@@ -8,6 +8,8 @@ import { Sidebar } from "./components/Sidebar";
 import { Settings } from "./components/Settings";
 import { NowPlaying } from "./components/NowPlaying";
 import { Clock } from "./components/Clock";
+import { ExitDialog } from "./components/ExitDialog";
+import { PlaybackBar } from "./components/PlaybackBar";
 import type { Channel } from "./types";
 
 const FAVOURITES = "\u2605 Favourites";
@@ -25,6 +27,9 @@ export default function App() {
   const [chrome, setChrome] = useState(true);
   const [showSettings, setShowSettings] = useState(false);
   const [digits, setDigits] = useState("");
+  const [showExit, setShowExit] = useState(false);
+  const [controls, setControls] = useState(false);
+  const [paused, setPaused] = useState(false);
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const playerRef = useRef<Player | null>(null);
@@ -120,11 +125,31 @@ export default function App() {
   const onKey = useCallback((code: number, event: KeyboardEvent) => {
     if (showSettings) return;   // the settings screen owns the remote while it is open
 
-    // With the panel hidden the arrows are not navigating a list, so up and down become
-    // channel change, which is what every TV does and so needs no instruction.
+    if (showExit) return;             // the dialog owns the remote while it is up
+
+    // PLAY/PAUSE is the only physical transport key on the Smart Remote, so it must work
+    // wherever the viewer is, and pressing it reveals the on screen controls with
+    // play/pause focused, as the media player guidance describes.
+    if (code === KEY.PLAY_PAUSE) {
+      event.preventDefault();
+      togglePause();
+      return;
+    }
+
+    if (controls) {
+      // The bar handles its own four directional movement. Return puts it away.
+      if (code === KEY.BACK || code === KEY.ESC) { event.preventDefault(); setControls(false); }
+      return;
+    }
+
+    // With the panel hidden the arrows are not navigating a list, so up and down change
+    // channel, matching how the remote behaves on broadcast. SELECT brings up the
+    // playback controls, which is how checklist 3.1 is satisfied without stealing the
+    // channel keys a viewer expects.
     if (!chrome && current) {
       if (code === KEY.UP) { event.preventDefault(); step(-1); return; }
       if (code === KEY.DOWN) { event.preventDefault(); step(1); return; }
+      if (code === KEY.ENTER) { event.preventDefault(); setControls(true); return; }
       if (code === KEY.BACK || code === KEY.ESC) { event.preventDefault(); showChrome(); return; }
       if (code < 48 || code > 57) { showChrome(); return; }
     }
@@ -182,16 +207,29 @@ export default function App() {
       case KEY.BACK:
       case KEY.ESC:
         event.preventDefault();
-        // Back hides the panel so the picture is unobstructed. Pressing it again with
-        // nothing playing would leave a blank screen, so that case keeps the panel.
-        if (current) {
+        // Samsung's input guide: RETURN moves back up the hierarchy, and on the home
+        // screen it closes the application. Inside the channel list that means stepping
+        // out to the category rail, then to full screen, then out of the app.
+        if (pane === "channels" && lists.length > 1) {
+          setPane("categories");
+        } else if (current) {
           window.clearTimeout(hideTimer.current);
           setChrome(false);
+        } else {
+          setShowExit(true);
         }
         break;
     }
   }, [showSettings, showChrome, digits, jump, pane, visible, index, lists.length, start,
       step, toggleFavourite, chrome, current, category, selectCategory]);
+
+  const togglePause = useCallback(() => {
+    if (!current) return;
+    if (paused) playerRef.current?.resume();
+    else playerRef.current?.pause();
+    setPaused((p) => !p);
+    setControls(true);
+  }, [current, paused]);
 
   useRemote(onKey);
 
@@ -243,7 +281,18 @@ export default function App() {
       </div>
 
       {error && <div className="toast">{error}</div>}
+      {controls && current && (
+        <PlaybackBar
+          playing={!paused}
+          onPrev={() => step(-1)}
+          onPlayPause={togglePause}
+          onNext={() => step(1)}
+          onList={() => { setControls(false); showChrome(); }}
+          onSettings={() => { setControls(false); setShowSettings(true); }}
+        />
+      )}
       {showSettings && <Settings onClose={() => setShowSettings(false)} />}
+      {showExit && <ExitDialog onCancel={() => setShowExit(false)} />}
 
       {chrome && (
         <div className="hints">

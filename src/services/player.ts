@@ -27,6 +27,7 @@ interface AVPlay {
   setListener(l: AVPlayListener): void;
   prepareAsync(ok: () => void, fail: (e: unknown) => void): void;
   play(): void;
+  pause?(): void;
   stop(): void;
   getState(): string;
   setStreamingProperty?(key: string, value: string): void;
@@ -127,6 +128,23 @@ export class Player {
     });
     hls.loadSource(url);
     hls.attachMedia(video);
+  }
+
+  /** Live streams have no seek, but pause and resume are still expected controls. */
+  pause() {
+    if (onTizen()) {
+      try { window.webapis!.avplay!.pause?.(); } catch { /* nothing to pause */ }
+    } else {
+      this.video?.pause();
+    }
+  }
+
+  resume() {
+    if (onTizen()) {
+      try { window.webapis!.avplay!.play(); } catch { /* nothing to resume */ }
+    } else {
+      void this.video?.play();
+    }
   }
 
   stop() {

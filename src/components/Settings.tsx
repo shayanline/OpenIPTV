@@ -4,6 +4,7 @@ import {
 } from "../stores/settings";
 import { useChannels } from "../stores/channels";
 import { KEY, useRemote } from "../hooks/useRemote";
+import { useSpatialNav } from "../hooks/useSpatialNav";
 import { APP_VERSION, AUTHOR, REPO_URL } from "../meta";
 
 type Section = "appearance" | "playlists" | "behaviour" | "about";
@@ -19,49 +20,56 @@ export function Settings({ onClose }: { onClose: () => void }) {
   const [section, setSection] = useState<Section>("appearance");
   const [inSections, setInSections] = useState(true);
   const bodyRef = useRef<HTMLDivElement>(null);
+  // Every control in the body has to be reachable with the four directional buttons,
+  // which the browser will not do on its own. Checklist items 2.2 and 3.2.
+  const { move, focusFirst } = useSpatialNav(bodyRef, !inSections);
 
   // Settings takes the whole remote while it is open, so App stops handling keys and
   // this owns navigation. Left and right move between the rail and the body, which is
   // the same shape as the main screen and so needs no explaining.
   const onKey = useCallback((code: number, event: KeyboardEvent) => {
+    const editing = document.activeElement instanceof HTMLInputElement;
+
     if (code === KEY.BACK || code === KEY.ESC) {
       event.preventDefault();
-      onClose();
+      // While the IME is up, RETURN belongs to the keyboard. Blurring dismisses it and
+      // keeps the viewer in settings, which is the step back they expect.
+      if (editing) (document.activeElement as HTMLInputElement).blur();
+      else onClose();
       return;
     }
-    if (code === KEY.LEFT) {
-      // Leaving a text field should not jump panes mid-edit.
-      if (document.activeElement instanceof HTMLInputElement) return;
-      event.preventDefault();
-      setInSections(true);
-      return;
-    }
-    if (code === KEY.RIGHT) {
-      if (document.activeElement instanceof HTMLInputElement) return;
+    // A text field consumes the arrows for the cursor and the on-screen keyboard.
+    if (editing && code !== KEY.UP && code !== KEY.DOWN) return;
+    if (code === KEY.RIGHT && inSections) {
       event.preventDefault();
       setInSections(false);
-      focusFirst();
+      window.setTimeout(focusFirst, 0);
       return;
     }
-    if (!inSections) return;
-    if (code === KEY.UP || code === KEY.DOWN) {
-      event.preventDefault();
-      const at = SECTIONS.findIndex((s) => s.id === section);
-      const next = code === KEY.UP ? Math.max(0, at - 1) : Math.min(SECTIONS.length - 1, at + 1);
-      setSection(SECTIONS[next].id);
-    }
-    if (code === KEY.ENTER) {
-      event.preventDefault();
-      setInSections(false);
-      focusFirst();
-    }
-  }, [inSections, section, onClose]);
 
-  const focusFirst = () => {
-    window.setTimeout(() => {
-      bodyRef.current?.querySelector<HTMLElement>("button, input")?.focus();
-    }, 0);
-  };
+    if (inSections) {
+      if (code === KEY.UP || code === KEY.DOWN) {
+        event.preventDefault();
+        const at = SECTIONS.findIndex((s) => s.id === section);
+        const next = code === KEY.UP ? Math.max(0, at - 1) : Math.min(SECTIONS.length - 1, at + 1);
+        setSection(SECTIONS[next].id);
+      }
+      if (code === KEY.ENTER) {
+        event.preventDefault();
+        setInSections(false);
+        window.setTimeout(focusFirst, 0);
+      }
+      return;
+    }
+
+    // Inside the body, arrows move focus between controls geometrically. When a move
+    // finds nothing to the left, the rail is the natural next stop.
+    if ([KEY.UP, KEY.DOWN, KEY.LEFT, KEY.RIGHT].includes(code as never)) {
+      event.preventDefault();
+      const moved = move(code);
+      if (!moved && code === KEY.LEFT) setInSections(true);
+    }
+  }, [inSections, section, onClose, move, focusFirst]);
 
   useRemote(onKey);
 
@@ -175,6 +183,7 @@ function Playlists() {
   const s = useSettings();
   const { load, loading, channels } = useChannels();
   const [editing, setEditing] = useState<Playlist | null>(null);
+  const [note, setNote] = useState("");
   const [name, setName] = useState("");
   const [url, setUrl] = useState("");
 
@@ -199,6 +208,7 @@ function Playlists() {
   return (
     <>
       <h3>Playlists</h3>
+      {note && <p className="sheet-lead" role="status">{note}</p>}
       <p className="sheet-lead">
         Any extended M3U works. {channels.length} channels loaded from the active one.
       </p>
@@ -214,11 +224,16 @@ function Playlists() {
               <span className="pl-url">{p.url}</span>
             </button>
             <button type="button" className="pill" onClick={() => startEdit(p)}>Edit</button>
+            {/* Not `disabled`: the guidelines say an unavailable function should still
+                take focus and appear translucent, so the viewer can find out why. */}
             <button
               type="button"
-              className="pill danger"
-              disabled={s.playlists.length < 2}
-              onClick={() => s.removePlaylist(p.id)}
+              className={`pill danger ${s.playlists.length < 2 ? "unavailable" : ""}`}
+              aria-disabled={s.playlists.length < 2}
+              onClick={() => {
+                if (s.playlists.length < 2) setNote("Keep at least one playlist, or there would be nothing to watch.");
+                else s.removePlaylist(p.id);
+              }}
             >
               Remove
             </button>
@@ -242,7 +257,8 @@ function Playlists() {
       ) : (
         <div className="actions">
           <button type="button" className="pill" onClick={startAdd}>Add a playlist</button>
-          <button type="button" className="pill" onClick={() => load(true)} disabled={loading}>
+          <button type="button" className="pill" onClick={() => load(true)}
+                  aria-busy={loading}>
             {loading ? "Refreshing\u2026" : "Refresh now"}
           </button>
         </div>

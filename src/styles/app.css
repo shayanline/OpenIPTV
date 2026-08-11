@@ -556,3 +556,64 @@ button { font: inherit; color: inherit; cursor: pointer; }
   border-radius: var(--r-lg);
   background: #fff;
 }
+
+/* ================================================= playback controls & dialog ==== */
+/* Required by checklist 3.1, and every button here is reachable with the four
+   directional buttons, which 3.2 requires. */
+.playbar {
+  position: absolute;
+  left: 50%;
+  bottom: calc(var(--safe-y) + 150px);
+  transform: translateX(-50%);
+  display: flex;
+  gap: var(--s1);
+  align-items: center;
+  padding: var(--s1);
+  border-radius: var(--r-pill);
+  background: var(--surface-1);
+}
+.pbtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 76px;
+  height: 76px;
+  padding: 0 var(--s2);
+  border: 1px solid transparent;
+  border-radius: var(--r-pill);
+  background: transparent;
+  color: var(--text-2);
+  font-size: var(--t-section);
+}
+.pbtn.wide { min-width: auto; font-size: var(--t-label); }
+.pbtn.primary { background: rgba(255, 255, 255, 0.12); color: var(--text); }
+.pbtn:focus-visible, .pbtn:focus {
+  outline: none;
+  background: var(--focus);
+  color: var(--on-focus);
+}
+.pbar-gap { width: var(--s3); }
+
+/* An unavailable action keeps its place in the focus order and explains itself when
+   chosen, rather than vanishing from four directional navigation. */
+.pill.unavailable { opacity: 0.4; }
+
+.dialog-scrim {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--scrim);
+}
+.dialog {
+  width: 720px;
+  padding: var(--s5);
+  border-radius: var(--r-lg);
+  background: var(--surface-2);
+  text-align: center;
+}
+.dialog h2 { margin: 0 0 var(--s1); font-size: var(--t-title); font-weight: 600; }
+.dialog p { margin: 0 0 var(--s4); color: var(--text-2); font-size: var(--t-label); }
+.dialog-actions { display: flex; gap: var(--s2); justify-content: center; }
+.dialog-actions .pill { min-width: 220px; justify-content: center; }
