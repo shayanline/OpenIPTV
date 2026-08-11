@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useChannels } from "./stores/channels";
+import { useSettings } from "./stores/settings";
 import { Player, onTizen, type PlayerEvent } from "./services/player";
 import { KEY, registerRemoteKeys, useRemote } from "./hooks/useRemote";
 import { ChannelList } from "./components/ChannelList";
 import { Sidebar } from "./components/Sidebar";
 import { Settings } from "./components/Settings";
 import { NowPlaying } from "./components/NowPlaying";
+import { Clock } from "./components/Clock";
 import type { Channel } from "./types";
 
 const FAVOURITES = "\u2605 Favourites";
@@ -13,6 +15,7 @@ const FAVOURITES = "\u2605 Favourites";
 export default function App() {
   const { channels, categories, favourites, load, loading, error, toggleFavourite,
           rememberLast, lastPlayed } = useChannels();
+  const settings = useSettings();
 
   const [category, setCategory] = useState(0);
   const [index, setIndex] = useState(0);
@@ -20,7 +23,7 @@ export default function App() {
   const [current, setCurrent] = useState<Channel | null>(null);
   const [status, setStatus] = useState("");
   const [chrome, setChrome] = useState(true);
-  const [settings, setSettings] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
   const [digits, setDigits] = useState("");
 
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -39,6 +42,12 @@ export default function App() {
     registerRemoteKeys();
     load();
   }, [load]);
+
+  useEffect(() => {
+    const root = document.documentElement;
+    root.style.setProperty("--font", settings.font().stack);
+    root.style.setProperty("--scale", String(settings.scale()));
+  }, [settings]);
 
   useEffect(() => {
     const onEvent = (e: PlayerEvent) => {
@@ -60,6 +69,7 @@ export default function App() {
   useEffect(() => {
     if (resumed.current || !channels.length) return;
     resumed.current = true;
+    if (!settings.resumeLast) return;
     const id = lastPlayed();
     const found = channels.find((c) => c.id === id);
     if (found) start(found);
@@ -68,8 +78,10 @@ export default function App() {
   const showChrome = useCallback(() => {
     setChrome(true);
     window.clearTimeout(hideTimer.current);
-    hideTimer.current = window.setTimeout(() => setChrome(false), 8000);
-  }, []);
+    if (settings.panelTimeout > 0) {
+      hideTimer.current = window.setTimeout(() => setChrome(false), settings.panelTimeout * 1000);
+    }
+  }, [settings.panelTimeout]);
 
   const start = useCallback((channel: Channel) => {
     setCurrent(channel);
@@ -106,7 +118,16 @@ export default function App() {
   }, [channels, lists, start]);
 
   const onKey = useCallback((code: number, event: KeyboardEvent) => {
-    if (settings) return;
+    if (showSettings) return;   // the settings screen owns the remote while it is open
+
+    // With the panel hidden the arrows are not navigating a list, so up and down become
+    // channel change, which is what every TV does and so needs no instruction.
+    if (!chrome && current) {
+      if (code === KEY.UP) { event.preventDefault(); step(-1); return; }
+      if (code === KEY.DOWN) { event.preventDefault(); step(1); return; }
+      if (code === KEY.BACK || code === KEY.ESC) { event.preventDefault(); showChrome(); return; }
+      if (code < 48 || code > 57) { showChrome(); return; }
+    }
     showChrome();
 
     if (code >= 48 && code <= 57) {
@@ -156,16 +177,21 @@ export default function App() {
         if (visible[index]) toggleFavourite(visible[index].id);
         break;
       case KEY.YELLOW:
-        setSettings(true);
+        setShowSettings(true);
         break;
       case KEY.BACK:
       case KEY.ESC:
-        if (!chrome) showChrome();
-        else if (current) setChrome(false);
+        event.preventDefault();
+        // Back hides the panel so the picture is unobstructed. Pressing it again with
+        // nothing playing would leave a blank screen, so that case keeps the panel.
+        if (current) {
+          window.clearTimeout(hideTimer.current);
+          setChrome(false);
+        }
         break;
     }
-  }, [settings, showChrome, digits, jump, pane, visible, index, lists.length, start, step,
-      toggleFavourite, chrome, current, category, selectCategory]);
+  }, [showSettings, showChrome, digits, jump, pane, visible, index, lists.length, start,
+      step, toggleFavourite, chrome, current, category, selectCategory]);
 
   useRemote(onKey);
 
@@ -185,6 +211,7 @@ export default function App() {
       {current && <NowPlaying channel={current} status={status} />}
       {!current && status && <div className="status">{status}</div>}
       {digits && <div className="digits">{digits}</div>}
+      {settings.showClock && chrome && <Clock />}
 
       <div className={`chrome ${chrome ? "" : "hidden"}`}>
         <Sidebar
@@ -203,6 +230,9 @@ export default function App() {
           focused={pane === "channels"}
           playingId={current?.id ?? ""}
           favourites={favourites}
+          showNumbers={settings.showNumbers}
+          showLogos={settings.showLogos}
+          language={settings.language}
           onSelect={(c, i) => {
             setIndex(i);
             start(c);
@@ -211,7 +241,7 @@ export default function App() {
       </div>
 
       {error && <div className="error">{error}</div>}
-      {settings && <Settings onClose={() => setSettings(false)} />}
+      {showSettings && <Settings onClose={() => setShowSettings(false)} />}
 
       {chrome && (
         <div className="hints">

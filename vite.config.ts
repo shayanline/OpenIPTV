@@ -1,8 +1,12 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
+import { readFileSync } from "node:fs";
+
+const pkg = JSON.parse(readFileSync("./package.json", "utf8"));
 
 export default defineConfig({
   plugins: [react()],
+  define: { __APP_VERSION__: JSON.stringify(pkg.version) },
   // The TV loads the app from the filesystem inside the widget, so every asset
   // reference has to be relative. An absolute /assets/... path resolves to the
   // device root and 404s.

@@ -1,6 +1,6 @@
 {
   "name": "simple-iptv",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "IPTV player for Samsung Tizen TVs",
   "main": "main.js",
   "scripts": {

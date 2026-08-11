@@ -9,10 +9,16 @@ interface Props {
   playingId: string;
   favourites: string[];
   loading: boolean;
+  showNumbers: boolean;
+  showLogos: boolean;
+  language: string;
   onSelect: (channel: Channel, index: number) => void;
 }
 
-export function ChannelList({ channels, index, focused, playingId, favourites, loading, onSelect }: Props) {
+export function ChannelList({
+  channels, index, focused, playingId, favourites, loading,
+  showNumbers, showLogos, language, onSelect,
+}: Props) {
   const rowRef = useRef<HTMLButtonElement>(null);
 
   // The remote moves the selection, so the list follows it rather than the pointer.
@@ -43,11 +49,11 @@ export function ChannelList({ channels, index, focused, playingId, favourites, l
           className={`channel ${i === index ? "selected" : ""} ${c.id === playingId ? "playing" : ""}`}
           onClick={() => onSelect(c, i)}
         >
-          <span className="number">{c.number}</span>
-          {c.logo
+          {showNumbers && <span className="number">{c.number}</span>}
+          {showLogos && (c.logo
             ? <img className="logo" src={c.logo} alt="" loading="lazy" />
-            : <span className="logo placeholder">{c.name.slice(0, 2)}</span>}
-          <Bilingual value={c.name} className="title" />
+            : <span className="logo placeholder">{c.name.slice(0, 2)}</span>)}
+          <Bilingual value={c.name} className="title" language={language} />
           {favourites.includes(c.id) && <span className="star">{"\u2605"}</span>}
           {c.quality && <span className="quality">{c.quality}</span>}
           {c.id === playingId && <span className="bars"><i /><i /><i /></span>}
