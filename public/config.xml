@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<widget xmlns="http://www.w3.org/ns/widgets" xmlns:tizen="http://tizen.org/ns/widgets"
+        id="http://simpleiptv.local/SimpleIPTV" version="0.1.0" viewmodes="maximized">
+  <name>SimpleIPTV</name>
+  <icon src="icon.png"/>
+  <content src="index.html"/>
+
+  <!-- Keep the id from the Tizen Studio scaffold, so an install replaces rather than
+       duplicates the app already on the TV. -->
+  <tizen:application id="qQHcuw4fHz.SimpleIPTV" package="qQHcuw4fHz" required_version="2.4"/>
+
+  <!-- internet: fetch the playlist and the streams.
+       tv.inputdevice: receive the coloured and channel keys.
+       application.launch: relaunch after the TV suspends the app. -->
+  <tizen:privilege name="http://tizen.org/privilege/internet"/>
+  <tizen:privilege name="http://tizen.org/privilege/tv.inputdevice"/>
+  <tizen:privilege name="http://tizen.org/privilege/application.launch"/>
+
+  <!-- Streams and logos come from many hosts, so no origin allowlist is workable. -->
+  <access origin="*" subdomains="true"/>
+
+  <tizen:setting screen-orientation="landscape" context-menu="disable"
+                 background-support="disable" encryption="disable"
+                 install-location="auto" hwkey-event="enable"/>
+  <tizen:metadata key="http://samsung.com/tv/metadata/prelaunch.support" value="true"/>
+  <tizen:metadata key="http://tizen.org/metadata/app_ui_type/base_screen_resolution" value="extensive"/>
+  <tizen:profile name="tv-samsung"/>
+</widget>
