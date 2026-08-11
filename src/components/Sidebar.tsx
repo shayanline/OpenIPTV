@@ -1,5 +1,7 @@
+import { Bilingual } from "./Bilingual";
+
 interface Props {
-  categories: string[];
+  categories: { name: string; count: number }[];
   selected: number;
   focused: boolean;
   onSelect: (index: number) => void;
@@ -8,18 +10,15 @@ interface Props {
 export function Sidebar({ categories, selected, focused, onSelect }: Props) {
   return (
     <nav className={`sidebar ${focused ? "focused" : ""}`}>
-      {categories.map((name, i) => (
+      {categories.map((c, i) => (
         <button
-          key={name}
+          key={c.name}
           type="button"
           className={`category ${i === selected ? "selected" : ""}`}
           onClick={() => onSelect(i)}
         >
-          {/* Bilingual group titles arrive as "English | فارسی". Stacking them keeps the
-              rail narrow and stops the Persian half being clipped. */}
-          {name.split(" | ").map((part, n) => (
-            <span key={n} className={n ? "fa" : "en"}>{part}</span>
-          ))}
+          <Bilingual value={c.name} />
+          <span className="count">{c.count}</span>
         </button>
       ))}
     </nav>

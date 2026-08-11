@@ -202,3 +202,99 @@ html, body, #root {
 }
 .settings button:focus { outline: 3px solid var(--accent); }
 .settings .note { margin: 18px 0 0; color: var(--dim); font-size: 18px; }
+
+/* --- bilingual text -------------------------------------------------------------- */
+/* Each half keeps its own direction, so Persian punctuation stays where it belongs. */
+.bilingual { display: inline-flex; gap: 8px; align-items: baseline; min-width: 0; }
+.bilingual .fa { opacity: 0.72; font-size: 0.85em; }
+.bilingual .en, .bilingual .fa { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* --- sidebar --------------------------------------------------------------------- */
+.category { justify-content: space-between; flex-direction: row; align-items: center; }
+.category .bilingual { flex-direction: column; gap: 0; align-items: flex-start; }
+.count {
+  flex: 0 0 auto;
+  padding: 2px 9px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--dim);
+  font-size: 15px;
+}
+.category.selected .count { background: rgba(56, 189, 248, 0.22); color: var(--text); }
+
+/* A left border alone is hard to pick out across a room, so the focused row also
+   brightens and lifts slightly. */
+.sidebar.focused .category.selected,
+.channels.focused .channel.selected {
+  background: linear-gradient(90deg, rgba(56, 189, 248, 0.28), rgba(56, 189, 248, 0.05));
+  box-shadow: inset 0 0 0 1px rgba(56, 189, 248, 0.35);
+}
+
+/* --- playing indicator ----------------------------------------------------------- */
+.bars { display: inline-flex; gap: 2px; align-items: flex-end; height: 16px; }
+.bars i {
+  width: 3px;
+  background: var(--accent);
+  animation: bar 900ms ease-in-out infinite;
+}
+.bars i:nth-child(1) { height: 7px; animation-delay: 0ms; }
+.bars i:nth-child(2) { height: 14px; animation-delay: 150ms; }
+.bars i:nth-child(3) { height: 10px; animation-delay: 300ms; }
+@keyframes bar { 0%, 100% { transform: scaleY(0.5); } 50% { transform: scaleY(1); } }
+
+/* --- now playing ----------------------------------------------------------------- */
+.now-playing {
+  position: absolute;
+  left: 40px;
+  bottom: 70px;
+  display: flex;
+  gap: 18px;
+  align-items: center;
+  max-width: 900px;
+  padding: 16px 22px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--panel);
+  transition: opacity 500ms ease;
+}
+.now-playing.fade { opacity: 0; pointer-events: none; }
+.np-logo {
+  width: 92px;
+  height: 58px;
+  object-fit: contain;
+  background: rgba(255, 255, 255, 0.92);
+  border-radius: 8px;
+}
+.np-logo.placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #1e293b;
+  color: var(--dim);
+  font-size: 22px;
+  text-transform: uppercase;
+}
+.np-text { min-width: 0; }
+.np-title { font-size: 30px; }
+.np-meta { display: flex; gap: 14px; align-items: baseline; margin-top: 4px; color: var(--dim); font-size: 19px; }
+.np-number {
+  padding: 1px 9px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text);
+}
+.np-quality { color: var(--accent); }
+.np-status { margin-left: 8px; color: var(--accent); font-size: 19px; }
+
+/* --- loading skeleton ------------------------------------------------------------ */
+.channel.skeleton { pointer-events: none; }
+.sk {
+  display: inline-block;
+  border-radius: 6px;
+  background: linear-gradient(90deg, #131c2c, #1c2942, #131c2c);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s linear infinite;
+}
+.sk-logo { width: 64px; height: 40px; }
+.sk-title { flex: 1; height: 18px; margin-left: 16px; }
+@keyframes shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }

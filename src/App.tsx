@@ -5,6 +5,7 @@ import { KEY, registerRemoteKeys, useRemote } from "./hooks/useRemote";
 import { ChannelList } from "./components/ChannelList";
 import { Sidebar } from "./components/Sidebar";
 import { Settings } from "./components/Settings";
+import { NowPlaying } from "./components/NowPlaying";
 import type { Channel } from "./types";
 
 const FAVOURITES = "\u2605 Favourites";
@@ -85,16 +86,23 @@ export default function App() {
     start(next);
   }, [visible, current, start]);
 
+  // Moving between categories starts at the top of the new one. Jumping to a channel
+  // number does not, so the two cannot share an effect on `category`: the effect would
+  // fire after the jump and drop the selection back to row zero.
+  const selectCategory = useCallback((i: number) => {
+    setCategory(i);
+    setIndex(0);
+  }, []);
+
   const jump = useCallback((n: number) => {
     const found = channels.find((c) => c.number === n);
-    if (found) {
-      const cat = lists.findIndex((l) => l.channels.some((c) => c.id === found.id));
-      if (cat >= 0) {
-        setCategory(cat);
-        setIndex(lists[cat].channels.indexOf(found));
-      }
-      start(found);
+    if (!found) return;
+    const cat = lists.findIndex((l) => l.channels.some((c) => c.id === found.id));
+    if (cat >= 0) {
+      setCategory(cat);
+      setIndex(lists[cat].channels.indexOf(found));
     }
+    start(found);
   }, [channels, lists, start]);
 
   const onKey = useCallback((code: number, event: KeyboardEvent) => {
@@ -116,12 +124,12 @@ export default function App() {
       case KEY.UP:
         event.preventDefault();
         if (pane === "channels") setIndex((i) => Math.max(0, i - 1));
-        else setCategory((c) => Math.max(0, c - 1));
+        else selectCategory(Math.max(0, category - 1));
         break;
       case KEY.DOWN:
         event.preventDefault();
         if (pane === "channels") setIndex((i) => Math.min(visible.length - 1, i + 1));
-        else setCategory((c) => Math.min(lists.length - 1, c + 1));
+        else selectCategory(Math.min(lists.length - 1, category + 1));
         break;
       case KEY.LEFT:
         event.preventDefault();
@@ -157,12 +165,9 @@ export default function App() {
         break;
     }
   }, [settings, showChrome, digits, jump, pane, visible, index, lists.length, start, step,
-      toggleFavourite, chrome, current]);
+      toggleFavourite, chrome, current, category, selectCategory]);
 
   useRemote(onKey);
-
-  // Keep the highlighted row in view as the selection moves.
-  useEffect(() => setIndex(0), [category]);
 
   return (
     <div className="app">
@@ -177,22 +182,24 @@ export default function App() {
         </div>
       )}
 
-      {status && <div className="status">{status}</div>}
+      {current && <NowPlaying channel={current} status={status} />}
+      {!current && status && <div className="status">{status}</div>}
       {digits && <div className="digits">{digits}</div>}
 
       <div className={`chrome ${chrome ? "" : "hidden"}`}>
         <Sidebar
-          categories={lists.map((l) => l.name)}
+          categories={lists.map((l) => ({ name: l.name, count: l.channels.length }))}
           selected={category}
           focused={pane === "categories"}
           onSelect={(i) => {
-            setCategory(i);
+            selectCategory(i);
             setPane("channels");
           }}
         />
         <ChannelList
           channels={visible}
           index={index}
+          loading={loading}
           focused={pane === "channels"}
           playingId={current?.id ?? ""}
           favourites={favourites}
