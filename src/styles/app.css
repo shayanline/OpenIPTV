@@ -1,18 +1,29 @@
+@import "./tokens.css";
+
 /*
- * Sized for a 1920x1080 canvas, which the TV scales to the panel. Everything is in px
- * rather than rem, because the widget's root font size is not something to rely on.
+ * Layout follows Samsung's "vertical style": categories in a rail down the left, content
+ * to its right. The guidelines recommend that shape for an app with several or a variable
+ * number of categories, which is exactly a playlist whose groups come from the file.
  *
- * The living room is the constraint: text no smaller than 22px, the focused row obvious
- * from three metres, and every interactive element reachable with four arrow keys.
+ * Focusable elements sit on a strict two column grid. The checklist requires focusable
+ * objects to be aligned in grids rather than diagonally, because four directional
+ * navigation across a diagonal layout leaves the viewer guessing where the next press
+ * will land.
  */
-:root {
-  --bg: #0b0f17;
-  --panel: rgba(14, 20, 32, 0.94);
-  --line: #1f2a3c;
-  --text: #eef2f8;
-  --dim: #93a3bb;
-  --accent: #38bdf8;
-  --accent-soft: rgba(56, 189, 248, 0.16);
+
+/* Vazirmatn ships inside the widget. Google Fonts is not reliably reachable inside Iran,
+   and a webfont that fails to load leaves the layout in a fallback nobody checked. */
+@font-face {
+  font-family: "Vazirmatn";
+  src: url("../fonts/Vazirmatn-Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Vazirmatn";
+  src: url("../fonts/Vazirmatn-Bold.woff2") format("woff2");
+  font-weight: 700;
+  font-display: swap;
 }
 
 * { box-sizing: border-box; }
@@ -20,11 +31,19 @@
 html, body, #root {
   margin: 0;
   height: 100%;
-  background: #000;
+  background: var(--bg);
   color: var(--text);
-  font-family: "Open Sans", "Noto Sans Arabic", -apple-system, "Segoe UI", sans-serif;
+  font-family: var(--font);
+  font-size: var(--t-body);
+  line-height: var(--lh);
   overflow: hidden;
+  /* A TV has no pointer by default, and a text cursor appearing over the picture looks
+     broken. */
+  user-select: none;
+  cursor: default;
 }
+
+button { font: inherit; color: inherit; cursor: pointer; }
 
 .app { position: relative; width: 100%; height: 100%; }
 
@@ -39,6 +58,254 @@ html, body, #root {
 /* AVPlay punches its own hole through the page, so nothing may paint over it. */
 .avplay-surface { background: transparent; pointer-events: none; }
 
+/* ---------------------------------------------------------------- browse panel ---- */
+/* The panel is a scrim over the picture rather than a solid wall, so the viewer never
+   loses sight of what is playing while choosing what to watch next. */
+.chrome {
+  position: absolute;
+  inset: 0 auto 0 0;
+  display: flex;
+  height: 100%;
+  background: linear-gradient(90deg, rgba(0, 0, 0, 0.94) 60%, rgba(0, 0, 0, 0));
+  padding-right: var(--s6);
+  transition: transform var(--t-med) var(--ease), opacity var(--t-med) var(--ease);
+}
+.chrome.hidden { transform: translateX(-100%); opacity: 0; pointer-events: none; }
+
+.rail, .list {
+  height: 100%;
+  padding: calc(var(--safe-y) + var(--s2)) 0 var(--s5);
+  overflow: hidden;
+  position: relative;
+}
+.rail { width: 380px; padding-left: var(--safe-x); }
+.list { width: 660px; }
+
+.rail-scroll, .list-scroll {
+  height: 100%;
+  overflow-y: auto;
+  scrollbar-width: none;
+  padding-right: var(--s2);
+}
+.rail-scroll::-webkit-scrollbar, .list-scroll::-webkit-scrollbar { display: none; }
+
+.panel-title {
+  margin: 0 0 var(--s2);
+  padding-right: var(--s2);
+  font-size: var(--t-caption);
+  font-weight: 400;
+  letter-spacing: 0.08em;
+  color: var(--text-3);
+  text-transform: uppercase;
+}
+
+/* ------------------------------------------------------------------- focus model ---- */
+/*
+ * Two states, deliberately different, because the guidelines call them out separately.
+ *
+ *   selected  the row the app is on, whether or not this pane has the remote
+ *   focused   this pane has the remote, so pressing OK acts on the selected row
+ *
+ * Focus inverts to a light fill with dark text, which is One UI's TV signature and is
+ * legible across a room. Selection alone is a quiet tint, so a viewer can see where each
+ * pane will resume without mistaking it for where the remote is now.
+ */
+.row {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  width: 100%;
+  min-height: 72px;
+  padding: var(--s1) var(--s2);
+  border: 0;
+  border-radius: var(--r-md);
+  background: transparent;
+  color: var(--text-2);
+  text-align: left;
+  transition: background var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
+}
+.row.selected { background: var(--surface-2); color: var(--text); }
+.pane.focused .row.selected {
+  background: var(--focus);
+  color: var(--on-focus);
+  border-radius: var(--r-pill);
+}
+.pane.focused .row.selected .muted { color: rgba(0, 0, 0, 0.6); }
+.muted { color: var(--text-3); }
+
+/* --------------------------------------------------------------------- category ---- */
+.category-name { flex: 1; min-width: 0; }
+.category-count {
+  flex: 0 0 auto;
+  min-width: 44px;
+  padding: 2px var(--s1);
+  border-radius: var(--r-pill);
+  background: rgba(255, 255, 255, 0.10);
+  font-size: var(--t-caption);
+  text-align: center;
+}
+.pane.focused .row.selected .category-count { background: rgba(0, 0, 0, 0.12); }
+
+/* ---------------------------------------------------------------------- channel ---- */
+.ch-number {
+  flex: 0 0 auto;
+  width: 58px;
+  font-size: var(--t-label);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.ch-logo {
+  flex: 0 0 auto;
+  width: 76px;
+  height: 48px;
+  object-fit: contain;
+  border-radius: var(--r-sm);
+  background: rgba(255, 255, 255, 0.92);
+}
+.ch-logo.placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--surface-3);
+  color: var(--text-3);
+  font-size: var(--t-caption);
+  text-transform: uppercase;
+}
+.ch-name { flex: 1; min-width: 0; }
+.ch-badge {
+  flex: 0 0 auto;
+  padding: 2px var(--s1);
+  border-radius: var(--r-sm);
+  background: rgba(255, 255, 255, 0.10);
+  font-size: var(--t-caption);
+}
+.pane.focused .row.selected .ch-badge { background: rgba(0, 0, 0, 0.12); }
+.ch-star { flex: 0 0 auto; color: #ffc453; }
+
+/* The channel that is actually playing, which is not the same as the one selected. */
+.playing-dot {
+  flex: 0 0 auto;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 4px var(--accent-dim);
+}
+
+/* -------------------------------------------------------------- scroll indicator ---- */
+/* Required by the UX checklist: a list longer than one page must show where the viewer
+   is within it. It fades in on movement and away when idle, as the guidelines describe. */
+.scrollbar {
+  position: absolute;
+  top: calc(var(--safe-y) + var(--s5));
+  bottom: var(--s5);
+  right: 6px;
+  width: 4px;
+  border-radius: var(--r-pill);
+  background: rgba(255, 255, 255, 0.10);
+  opacity: 0;
+  transition: opacity var(--t-med) var(--ease);
+}
+.scrollbar.show { opacity: 1; }
+.scrollbar-thumb {
+  position: absolute;
+  left: 0;
+  width: 100%;
+  min-height: 40px;
+  border-radius: var(--r-pill);
+  background: rgba(255, 255, 255, 0.55);
+  transition: transform var(--t-fast) var(--ease);
+}
+
+/* ------------------------------------------------------------------ now playing ---- */
+/* The guidelines describe a banner over the video carrying title and status, which
+   appears on input and withdraws when idle. */
+.banner {
+  position: absolute;
+  left: var(--safe-x);
+  right: var(--safe-x);
+  bottom: var(--safe-y);
+  display: flex;
+  gap: var(--s3);
+  align-items: center;
+  max-width: 1100px;
+  padding: var(--s3);
+  border-radius: var(--r-lg);
+  background: var(--surface-1);
+  transition: opacity var(--t-med) var(--ease), transform var(--t-med) var(--ease);
+}
+.banner.hide { opacity: 0; transform: translateY(12px); pointer-events: none; }
+.banner-logo {
+  width: 120px;
+  height: 74px;
+  flex: 0 0 auto;
+  object-fit: contain;
+  border-radius: var(--r-md);
+  background: rgba(255, 255, 255, 0.92);
+}
+.banner-logo.placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--surface-3);
+  color: var(--text-3);
+  font-size: var(--t-section);
+  text-transform: uppercase;
+}
+.banner-text { min-width: 0; flex: 1; }
+.banner-title { font-size: var(--t-title); }
+.banner-meta {
+  display: flex;
+  gap: var(--s2);
+  align-items: baseline;
+  margin-top: 4px;
+  color: var(--text-2);
+  font-size: var(--t-label);
+}
+.banner-number {
+  padding: 1px var(--s1);
+  border-radius: var(--r-sm);
+  background: rgba(255, 255, 255, 0.10);
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.banner-status { color: var(--accent); }
+
+/* --------------------------------------------------------------------- overlays ---- */
+.clock {
+  position: absolute;
+  top: var(--safe-y);
+  right: var(--safe-x);
+  font-size: var(--t-section);
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.9);
+}
+.digits {
+  position: absolute;
+  top: var(--safe-y);
+  left: 50%;
+  transform: translateX(-50%);
+  padding: var(--s2) var(--s4);
+  border-radius: var(--r-lg);
+  background: var(--surface-1);
+  font-size: var(--t-hero);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.12em;
+}
+.toast {
+  position: absolute;
+  left: 50%;
+  bottom: calc(var(--safe-y) + 200px);
+  transform: translateX(-50%);
+  max-width: 1100px;
+  padding: var(--s2) var(--s3);
+  border-radius: var(--r-pill);
+  background: var(--surface-2);
+  color: var(--danger);
+  font-size: var(--t-label);
+}
+
 .splash {
   position: absolute;
   inset: 0;
@@ -46,106 +313,21 @@ html, body, #root {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 8px;
+  gap: var(--s2);
 }
-.splash h1 { font-size: 64px; margin: 0; letter-spacing: -1px; }
-.splash p { color: var(--dim); font-size: 24px; margin: 0; }
+.splash h1 { margin: 0; font-size: var(--t-hero); font-weight: 600; }
+.splash p { margin: 0; color: var(--text-2); font-size: var(--t-body); }
 
-.status, .digits, .error {
-  position: absolute;
-  padding: 10px 18px;
-  border-radius: 10px;
-  background: var(--panel);
-  font-size: 22px;
+/* A loading animation is required when a wait is noticeable. */
+.spinner {
+  width: 54px;
+  height: 54px;
+  border: 4px solid rgba(255, 255, 255, 0.16);
+  border-top-color: var(--focus);
+  border-radius: 50%;
+  animation: spin 900ms linear infinite;
 }
-.status { top: 40px; left: 40px; }
-.digits { top: 40px; right: 40px; font-size: 44px; letter-spacing: 6px; }
-.error { bottom: 120px; left: 40px; right: 40px; color: #fca5a5; }
-
-.chrome {
-  position: absolute;
-  inset: 0 auto 0 0;
-  display: flex;
-  height: 100%;
-  transition: transform 220ms ease, opacity 220ms ease;
-}
-.chrome.hidden { transform: translateX(-102%); opacity: 0; }
-
-.sidebar {
-  width: 340px;
-  height: 100%;
-  overflow-y: auto;
-  background: var(--panel);
-  border-right: 1px solid var(--line);
-  padding: 24px 0;
-}
-.category {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  width: 100%;
-  padding: 12px 24px;
-  border: 0;
-  border-left: 4px solid transparent;
-  background: none;
-  color: var(--dim);
-  font: inherit;
-  font-size: 21px;
-  text-align: left;
-  cursor: pointer;
-}
-.category .fa { font-size: 18px; opacity: 0.75; }
-.category.selected { color: var(--text); background: var(--accent-soft); }
-.sidebar.focused .category.selected { border-left-color: var(--accent); }
-
-.channels {
-  width: 620px;
-  height: 100%;
-  overflow-y: auto;
-  background: rgba(8, 12, 20, 0.9);
-  padding: 24px 0;
-}
-.channel {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  width: 100%;
-  padding: 10px 24px;
-  border: 0;
-  border-left: 4px solid transparent;
-  background: none;
-  color: var(--text);
-  font: inherit;
-  font-size: 23px;
-  text-align: left;
-  cursor: pointer;
-}
-.channel.selected { background: var(--accent-soft); }
-.channels.focused .channel.selected { border-left-color: var(--accent); }
-.channel.playing .title { color: var(--accent); }
-
-.number { width: 46px; color: var(--dim); font-size: 18px; text-align: right; }
-.logo {
-  width: 64px;
-  height: 40px;
-  object-fit: contain;
-  flex: 0 0 auto;
-  background: rgba(255, 255, 255, 0.9);
-  border-radius: 6px;
-}
-.logo.placeholder {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: #1e293b;
-  color: var(--dim);
-  font-size: 16px;
-  text-transform: uppercase;
-}
-.title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.star { color: #fbbf24; }
-.quality { color: var(--dim); font-size: 16px; }
-.empty { padding: 24px; color: var(--dim); }
+@keyframes spin { to { transform: rotate(360deg); } }
 
 .hints {
   position: absolute;
@@ -153,360 +335,224 @@ html, body, #root {
   right: 0;
   bottom: 0;
   display: flex;
-  gap: 28px;
+  gap: var(--s4);
   justify-content: center;
-  padding: 14px;
-  background: linear-gradient(transparent, rgba(0, 0, 0, 0.85));
-  color: var(--dim);
-  font-size: 19px;
+  padding: var(--s2) var(--safe-x) var(--safe-y);
+  color: var(--text-3);
+  font-size: var(--t-caption);
 }
-.hints b { color: var(--text); }
-
-.settings {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(0, 0, 0, 0.72);
-}
-.settings .panel {
-  width: 900px;
-  padding: 32px;
-  border: 1px solid var(--line);
-  border-radius: 16px;
-  background: var(--panel);
-}
-.settings h2 { margin: 0 0 20px; font-size: 32px; }
-.settings label { display: block; margin-bottom: 8px; color: var(--dim); font-size: 20px; }
-.settings input {
-  width: 100%;
-  padding: 12px 14px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: #0a0e16;
-  color: var(--text);
+.hints kbd {
+  padding: 2px var(--s1);
+  border-radius: var(--r-sm);
+  background: rgba(255, 255, 255, 0.12);
+  color: var(--text-2);
   font: inherit;
-  font-size: 20px;
-}
-.settings .row { display: flex; gap: 12px; margin-top: 20px; }
-.settings button {
-  padding: 12px 20px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: #16213a;
-  color: var(--text);
-  font: inherit;
-  font-size: 20px;
-  cursor: pointer;
-}
-.settings button:focus { outline: 3px solid var(--accent); }
-.settings .note { margin: 18px 0 0; color: var(--dim); font-size: 18px; }
-
-/* --- bilingual text -------------------------------------------------------------- */
-/* Each half keeps its own direction, so Persian punctuation stays where it belongs. */
-.bilingual { display: inline-flex; gap: 8px; align-items: baseline; min-width: 0; }
-.bilingual .fa { opacity: 0.72; font-size: 0.85em; }
-.bilingual .en, .bilingual .fa { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-
-/* --- sidebar --------------------------------------------------------------------- */
-.category { justify-content: space-between; flex-direction: row; align-items: center; }
-.category .bilingual { flex-direction: column; gap: 0; align-items: flex-start; }
-.count {
-  flex: 0 0 auto;
-  padding: 2px 9px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.08);
-  color: var(--dim);
-  font-size: 15px;
-}
-.category.selected .count { background: rgba(56, 189, 248, 0.22); color: var(--text); }
-
-/* A left border alone is hard to pick out across a room, so the focused row also
-   brightens and lifts slightly. */
-.sidebar.focused .category.selected,
-.channels.focused .channel.selected {
-  background: linear-gradient(90deg, rgba(56, 189, 248, 0.28), rgba(56, 189, 248, 0.05));
-  box-shadow: inset 0 0 0 1px rgba(56, 189, 248, 0.35);
 }
 
-/* --- playing indicator ----------------------------------------------------------- */
-.bars { display: inline-flex; gap: 2px; align-items: flex-end; height: 16px; }
-.bars i {
-  width: 3px;
-  background: var(--accent);
-  animation: bar 900ms ease-in-out infinite;
-}
-.bars i:nth-child(1) { height: 7px; animation-delay: 0ms; }
-.bars i:nth-child(2) { height: 14px; animation-delay: 150ms; }
-.bars i:nth-child(3) { height: 10px; animation-delay: 300ms; }
-@keyframes bar { 0%, 100% { transform: scaleY(0.5); } 50% { transform: scaleY(1); } }
-
-/* --- now playing ----------------------------------------------------------------- */
-.now-playing {
-  position: absolute;
-  left: 40px;
-  bottom: 70px;
-  display: flex;
-  gap: 18px;
-  align-items: center;
-  max-width: 900px;
-  padding: 16px 22px;
-  border: 1px solid var(--line);
-  border-radius: 14px;
-  background: var(--panel);
-  transition: opacity 500ms ease;
-}
-.now-playing.fade { opacity: 0; pointer-events: none; }
-.np-logo {
-  width: 92px;
-  height: 58px;
-  object-fit: contain;
-  background: rgba(255, 255, 255, 0.92);
-  border-radius: 8px;
-}
-.np-logo.placeholder {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: #1e293b;
-  color: var(--dim);
-  font-size: 22px;
-  text-transform: uppercase;
-}
-.np-text { min-width: 0; }
-.np-title { font-size: 30px; }
-.np-meta { display: flex; gap: 14px; align-items: baseline; margin-top: 4px; color: var(--dim); font-size: 19px; }
-.np-number {
-  padding: 1px 9px;
-  border-radius: 6px;
-  background: rgba(255, 255, 255, 0.1);
-  color: var(--text);
-}
-.np-quality { color: var(--accent); }
-.np-status { margin-left: 8px; color: var(--accent); font-size: 19px; }
-
-/* --- loading skeleton ------------------------------------------------------------ */
-.channel.skeleton { pointer-events: none; }
+/* ---------------------------------------------------------------------- skeleton ---- */
 .sk {
   display: inline-block;
-  border-radius: 6px;
-  background: linear-gradient(90deg, #131c2c, #1c2942, #131c2c);
+  border-radius: var(--r-sm);
+  background: linear-gradient(90deg, var(--surface-1), var(--surface-3), var(--surface-1));
   background-size: 200% 100%;
   animation: shimmer 1.4s linear infinite;
 }
-.sk-logo { width: 64px; height: 40px; }
-.sk-title { flex: 1; height: 18px; margin-left: 16px; }
+.sk-logo { width: 76px; height: 48px; }
+.sk-title { flex: 1; height: 20px; }
 @keyframes shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
 
-/* --- fonts ----------------------------------------------------------------------- */
-/* Bundled rather than fetched. Much of this app's audience is inside Iran, where
-   Google Fonts is not reliably reachable, and a webfont that fails to load leaves the
-   layout in a fallback nobody checked. */
-@font-face {
-  font-family: "Vazirmatn";
-  src: url("../fonts/Vazirmatn-Regular.woff2") format("woff2");
-  font-weight: 400;
-  font-display: swap;
-}
-@font-face {
-  font-family: "Vazirmatn";
-  src: url("../fonts/Vazirmatn-Bold.woff2") format("woff2");
-  font-weight: 700;
-  font-display: swap;
-}
+.empty { padding: var(--s3) var(--s2); color: var(--text-3); }
 
-/* Set from the settings store, so every rule below follows the viewer's choice. */
-:root { --font: "Vazirmatn", sans-serif; --scale: 1; }
-html, body, #root { font-family: var(--font); }
-.category, .channel, .np-title, .settings, .hints, .clock { font-size: calc(1em * var(--scale)); }
-.channel { font-size: calc(23px * var(--scale)); }
-.category { font-size: calc(21px * var(--scale)); }
-.np-title { font-size: calc(30px * var(--scale)); }
-
-/* --- clock ------------------------------------------------------------------------ */
-.clock {
-  position: absolute;
-  top: 34px;
-  right: 40px;
-  padding: 8px 16px;
-  border-radius: 10px;
-  background: var(--panel);
-  font-size: 26px;
-  font-variant-numeric: tabular-nums;
-}
-
-/* --- settings screen -------------------------------------------------------------- */
-.settings-shell {
-  display: flex;
-  width: 1500px;
-  height: 820px;
-  border: 1px solid var(--line);
-  border-radius: 18px;
-  background: var(--panel);
+/* ------------------------------------------------------------------- bilingual ---- */
+.bilingual { display: flex; flex-direction: column; min-width: 0; }
+.bilingual .fa { color: inherit; opacity: 0.62; font-size: 0.8em; }
+.bilingual .en, .bilingual .fa,
+.ch-name, .category-name {
   overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-.settings-rail {
-  width: 300px;
+
+/* ==================================================================== settings ==== */
+/*
+ * A full screen sheet rather than a floating dialog. The guidelines ask for unnecessary
+ * screen levels to be removed and for the viewer to always know where they are, and a
+ * sheet with a persistent rail does both: the section list stays on screen, so there is
+ * never a question of which part of settings you are in.
+ */
+.sheet {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  background: rgba(0, 0, 0, 0.96);
+}
+
+.sheet-rail {
+  width: 420px;
   flex: 0 0 auto;
-  padding: 26px 0;
-  border-right: 1px solid var(--line);
-  background: rgba(8, 12, 20, 0.6);
+  padding: calc(var(--safe-y) + var(--s3)) var(--s2) var(--safe-y) var(--safe-x);
+  overflow-y: auto;
 }
-.settings-rail h2 { margin: 0 24px 18px; font-size: 30px; }
-.rail-item {
-  display: block;
-  width: 100%;
-  padding: 13px 24px;
-  border: 0;
-  border-left: 4px solid transparent;
-  background: none;
-  color: var(--dim);
-  font: inherit;
-  font-size: 22px;
-  text-align: left;
-  cursor: pointer;
+.sheet-rail h2 {
+  margin: 0 0 var(--s3) var(--s2);
+  font-size: var(--t-hero);
+  font-weight: 600;
 }
-.rail-item.selected { color: var(--text); background: var(--accent-soft); }
-.settings-rail.focused .rail-item.selected { border-left-color: var(--accent); }
-.rail-hint { margin: 22px 24px 0; color: var(--dim); font-size: 16px; }
-
-.settings-body { flex: 1; padding: 26px 32px; overflow-y: auto; }
-.settings-body h3 { margin: 0 0 18px; font-size: 27px; }
-
-.setting-row {
-  display: flex;
-  gap: 24px;
-  align-items: flex-start;
-  justify-content: space-between;
-  padding: 14px 0;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-}
-.setting-label { font-size: 21px; }
-.setting-hint { display: block; margin-top: 3px; color: var(--dim); font-size: 16px; }
-.setting-control { flex: 0 0 auto; }
-
-.choice { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; max-width: 700px; }
-.chip {
-  padding: 8px 15px;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  background: #131c2c;
-  color: var(--dim);
-  font: inherit;
-  font-size: 18px;
-  cursor: pointer;
-}
-.chip.on { border-color: var(--accent); background: var(--accent-soft); color: var(--text); }
-.chip:focus, .toggle:focus, .settings-body button:focus, .settings-body input:focus {
-  outline: 3px solid var(--accent);
-  outline-offset: 2px;
-}
-
-.toggle {
-  display: inline-flex;
-  gap: 10px;
-  align-items: center;
-  padding: 7px 15px 7px 8px;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  background: #131c2c;
-  color: var(--dim);
-  font: inherit;
-  font-size: 18px;
-  cursor: pointer;
-}
-.toggle .knob {
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  background: #44506a;
-  transition: background 160ms ease;
-}
-.toggle.on { border-color: var(--accent); color: var(--text); }
-.toggle.on .knob { background: var(--accent); }
-
-.preview-note {
-  margin-top: 22px;
-  padding: 16px 18px;
-  border: 1px dashed var(--line);
-  border-radius: 10px;
-  font-size: 24px;
-}
-
-/* --- playlists -------------------------------------------------------------------- */
-.playlists { display: flex; flex-direction: column; gap: 10px; margin: 16px 0 20px; }
-.playlist {
-  display: flex;
-  gap: 10px;
-  align-items: center;
-  padding: 10px;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-}
-.playlist.active { border-color: var(--accent); background: var(--accent-soft); }
-.pl-use {
+.sheet-body {
   flex: 1;
+  padding: calc(var(--safe-y) + var(--s3)) var(--safe-x) var(--safe-y) var(--s5);
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+.sheet-body::-webkit-scrollbar { display: none; }
+.sheet-body h3 {
+  margin: 0 0 var(--s1);
+  font-size: var(--t-title);
+  font-weight: 600;
+}
+.sheet-lead { margin: 0 0 var(--s3); color: var(--text-2); font-size: var(--t-label); }
+
+/* One setting per line, label left, control right, so four directional movement down the
+   column is unambiguous. */
+.field {
+  display: flex;
+  gap: var(--s3);
+  align-items: center;
+  justify-content: space-between;
+  min-height: 84px;
+  padding: var(--s2) 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+}
+.field-label { font-size: var(--t-body); }
+.field-hint { display: block; margin-top: 2px; color: var(--text-2); font-size: var(--t-caption); }
+.field-control { flex: 0 0 auto; display: flex; flex-wrap: wrap; gap: var(--s1); justify-content: flex-end; max-width: 780px; }
+
+/* Controls are pills, and focus inverts them, exactly as rows do. Keeping one focus
+   language across the app is the Consistency principle in practice. */
+.pill {
+  min-height: 56px;
+  padding: 0 var(--s3);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: var(--r-pill);
+  background: transparent;
+  color: var(--text-2);
+  font-size: var(--t-label);
+}
+.pill.on { border-color: transparent; background: var(--surface-3); color: var(--text); }
+.pill:focus-visible, .pill:focus {
+  outline: none;
+  border-color: transparent;
+  background: var(--focus);
+  color: var(--on-focus);
+}
+.pill.danger { color: var(--danger); border-color: rgba(255, 107, 107, 0.4); }
+.pill:disabled { opacity: 0.35; }
+
+.switch {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s2);
+  min-height: 56px;
+  padding: 0 var(--s2) 0 6px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: var(--r-pill);
+  background: transparent;
+  color: var(--text-2);
+  font-size: var(--t-label);
+}
+.switch-track {
+  width: 58px;
+  height: 32px;
+  padding: 3px;
+  border-radius: var(--r-pill);
+  background: rgba(255, 255, 255, 0.18);
+  transition: background var(--t-fast) var(--ease);
+}
+.switch-knob {
+  display: block;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: #fff;
+  transition: transform var(--t-fast) var(--ease);
+}
+.switch.on .switch-track { background: var(--accent); }
+.switch.on .switch-knob { transform: translateX(26px); }
+.switch:focus-visible, .switch:focus {
+  outline: none;
+  border-color: transparent;
+  background: var(--focus);
+  color: var(--on-focus);
+}
+
+.preview {
+  margin-top: var(--s3);
+  padding: var(--s3);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: var(--r-lg);
+  font-size: var(--t-section);
+}
+
+/* ------------------------------------------------------------------- playlists ---- */
+.pl {
+  display: flex;
+  gap: var(--s1);
+  align-items: center;
+  margin-bottom: var(--s1);
+  padding: var(--s1);
+  border-radius: var(--r-lg);
+  background: var(--surface-1);
+}
+.pl.active { background: var(--accent-dim); }
+.pl-main {
+  flex: 1;
+  min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 3px;
-  min-width: 0;
-  padding: 6px 8px;
+  gap: 2px;
+  min-height: 64px;
+  padding: var(--s1) var(--s2);
   border: 0;
-  background: none;
-  color: var(--text);
-  font: inherit;
+  border-radius: var(--r-md);
+  background: transparent;
   text-align: left;
-  cursor: pointer;
 }
-.pl-name { font-size: 21px; }
-.pl-url { overflow: hidden; color: var(--dim); font-size: 15px; text-overflow: ellipsis; white-space: nowrap; }
-.pl-edit, .pl-remove {
-  padding: 8px 14px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: #16213a;
-  color: var(--text);
-  font: inherit;
-  font-size: 17px;
-  cursor: pointer;
+.pl-main:focus-visible, .pl-main:focus {
+  outline: none;
+  background: var(--focus);
+  color: var(--on-focus);
+  border-radius: var(--r-pill);
 }
-.pl-remove:disabled { opacity: 0.35; cursor: not-allowed; }
-.pl-form { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
-.pl-form label { color: var(--dim); font-size: 17px; }
-.pl-form input {
-  padding: 11px 13px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: #0a0e16;
-  color: var(--text);
-  font: inherit;
-  font-size: 19px;
-}
-.settings-body .row { display: flex; gap: 10px; margin-top: 14px; }
-.settings-body .row button {
-  padding: 11px 18px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: #16213a;
-  color: var(--text);
-  font: inherit;
-  font-size: 19px;
-  cursor: pointer;
-}
-.settings-body .row button:disabled { opacity: 0.45; }
-.settings-body .row button.danger { border-color: #7f1d1d; color: #fca5a5; }
+.pl-main:focus .pl-url { color: rgba(0, 0, 0, 0.6); }
+.pl-title { font-size: var(--t-label); }
+.pl-url { overflow: hidden; color: var(--text-3); font-size: var(--t-caption); text-overflow: ellipsis; white-space: nowrap; }
 
-/* --- about ------------------------------------------------------------------------ */
-.about { display: flex; gap: 34px; align-items: flex-start; justify-content: space-between; }
-.about-name { margin: 0 0 8px; font-size: 32px; }
-.about-line { margin: 3px 0; color: var(--dim); font-size: 20px; }
-.about-repo { color: var(--accent); word-break: break-all; }
-.qr {
-  width: 240px;
-  height: 240px;
+.form { display: flex; flex-direction: column; gap: var(--s1); margin-top: var(--s2); }
+.form label { color: var(--text-2); font-size: var(--t-caption); }
+.form input {
+  min-height: 64px;
+  padding: 0 var(--s2);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: var(--r-md);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--t-label);
+  user-select: text;
+}
+.form input:focus { outline: none; border-color: var(--focus); background: rgba(255, 255, 255, 0.08); }
+.actions { display: flex; gap: var(--s1); margin-top: var(--s2); }
+
+/* ----------------------------------------------------------------------- about ---- */
+.about { display: flex; gap: var(--s5); align-items: flex-start; justify-content: space-between; }
+.about h4 { margin: 0 0 var(--s1); font-size: var(--t-title); font-weight: 600; }
+.about p { margin: 2px 0; color: var(--text-2); font-size: var(--t-label); }
+.about .link { color: var(--accent); word-break: break-all; }
+.about .qr {
+  width: 260px;
+  height: 260px;
   flex: 0 0 auto;
-  padding: 10px;
-  border-radius: 12px;
+  padding: var(--s2);
+  border-radius: var(--r-lg);
   background: #fff;
 }

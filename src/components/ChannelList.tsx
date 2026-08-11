@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import type { Channel } from "../types";
 import { Bilingual } from "./Bilingual";
+import { ScrollIndicator } from "./ScrollIndicator";
 
 interface Props {
   channels: Channel[];
@@ -19,47 +20,47 @@ export function ChannelList({
   channels, index, focused, playingId, favourites, loading,
   showNumbers, showLogos, language, onSelect,
 }: Props) {
-  const rowRef = useRef<HTMLButtonElement>(null);
+  const scroller = useRef<HTMLDivElement>(null);
+  const row = useRef<HTMLButtonElement>(null);
 
-  // The remote moves the selection, so the list follows it rather than the pointer.
+  // Moving focus, in Samsung's terms: the list holds still and the highlight travels,
+  // scrolling only when the selection would otherwise leave the view.
   useEffect(() => {
-    rowRef.current?.scrollIntoView({ block: "nearest" });
+    row.current?.scrollIntoView({ block: "nearest" });
   }, [index]);
 
-  if (loading && !channels.length) {
-    return (
-      <div className="channels">
-        {Array.from({ length: 9 }, (_, i) => (
-          <div className="channel skeleton" key={i}>
-            <span className="sk sk-logo" />
-            <span className="sk sk-title" />
-          </div>
-        ))}
-      </div>
-    );
-  }
-
   return (
-    <div className={`channels ${focused ? "focused" : ""}`}>
-      {channels.map((c, i) => (
-        <button
-          key={c.id}
-          ref={i === index ? rowRef : undefined}
-          type="button"
-          className={`channel ${i === index ? "selected" : ""} ${c.id === playingId ? "playing" : ""}`}
-          onClick={() => onSelect(c, i)}
-        >
-          {showNumbers && <span className="number">{c.number}</span>}
-          {showLogos && (c.logo
-            ? <img className="logo" src={c.logo} alt="" loading="lazy" />
-            : <span className="logo placeholder">{c.name.slice(0, 2)}</span>)}
-          <Bilingual value={c.name} className="title" language={language} />
-          {favourites.includes(c.id) && <span className="star">{"\u2605"}</span>}
-          {c.quality && <span className="quality">{c.quality}</span>}
-          {c.id === playingId && <span className="bars"><i /><i /><i /></span>}
-        </button>
-      ))}
-      {!channels.length && <p className="empty">Nothing in this category.</p>}
+    <div className={`list pane ${focused ? "focused" : ""}`}>
+      <p className="panel-title">Channels</p>
+      <div className="list-scroll" ref={scroller}>
+        {loading && !channels.length
+          ? Array.from({ length: 8 }, (_, i) => (
+              <div className="row" key={i}>
+                <span className="sk sk-logo" />
+                <span className="sk sk-title" />
+              </div>
+            ))
+          : channels.map((c, i) => (
+              <button
+                key={c.id}
+                ref={i === index ? row : undefined}
+                type="button"
+                className={`row ${i === index ? "selected" : ""}`}
+                onClick={() => onSelect(c, i)}
+              >
+                {showNumbers && <span className="ch-number muted">{c.number}</span>}
+                {showLogos && (c.logo
+                  ? <img className="ch-logo" src={c.logo} alt="" loading="lazy" />
+                  : <span className="ch-logo placeholder">{c.name.slice(0, 2)}</span>)}
+                <Bilingual value={c.name} className="ch-name" language={language} />
+                {favourites.includes(c.id) && <span className="ch-star">{"\u2605"}</span>}
+                {c.quality && <span className="ch-badge muted">{c.quality}</span>}
+                {c.id === playingId && <span className="playing-dot" title="Playing" />}
+              </button>
+            ))}
+        {!loading && !channels.length && <p className="empty">Nothing in this category.</p>}
+      </div>
+      <ScrollIndicator target={scroller} deps={[index, channels.length]} />
     </div>
   );
 }

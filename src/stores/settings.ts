@@ -19,17 +19,19 @@ export interface FontChoice {
 
 export const FONTS: FontChoice[] = [
   {
-    id: "vazirmatn",
-    label: "Vazirmatn",
-    stack: '"Vazirmatn", "Noto Sans Arabic", sans-serif',
-    bundled: true,
-    note: "Designed for Persian, and covers Latin too",
+    id: "oneui",
+    label: "One UI Sans",
+    // system-ui resolves to One UI Sans on a Samsung TV, since it is the Tizen system
+    // font. It covers Latin and Korean only, so Vazirmatn sits behind it for Persian.
+    stack: '"One UI Sans", system-ui, -apple-system, "Segoe UI", Roboto, "Vazirmatn", sans-serif',
+    note: "The TV's own font, matching the rest of One UI",
   },
   {
-    id: "system",
-    label: "System default",
-    stack: 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif',
-    note: "Whatever the TV ships with",
+    id: "vazirmatn",
+    label: "Vazirmatn",
+    stack: '"Vazirmatn", "One UI Sans", system-ui, sans-serif',
+    bundled: true,
+    note: "Designed for Persian, and covers Latin too",
   },
   {
     id: "noto",
@@ -113,7 +115,7 @@ interface Settings {
 const KEY = "simpleiptv.settings";
 
 const DEFAULTS = {
-  fontId: "vazirmatn",
+  fontId: "oneui",
   fontSizeId: "m",
   language: "auto",
   playlists: BUILT_IN_PLAYLISTS,

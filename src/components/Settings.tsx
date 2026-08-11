@@ -66,15 +66,14 @@ export function Settings({ onClose }: { onClose: () => void }) {
   useRemote(onKey);
 
   return (
-    <div className="settings">
-      <div className="settings-shell">
-        <nav className={`settings-rail ${inSections ? "focused" : ""}`}>
+    <div className="sheet">
+        <nav className={`sheet-rail pane ${inSections ? "focused" : ""}`}>
           <h2>Settings</h2>
           {SECTIONS.map((s) => (
             <button
               key={s.id}
               type="button"
-              className={`rail-item ${s.id === section ? "selected" : ""}`}
+              className={`row ${s.id === section ? "selected" : ""}`}
               onClick={() => {
                 setSection(s.id);
                 setInSections(false);
@@ -83,16 +82,15 @@ export function Settings({ onClose }: { onClose: () => void }) {
               {s.label}
             </button>
           ))}
-          <p className="rail-hint">Back closes</p>
+          <p className="sheet-lead" style={{ marginTop: "var(--s3)" }}>Return closes settings</p>
         </nav>
 
-        <div className="settings-body" ref={bodyRef}>
+        <div className="sheet-body" ref={bodyRef}>
           {section === "appearance" && <Appearance />}
           {section === "playlists" && <Playlists />}
           {section === "behaviour" && <Behaviour />}
           {section === "about" && <About />}
         </div>
-      </div>
     </div>
   );
 }
@@ -101,12 +99,12 @@ function Row({ label, hint, children }: {
   label: string; hint?: string; children: React.ReactNode;
 }) {
   return (
-    <div className="setting-row">
-      <div className="setting-label">
+    <div className="field">
+      <div className="field-label">
         {label}
-        {hint && <span className="setting-hint">{hint}</span>}
+        {hint && <span className="field-hint">{hint}</span>}
       </div>
-      <div className="setting-control">{children}</div>
+      <div className="field-control">{children}</div>
     </div>
   );
 }
@@ -115,26 +113,26 @@ function Choice<T extends string>({ options, value, onChange }: {
   options: { id: T; label: string }[]; value: T; onChange: (id: T) => void;
 }) {
   return (
-    <div className="choice">
+    <>
       {options.map((o) => (
         <button
           key={o.id}
           type="button"
-          className={`chip ${o.id === value ? "on" : ""}`}
+          className={`pill ${o.id === value ? "on" : ""}`}
           onClick={() => onChange(o.id)}
         >
           {o.label}
         </button>
       ))}
-    </div>
+    </>
   );
 }
 
 function Toggle({ value, onChange }: { value: boolean; onChange: (v: boolean) => void }) {
   return (
-    <button type="button" className={`toggle ${value ? "on" : ""}`} onClick={() => onChange(!value)}>
-      <span className="knob" />
-      <span className="toggle-text">{value ? "On" : "Off"}</span>
+    <button type="button" className={`switch ${value ? "on" : ""}`} onClick={() => onChange(!value)}>
+      <span className="switch-track"><span className="switch-knob" /></span>
+      <span>{value ? "On" : "Off"}</span>
     </button>
   );
 }
@@ -163,10 +161,10 @@ function Appearance() {
         <Toggle value={s.showLogos} onChange={(v) => s.set("showLogos", v)} />
       </Row>
       <Row label="Clock"><Toggle value={s.showClock} onChange={(v) => s.set("showClock", v)} /></Row>
-      <p className="preview-note" style={{ fontFamily: font.stack }}>
+      <p className="preview" style={{ fontFamily: font.stack }}>
         Preview: IRIB TV1 &nbsp; شبکه یک &nbsp; 1234567890
       </p>
-      <p className="setting-hint">
+      <p className="sheet-lead">
         A tick marks a font packaged inside the app, so it works without internet.
       </p>
     </>
@@ -201,24 +199,24 @@ function Playlists() {
   return (
     <>
       <h3>Playlists</h3>
-      <p className="setting-hint">
+      <p className="sheet-lead">
         Any extended M3U works. {channels.length} channels loaded from the active one.
       </p>
 
-      <div className="playlists">
+      <div>
         {s.playlists.map((p) => (
-          <div key={p.id} className={`playlist ${p.id === s.activePlaylistId ? "active" : ""}`}>
-            <button type="button" className="pl-use" onClick={async () => {
+          <div key={p.id} className={`pl ${p.id === s.activePlaylistId ? "active" : ""}`}>
+            <button type="button" className="pl-main" onClick={async () => {
               s.set("activePlaylistId", p.id);
               await load();
             }}>
-              <span className="pl-name">{p.name}</span>
+              <span className="pl-title">{p.name}</span>
               <span className="pl-url">{p.url}</span>
             </button>
-            <button type="button" className="pl-edit" onClick={() => startEdit(p)}>Edit</button>
+            <button type="button" className="pill" onClick={() => startEdit(p)}>Edit</button>
             <button
               type="button"
-              className="pl-remove"
+              className="pill danger"
               disabled={s.playlists.length < 2}
               onClick={() => s.removePlaylist(p.id)}
             >
@@ -229,22 +227,22 @@ function Playlists() {
       </div>
 
       {editing ? (
-        <div className="pl-form">
+        <div className="form">
           <label htmlFor="pl-name">Name</label>
           <input id="pl-name" value={name} onChange={(e) => setName(e.target.value)}
                  placeholder="My playlist" />
           <label htmlFor="pl-url">URL</label>
           <input id="pl-url" value={url} onChange={(e) => setUrl(e.target.value)}
                  placeholder="https://example.com/playlist.m3u" spellCheck={false} />
-          <div className="row">
-            <button type="button" onClick={save}>Save</button>
-            <button type="button" onClick={() => setEditing(null)}>Cancel</button>
+          <div className="actions">
+            <button type="button" className="pill on" onClick={save}>Save</button>
+            <button type="button" className="pill" onClick={() => setEditing(null)}>Cancel</button>
           </div>
         </div>
       ) : (
-        <div className="row">
-          <button type="button" onClick={startAdd}>Add a playlist</button>
-          <button type="button" onClick={() => load(true)} disabled={loading}>
+        <div className="actions">
+          <button type="button" className="pill" onClick={startAdd}>Add a playlist</button>
+          <button type="button" className="pill" onClick={() => load(true)} disabled={loading}>
             {loading ? "Refreshing\u2026" : "Refresh now"}
           </button>
         </div>
@@ -278,8 +276,8 @@ function Behaviour() {
           onChange={(id) => s.set("panelTimeout", Number(id))}
         />
       </Row>
-      <div className="row">
-        <button type="button" className="danger" onClick={() => {
+      <div className="actions">
+        <button type="button" className="pill danger" onClick={() => {
           s.reset();
           void load(true);
         }}>
@@ -296,15 +294,15 @@ function About() {
       <h3>About</h3>
       <div className="about">
         <div>
-          <p className="about-name">SimpleIPTV</p>
-          <p className="about-line">Version {APP_VERSION}</p>
-          <p className="about-line">By {AUTHOR}</p>
-          <p className="about-line about-repo">{REPO_URL}</p>
-          <p className="setting-hint">
+          <h4>SimpleIPTV</h4>
+          <p>Version {APP_VERSION}</p>
+          <p>By {AUTHOR}</p>
+          <p className="link">{REPO_URL}</p>
+          <p className="sheet-lead">
             Free and open source. Scan the code to read it, report a problem, or
             contribute a playlist.
           </p>
-          <p className="setting-hint">
+          <p className="sheet-lead">
             Vazirmatn by Saber Rastikerdar, under the SIL Open Font License.
           </p>
         </div>

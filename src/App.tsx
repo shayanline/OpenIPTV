@@ -201,15 +201,16 @@ export default function App() {
       <video ref={videoRef} className="video" playsInline muted={false} />
       {onTizen() && <div className="avplay-surface" />}
 
-      {!current && !loading && (
+      {!current && (
         <div className="splash">
+          {loading && !channels.length && <div className="spinner" />}
           <h1>SimpleIPTV</h1>
-          <p>{channels.length ? "Pick a channel to start" : "Loading the playlist\u2026"}</p>
+          <p>{channels.length ? "Choose a channel to start" : "Loading the playlist\u2026"}</p>
         </div>
       )}
 
-      {current && <NowPlaying channel={current} status={status} />}
-      {!current && status && <div className="status">{status}</div>}
+      {current && <NowPlaying channel={current} status={status} language={settings.language} />}
+      {!current && status && <div className="toast">{status}</div>}
       {digits && <div className="digits">{digits}</div>}
       {settings.showClock && chrome && <Clock />}
 
@@ -218,6 +219,7 @@ export default function App() {
           categories={lists.map((l) => ({ name: l.name, count: l.channels.length }))}
           selected={category}
           focused={pane === "categories"}
+          language={settings.language}
           onSelect={(i) => {
             selectCategory(i);
             setPane("channels");
@@ -240,17 +242,17 @@ export default function App() {
         />
       </div>
 
-      {error && <div className="error">{error}</div>}
+      {error && <div className="toast">{error}</div>}
       {showSettings && <Settings onClose={() => setShowSettings(false)} />}
 
       {chrome && (
         <div className="hints">
-          <span><b>OK</b> play</span>
-          <span><b>&larr; &rarr;</b> panes</span>
-          <span><b>Ch+/-</b> next</span>
-          <span><b>Green</b> favourite</span>
-          <span><b>Yellow</b> settings</span>
-          <span><b>Back</b> hide</span>
+          <span><kbd>OK</kbd> Watch</span>
+          <span><kbd>&larr;</kbd><kbd>&rarr;</kbd> Move between panes</span>
+          <span><kbd>0-9</kbd> Channel number</span>
+          <span><kbd>Green</kbd> Favourite</span>
+          <span><kbd>Yellow</kbd> Settings</span>
+          <span><kbd>Return</kbd> Full screen</span>
         </div>
       )}
     </div>

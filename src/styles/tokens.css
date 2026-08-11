@@ -1,0 +1,82 @@
+/*
+ * One UI design tokens for Samsung TV.
+ *
+ * Drawn from Samsung's Smart TV design guidelines and the One UI principles, chiefly:
+ *
+ *  - the viewer sits about 3 metres away, so legibility governs every size choice
+ *  - four directional navigation is the only guaranteed input, so focus must be
+ *    unmistakable and every target large
+ *  - "focused" and "selected" are different states and the guidelines require a viewer
+ *    to tell them apart at a glance
+ *  - the app should feel like the rest of the TV, so it borrows One UI's shapes rather
+ *    than inventing its own
+ *
+ * One UI's signature on a TV is an inverted focus: the focused row becomes a solid light
+ * surface with dark text, which reads across a room far better than a border or a glow.
+ */
+:root {
+  /* Surfaces. Neutral greys, not blue tinted, so the app sits calmly under any picture. */
+  --bg: #000000;
+  --surface-1: rgba(24, 24, 26, 0.92);
+  --surface-2: rgba(38, 38, 42, 0.94);
+  --surface-3: rgba(56, 56, 61, 0.96);
+  --scrim: rgba(0, 0, 0, 0.72);
+
+  /* Text. One UI leans on opacity rather than separate greys. */
+  --text: rgba(255, 255, 255, 0.96);
+  --text-2: rgba(255, 255, 255, 0.62);
+  --text-3: rgba(255, 255, 255, 0.40);
+  --on-focus: #101013;
+
+  /* Focus is a light fill. Accent is reserved for state, never for focus, so the two
+     never compete for the eye. */
+  --focus: #ffffff;
+  --accent: #2e94ff;
+  --accent-dim: rgba(46, 148, 255, 0.20);
+  --danger: #ff6b6b;
+
+  /* One UI is generously rounded. Pills for controls, soft rectangles for surfaces. */
+  --r-pill: 999px;
+  --r-lg: 26px;
+  --r-md: 16px;
+  --r-sm: 10px;
+
+  /* An 8px rhythm, which keeps focusable targets on a predictable grid. */
+  --s1: 8px;
+  --s2: 16px;
+  --s3: 24px;
+  --s4: 32px;
+  --s5: 48px;
+  --s6: 64px;
+
+  /* TV safe area. Sets overscan, and content at the very edge can be clipped on some
+     panels, so nothing important goes within 48px of the border. */
+  --safe-x: 48px;
+  --safe-y: 40px;
+
+  /* Type scale. The guidelines set a floor for legibility at distance and ask for line
+     spacing of 1.2 to 1.4, so each size carries its own. --scale is the viewer's
+     text size preference. */
+  --scale: 1;
+  --t-hero: calc(48px * var(--scale));
+  --t-title: calc(34px * var(--scale));
+  --t-section: calc(28px * var(--scale));
+  --t-body: calc(24px * var(--scale));
+  --t-label: calc(21px * var(--scale));
+  --t-caption: calc(18px * var(--scale));
+  --lh: 1.35;
+
+  /* One UI Sans is the Tizen system font, so system-ui resolves to it on the TV itself.
+     It covers Latin and Korean only, hence the Persian fallback behind it. */
+  --font: "One UI Sans", system-ui, -apple-system, "Segoe UI", Roboto, "Vazirmatn", sans-serif;
+
+  /* Motion: short and unfussy. The guidelines ask for instant, distinct feedback, so
+     focus moves must never feel like they lag the remote. */
+  --t-fast: 120ms;
+  --t-med: 220ms;
+  --ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root { --t-fast: 0ms; --t-med: 0ms; }
+}
