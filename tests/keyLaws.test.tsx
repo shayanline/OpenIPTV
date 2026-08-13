@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import assert from "node:assert/strict";
-import { act, cleanup, render, screen } from "@testing-library/react";
+import { act, cleanup, screen } from "@testing-library/react";
 import { KEY } from "../src/hooks/useRemote";
+import { mountApp, panelOpen, played, press } from "./support/app";
 
 /**
  * The four laws of the key model, asserted rather than described.
@@ -29,59 +30,7 @@ http://example.invalid/b.m3u8
 #EXTINF:-1 tvg-id="c" group-title="News",Gamma
 http://example.invalid/c.m3u8`;
 
-/** Presses a key the way the remote does, by keyCode, which is what the app listens for. */
-function press(code: number) {
-  const event = new KeyboardEvent("keydown", { bubbles: true, cancelable: true });
-  Object.defineProperty(event, "keyCode", { get: () => code });
-  Object.defineProperty(event, "which", { get: () => code });
-  act(() => { window.dispatchEvent(event); });
-}
-
-/** What the player was asked to play, so a channel change can be observed. */
-let played: string[] = [];
-
-async function mount() {
-  vi.resetModules();
-  played = [];
-
-  vi.doMock("../src/services/player", () => ({
-    onTizen: () => false,
-    Player: class {
-      constructor(public emit: (e: unknown) => void) {}
-      attach() {}
-      detach() {}
-      stop() {}
-      hide() {}
-      show() {}
-      pause() {}
-      setFit() {}
-      play(url: string) {
-        played.push(url);
-        // A picture arrives at once, so the tests are about keys rather than about waiting.
-        this.emit({ type: "playing" });
-      }
-      resume(url: string) { this.play(url); }
-    },
-  }));
-
-  localStorage.setItem("simpleiptv.settings", JSON.stringify({
-    playlists: [{ id: "pl-1", name: "Test", url: "http://list.invalid/a.m3u" }],
-    activePlaylistId: "pl-1",
-    resumeLast: false,
-    panelTimeout: 0,
-  }));
-  vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, text: async () => PLAYLIST }));
-
-  const { default: App } = await import("../src/App");
-  const view = render(<App />);
-  // Let the playlist land.
-  await act(async () => { await Promise.resolve(); });
-  await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
-  return view;
-}
-
-/** Whether the channel panel is open, which the app expresses by removing the away class. */
-const panelOpen = () => !document.querySelector(".panel")?.classList.contains("away");
+const mount = () => mountApp(PLAYLIST);
 
 beforeEach(() => {
   localStorage.clear();

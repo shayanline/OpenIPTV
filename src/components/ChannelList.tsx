@@ -193,13 +193,9 @@ export const ChannelList = memo(function ChannelList({
               </div>
             ))
           : <div className="window" style={{ transform: `translateY(${-win.offset}px)` }}>{rows}</div>}
-        {!loading && !channels.length && (
-          <p className="empty">
-            {category === "Favourites"
-              ? "No favourites yet. Press the green key on a channel to add one."
-              : "Nothing in this category."}
-          </p>
-        )}
+        {/* No case for an empty Favourites: the row is only in the rail while it has
+            something in it, so there is no way to be standing in an empty one. */}
+        {!loading && !channels.length && <p className="empty">Nothing in this category.</p>}
       </div>
       <ScrollIndicator count={channels.length} first={win.first} visible={win.visible} />
     </div>

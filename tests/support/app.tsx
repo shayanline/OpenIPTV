@@ -1,0 +1,70 @@
+import { act, render } from "@testing-library/react";
+import { vi } from "vitest";
+
+/**
+ * Mount the whole application against a playlist, with the player replaced.
+ *
+ * Shared because more than one thing worth asserting is only true of the app as a whole:
+ * which key does what, and where the highlight is left after the lists underneath it change
+ * shape. Both need a real render, a real store and a playlist that has actually arrived.
+ *
+ * The player is the one thing that cannot be real. It reaches for AVPlay or hls.js and a
+ * decoder, none of which exist here, so it is replaced by a stand in that records what it
+ * was asked to play and reports a picture at once. Every test using this is about what the
+ * interface does with a channel, not about whether the channel plays.
+ */
+
+/** What the player was asked to play, in order, so a channel change can be observed. */
+export let played: string[] = [];
+
+/** Presses a key the way the remote does, by keyCode, which is what the app listens for. */
+export function press(code: number) {
+  const event = new KeyboardEvent("keydown", { bubbles: true, cancelable: true });
+  Object.defineProperty(event, "keyCode", { get: () => code });
+  Object.defineProperty(event, "which", { get: () => code });
+  act(() => { window.dispatchEvent(event); });
+}
+
+/** Whether the channel panel is open, which the app expresses by removing the away class. */
+export const panelOpen = () => !document.querySelector(".panel")?.classList.contains("away");
+
+export async function mountApp(playlist: string) {
+  vi.resetModules();
+  played = [];
+
+  vi.doMock("../../src/services/player", () => ({
+    onTizen: () => false,
+    Player: class {
+      constructor(public emit: (e: unknown) => void) {}
+      attach() {}
+      detach() {}
+      stop() {}
+      hide() {}
+      show() {}
+      pause() {}
+      setFit() {}
+      play(url: string) {
+        played.push(url);
+        // A picture arrives at once, so the tests are about the interface rather than
+        // about waiting.
+        this.emit({ type: "playing" });
+      }
+      resume(url: string) { this.play(url); }
+    },
+  }));
+
+  localStorage.setItem("simpleiptv.settings", JSON.stringify({
+    playlists: [{ id: "pl-1", name: "Test", url: "http://list.invalid/a.m3u" }],
+    activePlaylistId: "pl-1",
+    resumeLast: false,
+    panelTimeout: 0,
+  }));
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, text: async () => playlist }));
+
+  const { default: App } = await import("../../src/App");
+  const view = render(<App />);
+  // Let the playlist land.
+  await act(async () => { await Promise.resolve(); });
+  await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
+  return view;
+}

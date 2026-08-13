@@ -29,14 +29,15 @@ export interface ChannelList {
 }
 
 /**
- * The playlist's own categories, with Favourites always first.
+ * The playlist's own categories, with Favourites first while there is something in it.
  *
- * Always, including when it is empty. Appearing only once something is in it would make the
- * green key insert a list at position zero and shift every category index by one: the
- * highlight would stay where it was, which is now Favourites, so favouriting a channel would
- * silently move the viewer out of the category they were reading, and removing the last
- * favourite would throw them back. A row that is always present cannot shift anything, and
- * it answers the question an absent one raises, which is where a favourite goes.
+ * An empty row is a row that says nothing, and a rail that opens with one is a rail whose
+ * first line is an apology. So it appears with the first favourite and goes with the last.
+ *
+ * That costs something, and the cost is paid in App: inserting a list at position zero moves
+ * every category down by one, and a viewer who pressed the green key asked to favourite a
+ * channel, not to be taken somewhere else. The green key is the only thing that can add or
+ * remove this row, so it is the one place that corrects for it.
  */
 export function listsOf(
   channels: Channel[],
@@ -44,10 +45,9 @@ export function listsOf(
   favourites: string[],
 ): ChannelList[] {
   const wanted = new Set(favourites);
-  return [
-    { name: FAVOURITES, channels: channels.filter((c) => wanted.has(c.id)) },
-    ...categories,
-  ];
+  const mine = channels.filter((c) => wanted.has(c.id));
+  if (!mine.length) return categories;
+  return [{ name: FAVOURITES, channels: mine }, ...categories];
 }
 
 /**

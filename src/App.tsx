@@ -97,10 +97,11 @@ export default function App() {
   const configured = settings.playlists.length > 0;
 
   const [view, setView] = useState<View>("panel");
-  /* One, not zero: zero is Favourites, and opening the app on an empty list would be a poor
-     first impression of a playlist that has just loaded two hundred channels. */
-  const [category, setCategory] = useState(1);
-  const [cursor, setCursor] = useState(2);   // rail row, zero is Settings
+  /* Zero, the top of the rail, which is the playlist's first category until there is a
+     favourite and Favourites once there is. Both are worth opening on, and neither can be
+     empty: the row only exists while it has something in it. */
+  const [category, setCategory] = useState(0);
+  const [cursor, setCursor] = useState(1);   // rail row, zero is Settings
   const [index, setIndex] = useState(0);
   const [pane, setPane] = useState<"rail" | "list">("list");
   const [showSettings, setShowSettings] = useState(false);
@@ -118,11 +119,11 @@ export default function App() {
   /*
    * One shared empty list rather than a fresh one each time.
    *
-   * `?? []` allocates on every render, and this is empty for the whole of the load: the
-   * cursor opens on category one and until the playlist parses there is only Favourites, so
-   * lists[1] is undefined. A new array is a new prop, which walks straight past ChannelList's
-   * memo and restarts the timer it uses to decide the list has settled, so the logos were
-   * never asked for at all while a playlist was arriving.
+   * `?? []` allocates on every render, and this is empty for the whole of the load: there
+   * are no lists at all until the playlist parses, so lists[category] is undefined. A new
+   * array is a new prop, which walks straight past ChannelList's memo and restarts the timer
+   * it uses to decide the list has settled, so the logos were never asked for at all while a
+   * playlist was arriving.
    */
   const visible = lists[category]?.channels ?? NO_CHANNELS;
 
@@ -323,12 +324,35 @@ export default function App() {
     tuner.start(found);
   }, [channels, lists, locate, tuner.start, chrome.say]);
 
+  /**
+   * Favourite or unfavourite a channel, and stay where the viewer was.
+   *
+   * Favourites is only in the rail while there is something in it, so the first one added
+   * puts a row above every category and the last one removed takes it away again. The
+   * viewer asked to favourite a channel, not to be moved: what is kept is the category they
+   * are reading, not the number it happened to have. This is the only thing that can insert
+   * or remove that row, which is why the correction lives here rather than in an effect
+   * watching the lists for a change it cannot attribute to anything.
+   */
   const favouriteCurrent = useCallback((channel: Channel | undefined) => {
     if (!channel) return;
     const had = favourites.includes(channel.id);
+    const appears = !had && !favourites.length;
+    const vanishes = had && favourites.length === 1;
+
+    if (appears || vanishes) {
+      const to = Math.max(0, category + (appears ? 1 : -1));
+      setCategory(to);
+      setCursor(to + 1);
+      cursorRef.current = to + 1;
+      // Standing in Favourites as the last one goes: the row that takes its place is a
+      // different list, and the row the highlight was on is not in it.
+      if (vanishes && category === 0) setIndex(0);
+    }
+
     toggleFavourite(channel.id);
     chrome.say(had ? "Removed from favourites" : "Added to favourites");
-  }, [favourites, toggleFavourite, chrome.say]);
+  }, [favourites, toggleFavourite, chrome.say, category]);
 
   /**
    * Transport keys. Checklist 2.3 wants every playback button on the remote to work.
@@ -682,6 +706,7 @@ export default function App() {
           categories={railItems}
           selected={category}
           cursor={cursor}
+          loading={loading}
           focused={pane === "rail"}
           scale={settings.scale()}
           onSettings={openSettings}
@@ -713,8 +738,10 @@ export default function App() {
           * checklist 1.3 asks for.
           */}
         {/* Four items, because a fifth wraps the line, and wrapping the one piece of writing
-            that explains the application is a poor trade. The green key is taught where it is
-            wanted instead: the empty Favourites list says how to fill itself. */}
+            that explains the application is a poor trade. The green key is taught on the
+            banner instead, which has the whole width of the screen for it. It used to be
+            taught by the empty Favourites list saying how to fill itself, and that row is no
+            longer drawn while it is empty. */}
         <KeyGuide
           className="panel-hints ruled"
           items={[

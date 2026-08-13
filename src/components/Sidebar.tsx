@@ -22,6 +22,8 @@ interface Props {
   selected: number;
   /** Which row the remote is on. Zero is Settings, so a category is index + 1. */
   cursor: number;
+  /** So an arriving playlist is not announced as a playlist with nothing in it. */
+  loading: boolean;
   focused: boolean;
   scale: number;
   onSettings: () => void;
@@ -65,7 +67,7 @@ const Row = memo(function Row({ name, count, index, selected, showing, top, heig
  * of them, and on entry hardware that walk is not free.
  */
 export const Sidebar = memo(function Sidebar({
-  categories, selected, cursor, focused, scale, onSettings, onSelect,
+  categories, selected, cursor, loading, focused, scale, onSettings, onSelect,
 }: Props) {
   const viewport = useRef<HTMLDivElement>(null);
   const height = useViewport(viewport);
@@ -123,7 +125,7 @@ export const Sidebar = memo(function Sidebar({
 
       <div className="viewport" ref={viewport}>
         <div className="window" style={{ transform: `translateY(${-win.offset}px)` }}>{rows}</div>
-        {!categories.length && <p className="empty">No categories yet.</p>}
+        {!loading && !categories.length && <p className="empty">No categories yet.</p>}
       </div>
       <ScrollIndicator count={categories.length} first={win.first} visible={win.visible} />
     </nav>

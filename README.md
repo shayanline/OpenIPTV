@@ -138,8 +138,10 @@ The picture is the home of the app, and the panel is the one place you go from i
 1064 of 1920 so the picture it is chosen against stays visible, and it holds two panes with
 only ever one cursor between them:
 
-- **The rail**: Favourites, always first and present even when empty, then the playlist's
-  own categories. Rows are two lines tall, because a group title written in two scripts
+- **The rail**: Favourites first while there is something in it, then the playlist's own
+  categories. The row appears with the first favourite and goes with the last, and the green
+  key corrects the highlight as it does, so adding a favourite never moves the viewer out of
+  the category they are reading. Rows are two lines tall, because a group title in two scripts
   cannot be truncated: an ellipsis removes the logical end of the string, which is the visual
   beginning of the right to left half, and what survives is the middle of a word.
 - **The channels** in the category the rail is showing, headed by that category's name.

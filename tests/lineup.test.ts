@@ -19,29 +19,26 @@ const channel = (id: string, name = id): Channel => ({
 const news = { name: "News", channels: [channel("a"), channel("b"), channel("c")] };
 const sport = { name: "Sport", channels: [channel("d")] };
 
-test("Favourites is the first list even when nothing is in it", () => {
-  const lists = listsOf([], [], []);
-  assert.equal(lists.length, 1);
-  assert.equal(lists[0].name, FAVOURITES);
-  assert.deepEqual(lists[0].channels, []);
+test("there is no Favourites list until there is a favourite", () => {
+  assert.deepEqual(listsOf([], [], []), []);
+  assert.deepEqual(listsOf(news.channels, [news], []).map((l) => l.name), ["News"]);
 });
 
-test("adding a favourite does not move the categories", () => {
+test("the first favourite puts Favourites at the top", () => {
   const channels = [...news.channels, ...sport.channels];
-  const before = listsOf(channels, [news, sport], []);
-  const after = listsOf(channels, [news, sport], ["b"]);
+  const lists = listsOf(channels, [news, sport], ["b"]);
 
-  // The point of the whole exercise: the index a category sits at cannot change because a
-  // favourite was made, or the viewer is moved somewhere they did not ask to be.
-  assert.deepEqual(before.map((l) => l.name), after.map((l) => l.name));
-  assert.equal(before.findIndex((l) => l.name === "News"), 1);
-  assert.equal(after.findIndex((l) => l.name === "News"), 1);
-  assert.deepEqual(after[0].channels.map((c) => c.id), ["b"]);
+  assert.deepEqual(lists.map((l) => l.name), [FAVOURITES, "News", "Sport"]);
+  assert.deepEqual(lists[0].channels.map((c) => c.id), ["b"]);
+  // Which is the shift App has to correct for: News was the first row and is now the second.
+  assert.equal(listsOf(channels, [news, sport], []).findIndex((l) => l.name === "News"), 0);
+  assert.equal(lists.findIndex((l) => l.name === "News"), 1);
 });
 
-test("removing the last favourite does not move them back", () => {
-  const lists = listsOf(news.channels, [news], []);
-  assert.equal(lists.findIndex((l) => l.name === "News"), 1);
+test("favourites saved against another playlist leave no row behind", () => {
+  // Favourites outlive the playlist they were made in, so a set of ids matching nothing here
+  // is ordinary rather than exceptional, and it must not put an empty row at the top.
+  assert.deepEqual(listsOf(news.channels, [news], ["gone"]).map((l) => l.name), ["News"]);
 });
 
 test("favourites keep the playlist's order rather than the order they were added", () => {

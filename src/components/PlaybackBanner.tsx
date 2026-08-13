@@ -59,12 +59,17 @@ export function PlaybackBanner({ channel, position }: {
         </div>
       </div>
 
-      {/* One guide, because there is now only one state to be in. */}
+      {/* One guide, because there is now only one state to be in.
+          The green key is taught here rather than in the panel, which has four items already
+          and wraps at five. This has the width of the screen, the key does the same thing in
+          both places, and the banner is the one guide every viewer sees, since it comes up on
+          every channel change. */}
       <KeyGuide
         className="pb-hints"
         items={[
           { keys: ["\u2191", "\u2193"], label: "Change channel" },
           { keys: ["OK"], label: "All channels" },
+          { keys: ["Green"], label: "Favourite" },
           { keys: ["Return"], label: "Hide this" },
         ]}
       />
