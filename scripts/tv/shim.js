@@ -59,7 +59,17 @@
     v.id = "tv-video-el";
     v.muted = false;
     v.playsInline = true;
-    v.setAttribute("style", "position:absolute;width:100%;height:100%;object-fit:contain;background:#000;");
+    /*
+     * top and left, which look redundant and are not.
+     *
+     * The plane is a flex container that bottom aligns its caption and keeps 24px of space
+     * under it. An absolutely positioned child is not a flex item, but with no offsets of
+     * its own it is still placed at the static position the container's alignment gives it,
+     * so the picture was pinned to the bottom of the content box: 24px of it pushed off the
+     * top of the screen, and a 24px black strip along the bottom that looked like the player
+     * failing to fill the height.
+     */
+    v.setAttribute("style", "position:absolute;top:0;left:0;width:100%;height:100%;object-fit:contain;background:#000;");
     host.appendChild(v);
     return v;
   };
