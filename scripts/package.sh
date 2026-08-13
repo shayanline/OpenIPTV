@@ -6,7 +6,10 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-PROFILE="${SIGNING_PROFILE:-shayanline}"
+# The Samsung profile whose distributor certificate is bound to this TV's DUID. A generic
+# Tizen distributor certificate signs cleanly but a retail set rejects it at install with
+# "Check certificate error [118, -12]".
+PROFILE="${SIGNING_PROFILE:-SimpleIPTV}"
 
 # Tizen Studio installs to different places depending on how it was set up, so look
 # rather than assume, and say something useful when it is missing.
@@ -16,6 +19,7 @@ find_tizen() {
     "$HOME/tizen-studio/tools/ide/bin/tizen" \
     "$HOME/TizenStudio/tools/ide/bin/tizen" \
     "/Applications/tizen-studio/tools/ide/bin/tizen" \
+    "$HOME/.tizen-extension-platform/server/sdktools/data/tools/ide/bin/tizen" \
     "$(command -v tizen 2>/dev/null || true)"; do
     [ -n "$candidate" ] && [ -x "$candidate" ] && { echo "$candidate"; return; }
   done
@@ -23,6 +27,12 @@ find_tizen() {
 
 echo "Building..."
 npm --prefix "$ROOT" run build
+
+# Stamp the widget with the release it was built from, so the number on the set and the number
+# on the About screen cannot disagree. Only dist/ is touched.
+VERSION="$(node -p "require('$ROOT/package.json').version")"
+node "$ROOT/scripts/stamp-version.mjs" "$ROOT/dist/config.xml" "$VERSION"
+echo "Version $VERSION"
 
 TIZEN="$(find_tizen)"
 if [ -z "$TIZEN" ]; then
@@ -41,10 +51,26 @@ MSG
 fi
 
 echo "Packaging as $PROFILE..."
-"$TIZEN" package -t wgt -s "$PROFILE" -- "$ROOT/dist" >/dev/null
+# The output is kept rather than discarded. The Tizen CLI is known for printing signing and
+# certificate problems and then exiting zero, so throwing stdout away meant a failure here
+# surfaced as nothing but "No .wgt produced." with the actual reason gone.
+PACKAGE_LOG="$(mktemp)"
+trap 'rm -f "$PACKAGE_LOG"' EXIT
+if ! "$TIZEN" package -t wgt -s "$PROFILE" -- "$ROOT/dist" >"$PACKAGE_LOG" 2>&1; then
+  cat "$PACKAGE_LOG"
+  echo "The Tizen CLI failed. If it mentions a profile, SIGNING_PROFILE is '$PROFILE'."
+  exit 1
+fi
 
-WGT="$(find "$ROOT/dist" -maxdepth 1 -name '*.wgt' | head -1)"
-[ -n "$WGT" ] || { echo "No .wgt produced."; exit 1; }
+# -print -quit rather than a pipe into head, which under `set -o pipefail` can exit 141 when
+# head closes the pipe early.
+WGT="$(find "$ROOT/dist" -maxdepth 1 -name '*.wgt' -print -quit)"
+if [ -z "$WGT" ]; then
+  cat "$PACKAGE_LOG"
+  echo "No .wgt produced. The Tizen CLI exited cleanly, which it does even when signing fails."
+  echo "SIGNING_PROFILE is '$PROFILE'. Check it exists in the Certificate Manager."
+  exit 1
+fi
 mkdir -p "$ROOT/build"
 mv "$WGT" "$ROOT/build/SimpleIPTV.wgt"
 echo "build/SimpleIPTV.wgt  ($(du -h "$ROOT/build/SimpleIPTV.wgt" | cut -f1))"

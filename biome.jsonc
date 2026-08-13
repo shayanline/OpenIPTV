@@ -1,0 +1,68 @@
+{
+  "$schema": "https://biomejs.dev/schemas/2.5.7/schema.json",
+
+  // Biome rather than ESLint, for one blunt reason: this project is on TypeScript 7 and
+  // typescript-eslint declares a peer range of >=4.8.4 <6.1.0, so the usual stack cannot be
+  // installed here at all without forcing a resolution nobody has tested. Biome parses
+  // TypeScript and JSX itself, has no opinion about which compiler is installed, and covers
+  // the formatter gap in the same tool rather than a second one.
+  "vcs": { "enabled": true, "clientKind": "git", "useIgnoreFile": true },
+  "files": { "includes": ["src/**", "tests/**", "scripts/**", "*.ts", "*.json", "*.jsonc"] },
+
+  // Matched to what is already written here rather than imposed on it, so that turning the
+  // formatter on does not reflow five thousand lines of carefully wrapped prose.
+  "formatter": { "enabled": true, "indentStyle": "space", "indentWidth": 2, "lineWidth": 96 },
+  "javascript": {
+    "formatter": { "quoteStyle": "double", "trailingCommas": "all", "semicolons": "always" }
+  },
+
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "recommended": true,
+      "correctness": {
+        "noUnusedVariables": "error",
+        "noUnusedImports": "error",
+        "noUnusedFunctionParameters": "error",
+        "useHookAtTopLevel": "error",
+        // A warning, not an error, and deliberately so for now. Several effects here depend
+        // on less than they close over on purpose, each with a comment saying why, and the
+        // honest sequence is to finish splitting App.tsx before deciding which of those are
+        // still wanted. Visible, and not yet a gate.
+        "useExhaustiveDependencies": "warn"
+      },
+      "suspicious": {
+        "noExplicitAny": "error",
+        "noConsole": { "level": "error", "options": { "allow": ["error", "warn"] } },
+        "noSkippedTests": "error"
+      },
+      "style": {
+        "useConst": "error",
+        // The Tizen globals are reached through non-null assertions after an explicit
+        // onTizen() check, which is the narrowing this codebase uses throughout.
+        "noNonNullAssertion": "off",
+        // Real, and not worth the churn: the eight it finds are all a bare class written
+        // after a compound one that already styles the same element, none of them change
+        // what is drawn, and five are in the development remote.
+        "noDescendingSpecificity": "off"
+      },
+      "a11y": {
+        // Every SVG here is decorative and marked aria-hidden, or sits inside a control
+        // that carries its own aria-label. The rule does not read either, and adding a
+        // <title> to an icon inside a labelled button makes a screen reader say it twice.
+        "noSvgWithoutTitle": "off",
+        // Both fire on the dialog scrim, which exists only so a mouse can dismiss a popup.
+        // The keyboard equivalent is not a handler on the scrim, it is RETURN, which every
+        // dialog in this application already answers. A key handler on a backdrop would be
+        // a second, invisible way to do the same thing.
+        "useKeyWithClickEvents": "off",
+        "noStaticElementInteractions": "off"
+      }
+    }
+  },
+
+  "overrides": [
+    // The build and device scripts are command line tools whose whole output is console.
+    { "includes": ["scripts/**"], "linter": { "rules": { "suspicious": { "noConsole": "off" } } } }
+  ]
+}

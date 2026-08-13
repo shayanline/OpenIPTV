@@ -1,18 +1,18 @@
-import { useCallback, useRef, useState } from "react";
-import {
-  FONTS, FONT_SIZES, LANGUAGES, useSettings, type Playlist,
-} from "../stores/settings";
-import { useChannels } from "../stores/channels";
+import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import { KEY, useRemote } from "../hooks/useRemote";
 import { useSpatialNav } from "../hooks/useSpatialNav";
-import { APP_VERSION, AUTHOR, REPO_URL } from "../meta";
+import { KeyGuide } from "./KeyGuide";
+import { About } from "./settings/About";
+import { Appearance } from "./settings/Appearance";
+import { Behaviour } from "./settings/Behaviour";
+import { Playlists } from "./settings/Playlists";
 
 type Section = "appearance" | "playlists" | "behaviour" | "about";
 
 const SECTIONS: { id: Section; label: string }[] = [
   { id: "appearance", label: "Appearance" },
   { id: "playlists", label: "Playlists" },
-  { id: "behaviour", label: "Playback" },
+  { id: "behaviour", label: "Watching" },
   { id: "about", label: "About" },
 ];
 
@@ -20,14 +20,67 @@ export function Settings({ onClose }: { onClose: () => void }) {
   const [section, setSection] = useState<Section>("appearance");
   const [inSections, setInSections] = useState(true);
   const bodyRef = useRef<HTMLDivElement>(null);
+  /**
+   * Whether a question is outstanding somewhere inside the body.
+   *
+   * A popup must make everything outside itself unavailable until it is answered, and this
+   * screen was the one place that did not: the confirmation registered its own key handler
+   * while this one stayed live, so a single press of Left moved the focus inside the dialog
+   * and moved it again behind the dialog, and the arrow keys drove two screens at once.
+   * The child raises this while it is asking, and this stands aside.
+   */
+  const [asking, setAsking] = useState(false);
   // Every control in the body has to be reachable with the four directional buttons,
   // which the browser will not do on its own. Checklist items 2.2 and 3.2.
-  const { move, focusFirst } = useSpatialNav(bodyRef, !inSections);
+  const { move, focusFirst, hasTargets } = useSpatialNav(bodyRef, !inSections && !asking);
+
+  /**
+   * Where the focus was when a question interrupted, so it can be given back.
+   *
+   * Without it the answer returned focus to the first control in the section rather than to
+   * the button that asked, which on a list of playlists is several rows away from where the
+   * viewer was looking.
+   */
+  const interrupted = useRef<HTMLElement | null>(null);
+  const ask = useCallback((open: boolean) => {
+    if (open) interrupted.current = document.activeElement as HTMLElement | null;
+    setAsking(open);
+    if (open) return;
+    // After the dialog has gone, and only if it is still something that can be focused.
+    window.setTimeout(() => {
+      const back = interrupted.current;
+      interrupted.current = null;
+      if (back?.isConnected) back.focus();
+      else focusFirst();
+    }, 0);
+  }, [focusFirst]);
+
+  const enterBody = useCallback(() => {
+    setInSections(false);
+    window.setTimeout(focusFirst, 0);
+  }, [focusFirst]);
+
+  /**
+   * A section with nothing to operate keeps the focus on the rail.
+   *
+   * About is all prose, so leaving the rail for it took the highlight off the rail and then
+   * found nothing to put it on: no focus anywhere on the screen, with Up, Down and Right all
+   * swallowed and doing nothing, and only Left or RETURN to recover.
+   *
+   * Checked here, after the body has rendered, rather than before moving. The section and
+   * the move are two pieces of state and the click path sets both at once, so asking "does
+   * the body have anything in it" before the render is asking about the section being left.
+   * Before paint, so the rail's highlight never visibly flickers off and back.
+   */
+  useLayoutEffect(() => {
+    if (!inSections && !asking && !hasTargets()) setInSections(true);
+  }, [inSections, asking, section, hasTargets]);
 
   // Settings takes the whole remote while it is open, so App stops handling keys and
   // this owns navigation. Left and right move between the rail and the body, which is
   // the same shape as the main screen and so needs no explaining.
   const onKey = useCallback((code: number, event: KeyboardEvent) => {
+    if (asking) return;
     const editing = document.activeElement instanceof HTMLInputElement;
 
     if (code === KEY.BACK || code === KEY.ESC) {
@@ -42,22 +95,31 @@ export function Settings({ onClose }: { onClose: () => void }) {
     if (editing && code !== KEY.UP && code !== KEY.DOWN) return;
     if (code === KEY.RIGHT && inSections) {
       event.preventDefault();
-      setInSections(false);
-      window.setTimeout(focusFirst, 0);
+      enterBody();
       return;
     }
 
     if (inSections) {
       if (code === KEY.UP || code === KEY.DOWN) {
         event.preventDefault();
-        const at = SECTIONS.findIndex((s) => s.id === section);
-        const next = code === KEY.UP ? Math.max(0, at - 1) : Math.min(SECTIONS.length - 1, at + 1);
-        setSection(SECTIONS[next].id);
+        /*
+         * Worked out from the value React is about to have, not from the one this closure
+         * captured. The input guide says movement accelerates while a direction is held, so
+         * presses arrive faster than renders, and computing the target from the captured
+         * section meant every press in a burst moved to the same place: holding Down walked
+         * one row and stopped.
+         */
+        setSection((was) => {
+          const at = SECTIONS.findIndex((s) => s.id === was);
+          const next = code === KEY.UP
+            ? Math.max(0, at - 1)
+            : Math.min(SECTIONS.length - 1, at + 1);
+          return SECTIONS[next].id;
+        });
       }
       if (code === KEY.ENTER) {
         event.preventDefault();
-        setInSections(false);
-        window.setTimeout(focusFirst, 0);
+        enterBody();
       }
       return;
     }
@@ -69,261 +131,55 @@ export function Settings({ onClose }: { onClose: () => void }) {
       const moved = move(code);
       if (!moved && code === KEY.LEFT) setInSections(true);
     }
-  }, [inSections, section, onClose, move, focusFirst]);
+  }, [asking, inSections, onClose, move, enterBody]);
 
   useRemote(onKey);
 
   return (
     <div className="sheet">
-        <nav className={`sheet-rail pane ${inSections ? "focused" : ""}`}>
-          <h2>Settings</h2>
+      <nav className={`sheet-rail pane ${inSections ? "focused" : ""}`}>
+        <h2>Settings</h2>
+        <div className="rail-scroll">
           {SECTIONS.map((s) => (
             <button
               key={s.id}
               type="button"
-              className={`row ${s.id === section ? "selected" : ""}`}
+              className={`row ${s.id === section ? "selected showing" : ""}`}
               onClick={() => {
                 setSection(s.id);
-                setInSections(false);
+                enterBody();
               }}
             >
               {s.label}
             </button>
           ))}
-          <p className="sheet-lead" style={{ marginTop: "var(--s3)" }}>Return closes settings</p>
-        </nav>
-
-        <div className="sheet-body" ref={bodyRef}>
-          {section === "appearance" && <Appearance />}
-          {section === "playlists" && <Playlists />}
-          {section === "behaviour" && <Behaviour />}
-          {section === "about" && <About />}
         </div>
-    </div>
-  );
-}
-
-function Row({ label, hint, children }: {
-  label: string; hint?: string; children: React.ReactNode;
-}) {
-  return (
-    <div className="field">
-      <div className="field-label">
-        {label}
-        {hint && <span className="field-hint">{hint}</span>}
-      </div>
-      <div className="field-control">{children}</div>
-    </div>
-  );
-}
-
-function Choice<T extends string>({ options, value, onChange }: {
-  options: { id: T; label: string }[]; value: T; onChange: (id: T) => void;
-}) {
-  return (
-    <>
-      {options.map((o) => (
-        <button
-          key={o.id}
-          type="button"
-          className={`pill ${o.id === value ? "on" : ""}`}
-          onClick={() => onChange(o.id)}
-        >
-          {o.label}
-        </button>
-      ))}
-    </>
-  );
-}
-
-function Toggle({ value, onChange }: { value: boolean; onChange: (v: boolean) => void }) {
-  return (
-    <button type="button" className={`switch ${value ? "on" : ""}`} onClick={() => onChange(!value)}>
-      <span className="switch-track"><span className="switch-knob" /></span>
-      <span>{value ? "On" : "Off"}</span>
-    </button>
-  );
-}
-
-function Appearance() {
-  const s = useSettings();
-  const font = s.font();
-  return (
-    <>
-      <h3>Appearance</h3>
-      <Row label="Font" hint={font.note}>
-        <Choice
-          options={FONTS.map((f) => ({ id: f.id, label: f.label + (f.bundled ? " \u2713" : "") }))}
-          value={s.fontId}
-          onChange={(id) => s.set("fontId", id)}
+        {/* The same guide as everywhere else, in the same shape, because this screen needs
+            explaining as much as the others and had only the last line of it. */}
+        {/* What the keys do where the viewer actually is. It described the rail whichever side
+            had the focus, so half the time it named a key that did something else. */}
+        <KeyGuide
+          className="sheet-hints ruled"
+          items={inSections
+            ? [
+                { keys: ["\u2191", "\u2193"], label: "Move" },
+                { keys: ["\u2192"], label: "Open" },
+                { keys: ["Return"], label: "Close settings" },
+              ]
+            : [
+                { keys: ["\u2191", "\u2193", "\u2190", "\u2192"], label: "Move" },
+                { keys: ["OK"], label: "Change it" },
+                { keys: ["Return"], label: "Close settings" },
+              ]}
         />
-      </Row>
-      <Row label="Text size">
-        <Choice options={FONT_SIZES} value={s.fontSizeId} onChange={(id) => s.set("fontSizeId", id)} />
-      </Row>
-      <Row label="Channel names" hint="Playlists may carry two languages">
-        <Choice options={LANGUAGES} value={s.language} onChange={(id) => s.set("language", id)} />
-      </Row>
-      <Row label="Channel numbers"><Toggle value={s.showNumbers} onChange={(v) => s.set("showNumbers", v)} /></Row>
-      <Row label="Channel logos" hint="Turn off on a slow connection">
-        <Toggle value={s.showLogos} onChange={(v) => s.set("showLogos", v)} />
-      </Row>
-      <Row label="Clock"><Toggle value={s.showClock} onChange={(v) => s.set("showClock", v)} /></Row>
-      <p className="preview" style={{ fontFamily: font.stack }}>
-        Preview: IRIB TV1 &nbsp; شبکه یک &nbsp; 1234567890
-      </p>
-      <p className="sheet-lead">
-        A tick marks a font packaged inside the app, so it works without internet.
-      </p>
-    </>
-  );
-}
+      </nav>
 
-function Playlists() {
-  const s = useSettings();
-  const { load, loading, channels } = useChannels();
-  const [editing, setEditing] = useState<Playlist | null>(null);
-  const [note, setNote] = useState("");
-  const [name, setName] = useState("");
-  const [url, setUrl] = useState("");
-
-  const startAdd = () => {
-    setEditing({ id: "", name: "", url: "" });
-    setName("");
-    setUrl("");
-  };
-  const startEdit = (p: Playlist) => {
-    setEditing(p);
-    setName(p.name);
-    setUrl(p.url);
-  };
-  const save = async () => {
-    if (!url.trim()) return;
-    if (editing?.id) s.updatePlaylist(editing.id, name || url, url);
-    else s.addPlaylist(name || "Untitled", url);
-    setEditing(null);
-    await load(true);
-  };
-
-  return (
-    <>
-      <h3>Playlists</h3>
-      {note && <p className="sheet-lead" role="status">{note}</p>}
-      <p className="sheet-lead">
-        Any extended M3U works. {channels.length} channels loaded from the active one.
-      </p>
-
-      <div>
-        {s.playlists.map((p) => (
-          <div key={p.id} className={`pl ${p.id === s.activePlaylistId ? "active" : ""}`}>
-            <button type="button" className="pl-main" onClick={async () => {
-              s.set("activePlaylistId", p.id);
-              await load();
-            }}>
-              <span className="pl-title">{p.name}</span>
-              <span className="pl-url">{p.url}</span>
-            </button>
-            <button type="button" className="pill" onClick={() => startEdit(p)}>Edit</button>
-            {/* Not `disabled`: the guidelines say an unavailable function should still
-                take focus and appear translucent, so the viewer can find out why. */}
-            <button
-              type="button"
-              className={`pill danger ${s.playlists.length < 2 ? "unavailable" : ""}`}
-              aria-disabled={s.playlists.length < 2}
-              onClick={() => {
-                if (s.playlists.length < 2) setNote("Keep at least one playlist, or there would be nothing to watch.");
-                else s.removePlaylist(p.id);
-              }}
-            >
-              Remove
-            </button>
-          </div>
-        ))}
+      <div className="sheet-body" ref={bodyRef}>
+        {section === "appearance" && <Appearance />}
+        {section === "playlists" && <Playlists onAsking={ask} />}
+        {section === "behaviour" && <Behaviour onAsking={ask} />}
+        {section === "about" && <About />}
       </div>
-
-      {editing ? (
-        <div className="form">
-          <label htmlFor="pl-name">Name</label>
-          <input id="pl-name" value={name} onChange={(e) => setName(e.target.value)}
-                 placeholder="My playlist" />
-          <label htmlFor="pl-url">URL</label>
-          <input id="pl-url" value={url} onChange={(e) => setUrl(e.target.value)}
-                 placeholder="https://example.com/playlist.m3u" spellCheck={false} />
-          <div className="actions">
-            <button type="button" className="pill on" onClick={save}>Save</button>
-            <button type="button" className="pill" onClick={() => setEditing(null)}>Cancel</button>
-          </div>
-        </div>
-      ) : (
-        <div className="actions">
-          <button type="button" className="pill" onClick={startAdd}>Add a playlist</button>
-          <button type="button" className="pill" onClick={() => load(true)}
-                  aria-busy={loading}>
-            {loading ? "Refreshing\u2026" : "Refresh now"}
-          </button>
-        </div>
-      )}
-    </>
-  );
-}
-
-function Behaviour() {
-  const s = useSettings();
-  const { load } = useChannels();
-  return (
-    <>
-      <h3>Playback</h3>
-      <Row label="Resume the last channel" hint="Start playing it when the app opens">
-        <Toggle value={s.resumeLast} onChange={(v) => s.set("resumeLast", v)} />
-      </Row>
-      <Row label="Sort channels A to Z" hint="Otherwise the playlist's own order is kept">
-        <Toggle value={s.sortAlphabetically} onChange={async (v) => {
-          s.set("sortAlphabetically", v);
-          await load();
-        }} />
-      </Row>
-      <Row label="Hide the panel after">
-        <Choice
-          options={[
-            { id: "4", label: "4s" }, { id: "8", label: "8s" },
-            { id: "15", label: "15s" }, { id: "0", label: "Never" },
-          ]}
-          value={String(s.panelTimeout)}
-          onChange={(id) => s.set("panelTimeout", Number(id))}
-        />
-      </Row>
-      <div className="actions">
-        <button type="button" className="pill danger" onClick={() => {
-          s.reset();
-          void load(true);
-        }}>
-          Reset everything to defaults
-        </button>
-      </div>
-    </>
-  );
-}
-
-function About() {
-  return (
-    <>
-      <h3>About</h3>
-      <div className="about">
-        <div>
-          <h4>SimpleIPTV</h4>
-          <p>Version {APP_VERSION}</p>
-          <p>By {AUTHOR}</p>
-          <p className="link">{REPO_URL}</p>
-          <p className="sheet-lead">
-            Free and open source. Scan the code to read it, report a problem, or
-            contribute a playlist.
-          </p>
-          <p className="sheet-lead">
-            Vazirmatn by Saber Rastikerdar, under the SIL Open Font License.
-          </p>
-        </div>
-        <img className="qr" src="./repo-qr.svg" alt={`QR code linking to ${REPO_URL}`} />
-      </div>
-    </>
+    </div>
   );
 }

@@ -1,0 +1,29 @@
+{
+  "model": "Entry tier, T4300 / TU7000 / AU7000 class",
+  "modelGroup": "20TV_BASIC1 / 20TV_BASIC2 / 21TV_BASIC1",
+  "platform": "Tizen 5.5",
+  "chromium": "69.0.3497.106",
+  "userAgent": "Mozilla/5.0 (SMART-TV; LINUX; Tizen 5.5) AppleWebKit/537.36 (KHTML, like Gecko) 69.0.3497.106.1/5.5 TV Safari/537.36",
+  "width": 1920,
+  "height": 1080,
+  "deviceScaleFactor": 1,
+  "cores": 4,
+  "deviceMemoryGB": 1,
+  "jsHeapLimitMB": 120,
+  "slowerThanReference": 6,
+  "why": "The weakest Samsung has sold since 2020, so that being smooth here means being smooth everywhere. Not a fraction of the reference set picked by feel: the numbers below come from what Samsung publishes, and each is sourced.",
+  "sources": {
+    "cores and memory": "Samsung's Common Criteria Security Targets state the minimum hardware for each Tizen version. For Tizen 5.5 (2020) and 6.0 (2021): quad Cortex-A53, 1.0GB DDR, 4GB eMMC. Samsung publishes no RAM or CPU figures anywhere in the developer documentation, calling them confidential, so this is the only first party source there is.",
+    "which models": "The 20TV_BASIC1 and 20TV_BASIC2 groups in Samsung's TV Model Groups table. BASIC2 is the floor of the floor: it is the one 2020 group absent from Samsung's multitasking support list, Samsung excludes it from Tap View, and other app vendors decline to support it outright. Still sold new as a current model into 2024 and receiving firmware, so it is a live target rather than a museum piece.",
+    "engine": "Samsung's Web Engine Specifications: Tizen 5.5 is Chromium 69, Tizen 6.0 is Chromium 76. Sets from 2020 to 2022 never receive an engine upgrade, only 2023 and later do, so these stay where they are.",
+    "heap": "Not published for any model. 120MB is Samsung's documented ceiling for an application installed through Tizen Studio, which is the only hard figure they give and the right one to engineer against. It covers the whole application rather than the JavaScript heap alone, so treating it as the heap limit is deliberately pessimistic.",
+    "speed": "No benchmark of any Samsung TV has ever been published, entry or flagship. Six is constructed, not measured: roughly 3x for quad Cortex-A53 against the reference set's quad Cortex-A76, and roughly 1.5x for Chromium 69 against 120. Multiplied by the reference set's own throttle, which is itself an estimate until calibrate.mjs runs. Treat the ordering as sound and the magnitude as approximate."
+  },
+  "caveats": [
+    "The engine cannot be downgraded. The user agent says Chromium 69 and the resources match an entry set, but the code still runs on whatever Chrome is installed, so a feature missing in 69 will work here and fail there. The build already targets es2019 for that reason; CSS has no equivalent and has to be checked by hand.",
+    "The panel on these models is often 1366x768, but the application resolution is 1920x1080 on every Samsung TV regardless, so the viewport is unchanged.",
+    "Video on this tier is capped at FHD, and MSE does not do UHD at all.",
+    "Throttling is a clock divider on the renderer's main thread, verified linear to 60x, so it genuinely models slow cores rather than few of them. It does not reach anything else: worker threads, rasterising, compositing and the GPU all still run at full laptop speed. A worker measured at rate 20 took exactly as long as an unthrottled main thread. Nothing in this app uses a worker, but hls.js demuxes in one, so --video flatters playback. On the set that path does not exist, since AVPlay demuxes natively.",
+    "60x is the reference set's estimated 10x multiplied by the floor's constructed 6x, so it compounds two estimates and is probably pessimistic. Good for a floor, but read the ordering of results rather than the absolute figures until calibrate.mjs has run."
+  ]
+}

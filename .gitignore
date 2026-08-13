@@ -2,5 +2,11 @@ node_modules/
 dist/
 build/
 *.wgt
+*.tsbuildinfo
 .env
 .DS_Store
+.playwright-cli/
+.vscode/
+.idea/
+coverage/
+*.log

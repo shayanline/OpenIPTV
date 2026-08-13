@@ -1,0 +1,15 @@
+{
+  "model": "QE55S90DAEXXU",
+  "platform": "Tizen 9.0",
+  "chromium": "120.0.6099.5",
+  "userAgent": "Mozilla/5.0 (SMART-TV; LINUX; Tizen 9.0) AppleWebKit/537.36 (KHTML, like Gecko) 120.0.6099.5/9.0 TV Safari/537.36",
+  "width": 1920,
+  "height": 1080,
+  "deviceScaleFactor": 1,
+  "cores": 4,
+  "deviceMemoryGB": 2,
+  "jsHeapLimitMB": 347,
+  "cpuThrottle": 10,
+  "calibrated": false,
+  "note": "Read off the set itself over sdb, not from the specifications page, which publishes no RAM, CPU or clock at all. cpuThrottle is an estimate until scripts/tv/calibrate.mjs has run against the TV."
+}

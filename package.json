@@ -2,21 +2,33 @@
   "name": "simple-iptv",
   "version": "0.2.0",
   "description": "IPTV player for Samsung Tizen TVs",
-  "main": "main.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "vitest run",
     "dev": "vite",
     "build": "tsc -b && vite build",
     "typecheck": "tsc -b",
     "preview": "vite preview",
     "package": "./scripts/package.sh",
-    "deploy": "./scripts/deploy.sh"
+    "deploy": "./scripts/deploy.sh",
+    "tv": "node scripts/tv/sim.mjs",
+    "tv:bench": "node scripts/tv/sim.mjs --bench",
+    "tv:calibrate": "node scripts/tv/calibrate.mjs",
+    "check": "npm run lint && npm run typecheck && npm test",
+    "tv:video": "node scripts/tv/sim.mjs --video",
+    "tv:floor": "node scripts/tv/sim.mjs --floor",
+    "tv:bench:floor": "node scripts/tv/sim.mjs --floor --bench",
+    "lint": "biome lint",
+    "lint:fix": "biome lint --write",
+    "format": "biome format --write",
+    "format:check": "biome format",
+    "test:watch": "vitest",
+    "tv:gap": "node scripts/tv/gap-parity.mjs"
   },
   "keywords": [],
   "author": "",
-  "license": "ISC",
+  "license": "MIT",
   "type": "module",
-  "private": "true",
+  "private": true,
   "dependencies": {
     "hls.js": "1.6.16",
     "react": "19.2.8",
@@ -24,10 +36,18 @@
     "zustand": "5.0.14"
   },
   "devDependencies": {
+    "@biomejs/biome": "2.5.7",
+    "@testing-library/dom": "10.4.1",
+    "@testing-library/react": "16.3.2",
     "@types/react": "19.2.18",
     "@types/react-dom": "19.2.4",
     "@vitejs/plugin-react": "6.0.5",
+    "jsdom": "30.0.1",
     "typescript": "7.0.2",
-    "vite": "8.2.0"
+    "vite": "8.2.0",
+    "vitest": "4.1.10"
+  },
+  "engines": {
+    "node": ">=22.18"
   }
 }

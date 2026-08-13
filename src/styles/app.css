@@ -5,26 +5,14 @@
  * to its right. The guidelines recommend that shape for an app with several or a variable
  * number of categories, which is exactly a playlist whose groups come from the file.
  *
- * Focusable elements sit on a strict two column grid. The checklist requires focusable
- * objects to be aligned in grids rather than diagonally, because four directional
- * navigation across a diagonal layout leaves the viewer guessing where the next press
- * will land.
+ * Focusable elements sit on a strict grid. The checklist requires focusable objects to be
+ * aligned in grids rather than diagonally, because four directional navigation across a
+ * diagonal layout leaves the viewer guessing where the next press will land.
+ *
+ * No fonts are bundled. Everything resolves through the device's own families, so a
+ * playlist in any script renders with whatever that device has, and the app never ships a
+ * guess about who is watching.
  */
-
-/* Vazirmatn ships inside the widget. Google Fonts is not reliably reachable inside Iran,
-   and a webfont that fails to load leaves the layout in a fallback nobody checked. */
-@font-face {
-  font-family: "Vazirmatn";
-  src: url("../fonts/Vazirmatn-Regular.woff2") format("woff2");
-  font-weight: 400;
-  font-display: swap;
-}
-@font-face {
-  font-family: "Vazirmatn";
-  src: url("../fonts/Vazirmatn-Bold.woff2") format("woff2");
-  font-weight: 700;
-  font-display: swap;
-}
 
 * { box-sizing: border-box; }
 
@@ -45,166 +33,431 @@ html, body, #root {
 
 button { font: inherit; color: inherit; cursor: pointer; }
 
-.app { position: relative; width: 100%; height: 100%; }
+/* overflow hidden, so an overlay arriving from off screen can never widen the box the
+   video is measured against. */
+.app { position: relative; width: 100%; height: 100%; overflow: hidden; }
 
-.video, .avplay-surface {
+/* Only ever rendered off the TV. No layer promotion hint: the guidance is explicit that
+   sprinkling translateZ(0) wastes GPU memory and adds compositing cost rather than
+   removing it. */
+.video {
   position: absolute;
-  inset: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
   width: 100%;
   height: 100%;
   background: #000;
   object-fit: contain;
 }
-/* AVPlay punches its own hole through the page, so nothing may paint over it. */
-.avplay-surface { background: transparent; pointer-events: none; }
 
-/* ---------------------------------------------------------------- browse panel ---- */
-/* The panel is a scrim over the picture rather than a solid wall, so the viewer never
-   loses sight of what is playing while choosing what to watch next. */
-.chrome {
-  position: absolute;
-  inset: 0 auto 0 0;
-  display: flex;
-  height: 100%;
-  background: linear-gradient(90deg, rgba(0, 0, 0, 0.94) 60%, rgba(0, 0, 0, 0));
-  padding-right: var(--s6);
-  transition: transform var(--t-med) var(--ease), opacity var(--t-med) var(--ease);
+/* On the TV the page is a window onto the video plane underneath it, so every layer in
+   the chain has to let light through. One opaque background anywhere here and the set
+   plays the channel into a hole nobody can see. */
+html.tizen, html.tizen body, html.tizen #root, html.tizen .app { background: transparent; }
+
+.icon { width: 1.05em; height: 1.05em; flex: 0 0 auto; }
+
+/* ================================================================== buttons ==== */
+/*
+ * One UI names two button types and three emphasis levels, and no outlined type at all:
+ * flat for low, a grey fill for medium, a coloured fill for high. Only one style should
+ * be used on a given screen. Dialogs and toolbars take flat buttons specifically so they
+ * do not add another layer on top of an already elevated surface.
+ *
+ * The radius is half the height, so every control is a stadium rather than a rounded
+ * rectangle. That is the shape One UI's 18dp radius on a 36dp button describes, and it
+ * has to be expressed as a ratio here because a TV control is far taller.
+ */
+.btn, .chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s1);
+  min-height: 64px;
+  padding: 0 var(--s3);
+  border: 0;
+  border-radius: var(--r-pill);
+  background: transparent;
+  color: var(--text-2);
+  font-size: var(--t-label);
+  transition: background var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
 }
-.chrome.hidden { transform: translateX(-100%); opacity: 0; pointer-events: none; }
+.btn.flat { background: transparent; }
+.btn.tonal { background: var(--tonal); color: var(--text); }
+.btn.filled { background: var(--accent); color: var(--on-accent); }
+.btn.wide { width: 100%; }
+.btn.danger { color: var(--danger); }
+/* Focus wins over the warning colour, or the one thing the viewer is pointing at would be
+   the one thing they cannot read. */
+.btn.danger:focus { color: var(--on-focus); }
+
+/*
+ * A choice within a group.
+ *
+ * The chosen one is filled in the accent, which is the colour One UI names for an activated
+ * control. It used to be a grey --tonal fill against white text on all the others, which
+ * made the selected chip the quietest thing in the row: from three metres you could not tell
+ * which text size was on, and checklist 4.1 asks for clear feedback about state.
+ */
+.chip { background: transparent; }
+.chip.on { background: var(--control-on); color: var(--on-accent); }
+
+/* Focus inverts, everywhere, on everything. One focus language across the app is the
+   Consistency principle in practice, and an inverted fill is what carries across a room. */
+.btn:focus, .chip:focus {
+  outline: none;
+  background: var(--focus);
+  color: var(--on-focus);
+}
+/* An unavailable action keeps its place in the focus order and appears translucent rather
+   than vanishing from four directional navigation, which is what the SELECT row of the
+   input guide asks for. */
+.btn:disabled { opacity: 0.4; }
+.btn:disabled:focus { opacity: 0.75; }
+
+/* ============================================================== channel panel ==== */
+/* A translucent surface over the picture, so the viewer never loses sight of what is
+   playing while choosing what to watch next, with a shadow marking where it ends. One UI
+   separates related surfaces with a shadow, and the panel and the picture are related. */
+.panel {
+  position: absolute;
+  z-index: var(--z-panel);
+  top: 0;
+  right: auto;
+  bottom: 0;
+  left: 0;
+  display: flex;
+  /* A column of two things: the two lists, and the key guide along the foot. */
+  flex-direction: column;
+  height: 100%;
+  width: var(--panel-w);
+  background: var(--over-video);
+  box-shadow: 32px 0 72px rgba(0, 0, 0, 0.5);
+  transition: transform var(--t-panel) var(--ease-enter), opacity var(--t-fast) linear;
+}
+/* min-height zero, or the two lists refuse to shrink and push the guide off the bottom. */
+.panel-cols { display: flex; flex: 1; min-height: 0; }
+/* Leaving uses ease in, arriving uses ease out, which is the pairing the motion guidance
+   sets out. Opacity is linear, because it says anything else looks forced. */
+.panel.away {
+  transform: translateX(-100%);
+  opacity: 0;
+  pointer-events: none;
+  transition: transform var(--t-panel) var(--ease-exit), opacity var(--t-fast) linear;
+}
 
 .rail, .list {
+  display: flex;
+  flex-direction: column;
   height: 100%;
-  padding: calc(var(--safe-y) + var(--s2)) 0 var(--s5);
+  /* No bottom padding: the key guide below is what separates the lists from the screen edge
+     now, so reserving space here as well left a gap the size of two rows. */
+  padding: calc(var(--safe-y) + var(--s2)) 0 0;
   overflow: hidden;
   position: relative;
 }
-.rail { width: 380px; padding-left: var(--safe-x); }
-.list { width: 660px; }
+.rail { width: var(--rail-w); padding-left: var(--safe-x); }
+.list { width: var(--list-w); }
 
-.rail-scroll, .list-scroll {
-  height: 100%;
-  overflow-y: auto;
-  scrollbar-width: none;
+/*
+ * The lists do not scroll. They render the rows in view and slide the block, so this is a
+ * fixed window onto a taller column that mostly does not exist.
+ *
+ * min-height zero, or a flex child refuses to shrink below its content and the window
+ * takes the height of everything it might have contained.
+ */
+.viewport {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
   padding-right: var(--s2);
 }
-.rail-scroll::-webkit-scrollbar, .list-scroll::-webkit-scrollbar { display: none; }
+.window { position: absolute; top: 0; left: 0; right: var(--s2); }
+/* Inside a window the rows are placed by index, not by flow. Everywhere else, such as the
+   settings rail, they stay in normal flow. */
+.window .row {
+  position: absolute;
+  left: 0;
+  right: 0;
+  width: auto;
+  /* No height here. A windowed row is positioned and sized from the hook, as an inline
+     style, which wins over anything this file could say. Two declarations of the same
+     measurement where only one is ever read is how the two drift apart. */
+}
 
+/* Both panes carry a header of the same height, so their lists start on the same line.
+   The checklist wants focusable objects on a grid, and two columns of rows that begin at
+   different heights is exactly the ragged layout it warns about. */
+.pane-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s2);
+  min-height: 56px;
+  /* Separation from the first row, which is not slack to be reclaimed. The header's own
+     height does not do this job on its own: the Settings key sits inside that height, and a
+     selected first row is a filled block, so without this the two almost touch. */
+  margin-bottom: var(--s2);
+  padding-right: var(--s2);
+}
+
+/*
+ * A subheader chunks a list, which is how One UI groups rows.
+ *
+ * No uppercasing. It carries a category name straight out of the playlist now rather than a
+ * fixed English word, and text-transform on a script with no cases does nothing, while on a
+ * Turkish or Greek name it can do something wrong.
+ */
 .panel-title {
-  margin: 0 0 var(--s2);
-  padding-right: var(--s2);
-  font-size: var(--t-caption);
+  display: block;
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  color: var(--text-2);
+  font-size: var(--t-label);
   font-weight: 400;
-  letter-spacing: 0.08em;
-  color: var(--text-3);
-  text-transform: uppercase;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
+.rail-brand {
+  margin: 0;
+  color: var(--text-3);
+  font-size: var(--t-caption);
+  letter-spacing: 0.06em;
+}
+
+/* Settings, sharing the header line with the subheader rather than taking a row of its
+   own. That keeps it labelled and reachable while the categories below stay level with
+   the channels beside them. */
+.gear {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s1);
+  flex: 0 0 auto;
+  height: 52px;
+  padding: 0 var(--s2);
+  border: 0;
+  border-radius: var(--r-pill);
+  background: var(--tonal);
+  color: var(--text-2);
+  font-size: var(--t-caption);
+  transition: background var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
+}
+.gear .icon { width: 24px; height: 24px; }
+.pane.focused .gear.selected,
+.gear:focus {
+  outline: none;
+  background: var(--focus);
+  color: var(--on-focus);
+}
+.gear.selected { background: var(--surface-3); color: var(--text); }
 
 /* ------------------------------------------------------------------- focus model ---- */
 /*
- * Two states, deliberately different, because the guidelines call them out separately.
+ * Three states, deliberately different, because the guidelines separate them.
  *
- *   selected  the row the app is on, whether or not this pane has the remote
- *   focused   this pane has the remote, so pressing OK acts on the selected row
+ *   showing   the category the channel list is currently displaying
+ *   selected  the row the remote cursor is on
+ *   focused   this pane holds the remote, so OK acts on the selected row
  *
- * Focus inverts to a light fill with dark text, which is One UI's TV signature and is
- * legible across a room. Selection alone is a quiet tint, so a viewer can see where each
- * pane will resume without mistaking it for where the remote is now.
+ * Only the pane holding the remote draws a cursor at all. A highlighted row in each
+ * column reads as two cursors, and the viewer is left working out which of them the OK
+ * button is pointing at. Checklist 4.2 allows one focused object, and this is the honest
+ * reading of it: the other column is not focused, so it shows no cursor.
  */
 .row {
+  position: relative;
   display: flex;
   align-items: center;
   gap: var(--s2);
   width: 100%;
-  min-height: 72px;
+  min-height: var(--row-h);
   padding: var(--s1) var(--s2);
   border: 0;
   border-radius: var(--r-md);
   background: transparent;
   color: var(--text-2);
   text-align: left;
-  transition: background var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
+  /* No transition on the highlight, deliberately.
+
+     The design guidance asks that "the control feedback must be instant and distinct"
+     because the viewer is across a room, and a fade is neither. It also costs: a row that
+     animates its fill repaints for the whole of the animation, and holding the arrow key
+     means every row in the column is mid-fade at once. The geometry never moves either
+     way, so the highlight simply lands where the cursor is. */
 }
-.row.selected { background: var(--surface-2); color: var(--text); }
-.pane.focused .row.selected {
+/* Which category the list is showing, and which section settings is on. Marked with a bar
+   and brighter text rather than a filled row, so it stays identifiable, as the Tab UI
+   guidance asks, without competing with the cursor for the eye. */
+.row.showing { color: var(--text); }
+.row.showing::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: 4px;
+  height: 38%;
+  border-radius: var(--r-pill);
+  background: var(--accent);
+  transform: translateY(-50%);
+}
+/* Inside the focused pane the cursor already says where you are. */
+.pane.focused .row.showing.selected::before { display: none; }
+
+/* Focus last, so it beats every other state a row can be in. */
+.pane.focused .row.selected,
+.row:focus {
+  outline: none;
   background: var(--focus);
   color: var(--on-focus);
-  border-radius: var(--r-pill);
 }
-.pane.focused .row.selected .muted { color: rgba(0, 0, 0, 0.6); }
-.muted { color: var(--text-3); }
+.row-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/*
+ * Two lines, and no ellipsis, for text that may be written in two directions at once.
+ *
+ * A bilingual group title is the normal case in a real playlist, and truncating one is not
+ * merely untidy: text-overflow removes the logical end of the string, and the logical end of
+ * a right to left run is its visual beginning, so "IRIB National Networks | شبکه‌های سراسری
+ * سیما" came out as "IRIB National Networks | یما...", which is the middle of a word. Wrapping
+ * has no such failure mode, and --row-h is sized to hold both lines.
+ */
+.row-label.two-line {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  white-space: normal;
+  text-overflow: clip;
+  line-height: 1.25;
+}
 
-/* --------------------------------------------------------------------- category ---- */
-.category-name { flex: 1; min-width: 0; }
-.category-count {
+.count, .ch-badge {
   flex: 0 0 auto;
-  min-width: 44px;
   padding: 2px var(--s1);
   border-radius: var(--r-pill);
-  background: rgba(255, 255, 255, 0.10);
+  background: var(--tonal);
+  color: var(--text-2);
   font-size: var(--t-caption);
-  text-align: center;
+  font-variant-numeric: tabular-nums;
 }
-.pane.focused .row.selected .category-count { background: rgba(0, 0, 0, 0.12); }
+.count { min-width: 44px; text-align: center; }
+.pane.focused .row.selected .count,
+.pane.focused .row.selected .ch-badge {
+  background: rgba(0, 0, 0, 0.12);
+  color: rgba(0, 0, 0, 0.62);
+}
 
 /* ---------------------------------------------------------------------- channel ---- */
 .ch-number {
   flex: 0 0 auto;
   width: 58px;
+  color: var(--text-3);
   font-size: var(--t-label);
   font-variant-numeric: tabular-nums;
   text-align: right;
 }
+.pane.focused .row.selected .ch-number { color: rgba(0, 0, 0, 0.5); }
 .ch-logo {
   flex: 0 0 auto;
-  width: 76px;
-  height: 48px;
+  /* Published from services/metrics, so the box a bitmap is reduced to and the box it is
+     drawn in are the same number rather than two that agree by hand. */
+  width: var(--logo-w);
+  height: var(--logo-h);
   object-fit: contain;
-  border-radius: var(--r-sm);
-  background: rgba(255, 255, 255, 0.92);
 }
+/*
+ * A channel with no artwork.
+ *
+ * Quiet, and with no fill. It had a solid --surface-3 tile, and a column of those with nothing
+ * in them is the single most broken looking thing in the interface: it reads as artwork that
+ * failed to load rather than artwork the playlist never carried. What is left holds the column
+ * straight without drawing attention to what is missing.
+ */
 .ch-logo.placeholder {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--surface-3);
   color: var(--text-3);
-  font-size: var(--t-caption);
-  text-transform: uppercase;
+  font-size: var(--t-label);
+  font-variant-numeric: tabular-nums;
 }
-.ch-name { flex: 1; min-width: 0; }
-.ch-badge {
-  flex: 0 0 auto;
-  padding: 2px var(--s1);
-  border-radius: var(--r-sm);
-  background: rgba(255, 255, 255, 0.10);
-  font-size: var(--t-caption);
-}
-.pane.focused .row.selected .ch-badge { background: rgba(0, 0, 0, 0.12); }
-.ch-star { flex: 0 0 auto; color: #ffc453; }
+.ch-logo.placeholder .icon { width: 34px; height: 34px; }
+.pane.focused .row.selected .ch-logo.placeholder { color: rgba(0, 0, 0, 0.4); }
+/*
+ * On the banner, no artwork means no box at all.
+ *
+ * A list row keeps an empty tile because the tiles form a column and a gap in it would ragged
+ * the names beside them. The banner has one, and an empty grey rectangle next to the channel
+ * number just looks like something failed to load. The number is the identity here.
+ */
+.pb-logo.placeholder { display: none; }
+.ch-star { flex: 0 0 auto; display: flex; color: #ffc453; }
 
 /* The channel that is actually playing, which is not the same as the one selected. */
+/*
+ * The channel playing now, marked with a slow pulse.
+ *
+ * A still dot says "this one is different". A dot with a ring breathing out of it says "this one
+ * is live", which is the actual meaning, and it is the only thing in the interface that moves on
+ * its own. That is deliberate: on a screen where nothing else animates, the one moving thing is
+ * unmistakable from across a room, and there is exactly one of it in the list.
+ *
+ * Two seconds and transform and opacity only, so it composites without repainting and reads as
+ * breathing rather than blinking. It only exists while the channel list is open, which closes
+ * itself after fifteen seconds, so nothing is animating over a programme.
+ */
 .playing-dot {
+  position: relative;
   flex: 0 0 auto;
-  width: 10px;
-  height: 10px;
+  width: 12px;
+  height: 12px;
   border-radius: 50%;
   background: var(--accent);
-  box-shadow: 0 0 0 4px var(--accent-dim);
 }
+.playing-dot.live::after {
+  content: "";
+  position: absolute;
+  /* Written out rather than `inset: 0`, which is Chromium 87 and so gives the ring no box
+     at all on the 2020 and 2021 sets this app is built for. */
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: live-pulse 2s var(--ease-exit) infinite;
+}
+@keyframes live-pulse {
+  from { transform: scale(1); opacity: 0.5; }
+  70%, to { transform: scale(2.8); opacity: 0; }
+}
+/* On the focused row the dot sits on a solid light fill, where the accent still reads but a
+   pale halo would not, so the ring is given a little more to start with. */
+.pane.focused .row.selected .playing-dot.live::after { opacity: 0.7; }
 
 /* -------------------------------------------------------------- scroll indicator ---- */
 /* Required by the UX checklist: a list longer than one page must show where the viewer
    is within it. It fades in on movement and away when idle, as the guidelines describe. */
 .scrollbar {
   position: absolute;
+  /* Spanning the rows, which now run to the foot of the pane, so this does too. */
   top: calc(var(--safe-y) + var(--s5));
-  bottom: var(--s5);
+  bottom: 0;
   right: 6px;
   width: 4px;
   border-radius: var(--r-pill);
   background: rgba(255, 255, 255, 0.10);
   opacity: 0;
-  transition: opacity var(--t-med) var(--ease);
+  transition: opacity var(--t-med) linear;
 }
 .scrollbar.show { opacity: 1; }
 .scrollbar-thumb {
@@ -217,69 +470,18 @@ button { font: inherit; color: inherit; cursor: pointer; }
   transition: transform var(--t-fast) var(--ease);
 }
 
-/* ------------------------------------------------------------------ now playing ---- */
-/* The guidelines describe a banner over the video carrying title and status, which
-   appears on input and withdraws when idle. */
-.banner {
-  position: absolute;
-  left: var(--safe-x);
-  right: var(--safe-x);
-  bottom: var(--safe-y);
-  display: flex;
-  gap: var(--s3);
-  align-items: center;
-  max-width: 1100px;
-  padding: var(--s3);
-  border-radius: var(--r-lg);
-  background: var(--surface-1);
-  transition: opacity var(--t-med) var(--ease), transform var(--t-med) var(--ease);
-}
-.banner.hide { opacity: 0; transform: translateY(12px); pointer-events: none; }
-.banner-logo {
-  width: 120px;
-  height: 74px;
-  flex: 0 0 auto;
-  object-fit: contain;
-  border-radius: var(--r-md);
-  background: rgba(255, 255, 255, 0.92);
-}
-.banner-logo.placeholder {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--surface-3);
-  color: var(--text-3);
-  font-size: var(--t-section);
-  text-transform: uppercase;
-}
-.banner-text { min-width: 0; flex: 1; }
-.banner-title { font-size: var(--t-title); }
-.banner-meta {
-  display: flex;
-  gap: var(--s2);
-  align-items: baseline;
-  margin-top: 4px;
-  color: var(--text-2);
-  font-size: var(--t-label);
-}
-.banner-number {
-  padding: 1px var(--s1);
-  border-radius: var(--r-sm);
-  background: rgba(255, 255, 255, 0.10);
-  color: var(--text);
-  font-variant-numeric: tabular-nums;
-}
-.banner-status { color: var(--accent); }
-
 /* --------------------------------------------------------------------- overlays ---- */
 .clock {
   position: absolute;
+  z-index: var(--z-notice);
   top: var(--safe-y);
   right: var(--safe-x);
+  padding: var(--s1) var(--s2);
+  border-radius: var(--r-pill);
+  background: var(--surface-1);
   font-size: var(--t-section);
   font-variant-numeric: tabular-nums;
   color: var(--text);
-  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.9);
 }
 .digits {
   position: absolute;
@@ -292,23 +494,31 @@ button { font: inherit; color: inherit; cursor: pointer; }
   font-size: var(--t-hero);
   font-variant-numeric: tabular-nums;
   letter-spacing: 0.12em;
+  z-index: var(--z-above);
 }
+/* A toast reports the result of the last action and leaves after three seconds. It never
+   dims the rest of the screen, since nothing about it needs answering. */
 .toast {
   position: absolute;
   left: 50%;
-  bottom: calc(var(--safe-y) + 200px);
+  bottom: calc(var(--safe-y) + 240px);
   transform: translateX(-50%);
   max-width: 1100px;
   padding: var(--s2) var(--s3);
   border-radius: var(--r-pill);
   background: var(--surface-2);
-  color: var(--danger);
+  color: var(--text);
   font-size: var(--t-label);
+  z-index: var(--z-above);
 }
+.toast.warn { color: var(--danger); }
 
 .splash {
   position: absolute;
-  inset: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -317,6 +527,8 @@ button { font: inherit; color: inherit; cursor: pointer; }
 }
 .splash h1 { margin: 0; font-size: var(--t-hero); font-weight: 600; }
 .splash p { margin: 0; color: var(--text-2); font-size: var(--t-body); }
+.hints.splash-keys { margin-top: var(--s2); }
+.hints.onboard-foot { margin-top: var(--s4); }
 
 /* A loading animation is required when a wait is noticeable. */
 .spinner {
@@ -327,27 +539,88 @@ button { font: inherit; color: inherit; cursor: pointer; }
   border-radius: 50%;
   animation: spin 900ms linear infinite;
 }
+/* Beside a line of text rather than alone on the picture, so it takes the size of the text and
+   the accent, and it never becomes the only thing reporting on a wait. */
+.spinner.small {
+  flex: 0 0 auto;
+  width: 24px;
+  height: 24px;
+  border-width: 3px;
+  border-top-color: var(--accent);
+}
 @keyframes spin { to { transform: rotate(360deg); } }
 
+/* Key hints. They lie straight over the picture, so like anything else that does they
+   carry their own surface rather than trusting whatever happens to be behind them. */
+/*
+ * The key guide, in one definition, with each variant saying only where it sits.
+ *
+ * It carries no surface of its own. Every guide in the application is a row inside something
+ * that already has one, the banner or the panel or a card, so the floating plate the base class
+ * used to draw was turned off again by all six variants, each of them restating the same four
+ * properties to do it.
+ */
 .hints {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
   display: flex;
-  gap: var(--s4);
-  justify-content: center;
-  padding: var(--s2) var(--safe-x) var(--safe-y);
-  color: var(--text-3);
-  font-size: var(--t-caption);
-}
-.hints kbd {
-  padding: 2px var(--s1);
-  border-radius: var(--r-sm);
-  background: rgba(255, 255, 255, 0.12);
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s1) var(--s4);
   color: var(--text-2);
-  font: inherit;
+  font-size: var(--t-label);
+  /*
+   * One key, drawn as a badge, sized from here.
+   *
+   * Height and minimum width are the same measurement, so a badge holding one character is
+   * an exact square and every badge on the row is the same height whatever is in it. In em,
+   * so it follows the viewer's text size and the smaller type the settings rail uses, and
+   * the four arrows never come out as slightly squat rectangles beside a square OK.
+   */
+  --key: 1.6em;
 }
+/*
+ * Each item is its keys followed by what they do, kept together on one line.
+ *
+ * No gap on this row, deliberately. A gap falls between every pair of children, including
+ * two key badges, so it would be added to the hair of space set between a pair of arrows and
+ * they would sit ten pixels apart instead of two. The spacing is set on the badges
+ * themselves, where the two cases can differ: tight between keys pressed as a pair, ordinary
+ * before the words that describe them.
+ */
+.hints span { display: inline-flex; align-items: center; }
+/* A guide that follows content it belongs to is ruled off from it. */
+.hints.ruled { padding-top: var(--s2); border-top: 1px solid var(--line); }
+/* A row of the panel rather than an overlay on it, so it takes its space from the lists
+   instead of covering the bottom of them. */
+.hints.panel-hints {
+  flex: 0 0 auto;
+  justify-content: center;
+  margin: 0 var(--s3) var(--safe-y) var(--safe-x);
+}
+/* A key looks the same everywhere in the application because this is the only rule that
+   says what a key looks like. Its size comes from --key, set on .hints above. */
+.hints kbd {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  height: var(--key);
+  min-width: var(--key);
+  padding: 0 6px;
+  border-radius: var(--r-sm);
+  background: var(--tonal);
+  color: var(--text);
+  font: inherit;
+  line-height: 1;
+}
+/*
+ * Two keys pressed as a pair, up and down or left and right, sit as a pair.
+ *
+ * Five pixels between them against eight before the words that follow, and the ratio is the
+ * whole point rather than either number: the pair has to hold together more tightly than it
+ * holds to its own label, or it reads as two items in a list instead of one instruction.
+ */
+.hints kbd + kbd { margin-left: 5px; }
+.hints kbd:last-of-type { margin-right: var(--s1); }
 
 /* ---------------------------------------------------------------------- skeleton ---- */
 .sk {
@@ -357,21 +630,34 @@ button { font: inherit; color: inherit; cursor: pointer; }
   background-size: 200% 100%;
   animation: shimmer 1.4s linear infinite;
 }
-.sk-logo { width: 76px; height: 48px; }
+.sk-logo { width: var(--logo-w); height: var(--logo-h); }
 .sk-title { flex: 1; height: 20px; }
 @keyframes shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
 
 .empty { padding: var(--s3) var(--s2); color: var(--text-3); }
 
-/* ------------------------------------------------------------------- bilingual ---- */
-.bilingual { display: flex; flex-direction: column; min-width: 0; }
-.bilingual .fa { color: inherit; opacity: 0.62; font-size: 0.8em; }
-.bilingual .en, .bilingual .fa,
-.ch-name, .category-name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+/* ================================================================= onboarding ==== */
+/* First run. One screen, one field, one button. */
+.onboard {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--sheet);
+  z-index: var(--z-sheet);
 }
+.onboard-box { width: 980px; max-width: calc(100% - var(--safe-x) * 2); }
+.onboard-box h1 { margin: 0 0 var(--s2); font-size: var(--t-hero); font-weight: 600; }
+.onboard-box .lead {
+  margin: 0 0 var(--s4);
+  color: var(--text-2);
+  font-size: var(--t-label);
+}
+.onboard-box .btn { margin-top: var(--s4); }
 
 /* ==================================================================== settings ==== */
 /*
@@ -382,29 +668,56 @@ button { font: inherit; color: inherit; cursor: pointer; }
  */
 .sheet {
   position: absolute;
-  inset: 0;
+  z-index: var(--z-sheet);
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
   display: flex;
-  background: rgba(0, 0, 0, 0.96);
+  /* Opaque. A settings screen is a place you go, not a layer you look through. */
+  background: var(--sheet);
+  animation: fade-in var(--t-med) linear;
 }
+@keyframes fade-in { from { opacity: 0; } }
 
 .sheet-rail {
-  width: 420px;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: var(--rail-w);
   flex: 0 0 auto;
   padding: calc(var(--safe-y) + var(--s3)) var(--s2) var(--safe-y) var(--safe-x);
-  overflow-y: auto;
+  overflow: hidden;
 }
 .sheet-rail h2 {
   margin: 0 0 var(--s3) var(--s2);
   font-size: var(--t-hero);
   font-weight: 600;
 }
+.sheet-rail .rail-scroll { flex: 1; overflow-y: auto; }
+.sheet-rail .sheet-lead { margin: var(--s3) 0 0 var(--s2); }
+/* Down the foot of the rail, one item per line, since the rail is a column. */
+.hints.sheet-hints {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--s1);
+  margin: var(--s3) 0 0 var(--s2);
+  font-size: var(--t-caption);
+}
+/* The settings sheet is short enough to scroll natively rather than window. Checklist 1.2
+   wants an indicator when content runs past a page, and here the scrollbar itself is it,
+   styled down to a quiet rail. */
 .sheet-body {
   flex: 1;
   padding: calc(var(--safe-y) + var(--s3)) var(--safe-x) var(--safe-y) var(--s5);
   overflow-y: auto;
-  scrollbar-width: none;
 }
-.sheet-body::-webkit-scrollbar { display: none; }
+.sheet-body::-webkit-scrollbar { width: 4px; }
+.sheet-body::-webkit-scrollbar-track { background: transparent; }
+.sheet-body::-webkit-scrollbar-thumb {
+  border-radius: var(--r-pill);
+  background: rgba(255, 255, 255, 0.3);
+}
 .sheet-body h3 {
   margin: 0 0 var(--s1);
   font-size: var(--t-title);
@@ -413,74 +726,62 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .sheet-lead { margin: 0 0 var(--s3); color: var(--text-2); font-size: var(--t-label); }
 
 /* One setting per line, label left, control right, so four directional movement down the
-   column is unambiguous. */
+   column is unambiguous. A toggle belongs on the right of its row, per One UI's lists. */
 .field {
   display: flex;
   gap: var(--s3);
   align-items: center;
   justify-content: space-between;
-  min-height: 84px;
+  min-height: 92px;
   padding: var(--s2) 0;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+  border-bottom: 1px solid var(--line);
 }
 .field-label { font-size: var(--t-body); }
 .field-hint { display: block; margin-top: 2px; color: var(--text-2); font-size: var(--t-caption); }
-.field-control { flex: 0 0 auto; display: flex; flex-wrap: wrap; gap: var(--s1); justify-content: flex-end; max-width: 780px; }
-
-/* Controls are pills, and focus inverts them, exactly as rows do. Keeping one focus
-   language across the app is the Consistency principle in practice. */
-.pill {
-  min-height: 56px;
-  padding: 0 var(--s3);
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  border-radius: var(--r-pill);
-  background: transparent;
-  color: var(--text-2);
-  font-size: var(--t-label);
+.field-control {
+  flex: 0 0 auto;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s1);
+  justify-content: flex-end;
+  max-width: 820px;
 }
-.pill.on { border-color: transparent; background: var(--surface-3); color: var(--text); }
-.pill:focus-visible, .pill:focus {
-  outline: none;
-  border-color: transparent;
-  background: var(--focus);
-  color: var(--on-focus);
-}
-.pill.danger { color: var(--danger); border-color: rgba(255, 107, 107, 0.4); }
-.pill:disabled { opacity: 0.35; }
 
 .switch {
   display: inline-flex;
+  /* Row reversed so the track finishes flush with the right edge, level with the chips
+     in the rows above it. A One UI list puts its switch on the right of the row. */
+  flex-direction: row-reverse;
   align-items: center;
   gap: var(--s2);
-  min-height: 56px;
-  padding: 0 var(--s2) 0 6px;
-  border: 1px solid rgba(255, 255, 255, 0.16);
+  min-height: 64px;
+  padding: 0 var(--s1) 0 var(--s3);
+  border: 0;
   border-radius: var(--r-pill);
   background: transparent;
   color: var(--text-2);
   font-size: var(--t-label);
 }
 .switch-track {
-  width: 58px;
-  height: 32px;
+  width: 62px;
+  height: 34px;
   padding: 3px;
   border-radius: var(--r-pill);
-  background: rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.20);
   transition: background var(--t-fast) var(--ease);
 }
 .switch-knob {
   display: block;
-  width: 26px;
-  height: 26px;
+  width: 28px;
+  height: 28px;
   border-radius: 50%;
   background: #fff;
   transition: transform var(--t-fast) var(--ease);
 }
-.switch.on .switch-track { background: var(--accent); }
-.switch.on .switch-knob { transform: translateX(26px); }
-.switch:focus-visible, .switch:focus {
+.switch.on .switch-track { background: var(--control-on); }
+.switch.on .switch-knob { transform: translateX(28px); }
+.switch:focus {
   outline: none;
-  border-color: transparent;
   background: var(--focus);
   color: var(--on-focus);
 }
@@ -488,59 +789,110 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .preview {
   margin-top: var(--s3);
   padding: var(--s3);
-  border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: var(--r-lg);
+  background: var(--surface-1);
   font-size: var(--t-section);
 }
 
 /* ------------------------------------------------------------------- playlists ---- */
+/*
+ * A playlist is one row carrying three things to do with it, and the row has to read as one
+ * row whichever of them holds the focus.
+ *
+ * It did not. The name filled most of the width as a single button and Edit and Remove sat
+ * outside it, so focusing the name drew a white block across two thirds of the row with two
+ * pieces of text floating past its end. One UI puts a list item's controls inside the item
+ * and lets the item keep its shape; the focus moves within it rather than redrawing it.
+ */
 .pl {
   display: flex;
   gap: var(--s1);
-  align-items: center;
+  align-items: stretch;
   margin-bottom: var(--s1);
   padding: var(--s1);
   border-radius: var(--r-lg);
   background: var(--surface-1);
 }
-.pl.active { background: var(--accent-dim); }
+/* Marked the way the showing category is marked, rather than with a colour of its own. An
+   accent tint here competed with the focus highlight and with the Active tag saying the
+   same thing a third time. */
+.pl.active { position: relative; }
+.pl.active::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: 4px;
+  height: 44%;
+  border-radius: var(--r-pill);
+  background: var(--accent);
+  transform: translateY(-50%);
+}
+/* A word, so the state survives greyscale and does not rest on the tint alone. */
+.tag {
+  margin-left: var(--s1);
+  padding: 1px var(--s1);
+  border-radius: var(--r-pill);
+  background: var(--accent);
+  color: var(--on-accent);
+  font-size: var(--t-caption);
+}
 .pl-main {
   flex: 1;
   min-width: 0;
   display: flex;
   flex-direction: column;
+  justify-content: center;
   gap: 2px;
-  min-height: 64px;
+  min-height: 72px;
   padding: var(--s1) var(--s2);
   border: 0;
   border-radius: var(--r-md);
   background: transparent;
   text-align: left;
 }
-.pl-main:focus-visible, .pl-main:focus {
+/* Centred at their own height rather than stretched to the row's. Stretched, a two word
+   button became a tall slab that dominated the row it belonged to. */
+.pl .btn { align-self: center; }
+.pl-main:focus {
   outline: none;
   background: var(--focus);
   color: var(--on-focus);
-  border-radius: var(--r-pill);
 }
 .pl-main:focus .pl-url { color: rgba(0, 0, 0, 0.6); }
-.pl-title { font-size: var(--t-label); }
+.pl-title { display: flex; align-items: center; font-size: var(--t-label); }
+.pl-main:focus .tag { background: var(--on-focus); color: var(--focus); }
 .pl-url { overflow: hidden; color: var(--text-3); font-size: var(--t-caption); text-overflow: ellipsis; white-space: nowrap; }
 
 .form { display: flex; flex-direction: column; gap: var(--s1); margin-top: var(--s2); }
+/*
+ * An error under the field that caused it, which is where One UI puts one: a popup would
+ * have to be dismissed before the mistake could be corrected, and on a remote that is two
+ * more presses to get back to the thing you were already looking at.
+ */
+.field-problem {
+  margin: 0;
+  color: var(--danger);
+  font-size: var(--t-caption);
+}
+input.wrong { border-color: var(--danger); }
 .form label { color: var(--text-2); font-size: var(--t-caption); }
 .form input {
-  min-height: 64px;
-  padding: 0 var(--s2);
-  border: 1px solid rgba(255, 255, 255, 0.16);
+  min-height: 72px;
+  padding: 0 var(--s3);
+  border: 0;
   border-radius: var(--r-md);
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--surface-2);
   color: var(--text);
   font: inherit;
   font-size: var(--t-label);
   user-select: text;
 }
-.form input:focus { outline: none; border-color: var(--focus); background: rgba(255, 255, 255, 0.08); }
+.form input:focus {
+  outline: none;
+  background: var(--surface-3);
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
 .actions { display: flex; gap: var(--s1); margin-top: var(--s2); }
 
 /* ----------------------------------------------------------------------- about ---- */
@@ -557,63 +909,798 @@ button { font: inherit; color: inherit; cursor: pointer; }
   background: #fff;
 }
 
-/* ================================================= playback controls & dialog ==== */
-/* Required by checklist 3.1, and every button here is reachable with the four
-   directional buttons, which 3.2 requires. */
-.playbar {
+/* ============================================================ pointer navigation ==== */
+/* Return and Exit for touch and mouse. The input methods guide makes these a requirement,
+   so they are always present, but they sit quietly in the corner furthest from the lists
+   and come forward only under a pointer. A remote user has RETURN and never needs them. */
+/*
+ * The on-screen navigation pad.
+ *
+ * Shaped like the Smart Remote's navigation area so nothing about it has to be learned: the
+ * wheel with select in the middle, and Return and Play beneath it in that order. Sits in the
+ * corner furthest from anything that carries meaning, and can be dragged if it still covers
+ * something.
+ */
+/*
+ * Halfway down the right hand edge, not the bottom corner.
+ *
+ * The corner is where the playback banner's clock and LIVE lamp live, and where the panel's
+ * key guide sits, so the pad covered the one and clipped the other: the guide read "Channel
+ * numbe" with a third item hidden entirely underneath. Nothing else claims the middle of the
+ * right edge, the panel comes in from the left, and it can still be dragged.
+ */
+.pad {
   position: absolute;
-  left: 50%;
-  bottom: calc(var(--safe-y) + 150px);
-  transform: translateX(-50%);
+  right: var(--safe-x);
+  top: 50%;
+  transform: translateY(-50%);
   display: flex;
-  gap: var(--s1);
+  flex-direction: column;
   align-items: center;
-  padding: var(--s1);
-  border-radius: var(--r-pill);
+  gap: var(--s2);
+  width: 208px;
+  padding: var(--s2);
+  border-radius: var(--r-lg);
   background: var(--surface-1);
+  box-shadow: var(--lift);
+  /*
+   * Nearly out of the way until it is wanted.
+   *
+   * It sits over the programme and it appears whenever a mouse moves anywhere on the screen,
+   * which is usually a mouse on its way somewhere else. At 0.9 it was a solid panel parked over
+   * the picture for five seconds every time the cursor twitched. Faint, it stays findable
+   * without competing with what is being watched, and reaching for it brings it back in full.
+   */
+  opacity: 0.35;
+  touch-action: none;
+  cursor: grab;
+  transition: opacity var(--t-fast) linear;
+  /* Above a page, since Return has to work there too, but below a popup, which must make
+     everything outside it unavailable. */
+  z-index: var(--z-pointer);
 }
-.pbtn {
+/* Solid the moment it is approached, held or being dragged. focus-within matters because a
+   click moves the focus into it, and it must not fade under a cursor that is using it. */
+.pad:hover, .pad:focus-within, .pad:active { opacity: 1; }
+.pad:active { cursor: grabbing; }
+
+.pad-wheel {
+  position: relative;
+  width: 176px;
+  height: 176px;
+  border-radius: 50%;
+  background: var(--surface-2);
+}
+
+.pad-dir {
+  position: absolute;
   display: flex;
   align-items: center;
   justify-content: center;
-  min-width: 76px;
-  height: 76px;
-  padding: 0 var(--s2);
-  border: 1px solid transparent;
-  border-radius: var(--r-pill);
+  width: 54px;
+  height: 54px;
+  border: 0;
+  border-radius: 50%;
   background: transparent;
+  cursor: pointer;
+}
+.pad-dir:hover, .pad-dir:focus { background: var(--tonal); outline: none; }
+.pad-up { top: 2px; left: 61px; }
+.pad-down { bottom: 2px; left: 61px; }
+.pad-left { left: 2px; top: 61px; }
+.pad-right { right: 2px; top: 61px; }
+/* The same faint chevrons the remote's own wheel is drawn with, rather than four arrows the
+   hardware does not print. */
+.pad-up .chev { transform: rotate(45deg) translate(1px, 1px); }
+.pad-down .chev { transform: rotate(-135deg) translate(1px, 1px); }
+.pad-left .chev { transform: rotate(-45deg) translate(1px, 1px); }
+.pad-right .chev { transform: rotate(135deg) translate(1px, 1px); }
+
+.pad-ok {
+  position: absolute;
+  top: 50px;
+  left: 50px;
+  width: 76px;
+  height: 76px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--surface-1);
+  color: var(--text);
+  font-size: var(--t-label);
+  font-weight: 600;
+  cursor: pointer;
+}
+.pad-ok:hover, .pad-ok:focus { background: var(--focus); color: var(--on-focus); outline: none; }
+
+/* Return then Play, left to right, as the hardware has them. */
+.pad-trio { display: flex; gap: var(--s3); }
+.pad-round {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--surface-2);
+  color: var(--text);
+  cursor: pointer;
+}
+.pad-round svg { width: 24px; height: 24px; }
+.pad-round:hover, .pad-round:focus { background: var(--focus); color: var(--on-focus); outline: none; }
+
+/*
+ * A card in the middle of the picture. Two things use it: what is happening to the picture,
+ * and a channel that will not start.
+ *
+ * Centred, lifted and edged in one place rather than in both, since the only things they
+ * disagree about are their width and which layer they sit on.
+ */
+.plate {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  padding: var(--s4) var(--s5);
+  border-radius: var(--r-lg);
+  background: var(--over-video);
+  box-shadow: var(--lift);
+  text-align: center;
+  transform: translate(-50%, -50%);
+}
+
+/*
+ * What is happening to the picture, centred on the picture it is happening to.
+ *
+ * It was a 128px disc with a turning ring in it and nothing else, while the banner along the
+ * bottom carried the words. One of the two had to go, and the words had to stay, so they came
+ * here to where the picture is missing.
+ */
+.picture-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--s2);
+  min-width: 340px;
+  z-index: var(--z-notice);
+  /* Wide enough for a sentence, narrow enough to stay a card rather than a page. */
+  max-width: 860px;
+}
+/* A failure has more to say, so it is given the room and a calmer rhythm, but it is the same
+   box in the same place: only the words inside it have changed. */
+.picture-state.failed { gap: var(--s1); padding: var(--s5); }
+
+/*
+ * The symbol, in a tinted disc.
+ *
+ * One UI puts a symbol on a soft circle of its own colour rather than loose on the surface, and
+ * keeps saturation for the small things. The warning is amber rather than red: a channel that is
+ * off the air is a disappointment, not a danger, and red is the colour this design system
+ * reserves for rejecting something.
+ */
+.picture-state-mark {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 76px;
+  height: 76px;
+  margin-bottom: var(--s1);
+  border-radius: 50%;
+  background: var(--accent-dim);
+  color: var(--accent);
+}
+.picture-state-mark .icon { width: 40px; height: 40px; }
+.picture-state-mark.warn { background: var(--warn-dim); color: var(--warn); }
+
+/* An overline naming the channel this is about, quiet, above the headline. */
+.picture-state-channel {
+  display: block;
   color: var(--text-2);
-  font-size: var(--t-section);
+  font-size: var(--t-label);
 }
-.pbtn.wide { min-width: auto; font-size: var(--t-label); }
-.pbtn.primary { background: rgba(255, 255, 255, 0.12); color: var(--text); }
-.pbtn:focus-visible, .pbtn:focus {
-  outline: none;
-  background: var(--focus);
-  color: var(--on-focus);
+.picture-state-word {
+  margin: 0;
+  font-size: var(--t-title);
+  font-weight: 600;
 }
-.pbar-gap { width: var(--s3); }
+/* The second line only ever appears to say something the first cannot, so it is allowed to
+   push the plate wider rather than being cut to fit. */
+.picture-state-note {
+  max-width: 640px;
+  margin: 0;
+  color: var(--text-2);
+  font-size: var(--t-label);
+}
+/* What the app is doing about it, in the present tense and in the accent, because it is the one
+   line saying the situation is still moving. */
+.picture-state-doing {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s2);
+  margin: var(--s2) 0 0;
+  color: var(--accent);
+  font-size: var(--t-label);
+}
+.hints.picture-state-keys { justify-content: center; margin-top: var(--s2); width: 100%; }
+.picture-state-code {
+  margin: var(--s2) 0 0;
+  color: var(--text-3);
+  font-size: var(--t-caption);
+}
 
-/* An unavailable action keeps its place in the focus order and explains itself when
-   chosen, rather than vanishing from four directional navigation. */
-.pill.unavailable { opacity: 0.4; }
+/* ================================================================ playback banner ==== */
+/*
+ * One banner along the bottom carrying what is on, where you are in it, and the controls,
+ * which is the arrangement the media player guidance illustrates. It replaced a card on the
+ * right and a panel beyond that, which said overlapping things in two places at once.
+ */
+/*
+ * Two boxes, stacked, the same width, with a gap between them.
+ *
+ * They are two different kinds of thing and they now look like it. The top one is about the
+ * programme and changes with every channel; the bottom one is about the remote and hardly
+ * changes at all. As one card with a rule across it they read as a single statement and the eye
+ * has to work out which half it is looking at.
+ */
+.pb-stack {
+  position: absolute;
+  right: var(--safe-x);
+  bottom: var(--safe-y);
+  left: var(--safe-x);
+  display: flex;
+  flex-direction: column;
+  /* Close enough to read as one thing in two parts, far enough to read as two parts. */
+  gap: var(--s1);
+  z-index: var(--z-notice);
+  animation: pb-in var(--t-med) var(--ease-enter);
+}
+.pb {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  padding: var(--s3) var(--s4);
+  border-radius: var(--r-lg);
+  background: var(--over-video);
+  box-shadow: var(--lift);
+}
+@keyframes pb-in { from { transform: translateY(16px); opacity: 0; } }
 
+/*
+ * The number, first and large.
+ *
+ * It is the one part of a channel's identity a viewer can type on the remote, so it is worth
+ * more room than the tag it used to have. Tabular figures and a fixed width, so it does not
+ * shift the name beside it as the digits change.
+ */
+.pb-number {
+  flex: 0 0 auto;
+  min-width: 108px;
+  padding: var(--s1) var(--s2);
+  border-radius: var(--r-md);
+  background: var(--tonal);
+  color: var(--text);
+  font-size: var(--t-title);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  text-align: center;
+}
+.pb-logo { flex: 0 0 auto; max-height: 68px; }
+.pb-id { flex: 1; min-width: 0; }
+/* Two lines at most. Names come out of a file nobody here controls, and one of forty words
+   would otherwise push the buttons and the key guide off the bottom of the screen. */
+.pb-title {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  font-size: var(--t-hero);
+  font-weight: 600;
+  line-height: 1.15;
+}
+.pb-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  color: var(--text-2);
+  font-size: var(--t-label);
+}
+.pb-group { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pb-quality {
+  flex: 0 0 auto;
+  padding: 1px var(--s1);
+  border-radius: var(--r-sm);
+  background: var(--tonal);
+  font-size: var(--t-caption);
+}
+
+/*
+ * The key guide, as the banner's last row, and the whole of this application's manual.
+ *
+ * Bigger than a caption, because it is the only instruction anybody gets and it is read from
+ * three metres away. It was --t-caption, the smallest size in the app, which is the wrong end
+ * of the scale for the one line that explains how to use the thing.
+ */
+/* A box of its own beneath the banner, matching its width and its surface. */
+.hints.pb-hints {
+  justify-content: center;
+  padding: var(--s2) var(--s4);
+  border-radius: var(--r-lg);
+  background: var(--over-video);
+  box-shadow: var(--lift);
+}
+
+/* ===================================================================== dialogs ==== */
+/*
+ * A popup makes everything outside it unavailable, so it sits above every other layer.
+ *
+ * One UI's depth model picks the effect by relationship: a dialog is unrelated to what is
+ * behind it, so the layer beneath should be blurred as well as dimmed. The blur is left
+ * out on purpose. It costs a full screen compositing layer, and on a TV there is nothing
+ * behind the dialog to blur anyway, since the picture lives on a plane below the page. A
+ * heavier dim carries the same separation for none of the cost.
+ */
 .dialog-scrim {
   position: absolute;
-  inset: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--scrim);
+  background: rgba(0, 0, 0, 0.82);
+  z-index: var(--z-popup);
+  animation: fade-in var(--t-med) linear;
 }
 .dialog {
-  width: 720px;
+  width: 940px;
+  max-width: calc(100% - var(--safe-x) * 2);
   padding: var(--s5);
   border-radius: var(--r-lg);
   background: var(--surface-2);
+  box-shadow: var(--lift);
+  text-align: center;
+  animation: rise var(--t-med) var(--ease-enter);
+}
+@keyframes rise { from { transform: translateY(24px); } }
+.dialog h2 { margin: 0 0 var(--s2); font-size: var(--t-title); font-weight: 600; }
+.dialog p { margin: 0 0 var(--s2); color: var(--text-2); font-size: var(--t-label); }
+/* Flat buttons in a dialog, so an already elevated surface gains no further layer. */
+.dialog-actions { display: flex; gap: var(--s1); justify-content: center; margin-top: var(--s4); }
+.dialog-actions .btn { min-width: 200px; }
+
+/* ================================================== smart remote, debug only ==== */
+/*
+ * A replica of the TM2360E, the Smart Remote that ships with current sets.
+ *
+ * Never present in a packaged widget. It exists so the whole interface can be driven the
+ * way a viewer will drive it, with the same key set and the same ergonomics, without a TV
+ * on the desk. Its own styles are deliberately self contained and do not use the app's
+ * tokens: it is a picture of a physical object, not part of the interface, and it must not
+ * change when the viewer changes the font size.
+ */
+.remote-stage {
+  position: fixed;
+  right: 28px;
+  bottom: 28px;
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  z-index: 999;
+  user-select: none;
+}
+
+.remote-hud {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 10px);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px 6px 14px;
+  border-radius: 999px;
+  background: rgba(20, 20, 22, 0.92);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+}
+.remote-last { color: rgba(255, 255, 255, 0.72); font-size: 12px; white-space: nowrap; }
+.remote-hide {
+  width: 22px;
+  height: 22px;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 15px;
+  line-height: 1;
+}
+
+/* ---------------------------------------------------------------- the body ---- */
+/* Graphite, lit from the top left, with the soft shoulder the moulding has. */
+.remote {
+  width: 172px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  padding: 16px 0 14px;
+  border-radius: 38px;
+  background:
+    linear-gradient(158deg, #55585c 0%, #3c3f43 22%, #303336 55%, #26282b 100%);
+  box-shadow:
+    0 30px 70px rgba(0, 0, 0, 0.62),
+    inset 0 1px 0 rgba(255, 255, 255, 0.16),
+    inset 0 0 0 1px rgba(0, 0, 0, 0.35);
+  cursor: grab;
+}
+.remote:active { cursor: grabbing; }
+
+/* Every key is a dark recess in the shell, so they share one treatment. */
+.remote button, .remote .rk-power, .remote .rk-mic, .remote .rk-round, .remote .rk-app {
+  border: 0;
+  background: linear-gradient(180deg, #2b2e31, #212326);
+  color: rgba(255, 255, 255, 0.82);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.09),
+    0 1px 2px rgba(0, 0, 0, 0.4);
+}
+.remote button:hover { background: linear-gradient(180deg, #3b3f43, #2e3134); }
+.remote button:active { background: #f2f2f2; color: #16181a; }
+/* Drawn, but the television owns it, so it never lights up. */
+.remote .inert { opacity: 0.5; cursor: default; }
+
+.remote-top { width: 100%; padding: 0 20px; }
+.remote .rk-power {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 27px;
+  border-radius: 999px;
+  color: #e0655f;
+}
+.rk-power svg { width: 15px; height: 15px; }
+
+/* -------------------------------------------------------- assistant row ---- */
+.remote-assist {
+  display: grid;
+  grid-template-columns: 40px 1fr 40px;
+  align-items: center;
+  width: 100%;
+  padding: 0 20px;
+}
+.rk-123 {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+}
+.rk-123[aria-pressed="true"] { background: #f2f2f2; color: #16181a; }
+.rk-123-dots {
+  display: grid;
+  grid-template-columns: 5px 5px;
+  gap: 1.5px;
+}
+.rk-123-dots i { width: 5px; height: 5px; border-radius: 1px; }
+.rk-123-dots i:nth-child(1) { background: #e05b52; }
+.rk-123-dots i:nth-child(2) { background: #4caf6a; }
+.rk-123-dots i:nth-child(3) { background: #e8c33c; }
+.rk-123-dots i:nth-child(4) { background: #4a8fe0; }
+.rk-123-label { font-size: 8px; letter-spacing: 0.04em; }
+
+.rk-mic-hole {
+  justify-self: center;
+  color: rgba(255, 255, 255, 0.4);
+  font-size: 7px;
+  letter-spacing: 0.14em;
+}
+.rk-mic {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  opacity: 0.5;
+}
+.rk-mic svg { width: 16px; height: 16px; }
+
+/* --------------------------------------------------------- navigation ring ---- */
+/* One raised wheel with a dished centre, which is the whole character of this remote.
+   The physical ring carries no printed arrows, so the chevrons wait for a pointer. */
+.dpad {
+  position: relative;
+  width: 132px;
+  height: 132px;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 50% 32%, #4e5257 0%, #3a3d41 58%, #2c2f32 100%);
+  box-shadow:
+    inset 0 2px 3px rgba(255, 255, 255, 0.13),
+    inset 0 -2px 4px rgba(0, 0, 0, 0.5),
+    0 3px 8px rgba(0, 0, 0, 0.45);
+}
+.remote .dp {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  box-shadow: none;
+}
+.remote .dp:hover { background: rgba(255, 255, 255, 0.07); }
+.remote .dp:active { background: rgba(255, 255, 255, 0.24); }
+.dp.up, .dp.down { left: 50%; width: 52px; height: 34px; margin-left: -26px; border-radius: 26px 26px 8px 8px; }
+.dp.up { top: 3px; }
+.dp.down { bottom: 3px; border-radius: 8px 8px 26px 26px; }
+.dp.left, .dp.right { top: 50%; width: 34px; height: 52px; margin-top: -26px; }
+.dp.left { left: 3px; border-radius: 26px 8px 8px 26px; }
+.dp.right { right: 3px; border-radius: 8px 26px 26px 8px; }
+
+/* A chevron drawn from a rotated corner, so it needs no glyph and no font. */
+.chev {
+  width: 8px;
+  height: 8px;
+  border-top: 2px solid rgba(255, 255, 255, 0.45);
+  border-left: 2px solid rgba(255, 255, 255, 0.45);
+}
+.dp.up .chev { transform: rotate(45deg) translate(1px, 1px); }
+.dp.down .chev { transform: rotate(-135deg) translate(1px, 1px); }
+.dp.left .chev { transform: rotate(-45deg) translate(1px, 1px); }
+.dp.right .chev { transform: rotate(135deg) translate(1px, 1px); }
+.remote .dp:active .chev { border-color: #16181a; }
+
+.remote .dp.ok {
+  top: 50%;
+  left: 50%;
+  width: 66px;
+  height: 66px;
+  margin: -33px 0 0 -33px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 50% 34%, #3d4145, #25282b);
+  box-shadow:
+    inset 0 2px 4px rgba(0, 0, 0, 0.65),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.08);
+}
+.remote .dp.ok:hover { background: radial-gradient(circle at 50% 34%, #4b4f54, #303336); }
+.remote .dp.ok:active { background: #f2f2f2; }
+
+/* ------------------------------------------------------------- the trio ---- */
+.remote-trio { display: flex; gap: 14px; }
+.rk-round {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+}
+.rk-round svg { width: 19px; height: 19px; }
+
+/* ------------------------------------------------------------- rockers ---- */
+.remote-rockers {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-areas: "vol ch" "ccad .";
+  justify-items: center;
+  gap: 4px 24px;
+  padding: 2px 26px 0;
+}
+.remote-rockers .rocker:first-of-type { grid-area: vol; }
+.remote-rockers .rocker:last-of-type { grid-area: ch; }
+.rocker {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  width: 40px;
+  padding: 6px 0;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #2b2e31, #212326);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 14px;
+}
+.rocker > i {
+  width: 14px;
+  height: 1px;
+  background: rgba(255, 255, 255, 0.18);
+}
+.remote .rock {
+  width: 34px;
+  height: 26px;
+  border-radius: 999px;
+  background: transparent;
+  box-shadow: none;
+  font-size: 15px;
+  line-height: 1;
+}
+.remote .rock:hover { background: rgba(255, 255, 255, 0.09); }
+.rocker-label {
+  grid-area: ccad;
+  color: rgba(255, 255, 255, 0.34);
+  font-size: 7px;
+  letter-spacing: 0.1em;
   text-align: center;
 }
-.dialog h2 { margin: 0 0 var(--s1); font-size: var(--t-title); font-weight: 600; }
-.dialog p { margin: 0 0 var(--s4); color: var(--text-2); font-size: var(--t-label); }
-.dialog-actions { display: flex; gap: var(--s2); justify-content: center; }
-.dialog-actions .pill { min-width: 220px; justify-content: center; }
+
+/* --------------------------------------------------------- app shortcuts ---- */
+/* Blank by intent: other people's trademarks do not belong in this repository, and the
+   set handles these keys anyway. */
+.remote-apps { display: flex; gap: 12px; }
+.remote-apps.one { margin-top: -6px; }
+.rk-app { width: 38px; height: 38px; border-radius: 50%; opacity: 0.72; }
+
+.remote-brand {
+  margin: 2px 0 0;
+  color: rgba(255, 255, 255, 0.42);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.22em;
+}
+
+/* ------------------------------------------------------- on-screen keypad ---- */
+/* What the 123 button raises on a real set: the digits, the coloured keys and the scan
+   keys that the hardware dropped. */
+.keypad {
+  width: 190px;
+  padding: 14px;
+  border-radius: 22px;
+  background: rgba(24, 24, 27, 0.97);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.6);
+}
+.keypad-title {
+  margin: 0 0 10px;
+  color: rgba(255, 255, 255, 0.42);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.keypad-colours { display: flex; gap: 6px; margin-bottom: 10px; }
+.ck { flex: 1; height: 10px; border: 0; border-radius: 5px; }
+.ck.red { background: #e05b52; }
+.ck.green { background: #4caf6a; }
+.ck.yellow { background: #e8c33c; }
+.ck.blue { background: #4a8fe0; }
+.ck:active { outline: 2px solid #fff; }
+
+.keypad-digits, .keypad-transport {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+}
+.keypad-transport { margin-top: 10px; }
+.dk {
+  height: 34px;
+  border: 0;
+  border-radius: 10px;
+  background: #303034;
+  color: #fff;
+  font-size: 14px;
+}
+.dk:hover { background: #3d3d42; }
+.dk:active { background: #fff; color: #16181a; }
+
+.remote-open {
+  position: fixed;
+  right: 28px;
+  bottom: 28px;
+  padding: 10px 18px;
+  border: 0;
+  border-radius: 999px;
+  background: #2a2a2f;
+  color: #fff;
+  font-family: system-ui, sans-serif;
+  font-size: 13px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  z-index: 999;
+}
+
+/* ================================================================ old engine gaps ==== */
+/*
+ * Spacing for the sets that do not have flex gap.
+ *
+ * `gap` on a *flex* container is Chromium 84. The 2020 and 2021 televisions this app is
+ * built for run Chromium 76, and the floor profile the simulator measures against is 69, so
+ * on the hardware that matters every rule above using flex gap contributes nothing at all
+ * and the row it describes collapses to no spacing whatever. Rows of buttons touch, the
+ * banner's logo sits against its title, the key guide runs together into one word.
+ *
+ * It cannot be detected in CSS. `@supports (gap: 1px)` is true on those engines because gap
+ * is a perfectly valid property there for *grid*, which has had it since Chromium 66, and
+ * @supports tests the property and value rather than the layout mode it lands in. So the
+ * test is done once in JavaScript, by measuring a probe, and lives in services/capabilities.
+ *
+ * Written as an addition under a class rather than by replacing the gaps above, on purpose.
+ * A modern engine never matches any of this and keeps using gap, so the change cannot regress
+ * the browsers and the newer sets that already work, which are also the only ones anybody
+ * here can actually test. An old set goes from no spacing to margin spacing, and if a rule
+ * below is imperfect it is still strictly better than the nothing it replaces.
+ *
+ * Grid gaps are left alone throughout: they work on all of these engines.
+ *
+ * The debug remote is not covered. It is a development tool, it is excluded from the
+ * production bundle, and it never runs on a television.
+ */
+
+/*
+ * .pane-head is deliberately absent.
+ *
+ * It is a two item row set to space-between, so the two are already pushed to opposite ends
+ * and the gap between them is slack rather than spacing: on a modern engine it changes
+ * nothing that can be measured. Adding a margin there is not free, though, because the
+ * header is close to full at the rail's width, and the measurements showed the extra outer
+ * width taking eight pixels off the Settings key. Nothing to reproduce, so nothing here.
+ */
+
+/* Rows: every child after the first is pushed off the one before it. */
+.no-flex-gap .btn > * + *,
+.no-flex-gap .chip > * + * { margin-left: var(--s1); }
+.no-flex-gap .gear > * + * { margin-left: var(--s1); }
+.no-flex-gap .row > * + * { margin-left: var(--s2); }
+.no-flex-gap .field > * + * { margin-left: var(--s3); }
+.no-flex-gap .pl > * + * { margin-left: var(--s1); }
+.no-flex-gap .actions > * + * { margin-left: var(--s1); }
+.no-flex-gap .about > * + * { margin-left: var(--s5); }
+.no-flex-gap .pad-trio > * + * { margin-left: var(--s3); }
+.no-flex-gap .picture-state-doing > * + * { margin-left: var(--s2); }
+.no-flex-gap .pb > * + * { margin-left: var(--s3); }
+.no-flex-gap .pb-meta > * + * { margin-left: var(--s2); }
+.no-flex-gap .dialog-actions > * + * { margin-left: var(--s1); }
+
+/* The switch runs row-reverse, so the space between its two halves is to the right of the
+   later child rather than the left of it. Margins have a side and gap does not, which is
+   the one place a direction-agnostic property has to be turned back into a direction. */
+.no-flex-gap .switch > * + * { margin-right: var(--s2); }
+
+/* Columns: the same idea, downwards. */
+.no-flex-gap .splash > * + * { margin-top: var(--s2); }
+.no-flex-gap .pl-main > * + * { margin-top: 2px; }
+.no-flex-gap .form > * + * { margin-top: var(--s1); }
+.no-flex-gap .pad > * + * { margin-top: var(--s2); }
+.no-flex-gap .picture-state > * + * { margin-top: var(--s2); }
+.no-flex-gap .pb-stack > * + * { margin-top: var(--s1); }
+
+/*
+ * Children that already carry a margin of their own.
+ *
+ * A gap sits *on top of* whatever margin a child brings with it, and a margin does not: the
+ * rules above are more specific than the plain class rules earlier in this file, so they
+ * replace the child's own margin instead of adding to it. Left alone that quietly loses
+ * spacing, and measurably did, pulling the form's buttons sixteen pixels up into the field
+ * above them.
+ *
+ * So the handful of children this applies to state the sum. Each is the child's own margin
+ * plus the gap of the container it sits in.
+ */
+.no-flex-gap .splash > .splash-keys { margin-top: calc(var(--s2) + var(--s2)); }
+.no-flex-gap .form > .actions { margin-top: calc(var(--s2) + var(--s1)); }
+.no-flex-gap .picture-state > .picture-state-doing,
+.no-flex-gap .picture-state > .picture-state-code,
+.no-flex-gap .picture-state > .picture-state-keys { margin-top: calc(var(--s2) + var(--s2)); }
+
+/* The failed card is the same set of children at a tighter gap. */
+.no-flex-gap .picture-state.failed > * + * { margin-top: var(--s1); }
+.no-flex-gap .picture-state.failed > .picture-state-doing,
+.no-flex-gap .picture-state.failed > .picture-state-code,
+.no-flex-gap .picture-state.failed > .picture-state-keys { margin-top: calc(var(--s2) + var(--s1)); }
+
+/*
+ * The two that can wrap, spaced between siblings like everything else.
+ *
+ * A trailing margin on every child would space a wrapped second line correctly, and it is
+ * what this had first. It is wrong here: both of these are centred or right aligned, so
+ * slack after the last item is not invisible, it moves the whole row. Measured, it took the
+ * panel's key guide sixteen pixels left and eight pixels up.
+ *
+ * So they are spaced between siblings, which is exact for one line and is what both of
+ * these are in practice. The cost is that an old set gets no spacing *between* lines on the
+ * rare occasion one wraps, which is a far smaller thing than moving a row that did not.
+ */
+.no-flex-gap .hints > * + * { margin-left: var(--s4); }
+.no-flex-gap .hints.sheet-hints > * + * { margin-left: 0; margin-top: var(--s1); }
+.no-flex-gap .field-control > * + * { margin-left: var(--s1); }

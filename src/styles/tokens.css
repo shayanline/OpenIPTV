@@ -1,44 +1,113 @@
 /*
- * One UI design tokens for Samsung TV.
+ * Design tokens, following One UI as far as it goes and Samsung's Smart TV guidelines
+ * where One UI is silent.
  *
- * Drawn from Samsung's Smart TV design guidelines and the One UI principles, chiefly:
+ * The TV guidelines set the constraints: the viewer is about three metres away, four
+ * directional navigation is the only guaranteed input, and "focused" and "selected" are
+ * different states a viewer must tell apart at a glance.
  *
- *  - the viewer sits about 3 metres away, so legibility governs every size choice
- *  - four directional navigation is the only guaranteed input, so focus must be
- *    unmistakable and every target large
- *  - "focused" and "selected" are different states and the guidelines require a viewer
- *    to tell them apart at a glance
- *  - the app should feel like the rest of the TV, so it borrows One UI's shapes rather
- *    than inventing its own
- *
- * One UI's signature on a TV is an inverted focus: the focused row becomes a solid light
- * surface with dark text, which reads across a room far better than a border or a glow.
+ * One UI sets the character. It is a solid colour system, not a translucent one, built on
+ * calm backgrounds with one confident blue reserved for interaction. Its signature on a TV
+ * is an inverted focus: the focused row becomes a solid light surface with dark text,
+ * which reads across a room far better than a border or a glow.
  */
 :root {
-  /* Surfaces. Neutral greys, not blue tinted, so the app sits calmly under any picture. */
+  /*
+   * Surfaces. Calm, near neutral, so the app sits quietly under any picture. One UI puts
+   * calm colour on large areas and saves saturation for small ones.
+   *
+   * Anything that floats over the video is translucent, with a shadow marking its edge.
+   * What is beneath stays present but recedes, which is how One UI expresses a layer over
+   * content, and a gradient running out to full transparency is not that: it has no edge
+   * at all, so it ends in a hard line wherever the ramp happens to finish.
+   *
+   * Translucent, but deliberately not blurred. A backdrop blur promotes every panel to its
+   * own full screen compositing layer, which the memory guidance singles out as something
+   * not to stack, and on a TV the backdrop behind these panels is not video anyway: it is
+   * the transparent hole the video plane shows through, so there is nothing there to blur.
+   */
   --bg: #000000;
-  --surface-1: rgba(24, 24, 26, 0.92);
-  --surface-2: rgba(38, 38, 42, 0.94);
-  --surface-3: rgba(56, 56, 61, 0.96);
-  --scrim: rgba(0, 0, 0, 0.72);
+  --surface-1: rgba(24, 24, 28, 0.90);
+  --surface-2: rgba(40, 40, 46, 0.94);
+  --surface-3: rgba(56, 56, 62, 0.94);
+  --over-video: rgba(13, 13, 15, 0.92);
+  /* Full screen, with nothing behind worth keeping, so it stays opaque. */
+  --sheet: #0a0a0b;
 
-  /* Text. One UI leans on opacity rather than separate greys. */
+  /*
+   * One UI separates related surfaces with a shadow rather than a blur, which is what gives a
+   * panel over the picture a defined edge instead of a vanishing one.
+   *
+   * With a hairline inside it, because a shadow is darkness and half of live television is a
+   * dark picture: over a night scene the card had no edge at all and appeared to be a hole.
+   */
+  --lift: 0 24px 60px rgba(0, 0, 0, 0.5), inset 0 0 0 1px rgba(255, 255, 255, 0.10);
+
+  /*
+   * The stack, named rather than numbered at each use site, so the order is something you
+   * can read in one place instead of inferring from twenty scattered z-indexes.
+   *
+   *   player   the picture, and a failed channel drawn inside it
+   *   notice   the playback banner and the key guides, transient
+   *   panel    the channel panel
+   *   sheet    settings and first run, which are pages rather than popups
+   *   pointer  the on-screen navigation pad, for a mouse
+   *   popup    a question that must be answered
+   *   above    a dialled number or a toast, which answer to nothing below them
+   *
+   * Settings and the confirmation used to share one level, and the pad sat below both so
+   * as not to float over a popup. That buried it under the settings page too, which left
+   * anyone using a mouse with no way out of it at all. They are different things: a page
+   * is somewhere you are and needs a way back, a popup is a question and must make
+   * everything outside itself unavailable until it is answered.
+   */
+  --z-notice: 10;
+  --z-panel: 20;
+  --z-sheet: 30;
+  --z-pointer: 34;
+  --z-popup: 40;
+  --z-above: 50;
+
+  /*
+   * Text. Opacity rather than separate greys, so it sits correctly on any surface.
+   *
+   * The accessibility guidance asks for 4.5:1 against the background, or 3:1 for text
+   * above 18px, and every size here clears 18px. The figures were checked against the
+   * worst case rather than the typical one: a translucent panel sitting over a white
+   * frame of video, which is the least contrast any of these will ever have. At 0.40 the
+   * quietest tier came out at 3.06:1, inside the rule but with nothing to spare, so it
+   * sits at 0.46 and clears 3.5:1 everywhere.
+   */
   --text: rgba(255, 255, 255, 0.96);
   --text-2: rgba(255, 255, 255, 0.62);
-  --text-3: rgba(255, 255, 255, 0.40);
+  --text-3: rgba(255, 255, 255, 0.46);
   --on-focus: #101013;
+  --on-accent: #ffffff;
 
-  /* Focus is a light fill. Accent is reserved for state, never for focus, so the two
-     never compete for the eye. */
+  /* The One UI blue, in the three roles the colour guidance names. Primary dark is the
+     only one that shifts by theme, and this app is dark, so it takes the dark value.
+     Focus is deliberately not blue: white is the focus, blue means state, and keeping
+     them apart stops the two competing for the eye. */
+  --accent: #3e91ff;          /* primary dark, dark theme: emphasis and sub text */
+  --control-on: #3e91ff;      /* control activated: toggles and checkboxes */
+  --accent-dim: rgba(62, 145, 255, 0.18);
   --focus: #ffffff;
-  --accent: #2e94ff;
-  --accent-dim: rgba(46, 148, 255, 0.20);
   --danger: #ff6b6b;
+  /* A channel that will not play is a disappointment rather than a danger, and One UI reserves
+     red for rejecting something. Amber says "not right" without saying "stop". */
+  --warn: #ffc453;
+  --warn-dim: rgba(255, 196, 83, 0.16);
 
-  /* One UI is generously rounded. Pills for controls, soft rectangles for surfaces. */
+  /* Dividers and the grey contained button. One UI has no outlined button, so a middle
+     emphasis control is grey filled rather than bordered. */
+  --line: rgba(255, 255, 255, 0.09);
+  --tonal: rgba(255, 255, 255, 0.11);
+
+  /* One UI is generously rounded. Controls are stadiums, so the radius is half the
+     height rather than a fixed number, and surfaces are soft rectangles. */
   --r-pill: 999px;
-  --r-lg: 26px;
-  --r-md: 16px;
+  --r-lg: 28px;
+  --r-md: 18px;
   --r-sm: 10px;
 
   /* An 8px rhythm, which keeps focusable targets on a predictable grid. */
@@ -54,29 +123,76 @@
   --safe-x: 48px;
   --safe-y: 40px;
 
-  /* Type scale. The guidelines set a floor for legibility at distance and ask for line
-     spacing of 1.2 to 1.4, so each size carries its own. --scale is the viewer's
-     text size preference. */
+  /* Fixed, because the lists render a window of rows rather than all of them and the
+     arithmetic needs an exact height. ROW_BASE and RAIL_ROW_BASE in useWindowed.ts are the
+     same two numbers.
+
+     The rail's rows are taller because a group title may be written in two scripts at once
+     and has to wrap to two lines: cutting a bidirectional string with an ellipsis removes
+     its logical end, which is the visual beginning of the right to left half, and what
+     survives is the middle of a word. A channel name fits on one line, so the channel list
+     keeps the shorter row and three more channels on screen. */
+  /* --row-base comes from services/metrics at startup, so the height the windowing
+     arithmetic assumes and the height a row is drawn at cannot drift apart. The rail's
+     taller row is sized entirely from the hook and needs no token of its own. */
+  --row-h: calc(var(--row-base) * var(--scale));
+
+  /*
+   * Panel geometry at 1920 wide.
+   *
+   * The panel covers the picture the viewer is choosing against, so it takes as little of
+   * the screen as it can while still holding a bilingual category name on two lines and a
+   * channel name on one. 1064 of 1920 leaves 856 of picture, where the previous 1224 left
+   * 696. Checklist 1.7 asks for the total information on screen to be reduced.
+   */
+  --rail-w: 424px;
+  --list-w: 576px;
+  --panel-w: calc(var(--rail-w) + var(--list-w) + var(--s6));
+
+  /* Type scale. The TV guidelines set a floor for legibility at distance and ask for line
+     spacing of 1.2 to 1.4. --scale is the viewer's text size preference. */
   --scale: 1;
   --t-hero: calc(48px * var(--scale));
   --t-title: calc(34px * var(--scale));
   --t-section: calc(28px * var(--scale));
   --t-body: calc(24px * var(--scale));
-  --t-label: calc(21px * var(--scale));
-  --t-caption: calc(18px * var(--scale));
+  --t-label: calc(22px * var(--scale));
+  --t-caption: calc(20px * var(--scale));
   --lh: 1.35;
 
-  /* One UI Sans is the Tizen system font, so system-ui resolves to it on the TV itself.
-     It covers Latin and Korean only, hence the Persian fallback behind it. */
-  --font: "One UI Sans", system-ui, -apple-system, "Segoe UI", Roboto, "Vazirmatn", sans-serif;
+  /* Set by the app from the viewer's font preference. */
+  --font: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 
-  /* Motion: short and unfussy. The guidelines ask for instant, distinct feedback, so
-     focus moves must never feel like they lag the remote. */
-  --t-fast: 120ms;
-  --t-med: 220ms;
-  --ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+  /*
+   * Motion, from the One UI motion guidance.
+   *
+   * The basic path interpolator is given as [0.22, 0.25, 0.00, 1.00], which is the same
+   * parameterisation as cubic-bezier, so it transfers directly. It accelerates hard and
+   * settles, which is what gives One UI its particular feel.
+   *
+   * Enter with ease out, leave with ease in, and use linear only for opacity, where the
+   * guidance says anything else looks forced. Durations must clear 100ms to be noticed
+   * and stay under 500ms so they never hold the viewer up.
+   */
+  --ease: cubic-bezier(0.22, 0.25, 0.00, 1.00);
+  --ease-enter: cubic-bezier(0, 0, 0.2, 1);
+  --ease-exit: cubic-bezier(0.4, 0, 1, 1);
+  --t-fast: 150ms;
+  --t-med: 250ms;
+  /*
+   * For the panels sliding in and out, which is the one movement a viewer waits on rather
+   * than watches. 250ms is well inside the 100 to 500ms the motion guidance allows, but the
+   * work of building the channel list happens before the slide can even start, and on slow
+   * hardware the two add up into something that feels like a delay rather than an animation.
+   * 180ms is still unhurried and takes 70ms out of the wait.
+   */
+  --t-panel: 180ms;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  :root { --t-fast: 0ms; --t-med: 0ms; }
+  :root { --t-fast: 0ms; --t-med: 0ms; --t-panel: 0ms; }
+  /* Durations only cover transitions. The two things that animate on their own have to be
+     stopped by name, and the pulse settles to the plain dot it decorates. */
+  .playing-dot.live::after { animation: none; opacity: 0; }
+  .spinner { animation: none; }
 }

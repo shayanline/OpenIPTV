@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect } from "react";
 import { KEY } from "./useRemote";
 
 /**
@@ -19,7 +19,21 @@ import { KEY } from "./useRemote";
  * last item in a list rather than looping round.
  */
 
-const FOCUSABLE = "button:not([hidden]), input:not([hidden]), [tabindex]:not([tabindex='-1'])";
+/*
+ * Every element the directional buttons may land on.
+ *
+ * tabindex="-1" is excluded from all three arms, not just the last. Written as
+ * `button, input, [tabindex]:not([tabindex='-1'])` the exclusion only covered things that
+ * were reachable *because* of a tabindex, so a button opting out with tabindex="-1" was
+ * matched by the first arm anyway and stayed reachable. The pointer pad's seven buttons all
+ * opt out that way, and only stay out of reach because the pad happens to sit outside every
+ * area this hook is pointed at.
+ */
+const FOCUSABLE = [
+  "button:not([hidden]):not([tabindex='-1'])",
+  "input:not([hidden]):not([tabindex='-1'])",
+  "[tabindex]:not([tabindex='-1'])",
+].join(", ");
 
 interface Box { el: HTMLElement; x: number; y: number; left: number; right: number; top: number; bottom: number }
 
@@ -60,7 +74,19 @@ function pick(from: Box, all: Box[], code: number): HTMLElement | null {
       ? Math.max(0, Math.max(from.top - b.bottom, b.top - from.bottom))
       : Math.max(0, Math.max(from.left - b.right, b.left - from.right));
 
-    const cost = Math.max(0, along) + across * 3;   // drift is penalised heavily
+    // Sideways movement may never change row. Samsung's Figure 1-3 is precisely this
+    // case: a press that lands somewhere diagonal leaves the viewer guessing where the
+    // next one will go. Left and right walk along a row, up and down move between rows,
+    // and if a row has nothing further along, focus simply stops.
+    if (horizontal && across > 0) continue;
+
+    // Vertical movement still needs the ragged escape, because a settings row's controls
+    // are right aligned and rarely line up with the row above. The pressed axis dominates,
+    // and among equals the nearest centre wins, which is how the guidance describes it.
+    const drift = horizontal
+      ? 0
+      : Math.abs((from.left + from.right) / 2 - (b.left + b.right) / 2);
+    const cost = Math.max(0, along) * 4 + across * 2 + drift * 0.2;
     if (!best || cost < best.cost) best = { el: b.el, cost };
   }
   return best?.el ?? null;
@@ -97,12 +123,15 @@ export function useSpatialNav(root: React.RefObject<HTMLElement | null>, enabled
     if (all.length && !container.contains(document.activeElement)) all[0].el.focus();
   }, [rootRef]);
 
-  const enabledRef = useRef(enabled);
-  enabledRef.current = enabled;
-
   useEffect(() => {
     if (enabled) focusFirst();
   }, [enabled, focusFirst]);
 
-  return { move, focusFirst };
+  /** Whether this area holds anything the directional buttons could land on. */
+  const hasTargets = useCallback(
+    () => !!rootRef.current && boxes(rootRef.current).length > 0,
+    [rootRef],
+  );
+
+  return { move, focusFirst, hasTargets };
 }

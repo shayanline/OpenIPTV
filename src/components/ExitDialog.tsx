@@ -1,6 +1,4 @@
-import { useEffect, useRef } from "react";
-import { KEY, useRemote } from "../hooks/useRemote";
-import { useSpatialNav } from "../hooks/useSpatialNav";
+import { Confirm } from "./Confirm";
 
 /**
  * Samsung's input guide says RETURN on the application's home screen closes the
@@ -18,41 +16,22 @@ export function exitApp() {
   }
 }
 
-export function ExitDialog({ onCancel }: { onCancel: () => void }) {
-  const box = useRef<HTMLDivElement>(null);
-  const { move } = useSpatialNav(box, true);
-  const cancelRef = useRef<HTMLButtonElement>(null);
-
-  // Cancel takes focus, so an accidental press of RETURN then SELECT keeps the viewer in
-  // the app rather than dropping them out of it.
-  useEffect(() => { cancelRef.current?.focus(); }, []);
-
-  useRemote((code, event) => {
-    if (code === KEY.BACK || code === KEY.ESC) {
-      event.preventDefault();
-      onCancel();
-      return;
-    }
-    if ([KEY.LEFT, KEY.RIGHT, KEY.UP, KEY.DOWN].includes(code as never)) {
-      event.preventDefault();
-      move(code);
-    }
-  });
-
+export function ExitDialog({ watching, onCancel }: {
+  /** Whether a channel is actually playing, which decides what staying is called. */
+  watching: boolean;
+  onCancel: () => void;
+}) {
   return (
-    <div className="dialog-scrim">
-      <div className="dialog" ref={box} role="dialog" aria-modal="true" aria-label="Close SimpleIPTV">
-        <h2>Close SimpleIPTV?</h2>
-        <p>You can open it again from the Apps row.</p>
-        <div className="dialog-actions">
-          <button type="button" ref={cancelRef} className="pill" onClick={onCancel}>
-            Keep watching
-          </button>
-          <button type="button" className="pill on" onClick={exitApp}>
-            Close
-          </button>
-        </div>
-      </div>
-    </div>
+    <Confirm
+      title="Close SimpleIPTV?"
+      body="You can open it again from the Apps row."
+      confirmLabel="Close"
+      /* "Keep watching" is only true if they are. This dialog is also reachable from the channel
+         list with nothing playing and from a playlist that loaded nothing, where it told the
+         viewer they were watching something they were not. */
+      cancelLabel={watching ? "Keep watching" : "Stay here"}
+      onConfirm={exitApp}
+      onCancel={onCancel}
+    />
   );
 }

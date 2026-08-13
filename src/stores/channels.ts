@@ -2,25 +2,18 @@ import { create } from "zustand";
 import type { Channel } from "../types";
 import { groupByCategory, parseM3U } from "../services/m3u";
 import { useSettings } from "./settings";
+import { read, readJSON, remove, write } from "../services/store";
 
 const FAVOURITES_KEY = "simpleiptv.favourites";
 const LAST_KEY = "simpleiptv.last";
 const cacheKey = (playlistId: string) => `simpleiptv.cache.${playlistId}`;
 
-const read = (key: string, fallback = "") => {
-  try {
-    return localStorage.getItem(key) ?? fallback;
-  } catch {
-    return fallback;
-  }
-};
-const write = (key: string, value: string) => {
-  try {
-    localStorage.setItem(key, value);
-  } catch {
-    // A full or disabled store must not stop a channel change.
-  }
-};
+/** What a load attempt produced, so the caller can say so without re-reading the store. */
+export interface LoadResult {
+  count: number;
+  /** Empty when it worked. */
+  error: string;
+}
 
 interface State {
   channels: Channel[];
@@ -28,23 +21,43 @@ interface State {
   favourites: string[];
   loading: boolean;
   error: string;
-  load: (force?: boolean) => Promise<void>;
+  /**
+   * Fetch the active playlist. Reports what happened, because a caller that has just asked
+   * for a refresh has to be able to say whether it worked, and reading the store back
+   * afterwards races the state it is trying to read.
+   */
+  load: (force?: boolean) => Promise<LoadResult>;
   toggleFavourite: (id: string) => void;
   rememberLast: (id: string) => void;
   lastPlayed: () => string;
+  /** Forget the favourites and the last played channel, for "reset everything". */
+  clearPersonal: () => void;
 }
+
+/**
+ * The fetch in flight, so a later request can call off an earlier one.
+ *
+ * Switching playlist twice quickly used to leave two requests running and let whichever
+ * answered last win, which on a slow connection is the one you asked for first. Outside the
+ * store because it is machinery rather than state: nothing renders from it.
+ */
+let inFlight: AbortController | null = null;
 
 export const useChannels = create<State>((set, get) => ({
   channels: [],
   categories: [],
-  favourites: JSON.parse(read(FAVOURITES_KEY, "[]")) as string[],
+  favourites: readJSON<string[]>(FAVOURITES_KEY, []),
   loading: false,
   error: "",
 
-  async load(force = false) {
+  async load(force = false): Promise<LoadResult> {
     const settings = useSettings.getState();
     const playlist = settings.activePlaylist();
-    if (!playlist) return;
+    // Nothing configured yet, which is the first run. The onboarding screen is showing.
+    if (!playlist) {
+      set({ channels: [], categories: [], loading: false, error: "" });
+      return { count: 0, error: "" };
+    }
     set({ loading: true, error: "" });
 
     const apply = (text: string) => {
@@ -65,23 +78,30 @@ export const useChannels = create<State>((set, get) => ({
       }
     }
 
+    inFlight?.abort();
+    const attempt = new AbortController();
+    inFlight = attempt;
+
     try {
-      const res = await fetch(playlist.url, { cache: "no-cache" });
+      const res = await fetch(playlist.url, { cache: "no-cache", signal: attempt.signal });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const text = await res.text();
       const parsed = apply(text);
       if (!parsed.channels.length) throw new Error("no channels in that playlist");
       write(cacheKey(playlist.id), text);
       set({ ...parsed, loading: false });
+      return { count: parsed.channels.length, error: "" };
     } catch (e) {
+      // Called off because something newer was asked for. The newer one owns the state now,
+      // so this must not touch it, and in particular must not report a failure.
+      if (attempt.signal.aborted) return { count: get().channels.length, error: "" };
       const message = e instanceof Error ? e.message : String(e);
       // Keep whatever the cache gave us rather than emptying the screen.
-      set({
-        loading: false,
-        error: get().channels.length
-          ? `Could not refresh: ${message}. Showing the last saved copy.`
-          : `Could not load the playlist: ${message}`,
-      });
+      const error = get().channels.length
+        ? `Could not refresh: ${message}. Showing the last saved copy.`
+        : `Could not load the playlist: ${message}`;
+      set({ loading: false, error });
+      return { count: get().channels.length, error };
     }
   },
 
@@ -95,4 +115,10 @@ export const useChannels = create<State>((set, get) => ({
 
   rememberLast: (id) => write(LAST_KEY, id),
   lastPlayed: () => read(LAST_KEY),
+
+  clearPersonal() {
+    remove(FAVOURITES_KEY);
+    remove(LAST_KEY);
+    set({ favourites: [] });
+  },
 }));

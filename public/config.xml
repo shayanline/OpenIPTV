@@ -1,6 +1,12 @@
 <?xml version="1.0" encoding="UTF-8"?>
+<!-- The version is stamped from package.json at package time by scripts/package.sh, so the
+     number below is only a placeholder and cannot drift from the release.
+
+     A comment may not appear inside a start tag, so it stays out here. Written inside the
+     <widget> tag this file is not well formed and libxml2, which the Tizen CLI and the WRT
+     both use, refuses to parse it. -->
 <widget xmlns="http://www.w3.org/ns/widgets" xmlns:tizen="http://tizen.org/ns/widgets"
-        id="http://simpleiptv.local/SimpleIPTV" version="0.1.0" viewmodes="maximized">
+        id="http://simpleiptv.local/SimpleIPTV" version="0.0.0" viewmodes="maximized">
   <name>SimpleIPTV</name>
   <icon src="icon.png"/>
   <content src="index.html"/>
@@ -11,13 +17,43 @@
 
   <!-- internet: fetch the playlist and the streams.
        tv.inputdevice: receive the coloured and channel keys.
-       application.launch: relaunch after the TV suspends the app. -->
+       avplay: the guide says it is unused since 2015 sets, but Samsung's own AVPlay
+       samples still declare it and it costs nothing to carry.
+
+       application.launch is deliberately absent. It was declared for a relaunch the app
+       never performs: the only Tizen application call anywhere is getCurrentApplication()
+       .exit() in ExitDialog, which needs no privilege at all. -->
   <tizen:privilege name="http://tizen.org/privilege/internet"/>
+  <tizen:privilege name="http://developer.samsung.com/privilege/avplay"/>
   <tizen:privilege name="http://tizen.org/privilege/tv.inputdevice"/>
-  <tizen:privilege name="http://tizen.org/privilege/application.launch"/>
 
   <!-- Streams and logos come from many hosts, so no origin allowlist is workable. -->
   <access origin="*" subdomains="true"/>
+
+  <!--
+    Declaring a policy moves the widget from WARP based security to CSP based security, and
+    the two do not combine: once this element exists <access> no longer governs the network,
+    so every wildcard the app relies on has to be restated here.
+
+    What it buys is script-src. The app fetches playlist text from whatever host the viewer
+    points it at, and while nothing here ever interprets that text as markup or code, a
+    widget with no script-src at all has nothing standing between a future mistake and
+    arbitrary execution.
+
+    object-src must be 'self' rather than 'none'. The AVPlay picture is a hardware plane
+    bound to an <object type="application/avplayer"> that services/player.ts creates, and
+    'none' stops the set binding to it: sound, no picture.
+  -->
+  <tizen:content-security-policy>
+    default-src 'self';
+    script-src 'self';
+    style-src 'self' 'unsafe-inline';
+    img-src * data: blob:;
+    media-src *;
+    connect-src *;
+    object-src 'self';
+    frame-src 'none'
+  </tizen:content-security-policy>
 
   <tizen:setting screen-orientation="landscape" context-menu="disable"
                  background-support="disable" encryption="disable"

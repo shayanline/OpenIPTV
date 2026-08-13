@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+
+# A second push to the same branch makes the first run pointless.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v6
+        with:
+          # The test script runs TypeScript through Node's own type stripping, which is only
+          # on by default from 22.18. Read from .nvmrc so the version lives in one place.
+          node-version-file: .nvmrc
+          cache: npm
+
+      - run: npm ci
+
+      # Lint, typecheck and unit tests, which is what `npm run check` is.
+      - run: npm run check
+
+      - run: npm run build
+
+      # The widget manifest has to be well formed XML or the Tizen CLI will not package it,
+      # and it is a file nothing else parses, so nothing else would notice. It has been
+      # broken in this repository before.
+      - name: Validate the widget manifest
+        run: xmllint --noout public/config.xml
+
+      # The televisions this is built for have no flex gap, so the stylesheet carries a
+      # second set of spacing rules that no browser here ever uses. Without this they would
+      # only be exercised on hardware nobody in CI has, which is to say never.
+      - name: Spacing is the same with and without flex gap
+        run: npm run tv:gap

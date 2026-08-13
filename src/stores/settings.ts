@@ -1,56 +1,65 @@
 import { create } from "zustand";
+import { readJSON, write } from "../services/store";
 
 /**
  * Everything the viewer can change, persisted to localStorage.
  *
- * Fonts are bundled rather than fetched. A large share of this app's audience is inside
- * Iran, where Google Fonts is not reliably reachable, and a webfont that fails to load on
- * a TV leaves the interface in a fallback the layout was never checked against.
+ * Fonts are whatever the device already has. Nothing is bundled: a webfont adds weight to
+ * every launch, and the choice of which script to bundle would be a guess about who is
+ * watching. The families below are generic, so each resolves to something sensible
+ * wherever the app runs, and the device supplies the glyphs for the playlist's language.
  */
 
 export interface FontChoice {
   id: string;
   label: string;
   stack: string;
-  /** True when the file ships inside the widget rather than coming from the system. */
-  bundled?: boolean;
   note?: string;
 }
 
 export const FONTS: FontChoice[] = [
   {
-    id: "oneui",
-    label: "One UI Sans",
-    // system-ui resolves to One UI Sans on a Samsung TV, since it is the Tizen system
-    // font. It covers Latin and Korean only, so Vazirmatn sits behind it for Persian.
-    stack: '"One UI Sans", system-ui, -apple-system, "Segoe UI", Roboto, "Vazirmatn", sans-serif',
-    note: "The TV's own font, matching the rest of One UI",
+    id: "system",
+    label: "System",
+    // system-ui resolves to One UI Sans on a Samsung TV, which is what the rest of the
+    // set is drawn in, and to the platform font everywhere else.
+    stack: 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif',
+    note: "The device's own interface font",
   },
   {
-    id: "vazirmatn",
-    label: "Vazirmatn",
-    stack: '"Vazirmatn", "One UI Sans", system-ui, sans-serif',
-    bundled: true,
-    note: "Designed for Persian, and covers Latin too",
-  },
-  {
-    id: "noto",
-    label: "Noto Sans",
-    stack: '"Noto Sans", "Noto Sans Arabic", system-ui, sans-serif',
-    note: "Wide script coverage where the TV has it",
+    id: "sans",
+    label: "Sans serif",
+    stack: '"Noto Sans", Arial, Helvetica, sans-serif',
+    note: "Widest script coverage where the device has it",
   },
   {
     id: "serif",
     label: "Serif",
-    stack: 'Georgia, "Times New Roman", "Noto Naskh Arabic", serif',
+    stack: '"Noto Serif", Georgia, "Times New Roman", serif',
   },
   {
     id: "mono",
     label: "Monospace",
-    stack: '"SF Mono", Menlo, Consolas, monospace',
+    stack: '"Noto Sans Mono", Menlo, Consolas, monospace',
     note: "Aligns channel numbers neatly",
   },
 ];
+
+/**
+ * What to do with a picture that is not the shape of the screen.
+ *
+ * Live channels arrive in whatever shape the broadcaster sends, and plenty of them are not
+ * sixteen by nine: standard definition feeds, old archive material, and streams whose
+ * encoder has rounded the height to something odd. The names are the viewer's words for it
+ * rather than the platform's, and each maps onto a display mode the TV already has.
+ */
+export const ASPECTS = [
+  { id: "fit", label: "Fit", note: "The whole picture, with bars if it does not fill the screen" },
+  { id: "fill", label: "Fill", note: "Fills the screen, cropping the edges of the picture" },
+  { id: "stretch", label: "Stretch", note: "Fills the screen by distorting the picture" },
+] as const;
+
+export type AspectId = (typeof ASPECTS)[number]["id"];
 
 export const FONT_SIZES = [
   { id: "s", label: "Small", scale: 0.85 },
@@ -59,44 +68,21 @@ export const FONT_SIZES = [
   { id: "xl", label: "Extra large", scale: 1.3 },
 ];
 
-export const LANGUAGES = [
-  { id: "auto", label: "Both, as the playlist provides" },
-  { id: "en", label: "English only" },
-  { id: "fa", label: "Persian only" },
-];
-
 export interface Playlist {
   id: string;
   name: string;
   url: string;
 }
 
-export const BUILT_IN_PLAYLISTS: Playlist[] = [
-  {
-    id: "iran",
-    name: "Iran, everything",
-    url: "https://raw.githubusercontent.com/shayanline/iptv-iran/main/playlists/iran.m3u",
-  },
-  {
-    id: "iran-global",
-    name: "Iran, plays worldwide",
-    url: "https://raw.githubusercontent.com/shayanline/iptv-iran/main/playlists/iran-global.m3u",
-  },
-  {
-    id: "iran-compat",
-    name: "Iran, safest for older TVs",
-    url: "https://raw.githubusercontent.com/shayanline/iptv-iran/main/playlists/iran-compat.m3u",
-  },
-];
-
 interface Settings {
   fontId: string;
   fontSizeId: string;
-  language: string;
   playlists: Playlist[];
   activePlaylistId: string;
   showNumbers: boolean;
   showLogos: boolean;
+  /** How a picture that is not the shape of the screen should be fitted to it. */
+  aspectId: AspectId;
   showClock: boolean;
   resumeLast: boolean;
   panelTimeout: number;
@@ -109,46 +95,59 @@ interface Settings {
   reset: () => void;
   font: () => FontChoice;
   scale: () => number;
-  activePlaylist: () => Playlist;
+  activePlaylist: () => Playlist | undefined;
 }
 
 const KEY = "simpleiptv.settings";
 
+// A fresh install ships with no playlist. There is no neutral one to choose: any list
+// bundled here would be a decision about what somebody in some country should watch, made
+// by the app rather than by them. The first run asks for a URL instead.
 const DEFAULTS = {
-  fontId: "oneui",
+  fontId: "system",
   fontSizeId: "m",
-  language: "auto",
-  playlists: BUILT_IN_PLAYLISTS,
-  activePlaylistId: "iran",
+  playlists: [] as Playlist[],
+  activePlaylistId: "",
   showNumbers: true,
   showLogos: true,
+  aspectId: "fit" as AspectId,
   showClock: true,
   resumeLast: true,
-  panelTimeout: 8,
+  /* Fifteen seconds, not eight. The channel list is read rather than glanced at, and a
+     playlist with two hundred channels in twenty five categories takes longer than eight
+     seconds to find your way around. A menu that closes itself while somebody is still
+     deciding reads as the television interrupting them. */
+  panelTimeout: 15,
   sortAlphabetically: false,
 };
 
+/**
+ * An id no existing playlist is using.
+ *
+ * The clock alone is not enough. It has a resolution of one millisecond, and adding two
+ * playlists within the same millisecond is not a race anyone has to try for: it happens
+ * whenever anything adds two in a row. Two playlists carrying one id is not a cosmetic
+ * problem, because removal filters by id, so removing either removes both, takes the active
+ * playlist with them and drops the app back to its first run screen.
+ */
+function freshId(existing: Playlist[]): string {
+  const used = new Set(existing.map((p) => p.id));
+  const stamp = Date.now().toString(36);
+  let id = `pl-${stamp}`;
+  for (let n = 2; used.has(id); n += 1) id = `pl-${stamp}-${n}`;
+  return id;
+}
+
 function load(): typeof DEFAULTS {
-  try {
-    const raw = localStorage.getItem(KEY);
-    if (!raw) return DEFAULTS;
-    const saved = JSON.parse(raw) as Partial<typeof DEFAULTS>;
-    // Merge rather than replace, so a settings file written by an older version keeps
-    // working when new keys appear.
-    return { ...DEFAULTS, ...saved };
-  } catch {
-    return DEFAULTS;
-  }
+  // Merged rather than replaced, so a settings file written by an older version keeps working
+  // when new keys appear.
+  return { ...DEFAULTS, ...readJSON<Partial<typeof DEFAULTS>>(KEY, {}) };
 }
 
 function persist(state: Settings) {
-  try {
-    const { set: _s, addPlaylist: _a, removePlaylist: _r, updatePlaylist: _u,
-            reset: _re, font: _f, scale: _sc, activePlaylist: _ap, ...data } = state;
-    localStorage.setItem(KEY, JSON.stringify(data));
-  } catch {
-    // A full or disabled store must not stop the app working.
-  }
+  const { set: _s, addPlaylist: _a, removePlaylist: _r, updatePlaylist: _u,
+          reset: _re, font: _f, scale: _sc, activePlaylist: _ap, ...data } = state;
+  write(KEY, JSON.stringify(data));
 }
 
 export const useSettings = create<Settings>((set, get) => ({
@@ -160,17 +159,24 @@ export const useSettings = create<Settings>((set, get) => ({
   },
 
   addPlaylist(name, url) {
-    const playlist = { id: `custom-${Date.now().toString(36)}`, name: name.trim(), url: url.trim() };
-    set({ playlists: [...get().playlists, playlist] });
+    const playlist = { id: freshId(get().playlists), name: name.trim(), url: url.trim() };
+    const first = !get().playlists.length;
+    set({
+      playlists: [...get().playlists, playlist],
+      // The first one added becomes the active one, so adding a playlist is the whole of
+      // first run rather than adding then choosing.
+      activePlaylistId: first ? playlist.id : get().activePlaylistId,
+    });
     persist(get());
   },
 
   removePlaylist(id) {
     const remaining = get().playlists.filter((p) => p.id !== id);
-    if (!remaining.length) return;   // never leave the app with nothing to play
     set({
       playlists: remaining,
-      activePlaylistId: get().activePlaylistId === id ? remaining[0].id : get().activePlaylistId,
+      activePlaylistId: get().activePlaylistId === id
+        ? (remaining[0]?.id ?? "")
+        : get().activePlaylistId,
     });
     persist(get());
   },
