@@ -8,6 +8,7 @@
     "build": "tsc -b && vite build",
     "typecheck": "tsc -b",
     "preview": "vite preview",
+    "icon": "node scripts/icon.mjs",
     "package": "./scripts/package.sh",
     "deploy": "./scripts/deploy.sh",
     "tv": "node scripts/tv/sim.mjs",

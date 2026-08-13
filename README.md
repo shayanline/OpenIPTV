@@ -315,6 +315,11 @@ Packaging needs the Tizen CLI. `dist/` is already a complete widget root, since 
 the CLI performs. `npm run deploy` always rebuilds first, so what lands on the set is what
 is in the working tree.
 
+The icon is generated rather than kept by hand: `public/icon.svg` is the master and
+`npm run icon` redraws `public/icon.png` from it at 512 square, using the same headless
+Chrome the simulator already needs. Every size the set and the store ask for is a downscale
+from that one file, so the vector and the bitmap cannot drift apart.
+
 Three environment variables, all optional, all for when the toolchain is somewhere unusual:
 
 | | |
@@ -355,6 +360,7 @@ src/
 scripts/
   package.sh               build and sign
   deploy.sh                build, install over sdb and launch
+  icon.mjs                 redraw public/icon.png from public/icon.svg
   tv/                      run the app under the TV's measured constraints
   tv/gap-parity.mjs        spacing is the same with and without flex gap
 ```
