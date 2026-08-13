@@ -75,10 +75,16 @@
     //
     // Note it flatters overlay contrast. The readability checks were done against worst
     // case white content, which is the harder direction and not what this is for.
+    //
+    // Shown from the moment it exists, not from the first channel. A set's video plane is
+    // under the browser from boot and is dark until something plays, while this waited for
+    // prepareAsync, so the simulator opened onto the browser's own white paper through the
+    // transparent page: a screen the television cannot produce, and the wrong thing to have
+    // been judging the interface against.
     el.setAttribute(
       "style",
       "position:fixed;top:0;right:0;bottom:0;left:0;z-index:-1;pointer-events:none;" +
-        "display:none;background:#08080a;" +
+        "display:flex;background:#08080a;" +
         "font:500 18px system-ui;color:rgba(255,255,255,.09);letter-spacing:.24em;" +
         "text-transform:uppercase;align-items:flex-end;justify-content:center;" +
         "padding-bottom:24px;box-sizing:border-box;",
@@ -160,8 +166,6 @@
       prepareAsync(ok, fail) {
         guard("prepareAsync");
         const v = video();
-        const el = plane();
-        if (el) el.style.display = "flex";
         if (!v) { fail?.("PLAYER_ERROR_INVALID_STATE"); return; }
 
         listener.onbufferingstart?.();
