@@ -321,7 +321,20 @@ export class Player {
    */
   private tryPlay(video: HTMLVideoElement) {
     video.play().catch((e: unknown) => {
-      if ((e as { name?: string })?.name !== "NotAllowedError") {
+      const name = (e as { name?: string })?.name;
+      /*
+       * An abort is this application's own doing and never news.
+       *
+       * The promise rejects with AbortError when the request is interrupted by a later load
+       * or a pause, which is what tuning away, retrying and pausing all do. Reported as a
+       * fault it was worse than noise: play() clears `failed` for the new attempt, so the
+       * abort from the attempt just torn down arrived first and won the rule that keeps the
+       * first explanation. A channel on a host that never answers timed out, was retried,
+       * and ended up telling the viewer "the stream stopped unexpectedly" with AbortError
+       * underneath, having buried "the TV could not reach this channel's server".
+       */
+      if (name === "AbortError") return;
+      if (name !== "NotAllowedError") {
         this.fail(codeOf(e));
         return;
       }

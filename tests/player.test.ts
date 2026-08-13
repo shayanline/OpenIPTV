@@ -2,6 +2,10 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import assert from "node:assert/strict";
 import { Player, onTizen, type PlayerEvent } from "../src/services/player";
 
+// The browser path loads hls.js on demand. Half a megabyte off the disk is not worth waiting
+// for here, and the one test that goes that way wants the native route anyway.
+vi.mock("hls.js", () => ({ default: { isSupported: () => false } }));
+
 /**
  * The player, which is the riskiest thing in the application and had no tests at all.
  *
@@ -226,6 +230,45 @@ test("a stream that ends is reported, and only once", () => {
   av.prepared?.ok();
   av.listener?.onstreamcompleted?.();
   expect(events.filter((e) => e.type === "ended")).toHaveLength(1);
+});
+
+test("an abort the app caused itself is not reported as a fault", async () => {
+  /*
+   * The browser path, because that is where play() returns a promise at all.
+   *
+   * A channel on a host that never answers is given up on by the watchdog, retried, and the
+   * retry tears the last attempt down: the pending play() then rejects with AbortError. That
+   * arrives after the new attempt has cleared the failure, so it used to win the rule that
+   * keeps the first explanation and replace "could not reach the server" with "the stream
+   * stopped unexpectedly", which is neither true nor any help.
+   */
+  delete (window as unknown as { webapis?: unknown }).webapis;
+  const seen: PlayerEvent[] = [];
+  const browser = new Player((e) => seen.push(e));
+
+  const video = document.createElement("video");
+  // Safari's route, so the test is about play() rather than about hls.js.
+  video.canPlayType = () => "probably";
+  let refuse: (e: unknown) => void = () => {};
+  let asked = 0;
+  video.play = () => new Promise<void>((_, reject) => { asked += 1; refuse = reject; });
+  browser.attach(video);
+
+  browser.play("http://example.invalid/a.m3u8");
+  await vi.advanceTimersByTimeAsync(0);
+  assert.equal(asked, 1, "the element was never asked to play, so nothing is being tested");
+  const aborted = refuse;
+
+  await vi.advanceTimersByTimeAsync(30_000);      // the watchdog names the real reason
+  browser.play("http://example.invalid/a.m3u8");  // the automatic retry, which tears it down
+  aborted(new DOMException("interrupted by a new load request", "AbortError"));
+  await vi.advanceTimersByTimeAsync(0);
+
+  assert.deepEqual(
+    seen.filter((e) => e.type === "error").map((e) => e.code),
+    ["TIMEOUT"],
+  );
+  browser.stop();
 });
 
 test("firmware without the optional calls does not stop a channel starting", () => {
