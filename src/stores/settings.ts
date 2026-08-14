@@ -54,8 +54,8 @@ export const FONTS: FontChoice[] = [
  * rather than the platform's, and each maps onto a display mode the TV already has.
  */
 export const ASPECTS = [
-  { id: "fit", label: "Fit", note: "The whole picture, with bars if it does not fill the screen" },
   { id: "fill", label: "Fill", note: "Fills the screen, cropping the edges of the picture" },
+  { id: "fit", label: "Fit", note: "The whole picture, with bars if it does not fill the screen" },
   { id: "stretch", label: "Stretch", note: "Fills the screen by distorting the picture" },
 ] as const;
 
@@ -110,7 +110,11 @@ const DEFAULTS = {
   activePlaylistId: "",
   showNumbers: true,
   showLogos: true,
-  aspectId: "fit" as AspectId,
+  /* Fill, and it leads the list because it is the default. Almost everything in these
+     playlists is sixteen by nine, and a television that leaves bars around a picture which
+     would have fitted reads as a fault rather than as a choice. Fit is one press away for
+     the feeds that get cropped badly, which are the standard definition ones. */
+  aspectId: "fill" as AspectId,
   showClock: true,
   resumeLast: true,
   /* Fifteen seconds, not eight. The channel list is read rather than glanced at, and a
