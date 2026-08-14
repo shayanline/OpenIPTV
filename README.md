@@ -756,8 +756,8 @@ scripts/
 | Key | Watching | In the channel panel | Searching |
 |:--|:--|:--|:--|
 | Up / Down | Previous and next channel | Move through the list | Between the field and the results |
-| Left | Open the channel panel | Step out to the rail, then to the picture | Move the caret |
-| Right | Open the info panel | Step into the channel list | Move the caret |
+| Left | Open the channel panel | Out to the rail, then out of the panel from a category | Move the caret |
+| Right | Hide the banner | Further in at every stop, and plays the channel at the last one | Move the caret |
 | OK | Pause and resume | Play the highlighted channel | Show the matches, then play one |
 | Return | Open the channel panel | Step back, then offer to close the app | Clear, then leave the search |
 | Ch+ / Ch- | Previous and next channel | Previous and next channel | Previous and next channel |
@@ -767,10 +767,20 @@ scripts/
 | Yellow | Settings | Settings | Settings |
 
 In the title bar, left and right choose between Search and Settings before they leave it, which
-is the same rule as everywhere else: those two keys move within whatever is showing first. Right
-from the last key goes to the categories, so a walk rightwards crosses everything in order,
-Search, Settings, categories, channels. It used to land in the channel column and skip the
-categories, which were then reachable by pressing down and by nothing else.
+is the same rule as everywhere else: those two keys move within whatever is showing first. Both
+edges of the pair then lead to the categories rather than out of the panel, so a walk rightwards
+crosses everything in order, Search, Settings, categories, channels, and leaving the bar leftwards
+lands on the categories a few pixels below rather than closing the whole thing. RETURN is the key
+that closes the panel, as it is everywhere else.
+
+Right keeps going further in at every stop, and at the last column the only thing further in is
+the programme, so it plays the highlighted channel exactly as OK does. That is not a new door:
+choosing a channel closes the panel too, which is what right used to do there on its own.
+
+At the picture, right has nothing to travel to and puts away whatever is on the screen instead. It
+is the pair of the press that raised the banner, since any key the app does not otherwise own
+brings it up. RETURN still does it too and goes on to offer to close the application once the
+screen is clear, so the two are not the same key with the same job.
 
 ## Not there yet
 

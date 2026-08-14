@@ -122,9 +122,12 @@ type View = "watch" | "panel";
  *      there is visibly a list with a highlight in it.
  *   2. OK does the obvious thing where it is pressed. At the picture that is always the
  *      channel list, and on a focused button it is that button.
- *   3. Left and right move within whatever is showing. At the picture with nothing showing,
- *      left goes to the channel list, because that is what is off the left of the screen, and
- *      right goes to the buttons.
+ *   3. Left and right move within whatever is showing, and then one step further in or out of
+ *      it. Left goes towards the picture and right goes away from it: at the picture, left
+ *      opens the channel list, because that is what is off the left of the screen, and right
+ *      has nothing to travel to so it puts away whatever is on screen. In the panel, right
+ *      moves one step further in at every stop and plays the highlighted channel at the last
+ *      one, since the only thing further in than the channel list is the programme.
  *   4. RETURN always goes back. It clears the screen if anything is on it, closes the panel if
  *      the panel is open, and closes the application only when there is nothing left to close.
  *
@@ -137,8 +140,9 @@ type View = "watch" | "panel";
  * picture, including a channel that has failed and including one with a button focused, where
  * channel up leaves the viewer where they were. Whatever has gone wrong, one press moves on.
  *
- * What that costs is that the buttons cannot be reached with down, so they are reached with
- * right instead. What it buys is that there is nothing to learn.
+ * What it costs is that nothing else at the picture may claim up and down, which is why there is
+ * no row of buttons there to be reached with them and why the banner reports rather than offers.
+ * What it buys is that there is nothing to learn.
  */
 
 
@@ -778,10 +782,21 @@ export default function App() {
       switch (code) {
         /*
          * Law 3 at the picture. The channel list is off the left of the screen, so left goes to
-         * it. Nothing is off the right, so Right is not claimed: it falls through to the banner
-         * like any other key, which is a press showing you what you are watching rather than a
-         * press that does nothing.
+         * it. Nothing is off the right, so right has nothing to travel to, and it puts away
+         * whatever is on the screen instead.
+         *
+         * Which makes it the pair of the press that raised it: any key the app does not otherwise
+         * own brings the banner up, and right takes it down again. RETURN still does too, and goes
+         * on to offer to close the application once the screen is clear, so the two are not the
+         * same key with the same job: right only ever means "I have read it, thank you".
+         *
+         * With nothing showing it falls through to the line below the switch and raises the
+         * banner, so the two presses are a toggle rather than one working and the other not.
          */
+        case KEY.RIGHT:
+          if (chrome.showing) { chrome.clear(); return; }
+          break;
+
         case KEY.LEFT: revealPanel(); return;
 
         // Law 2. At the picture, the only question worth a whole screen is what else is on,
@@ -875,6 +890,27 @@ export default function App() {
       if (code !== KEY.UP && code !== KEY.DOWN) return;
     }
 
+    /**
+     * Play whatever the channel column has under the cursor.
+     *
+     * One function because two keys now do it. OK has always meant "the obvious thing here", and
+     * right means it too at the last column, where the only thing further in is the programme.
+     * Written once so the two cannot drift into disagreeing about what a search result is: a
+     * result takes the rail to that channel's category, and a row of a category does not need to.
+     */
+    const chooseChannel = () => {
+      if (searching) {
+        if (column[index]) pickResult(column[index]);
+        return;
+      }
+      const channel = visible[index];
+      if (!channel) return;
+      // Choosing the channel already playing only puts the panel away rather than tearing the
+      // stream down and rebuilding it: see pickChannel.
+      if (channel.id !== current?.id) tuner.start(channel);
+      watch();
+    };
+
     switch (code) {
       case KEY.UP:
         event.preventDefault();
@@ -888,21 +924,28 @@ export default function App() {
         break;
       case KEY.LEFT:
         event.preventDefault();
-        // Off the left edge of the rail is out of the panel altogether, which is the
-        // gesture that opened it, reversed. In the title bar the two keys come first, since
-        // left and right move within whatever is showing before they leave it.
+        // Out of the channel column into the rail, which is the gesture that opened it reversed.
         if (pane === "list") setPane("rail");
+        // Within the title bar first, since left and right move inside whatever is showing
+        // before they leave it.
         else if (cursor === 0 && headerKey === "settings") setHeaderKey("search");
+        /*
+         * And off the first key of the bar into the categories, rather than out of the panel.
+         *
+         * Leaving the application's own two keys by the left edge used to close the whole panel,
+         * which is a lot to happen to somebody who was aiming for the category list a few pixels
+         * below. The bar has no third key to its left, so the only thing left of it is the column
+         * underneath, and that is where left goes.
+         *
+         * It costs the shortcut of closing the panel from up here, and RETURN is the key for that
+         * everywhere else in the application anyway. What it buys is that neither horizontal key
+         * can throw the viewer out of the panel by accident from a row they did not aim for.
+         */
+        else if (cursor === 0) nudgeCursor(1);
         else if (current) watch();
         break;
       case KEY.RIGHT:
         event.preventDefault();
-        /*
-         * Right off the end of the panel closes it, which is the same door being used in the
-         * same direction. The information panel already works that way: right opens it, left
-         * shuts it. Having the channel panel open on left but refuse to close on right made
-         * the two edges of the screen behave by different rules.
-         */
         if (pane === "rail" && cursor === 0 && headerKey === "search") setHeaderKey("settings");
         /*
          * Off the last key of the title bar and into the categories, which is where right
@@ -919,7 +962,20 @@ export default function App() {
          */
         else if (pane === "rail" && cursor === 0) nudgeCursor(1);
         else if (pane === "rail") setPane("list");
-        else if (current) watch();
+        /*
+         * And in the channel column, right plays the row it is on, exactly as OK does.
+         *
+         * It used to close the panel back to the picture, on the reasoning that right off the end
+         * of the panel is the door being used in the same direction. Playing the channel goes
+         * through that same door and takes the viewer somewhere they asked to be rather than back
+         * to what was already on, so the old behaviour is a special case of the new one: choosing
+         * a channel closes the panel too.
+         *
+         * It also means the last column obeys the same rule as everything to its left. Right has
+         * moved one step further into the interface at every stop along the way, and at the end of
+         * it the next step is the programme.
+         */
+        else chooseChannel();
         break;
       case KEY.ENTER:
         event.preventDefault();
@@ -933,16 +989,7 @@ export default function App() {
           // item it left when it has not. moveCursor is what resets the index, so arriving
           // here without having moved keeps the row the viewer was on.
           else setPane("list");
-        } else if (searching) {
-          // A result rather than a row of the category, and it takes the rail with it.
-          if (column[index]) pickResult(column[index]);
-        } else if (visible[index]) {
-          // Choosing a channel means watching it, so the panel gets out of the way at once and
-          // the banner carries the name until the picture arrives. Choosing the channel already
-          // playing only puts the panel away: see pickChannel.
-          if (visible[index].id !== current?.id) tuner.start(visible[index]);
-          watch();
-        }
+        } else chooseChannel();
         break;
       case KEY.BACK:
       case KEY.ESC:

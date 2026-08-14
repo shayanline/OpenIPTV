@@ -70,7 +70,10 @@ export function PlaybackBanner({ channel, position }: {
           { keys: ["\u2191", "\u2193"], label: "Change channel" },
           { keys: ["OK"], label: "All channels" },
           { keys: ["Green"], label: "Favourite" },
-          { keys: ["Return"], label: "Hide this" },
+          /* Two keys, one label, because two keys do it. Right is the shorter reach of the pair
+             and RETURN is the one every other screen uses, so both are taught rather than
+             leaving whichever the viewer tries first to be the one that appears not to work. */
+          { keys: ["Return", "\u2192"], label: "Hide this" },
         ]}
       />
     </div>
