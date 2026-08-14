@@ -49,7 +49,7 @@
     script-src 'self';
     style-src 'self' 'unsafe-inline';
     img-src * data: blob:;
-    media-src *;
+    media-src * blob:;
     connect-src *;
     object-src 'self';
     frame-src 'none'
