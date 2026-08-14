@@ -2,10 +2,10 @@
 /**
  * Prove that the interface is spaced the same with flex gap and without it.
  *
- * `gap` on a flex container is Chromium 84 and the televisions this app is built for run 76,
- * with the simulator's floor profile at 69. So the stylesheet carries a second, margin based
- * set of spacing rules under `.no-flex-gap`, chosen at startup by a measured probe. See the
- * "old engine gaps" section at the foot of styles/app.css.
+ * `gap` on a flex container is Chromium 84, and the 2020 and 2021 televisions this app is
+ * built for run 69 and 76. So the stylesheet carries a second, margin based set of spacing
+ * rules under `.no-flex-gap`, chosen at startup by a measured probe. See the "old engine
+ * gaps" section at the foot of styles/app.css, and scripts/tv/platforms.json for the matrix.
  *
  * Nothing anybody here can open exercises that second set. Every browser on this machine has
  * flex gap, so the rules that only old sets use are the rules nobody ever sees, which is
@@ -28,74 +28,67 @@
  * dependency and no browser automation framework.
  */
 import { spawn } from "node:child_process";
-import { createServer } from "node:http";
-import { readFile } from "node:fs/promises";
-import { existsSync } from "node:fs";
-import { extname, join, resolve } from "node:path";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
+import { mkdtempSync } from "node:fs";
 import { connect, findChrome } from "./cdp.mjs";
+import { serve, walk, compare } from "./harness.mjs";
 
 const ROOT = resolve(import.meta.dirname, "../..");
 const DIST = join(ROOT, "dist");
 const PORT = 4319;
 const CDP_PORT = 9335;
 
-/** Containers that space themselves with flex gap, and so need a fallback. */
-const FLEX_GAP = [
-  ".btn", ".chip", ".gear", ".row", ".splash", ".hints", ".hints.sheet-hints", ".field",
-  ".field-control", ".switch", ".pl", ".pl-main", ".form", ".actions", ".about", ".pad",
-  ".pad-trio", ".picture-state", ".picture-state.failed", ".picture-state-doing",
-  ".pb-stack", ".pb", ".pb-meta", ".dialog-actions",
-];
+/**
+ * The dev-only debug remote, which is excluded and is the only thing that is.
+ *
+ * It is a development tool, the bundler drops it from a production build, and it never runs on
+ * a television, so it is the one part of the interface that may use flex gap without a
+ * fallback. Its stylesheet is not tree shaken, so it is still in the built CSS and has to be
+ * named to be skipped.
+ */
+const DEV_ONLY = /^\.(remote|rk-|keypad|rocker|dp\b)/;
 
-const TYPES = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css",
-                ".svg": "image/svg+xml", ".png": "image/png", ".xml": "application/xml" };
-
-const PLAYLIST = `#EXTM3U
-#EXTINF:-1 tvg-id="a" group-title="News" tvg-quality="FHD",Channel Alpha News
-http://example.invalid/a.m3u8
-#EXTINF:-1 tvg-id="b" group-title="News",Channel Beta With A Longer Name
-http://example.invalid/b.m3u8
-#EXTINF:-1 tvg-id="c" group-title="Sport",Gamma Sport
-http://example.invalid/c.m3u8
-`;
-
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-
-function serve() {
-  const server = createServer(async (req, res) => {
-    const path = req.url.split("?")[0];
-    if (path === "/playlist.m3u") {
-      res.writeHead(200, { "content-type": "audio/x-mpegurl" });
-      return res.end(PLAYLIST);
+/**
+ * Every container that spaces itself with flex gap, read out of the built stylesheet.
+ *
+ * This was a hand written list of twenty four selectors, and the trouble with a hand written
+ * list is the thing it leaves out. `.pane-head` is a flex container with a gap, has been since
+ * it was written, and was not on the list, so on every 2020 and 2021 set the panel header drew
+ * with no spacing and the gate that exists to catch precisely that reported success. A gate
+ * whose coverage is a constant is a gate that silently narrows every time somebody adds a
+ * flex container.
+ *
+ * So it is derived. Any rule that declares a gap and is not `display: grid` needs the margin
+ * fallback, because grid gap has worked since Chromium 66 and flex gap did not arrive until
+ * 84. Comments are stripped first, or the prose at the foot of the stylesheet explaining all
+ * of this would itself be parsed as a rule.
+ */
+function gapContainers(css) {
+  const bare = css.replace(/\/\*[\s\S]*?\*\//g, "");
+  const found = new Set();
+  for (const [, selector, body] of bare.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+    if (!/(^|[;\s])(row-|column-)?gap\s*:/.test(body)) continue;
+    if (/display\s*:\s*grid/.test(body)) continue;
+    for (const one of selector.split(",")) {
+      const trimmed = one.trim();
+      // Simple class selectors only. A descendant or pseudo selector is not something the
+      // simulation below can neutralise cleanly, and none of them carry a gap today.
+      if (!/^\.[a-zA-Z0-9_.-]+$/.test(trimmed)) continue;
+      if (DEV_ONLY.test(trimmed)) continue;
+      found.add(trimmed);
     }
-    const file = join(DIST, path === "/" ? "index.html" : path);
-    try {
-      const body = await readFile(file);
-      res.writeHead(200, { "content-type": TYPES[extname(file)] ?? "application/octet-stream" });
-      res.end(body);
-    } catch {
-      res.writeHead(404).end("not found");
-    }
-  });
-  return new Promise((ok) => server.listen(PORT, () => ok(server)));
+  }
+  return [...found].sort();
 }
 
-/** Every child box of every gap using container, keyed so the two runs can be lined up. */
-const MEASURE = (sels) => `(() => {
-  const out = {};
-  for (const sel of ${JSON.stringify(sels)}) {
-    document.querySelectorAll(sel).forEach((el, i) => {
-      Array.from(el.children).forEach((c, j) => {
-        const r = c.getBoundingClientRect();
-        if (!r.width && !r.height) return;
-        out[sel + "[" + i + "]>" + j] =
-          [r.x, r.y, r.width, r.height].map((v) => Math.round(v * 100) / 100);
-      });
-    });
-  }
-  return JSON.stringify(out);
-})()`;
+const stylesheet = readdirSync(join(DIST, "assets")).find((f) => f.endsWith(".css"));
+if (!stylesheet) {
+  console.error("No stylesheet in dist/assets. Run `npm run build` first.");
+  process.exit(2);
+}
+const FLEX_GAP = gapContainers(readFileSync(join(DIST, "assets", stylesheet), "utf8"));
 
 /** What a set without flex gap sees: the gaps do nothing, and the fallback rules apply. */
 const SIMULATE_OLD = `(() => {
@@ -106,60 +99,6 @@ const SIMULATE_OLD = `(() => {
   document.documentElement.classList.add("no-flex-gap");
   return "ok";
 })()`;
-
-const SEED = `(() => {
-  localStorage.setItem("simpleiptv.settings", JSON.stringify({
-    playlists: [{ id: "pl-1", name: "Parity", url: "/playlist.m3u" }],
-    activePlaylistId: "pl-1", resumeLast: false,
-  }));
-  return "ok";
-})()`;
-
-async function run(cdp, { old }) {
-  const evaluate = async (expression) => {
-    const { result, exceptionDetails } = await cdp.send("Runtime.evaluate",
-      { expression, awaitPromise: true, returnByValue: true });
-    if (exceptionDetails) throw new Error(exceptionDetails.text ?? "evaluate failed");
-    return result.value;
-  };
-  const press = async (key, code) => {
-    for (const type of ["keyDown", "keyUp"]) {
-      await cdp.send("Input.dispatchKeyEvent",
-        { type, key, windowsVirtualKeyCode: code, nativeVirtualKeyCode: code });
-    }
-    await sleep(140);
-  };
-  const clickText = (text) => evaluate(
-    `(() => { const b = [...document.querySelectorAll("button")]
-        .find((e) => e.textContent.trim() === ${JSON.stringify(text)});
-      if (b) b.click(); return !!b; })()`);
-
-  await cdp.send("Page.navigate", { url: `http://127.0.0.1:${PORT}/` });
-  await sleep(1200);
-  await evaluate(SEED);
-  await cdp.send("Page.reload");
-  await sleep(1500);
-  if (old) await evaluate(SIMULATE_OLD);
-
-  const shots = {};
-  const capture = async (name) => { await sleep(320); shots[name] = JSON.parse(await evaluate(MEASURE(FLEX_GAP))); };
-
-  await capture("panel");
-  await evaluate(`document.querySelector(".gear").click()`);
-  await capture("settings.appearance");
-  await clickText("Playlists");        await capture("settings.playlists");
-  await clickText("Add a playlist");   await capture("settings.playlistForm");
-  await clickText("Cancel");           await sleep(200);
-  await clickText("Remove");           await capture("settings.confirm");
-  await clickText("Keep it");          await sleep(200);
-  await clickText("Watching");         await capture("settings.behaviour");
-  await clickText("About");            await capture("settings.about");
-  await press("Escape", 27);
-  await cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: 900, y: 500 });
-  await cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: 905, y: 505 });
-  await capture("pointerPad");
-  return shots;
-}
 
 async function main() {
   if (!existsSync(join(DIST, "index.html"))) {
@@ -172,11 +111,24 @@ async function main() {
     process.exit(2);
   }
 
-  const server = await serve();
+  const server = await serve(DIST, PORT);
   const browser = spawn(chrome, [
     `--remote-debugging-port=${CDP_PORT}`,
-    `--user-data-dir=${join(tmpdir(), "simpleiptv-gap-parity")}`,
+    /*
+     * A profile per run, and it matters more than it looks.
+     *
+     * With a fixed directory, a Chrome already holding it makes the one spawned here detect the
+     * singleton lock, hand over its command line and exit immediately. None of the flags below
+     * would apply, and the debugger would attach to the browser that was already there: a
+     * different engine, a different window, and in the simulator's case none of the throttling
+     * or the heap cap. It also means the two walks no longer share a warm cache between runs,
+     * so a cold profile and a warm one cannot disagree about the layout.
+     */
+    `--user-data-dir=${mkdtempSync(join(tmpdir(), "simpleiptv-gap-"))}`,
     "--headless=new", "--window-size=1920,1080", "--no-first-run", "--no-default-browser-check",
+    // Linux runners have no unprivileged user namespaces, so the sandbox refuses to start and
+    // this gate is a blocking step. See the longer note in engine-parity.
+    "--no-sandbox", "--disable-gpu", "--hide-scrollbars",
   ], { stdio: "ignore" });
 
   let failures = 0;
@@ -185,29 +137,18 @@ async function main() {
     await cdp.send("Runtime.enable");
     await cdp.send("Page.enable");
 
-    const withGap = await run(cdp, { old: false });
-    const without = await run(cdp, { old: true });
+    // The same walk both times, and the same walk engine-parity uses, so a screen added to
+    // one gate is never quietly missing from the other.
+    const withGap = await walk(cdp, PORT, FLEX_GAP);
+    const without = await walk(cdp, PORT, FLEX_GAP, { before: SIMULATE_OLD });
     cdp.close();
 
-    let boxes = 0;
-    for (const screen of Object.keys(withGap)) {
-      for (const [key, a] of Object.entries(withGap[screen])) {
-        const b = without[screen]?.[key];
-        boxes += 1;
-        if (!b) {
-          console.error(`missing  ${screen} ${key}`);
-          failures += 1;
-          continue;
-        }
-        if (a.some((v, i) => Math.abs(v - b[i]) > 0.6)) {
-          console.error(`differs  ${screen} ${key}\n           gap      ${a.join(", ")}` +
-                        `\n           fallback ${b.join(", ")}`);
-          failures += 1;
-        }
-      }
-    }
-    console.log(`\n${boxes} child boxes across ${Object.keys(withGap).length} screens, ` +
-                `${failures} differing`);
+    const { boxes, differing, screens } = compare(withGap, without, {
+      tolerance: 0.6,
+      labels: ["gap", "fallback"],
+    });
+    failures = differing;
+    console.log(`\n${boxes} child boxes across ${screens} screens, ${failures} differing`);
     if (failures) {
       console.error("\nThe margin fallback does not reproduce the gap spacing. The rules are " +
                     "at the foot of src/styles/app.css.");

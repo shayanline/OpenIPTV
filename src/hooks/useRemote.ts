@@ -64,6 +64,38 @@ const REGISTERED = [
 
 interface TizenInputDevice {
   registerKey(name: string): void;
+  getSupportedKeys?: () => { name: string; code: number }[];
+}
+
+/**
+ * Which of the keys asked for were actually granted, remembered for the diagnostics screen.
+ *
+ * A key a model does not have is not an error and must not interrupt anybody, so the
+ * failure is swallowed. Swallowed and forgotten are different things, though: the set of
+ * keys differs by model year and by which remote came in the box, and "the yellow button
+ * does nothing on my television" is unanswerable from here without knowing whether the
+ * platform ever handed it over. So the outcome is kept, and Settings can show it.
+ */
+export interface KeyGrant {
+  name: string;
+  granted: boolean;
+}
+
+let grants: KeyGrant[] = [];
+
+/** What happened the last time keys were registered. Empty off a television. */
+export const keyGrants = (): readonly KeyGrant[] => grants;
+
+/** Every key the model claims to have, which is not the same as the ones this app wants. */
+export function supportedKeys(): string[] {
+  const device = (window as unknown as {
+    tizen?: { tvinputdevice?: TizenInputDevice };
+  }).tizen?.tvinputdevice;
+  try {
+    return device?.getSupportedKeys?.().map((k) => k.name) ?? [];
+  } catch {
+    return [];
+  }
 }
 
 export function registerRemoteKeys() {
@@ -72,13 +104,14 @@ export function registerRemoteKeys() {
   }).tizen;
   const device = tizen?.tvinputdevice;
   if (!device) return;
-  for (const name of REGISTERED) {
+  grants = REGISTERED.map((name) => {
     try {
       device.registerKey(name);
+      return { name, granted: true };
     } catch {
-      // A key the model does not have is not an error worth surfacing.
+      return { name, granted: false };
     }
-  }
+  });
 }
 
 /**

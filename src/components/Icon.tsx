@@ -24,6 +24,15 @@ const paths: Record<string, React.ReactNode> = {
       <path d="M12 16.2v.1" />
     </>
   ),
+  /* A magnifier, single stroke like the other navigational glyphs. Angled down and to the
+     right, which is the way every remote's search glyph points and therefore the one a viewer
+     recognises without reading the word beside it. */
+  search: (
+    <>
+      <circle cx="10.6" cy="10.6" r="6.4" />
+      <path d="M15.3 15.3l4.5 4.5" />
+    </>
+  ),
   /* Stands in for artwork a channel did not supply. A television, because that is what the
      missing thing is a picture of, and it says "nothing to show here" in no language at all. */
   tv: (

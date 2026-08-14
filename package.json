@@ -23,7 +23,9 @@
     "format": "biome format --write",
     "format:check": "biome format",
     "test:watch": "vitest",
-    "tv:gap": "node scripts/tv/gap-parity.mjs"
+    "tv:gap": "node scripts/tv/gap-parity.mjs",
+    "tv:engines": "node scripts/tv/engine-parity.mjs",
+    "tv:budget": "node scripts/tv/sim.mjs --floor --bench --budget"
   },
   "keywords": [],
   "author": "",

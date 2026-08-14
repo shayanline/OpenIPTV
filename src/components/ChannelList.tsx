@@ -5,6 +5,7 @@ import { Icon } from "./Icon";
 import { Logo } from "./Logo";
 import { dropQueuedWarming, LOGO_BOX, warmChain } from "../services/logos";
 import { ScrollIndicator } from "./ScrollIndicator";
+import { SearchField } from "./SearchField";
 import { useWindowed } from "../hooks/useWindowed";
 import { useViewport } from "../hooks/useViewport";
 
@@ -14,14 +15,44 @@ interface Props {
   category: string;
   index: number;
   focused: boolean;
+  /**
+   * The search, when the column is showing results rather than a category.
+   *
+   * Absent the column is a category, present it is an answer to a query, and the difference is
+   * confined to what the header draws and what the empty case says. The rows are the same rows:
+   * a result is a channel, and it keeps its number, its artwork, its favourite star and its
+   * playing marker, which is the whole reason the results live in this column rather than on a
+   * screen of their own.
+   */
+  search?: {
+    query: string;
+    /** How many matched altogether, so the header can own up to a capped list. */
+    total: number;
+    /** Whether the cursor is on the field, which is the row above the first result. */
+    onField: boolean;
+    onQuery: (query: string) => void;
+  };
   playingId: string;
   /** Whether the playing channel is actually running, so the marker can say so honestly. */
   live: boolean;
-  favourites: string[];
+  /**
+   * A set, not an array. Every row asks whether it is a favourite on every render, and
+   * `includes` made that a scan of the whole list per row per press.
+   */
+  favourites: ReadonlySet<string>;
   loading: boolean;
   showNumbers: boolean;
   showLogos: boolean;
   scale: number;
+  /**
+   * How many figures the widest channel number in the playlist has.
+   *
+   * The number column is sized from this rather than from a constant, so the names still line up
+   * whether the playlist has nine channels or twelve thousand. A fixed width was 58 pixels, which
+   * holds four figures at the default text size and clips the fifth, and the playlist this app is
+   * measured against has 12,732 channels in it.
+   */
+  numberDigits: number;
   /** Must be stable, or every row rebuilds on every press. */
   onSelect: (index: number) => void;
 }
@@ -45,7 +76,13 @@ const Row = memo(function Row({
   index: number;
   selected: boolean;
   playing: boolean;
-  /** Whether that channel is actually running, as opposed to paused or frozen. */
+  /**
+   * Whether this row's channel is actually running, as opposed to paused or frozen.
+   *
+   * This row's, not the app's. Passed as the app's, every row took a new prop each time
+   * playback stalled or resumed, so twenty rows re-rendered to change the one dot that
+   * draws it. Only the playing row can show the marker, so only the playing row is told.
+   */
   live: boolean;
   favourite: boolean;
   showNumbers: boolean;
@@ -92,25 +129,41 @@ const Row = memo(function Row({
  */
 export const ChannelList = memo(function ChannelList({
   channels, category, index, focused, playingId, live, favourites, loading,
-  showNumbers, showLogos, scale, onSelect,
+  showNumbers, showLogos, scale, search, numberDigits, onSelect,
 }: Props) {
   const viewport = useRef<HTMLDivElement>(null);
   const height = useViewport(viewport);
-  const win = useWindowed(channels.length, index, height, scale);
+  /*
+   * Clamped, because the search field is index -1 and is not a row.
+   *
+   * The window decides where the list sits from where the cursor is, so a cursor of -1 asked it to
+   * scroll one row above the first one: it obliged, carried `first: -1` in the ref that remembers
+   * where the list was left, and drew every result a row further down than it belongs. It then
+   * stayed that way until the cursor walked far enough down the results to force a recalculation.
+   *
+   * The rail has always done this for the same reason, since its own position zero is the title
+   * bar rather than a category.
+   */
+  const win = useWindowed(channels.length, Math.max(0, index), height, scale);
 
   /**
    * Whether the list has stopped moving.
    *
-   * Holding the key down on the category rail replaces the whole channel list thirty times a
-   * second, and asking for fifteen pieces of artwork each time is work for categories nobody
-   * is going to look at. So while it is still changing the rows show their initials, and the
-   * logos are only asked for once it settles. Anything already in the cache still draws
-   * immediately, so coming back to a category you have seen is instant either way.
+   * This used to be the only thing standing between the rail and fifteen decodes per press:
+   * holding the key down replaced the whole channel list thirty times a second, and each
+   * replacement asked for a screenful of artwork nobody would look at. It is no longer the
+   * front line, because the rail now waits before handing over a new category at all, so
+   * this can only ever see one change per walk instead of eighteen.
+   *
+   * It stays as the backstop, for the changes the rail knows nothing about: a playlist
+   * arriving, a refresh replacing it, favourites gaining or losing a member. Shorter than
+   * it was, since the two delays are now paid one after the other and the second no longer
+   * has eighteen rebuilds to absorb.
    */
   const [settled, setSettled] = useState(true);
   useEffect(() => {
     setSettled(false);
-    const t = window.setTimeout(() => setSettled(true), 180);
+    const t = window.setTimeout(() => setSettled(true), 120);
     return () => window.clearTimeout(t);
   }, [channels]);
 
@@ -142,11 +195,23 @@ export const ChannelList = memo(function ChannelList({
     );
   }, [channels, win.start, win.end, win.slots, showLogos, settled]);
 
-  // Only the rows in view are built. Everything outside is not in the DOM at all, so its
-  // logo is not decoded and its memory is not held.
+  /*
+   * Only the rows in view are built. Everything outside is not in the DOM at all, so its
+   * logo is not decoded and its memory is not held.
+   *
+   * They are built whether or not the panel is on screen, which was tried the other way and
+   * measured worse. Dropping the rows once the panel had finished sliding away took the
+   * document from 187 nodes to 68 while watching, and cost a rebuild of the whole window on
+   * every open: the p95 of opening the panel, walking it and choosing went from 145ms to
+   * between 187 and 203ms across three runs, and the stalls from 29 to 35. Opening the
+   * panel is the commonest thing anybody does with it, and holding a hundred and nineteen
+   * nodes is not worth making it slower. What is left of the idea is the freeze in App,
+   * which stops the closed panel being told about channel changes it cannot show.
+   */
   const rows = [];
   for (let i = win.start; i < win.end; i++) {
     const c = channels[i];
+    const playing = c.id === playingId;
     rows.push(
       <Row
         // Keyed by slot, not by channel, so the row elements are recycled as the list
@@ -156,9 +221,9 @@ export const ChannelList = memo(function ChannelList({
         channel={c}
         index={i}
         selected={i === index}
-        playing={c.id === playingId}
-        live={live}
-        favourite={favourites.includes(c.id)}
+        playing={playing}
+        live={playing && live}
+        favourite={favourites.has(c.id)}
         showNumbers={showNumbers}
         showLogos={showLogos}
         settled={settled}
@@ -170,15 +235,40 @@ export const ChannelList = memo(function ChannelList({
   }
 
   return (
-    <div className={`list pane ${focused ? "focused" : ""}`}>
-      {/* Same header height as the rail, so the two lists start on the same line.
-          It names the category rather than saying "Channels", which said nothing the column
-          full of channels was not already saying: "users should always know exactly where
-          they are within an application". */}
-      {/* The name only. The count was here too, and the rail row it came from is on screen at
-          the same time carrying the same number for the same category. */}
+    <div
+      className={`list pane ${focused ? "focused" : ""}`}
+      /* The number column's width, published to the stylesheet as a count of figures, so the
+         arithmetic that decides how wide the digits are and the rule that draws them cannot
+         disagree. Same reasoning as services/metrics and the row height. */
+      style={{ "--ch-digits": numberDigits } as React.CSSProperties}
+    >
+      {/*
+        * Same header height as the rail, so the two lists start on the same line, and the same
+        * shape: what the column is, and how many are in it.
+        *
+        * The name rather than "Channels", which said nothing a column full of channels was not
+        * already saying: "users should always know exactly where they are within an
+        * application". The count is back, and it is no longer a repetition of the rail's: while
+        * a search is showing, the rail's counts describe categories nobody is looking at, and
+        * this one describes the list actually on screen.
+        */}
       <div className="pane-head">
-        <Text value={category || "Channels"} className="panel-title" />
+        {search
+          ? (
+            <SearchField
+              value={search.query}
+              focused={search.onField}
+              shown={channels.length}
+              total={search.total}
+              onChange={search.onQuery}
+            />
+          )
+          : (
+            <>
+              <Text value={category || "Channels"} className="panel-title" />
+              {!!channels.length && <span className="count">{channels.length}</span>}
+            </>
+          )}
       </div>
       <div className="viewport" ref={viewport}>
         {loading && !channels.length
@@ -193,9 +283,27 @@ export const ChannelList = memo(function ChannelList({
               </div>
             ))
           : <div className="window" style={{ transform: `translateY(${-win.offset}px)` }}>{rows}</div>}
-        {/* No case for an empty Favourites: the row is only in the rail while it has
-            something in it, so there is no way to be standing in an empty one. */}
-        {!loading && !channels.length && <p className="empty">Nothing in this category.</p>}
+        {/*
+          * Nothing to show, said three different ways, because they are three different
+          * situations and one sentence for all of them would be wrong twice.
+          *
+          * A search with nothing typed has not failed, it has not started, so it says what to
+          * do. A search that matched nothing names what was looked for, since a viewer typing
+          * on a television is often typing a letter they did not mean. An empty category is the
+          * remaining case and keeps what it always said.
+          *
+          * There is no case for an empty Favourites: that row is only in the rail while it has
+          * something in it, so there is no way to be standing in an empty one.
+          */}
+        {!loading && !channels.length && (
+          <p className="empty">
+            {!search
+              ? "Nothing in this category."
+              : search.query.trim()
+                ? `No channel matches \u201c${search.query.trim()}\u201d.`
+                : "Type a channel name."}
+          </p>
+        )}
       </div>
       <ScrollIndicator count={channels.length} first={win.first} visible={win.visible} />
     </div>

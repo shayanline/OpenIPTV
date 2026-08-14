@@ -36,6 +36,21 @@ export function remove(key: string): void {
   }
 }
 
+/**
+ * Every key in the store, so something can be swept without knowing its name.
+ *
+ * A copy rather than a live view. Removing entries while walking localStorage by index
+ * renumbers the ones after it, so half of what should have gone survives, which is the sort
+ * of bug that leaves a cache mysteriously half cleared.
+ */
+export function keys(): string[] {
+  try {
+    return Object.keys(localStorage);
+  } catch {
+    return [];
+  }
+}
+
 /** Read and parse, falling back whenever the store or the contents disappoint. */
 export function readJSON<T>(key: string, fallback: T): T {
   try {

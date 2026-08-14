@@ -3,6 +3,7 @@ import { ASPECTS, useSettings } from "../../stores/settings";
 import { useChannels } from "../../stores/channels";
 import { Choice, Row, Toggle } from "./Field";
 import { Confirm } from "../Confirm";
+import { forgetAll } from "../../services/disk";
 
 export function Behaviour({ onAsking }: { onAsking: (asking: boolean) => void }) {
   const s = useSettings();
@@ -63,9 +64,12 @@ export function Behaviour({ onAsking }: { onAsking: (asking: boolean) => void })
           onConfirm={() => {
             // "Everything" has to mean everything. Favourites and the last played channel
             // live in the other store and used to survive a reset, so the app came back
-            // claiming to be freshly installed while still remembering what you liked.
+            // claiming to be freshly installed while still remembering what you liked. The
+            // cached playlists and logos are the third store and had the same problem: an
+            // app with no playlists configured, holding a copy of one.
             s.reset();
             clearPersonal();
+            void forgetAll();
             ask(false);
             void load(true);
           }}

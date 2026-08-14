@@ -133,19 +133,100 @@ html.tizen, html.tizen body, html.tizen #root, html.tizen .app { background: tra
   flex-direction: column;
   height: 100%;
   width: var(--panel-w);
+  /* How far the shadow reaches past the panel. Declared here rather than in the tokens
+     because two rules need it and they must agree: the strip below is this wide, and the
+     slide has to travel this much further to take it off the screen with everything else. */
+  --panel-shadow-w: 104px;
   background: var(--over-video);
-  box-shadow: 32px 0 72px rgba(0, 0, 0, 0.5);
-  transition: transform var(--t-panel) var(--ease-enter), opacity var(--t-fast) linear;
+  transition: transform var(--t-panel) var(--ease-enter);
 }
+/*
+ * The shadow, as a gradient beside the panel rather than a blur around it.
+ *
+ * It was `box-shadow: 32px 0 72px`, which is the same picture and a much worse way to draw
+ * it. A blur that wide has to be rasterised across a strip the height of the screen, and on
+ * the entry sets that showed: with the GPU taken away, so that painting could not hide
+ * behind a laptop's, opening the panel went from a p95 of 145ms to 312ms and from 29 stalls
+ * to 34. It is the only phase in the whole journey that the GPU made any difference to,
+ * which is what says the cost was paint rather than script.
+ *
+ * A linear gradient is a fill. No blur kernel, no sampling, and it is exactly what a one
+ * directional shadow looks like anyway. Placed outside the panel and made unclickable so it
+ * changes nothing about what the panel is or where it ends.
+ */
+.panel::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 100%;
+  width: var(--panel-shadow-w);
+  height: 100%;
+  pointer-events: none;
+  background: linear-gradient(to right, rgba(0, 0, 0, 0.5), rgba(0, 0, 0, 0));
+}
+/*
+ * The panel's title bar: the application's name, and the keys that belong to the application.
+ *
+ * Across the whole panel rather than inside the category column, with a divider under it, which
+ * is how One UI opens a surface: a title line, its actions on the trailing edge, then the
+ * content. It also gives the two keys somewhere to sit as a pair, which a corner of the rail
+ * did not: a second key there lands beside the channel column's heading and reads as though it
+ * belongs to the channels.
+ */
+/*
+ * Its height is a row of the channel list, near enough, and that is the constraint it is built
+ * to. Every pixel here is a pixel the lists do not have: the columns lost most of a channel to
+ * the first version of this bar, which had a 76px minimum on top of 40px of overscan padding.
+ * The keys are 52px tall and the top padding is the set's safe area, which is not negotiable, so
+ * what is left to give is the space underneath, and --s1 is enough to separate a pill from a line.
+ */
+.panel-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex: 0 0 auto;
+  gap: var(--s3);
+  padding: var(--safe-y) var(--s3) var(--s1) var(--safe-x);
+  border-bottom: 1px solid var(--line);
+}
+.panel-keys { display: flex; align-items: center; gap: var(--s2); }
+
+/*
+ * The mark and the name, as one thing.
+ *
+ * Sized from --scale like the text it stands beside, so raising the viewer's text size does not
+ * leave a small logo against large words. 34px against the caption's 20 puts the mark a little
+ * taller than the capital letters, which is where a lockup sits: matched to the x height it reads
+ * as an afterthought, and matched to the whole line it dwarfs the name.
+ */
+.brand { display: flex; align-items: center; gap: var(--s2); min-width: 0; }
+.brand-mark {
+  flex: 0 0 auto;
+  width: calc(34px * var(--scale));
+  height: calc(34px * var(--scale));
+}
+
 /* min-height zero, or the two lists refuse to shrink and push the guide off the bottom. */
 .panel-cols { display: flex; flex: 1; min-height: 0; }
-/* Leaving uses ease in, arriving uses ease out, which is the pairing the motion guidance
-   sets out. Opacity is linear, because it says anything else looks forced. */
+/*
+ * Leaving uses ease in, arriving uses ease out, which is the pairing the motion guidance
+ * sets out.
+ *
+ * No opacity any more. It was fading a surface 1064 pixels wide and the full height of the
+ * screen, over the video plane, at the same moment React was building the list that goes
+ * inside it: two expensive things competing for the frame, one of which was buying nothing.
+ * A drawer that slides out of the screen is already gone when it gets there, so fading it
+ * on the way was describing the movement twice.
+ *
+ * Far enough to take the shadow with it. The strip sits past the panel's right edge, so a
+ * plain -100% parks the panel off screen and leaves its shadow lying across the first
+ * hundred pixels of the picture. Opacity used to hide that, which is a thing worth knowing
+ * before removing an opacity anybody thinks is decorative.
+ */
 .panel.away {
-  transform: translateX(-100%);
-  opacity: 0;
+  transform: translateX(calc(-100% - var(--panel-shadow-w)));
   pointer-events: none;
-  transition: transform var(--t-panel) var(--ease-exit), opacity var(--t-fast) linear;
+  transition: transform var(--t-panel) var(--ease-exit);
 }
 
 .rail, .list {
@@ -153,13 +234,30 @@ html.tizen, html.tizen body, html.tizen #root, html.tizen .app { background: tra
   flex-direction: column;
   height: 100%;
   /* No bottom padding: the key guide below is what separates the lists from the screen edge
-     now, so reserving space here as well left a gap the size of two rows. */
-  padding: calc(var(--safe-y) + var(--s2)) 0 0;
+     now, so reserving space here as well left a gap the size of two rows. The top padding is
+     the divider's clearance rather than the screen's, since the title bar above owns the
+     overscan margin, so it is a fraction of what it was. */
+  padding: var(--s1) 0 0;
   overflow: hidden;
   position: relative;
 }
 .rail { width: var(--rail-w); padding-left: var(--safe-x); }
-.list { width: var(--list-w); }
+/*
+ * The divider between the categories and the channels.
+ *
+ * A border on the column rather than an element of its own, which is one fewer node in the
+ * document and cannot be mistaken for something focusable. One UI separates a navigation column
+ * from the content beside it with exactly this hairline, and until now the two lists were told
+ * apart only by the highlight happening to be in one of them.
+ *
+ * The padding is what keeps the rows off the line. Taken out of the column's width rather than
+ * added to the panel's, so the panel is exactly as wide as it was.
+ */
+.list {
+  width: var(--list-w);
+  padding-left: var(--s3);
+  border-left: 1px solid var(--line);
+}
 
 /*
  * The lists do not scroll. They render the rows in view and slide the block, so this is a
@@ -176,16 +274,35 @@ html.tizen, html.tizen body, html.tizen #root, html.tizen .app { background: tra
   padding-right: var(--s2);
 }
 .window { position: absolute; top: 0; left: 0; right: var(--s2); }
-/* Inside a window the rows are placed by index, not by flow. Everywhere else, such as the
-   settings rail, they stay in normal flow. */
+/*
+ * Inside a window the rows are placed by index, not by flow. Everywhere else, such as the
+ * settings rail, they stay in normal flow.
+ *
+ * The width is stated rather than implied by left and right, and that is the fix for a real
+ * fault on real televisions rather than a preference. An absolutely positioned box with
+ * `left: 0; right: 0; width: auto` is supposed to stretch to its containing block, and it
+ * does, unless it is also a flex container on Chromium 69, where it shrink wraps to its
+ * contents instead. Every set Samsung sold in 2020 runs Chromium 69.
+ *
+ * What that looked like on those sets: every row as wide as its own text, so the quality
+ * badge and the favourite star sat against the channel name instead of at the right hand
+ * edge, the category counts were not in a column, and worst of all the focus highlight,
+ * which is a background on this element, was a short bar around the words rather than the
+ * full width fill the whole interface is built around. The one thing a viewer across a room
+ * has to be able to see was the thing that broke.
+ *
+ * `width: 100%` resolves against the containing block's padding box, and .window has no
+ * padding, so on an engine that never had the fault this is the same number it already
+ * computed. Found by scripts/tv/engine-parity.mjs, which is exactly what it is for.
+ *
+ * No height here. A windowed row is positioned and sized from the hook, as an inline style,
+ * which wins over anything this file could say. Two declarations of the same measurement
+ * where only one is ever read is how the two drift apart.
+ */
 .window .row {
   position: absolute;
   left: 0;
-  right: 0;
-  width: auto;
-  /* No height here. A windowed row is positioned and sized from the hook, as an inline
-     style, which wins over anything this file could say. Two declarations of the same
-     measurement where only one is ever read is how the two drift apart. */
+  width: 100%;
 }
 
 /* Both panes carry a header of the same height, so their lists start on the same line.
@@ -229,10 +346,9 @@ html.tizen, html.tizen body, html.tizen #root, html.tizen .app { background: tra
   letter-spacing: 0.06em;
 }
 
-/* Settings, sharing the header line with the subheader rather than taking a row of its
-   own. That keeps it labelled and reachable while the categories below stay level with
-   the channels beside them. */
-.gear {
+/* Search and Settings, in the panel's title bar. Two of them now, so the rule is named after
+   what they are rather than after the one that used to be alone here. */
+.panel-key {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -247,14 +363,27 @@ html.tizen, html.tizen body, html.tizen #root, html.tizen .app { background: tra
   font-size: var(--t-caption);
   transition: background var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
 }
-.gear .icon { width: 24px; height: 24px; }
-.pane.focused .gear.selected,
-.gear:focus {
+.panel-key .icon { width: 24px; height: 24px; }
+/*
+ * Three states, and the middle one is the interesting one.
+ *
+ * `selected` is the cursor resting on the key and inverts, like every other cursor in the app.
+ * `on` is search being what the channel column is showing, which stays true while the cursor is
+ * down among the results, so the key keeps saying where the list came from. That is the same
+ * relationship the rail's `showing` category has with its column, and it is drawn the same way:
+ * the accent, quietly, rather than a second inverted block competing with the cursor.
+ */
+/* `:focus` is deliberately not here either, for the reason set out above the row cursor: these
+   keys are driven by the remote through `selected`, and a click on one leaves the browser's focus
+   behind on it, which would light it up while the cursor was somewhere else entirely. */
+.panel-key.selected {
   outline: none;
   background: var(--focus);
   color: var(--on-focus);
 }
-.gear.selected { background: var(--surface-3); color: var(--text); }
+.panel-key:focus { outline: none; }
+.panel-key.on { background: var(--control-on); color: var(--on-accent); }
+.panel-key.on.selected { background: var(--focus); color: var(--on-focus); }
 
 /* ------------------------------------------------------------------- focus model ---- */
 /*
@@ -290,11 +419,24 @@ html.tizen, html.tizen body, html.tizen #root, html.tizen .app { background: tra
      means every row in the column is mid-fade at once. The geometry never moves either
      way, so the highlight simply lands where the cursor is. */
 }
-/* Which category the list is showing, and which section settings is on. Marked with a bar
-   and brighter text rather than a filled row, so it stays identifiable, as the Tab UI
-   guidance asks, without competing with the cursor for the eye. */
-.row.showing { color: var(--text); }
-.row.showing::before {
+/*
+ * Which category the list is showing, and which section settings is on. Marked with a bar and
+ * brighter text rather than a filled row, so it stays identifiable, as the Tab UI guidance asks,
+ * without competing with the cursor for the eye.
+ *
+ * Only while the pane does not hold the remote, which is the whole of the mark's usefulness and
+ * was not how it behaved. The channel column follows the rail's cursor by 150ms on purpose, and
+ * this mark follows the column, so walking the rail dragged a blue bar along one row behind the
+ * highlight, appearing and disappearing as the two caught up with each other. It read as a lag in
+ * the interface, which is exactly what it was a picture of.
+ *
+ * There is nothing for it to say while the cursor is in this column: the cursor is already the
+ * answer to "where am I". It earns its place the moment the cursor leaves for the channels, when
+ * "which category are these from" stops being obvious. So it waits until then, and then it is
+ * still, because by then the column has long since caught up.
+ */
+.pane:not(.focused) .row.showing { color: var(--text); }
+.pane:not(.focused) .row.showing::before {
   content: "";
   position: absolute;
   left: 0;
@@ -305,16 +447,40 @@ html.tizen, html.tizen body, html.tizen #root, html.tizen .app { background: tra
   background: var(--accent);
   transform: translateY(-50%);
 }
-/* Inside the focused pane the cursor already says where you are. */
-.pane.focused .row.showing.selected::before { display: none; }
 
-/* Focus last, so it beats every other state a row can be in. */
-.pane.focused .row.selected,
-.row:focus {
+
+/*
+ * The cursor, last, so it beats every other state a row can be in.
+ *
+ * `.row:focus` used to be here beside it and was the cause of two bugs at once, which is what
+ * happens when two things both claim to be the cursor.
+ *
+ * A row is a <button>, so clicking one gives it the browser's own focus, and that focus stays
+ * where it was put. Meanwhile the row elements are recycled as the list scrolls: the element for
+ * a row that has left the view is the element a row arriving into view is drawn with. So a click
+ * left a light fill nailed to a *position* on screen, and the channel it belonged to scrolled
+ * away from underneath it, which is exactly the second bug reported.
+ *
+ * The first bug was the same rule from the other side. Every child of a lit row has its own
+ * colour rule, and all of them are scoped to `.pane.focused .row.selected`: the number, the
+ * count, the quality badge, the placeholder and the playing dot. A row lit by `:focus` alone got
+ * the white fill and none of those, so its channel number stayed the grey it uses on a dark row
+ * and became invisible. Adding `:focus` to five more rules would have hidden the real problem,
+ * which is that DOM focus is not this interface's cursor and must not draw one.
+ *
+ * What the app does own is `selected`, and a click sets it: the row handlers set the index, so a
+ * clicked row is the selected row and lights up for that reason. Nothing is lost by leaving DOM
+ * focus unpainted here. Settings is unaffected, because there focus genuinely is the cursor,
+ * moved geometrically by useSpatialNav over `.btn` and `.chip`, and no `.row` lives inside it.
+ */
+.pane.focused .row.selected {
   outline: none;
   background: var(--focus);
   color: var(--on-focus);
 }
+/* Still no ring, because the cursor above is the feedback and a ring on a row nobody is pointing
+   at is the second cursor this rule exists to prevent. */
+.row:focus { outline: none; }
 .row-label {
   flex: 1;
   min-width: 0;
@@ -356,14 +522,73 @@ html.tizen, html.tizen body, html.tizen #root, html.tizen .app { background: tra
   color: rgba(0, 0, 0, 0.62);
 }
 
+/* ------------------------------------------------------------------------ search ---- */
+/*
+ * The query, in the place the category's name would be.
+ *
+ * A stadium, tonal filled, like every other One UI control that takes input, and it fills the
+ * header rather than sitting in the middle of it so the field is plainly the whole of that line.
+ * The focused state inverts, exactly as a focused row does: one focus language across the app.
+ */
+.search {
+  display: flex;
+  align-items: center;
+  flex: 1;
+  min-width: 0;
+  gap: var(--s2);
+  height: 52px;
+  padding: 0 var(--s2);
+  border-radius: var(--r-pill);
+  background: var(--tonal);
+  color: var(--text-2);
+}
+.search-icon { display: flex; flex: 0 0 auto; }
+.search-icon .icon { width: 24px; height: 24px; }
+/*
+ * The input itself, which has to be told not to look like an input.
+ *
+ * A television has no window chrome and no visible caret worth speaking of at three metres, so
+ * the box, the border and the background all come off and the surrounding stadium is the control.
+ * The text size matches a row's, because it is read from the same distance as the rows under it.
+ */
+.search-field {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: var(--t-label);
+}
+.search-field:focus { outline: none; }
+.search-field::placeholder { color: var(--text-3); }
+/* Inverted while the cursor is on it, so the keyboard's target is as obvious as a selected row.
+   The placeholder has to be told as well, or it keeps a grey that is now on a white fill. */
+.search.focused { background: var(--focus); color: var(--on-focus); }
+.search.focused .search-field::placeholder { color: rgba(0, 0, 0, 0.45); }
+.search.focused .count { background: rgba(0, 0, 0, 0.12); color: rgba(0, 0, 0, 0.62); }
+
 /* ---------------------------------------------------------------------- channel ---- */
+/*
+ * The channel number, left aligned, in a column as wide as the playlist's largest number.
+ *
+ * Both halves of that were wrong. It was right aligned, so in a playlist numbered into four
+ * figures the digits marched away from the names and every row started at a different place,
+ * which is exactly what a fixed column is meant to prevent. And it was 58 pixels wide, which
+ * holds four figures at the default text size and clips the fifth: the playlist this app is
+ * measured against has 12,732 channels in it.
+ *
+ * `--ch-digits` is set on the column from the length of the playlist, so the width is the real
+ * one rather than a guess, and `tabular-nums` is what makes a figure exactly 1ch wide.
+ */
 .ch-number {
   flex: 0 0 auto;
-  width: 58px;
+  width: calc(1ch * var(--ch-digits, 4));
   color: var(--text-3);
   font-size: var(--t-label);
   font-variant-numeric: tabular-nums;
-  text-align: right;
+  text-align: left;
 }
 .pane.focused .row.selected .ch-number { color: rgba(0, 0, 0, 0.5); }
 .ch-logo {
@@ -908,6 +1133,60 @@ input.wrong { border-color: var(--danger); }
   border-radius: var(--r-lg);
   background: #fff;
 }
+
+/* ----------------------------------------------------------------- diagnostics ---- */
+/*
+ * Two columns of facts and a running list of key presses.
+ *
+ * Grid rather than flex, and that is on purpose here rather than by habit: grid gap has
+ * worked since Chromium 66, so this is the one part of the interface that needs no entry in
+ * the margin fallback at the foot of this file. A screen whose whole job is to be readable
+ * on an unfamiliar television should not itself depend on the thing most likely to be
+ * missing on one.
+ */
+.diag-facts {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--s1) var(--s4);
+  margin-top: var(--s2);
+}
+.diag-fact {
+  display: grid;
+  grid-template-columns: 200px 1fr;
+  gap: var(--s2);
+  align-items: baseline;
+  padding: var(--s1) 0;
+  border-bottom: 1px solid var(--surface-2);
+  font-size: var(--t-label);
+}
+.diag-label { color: var(--text-3); }
+.diag-value { color: var(--text); word-break: break-word; }
+
+.diag-heading { margin: var(--s4) 0 var(--s1); font-size: var(--t-title); font-weight: 600; }
+
+.diag-keys {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--s1) var(--s2);
+  margin-top: var(--s2);
+}
+.diag-press {
+  display: grid;
+  grid-template-columns: 90px 1fr;
+  gap: var(--s1);
+  align-items: baseline;
+  padding: var(--s1) var(--s2);
+  border-radius: var(--r-md);
+  background: var(--surface-1);
+  font-size: var(--t-label);
+}
+/* Tabular figures, so a column of key codes lines up and a changed digit is visible. */
+.diag-code {
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+.diag-name { color: var(--text-2); word-break: break-word; }
 
 /* ============================================================ pointer navigation ==== */
 /* Return and Exit for touch and mouse. The input methods guide makes these a requirement,
@@ -1640,7 +1919,20 @@ input.wrong { border-color: var(--danger); }
 /* Rows: every child after the first is pushed off the one before it. */
 .no-flex-gap .btn > * + *,
 .no-flex-gap .chip > * + * { margin-left: var(--s1); }
-.no-flex-gap .gear > * + * { margin-left: var(--s1); }
+.no-flex-gap .panel-key > * + * { margin-left: var(--s1); }
+/* The title bar's two keys, and the field's icon against its input. Both are new spacing and
+   both would be no spacing at all on a 2020 set without a line here. */
+.no-flex-gap .panel-keys > * + * { margin-left: var(--s2); }
+.no-flex-gap .brand > * + * { margin-left: var(--s2); }
+.no-flex-gap .search > * + * { margin-left: var(--s2); }
+.no-flex-gap .panel-bar > * + * { margin-left: var(--s3); }
+/* The panel and settings headers, which were missing from this section and from the hand
+   written list the gate used to work from. Adding them changes nothing today, and that is
+   worth writing down rather than implying: the header is justify-content: space-between with
+   at most two children, so its gap never had anything to do. It is here so that every gap in
+   the stylesheet has a fallback without anybody having to know which ones currently matter,
+   and so that giving the header a third child is not quietly a regression on a 2020 set. */
+.no-flex-gap .pane-head > * + * { margin-left: var(--s2); }
 .no-flex-gap .row > * + * { margin-left: var(--s2); }
 .no-flex-gap .field > * + * { margin-left: var(--s3); }
 .no-flex-gap .pl > * + * { margin-left: var(--s1); }

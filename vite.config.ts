@@ -14,8 +14,16 @@ export default defineConfig({
   base: "./",
   build: {
     outDir: "dist",
-    // 2020 and 2021 sets still run Chromium 76, which predates optional chaining
-    // and nullish coalescing. Targeting es2019 keeps the bundle parseable there.
+    // The oldest engine a supported set runs is Chromium 69, on the 2020 models. 2021 is
+    // 76, and optional chaining and nullish coalescing did not arrive until 80, so es2019
+    // is what keeps the bundle parseable on both. scripts/tv/platforms.json holds the whole
+    // matrix and is the only place it is written down; this comment used to say 76 was the
+    // oldest, which was a year and one engine wrong.
+    //
+    // Syntax only. esbuild lowers `?.` and `??`, and leaves Array.at and Object.hasOwn
+    // exactly where they are, so a method the old engine lacks still ships and still
+    // throws. scripts/tv/engine-parity.mjs is what catches those, by running the built app
+    // in a real Chromium 69.
     target: "es2019",
     // The stylesheet needs the same treatment and does not inherit it: `target` above
     // governs JavaScript only, and left unset the CSS is minified for a modern browser.

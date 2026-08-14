@@ -17,8 +17,20 @@
  * Drawing is unaffected by tainting, so this works whatever the host does.
  */
 
+import * as disk from "./disk";
+import { whenIdle } from "./idle";
+
 /** Enough entries for a long category, and a trivial amount of memory at this size. */
 const LIMIT = 240;
+
+/**
+ * The key a logo is saved under on disk, which is the key it is cached under in memory.
+ *
+ * Prefixed so the sweep in the channel store can tell a logo from a playlist. Deliberately
+ * not swept when a playlist goes: the same channels usually come back, artwork is what takes
+ * longest to reappear, and the budget already bounds it.
+ */
+const diskKey = (key: string) => `logo:${key}`;
 
 /**
  * The box a logo is drawn into, in one place.
@@ -157,6 +169,147 @@ export function dropQueuedWarming() {
 const noFetch = new Set<string>();
 
 /**
+ * Keep the reduced logo, so the next launch does not decode it again.
+ *
+ * The reduced one, not the original, and that is the whole value. The expensive part of a
+ * logo has never been the download, it is the decode: broadcasters host artwork at whatever
+ * size suits them, two thousand pixels square being real, and fifteen of those decoding at
+ * once froze the interface for three and a half seconds. Saving the original would spare the
+ * network and leave that cost exactly where it was, on every launch, forever.
+ *
+ * Re-encoded through a canvas, which means reading pixels back out of one, which is the one
+ * thing tainting forbids. On a television it is never tainted: a packaged Tizen app declares
+ * the origins it may reach in config.xml, so the fetch path in decodeToSize succeeds and the
+ * bitmap came from bytes this app owns. In a desktop browser most hosts refuse that fetch,
+ * the <img> fallback runs, the canvas is tainted and toBlob throws. So the saving works
+ * where it matters and quietly does not where it does not, which is the same trade
+ * decodeToSize already makes and for the same reason.
+ *
+ * PNG, because these are logos: flat colour, hard edges and transparency, all of which PNG
+ * keeps and JPEG ruins. At 76x48 the file is a few kilobytes.
+ */
+/**
+ * Logos encoded and waiting to be written, and the write happens in idle time.
+ *
+ * Saving them inline cost a measurable regression and it is worth recording what it looked
+ * like, because the mistake is an easy one to make twice. Holding the down key inside a
+ * category went from eight stalls to twelve, and unevenly: four runs of the old code gave
+ * 8, 10, 8, 8, and four of the new gave 14, 5, 14, 9. The spread is the tell. A scroll that
+ * crossed rows whose artwork was already saved cost nothing, and one that crossed new rows
+ * paid for a database transaction per logo, on the main thread, while the viewer's thumb was
+ * still on the key.
+ *
+ * Nothing is waiting for these. The logo is already decoded, already in memory and already
+ * on screen; writing it down only matters for the next launch. So it queues, and the queue
+ * drains one at a time in whatever time is going spare, which is the same shape as
+ * warmChain below and for the same reason.
+ */
+/**
+ * A map rather than an array, so an address queued twice is queued once.
+ *
+ * It can be: a logo evicted from the memory cache and then scrolled back to is decoded again,
+ * and without this it would be written again as well.
+ */
+const unsaved = new Map<string, Blob>();
+
+/**
+ * How many encoded logos may be waiting.
+ *
+ * Bounded because they are Blobs, and idle time is not guaranteed to arrive: a viewer holding
+ * the down key gives the browser no idle callbacks at all, and every new row decodes artwork
+ * that then queues. Unbounded, a long walk through a large playlist accumulates every logo it
+ * passed, in memory, on a set whose whole application budget is 120MB.
+ *
+ * The oldest goes when it is full, which is the right one to lose: it has been waiting longest
+ * so it is the most likely to have been written by an earlier pass, and if it has not, all
+ * that happens is the next launch fetches one logo.
+ */
+const MOST_UNSAVED = 64;
+
+/** A drain waiting for idle time. */
+let scheduled: (() => void) | null = null;
+/** A write actually in flight, which is a different thing and used to be conflated. */
+let draining = false;
+
+function queueSave(key: string, blob: Blob): void {
+  if (!unsaved.has(key) && unsaved.size >= MOST_UNSAVED) {
+    const oldest = unsaved.keys().next();
+    if (!oldest.done) unsaved.delete(oldest.value);
+  }
+  unsaved.set(key, blob);
+  scheduleSaves();
+}
+
+/**
+ * One write at a time, which took two flags to actually mean.
+ *
+ * With a single flag cleared at the top of the drain, anything queued while a write was in
+ * flight found it already null and scheduled another drain, so the number of concurrent
+ * database writes was however many logos happened to be decoded during one write. That is
+ * the opposite of the intent: the queue exists so that the set is asked to write to flash
+ * once at a time, in the gaps, rather than in a burst while somebody is pressing a key.
+ */
+function scheduleSaves(): void {
+  if (scheduled || draining) return;
+  scheduled = whenIdle(drainSaves, 3000);
+}
+
+function drainSaves(): void {
+  scheduled = null;
+  const next = unsaved.entries().next();
+  if (next.done) return;
+  const [key, blob] = next.value;
+  unsaved.delete(key);
+
+  draining = true;
+  const done = () => {
+    draining = false;
+    if (unsaved.size) scheduleSaves();
+  };
+  // Both arms, so a rejection cannot leave `draining` stuck true and the queue stalled for
+  // the rest of the session. disk.write is written not to reject, and that is its business.
+  disk.write(diskKey(key), blob).then(done, done);
+}
+
+function keep(key: string, bitmap: ImageBitmap): void {
+  try {
+    const canvas = document.createElement("canvas");
+    canvas.width = bitmap.width;
+    canvas.height = bitmap.height;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    ctx.drawImage(bitmap, 0, 0);
+    // toBlob encodes off the main thread, so the cost here is the drawImage. The write it
+    // hands on is the expensive part, and that is what waits.
+    canvas.toBlob((blob) => {
+      if (blob) queueSave(key, blob);
+    }, "image/png");
+  } catch {
+    // Tainted, or no canvas support. Neither is worth reporting: the logo is on screen, and
+    // all that is lost is having to fetch it again next time.
+  }
+}
+
+/**
+ * A logo saved by an earlier run, decoded at the size it was saved at.
+ *
+ * Which is small, so this is the cheap decode rather than the expensive one, and it is why
+ * saving the reduced version rather than the original was the point.
+ */
+async function fromDisk(key: string): Promise<ImageBitmap | null> {
+  const saved = await disk.read(diskKey(key));
+  if (!(saved instanceof Blob)) return null;
+  try {
+    return await createImageBitmap(saved);
+  } catch {
+    // Saved by a version that wrote something else, or simply corrupt. Drop it so the next
+    // launch does not try again, and fall through to the network.
+    void disk.forget((k) => k === diskKey(key));
+    return null;
+  }
+}
+
+/**
  * Decode straight to the size wanted, never materialising the original.
  *
  * This is the whole trick. Handing an <img> to createImageBitmap means the browser has
@@ -231,8 +384,13 @@ export function shrink(
       if (arrived) return arrived;
       if (eager && !onScreen.has(key)) return null;   // its row is long gone
 
+      // Disk before network. An earlier run already paid for the download and, more to the
+      // point, for reducing it, so this is a small decode of a few kilobytes.
+      const saved = await fromDisk(key);
+      if (saved) { remember(key, saved); return saved; }
+
       const scaled = await decodeToSize(url, width, height);
-      if (scaled) { remember(key, scaled); return scaled; }
+      if (scaled) { remember(key, scaled); keep(key, scaled); return scaled; }
 
       // Nothing scaled arrived, so fall back to letting the browser load it as an image and
       // shrinking afterwards. Costs a full size decode, which is the thing worth avoiding,
@@ -252,6 +410,11 @@ export function shrink(
         resizeQuality: "high",
       });
       remember(key, bitmap);
+      // Saved too, and it will usually fail. This path only runs when the fetch was refused,
+      // which means the pixels came through an <img> from another origin and the canvas keep
+      // uses is tainted. Attempted anyway rather than skipped, because the refusal is the
+      // host's decision and not every host that blocks fetch also lacks CORS headers.
+      keep(key, bitmap);
       return bitmap;
     } catch {
       // A logo that will not load is not worth reporting, and not worth retrying either.

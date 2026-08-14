@@ -156,10 +156,26 @@
       stop() { guard("stop"); release(); state = "IDLE"; log("stop"); },
       setDisplayRect(x, y, w, h) {
         guard("setDisplayRect");
-        // The rect is always in a 1920x1080 space on a real set whatever the panel is, and
-        // the simulator's viewport is that space, so the numbers go straight through.
+        /*
+         * The rect is always in a 1920x1080 space on a real set whatever the panel is, which is
+         * why the application passes those numbers as constants, and normally the simulator's
+         * viewport is that space so they go straight through.
+         *
+         * Under --fit it is not that space: the viewport is whatever window the page is in,
+         * and a plane placed at 1920x1080 inside a window 1512 wide hangs off the right and the
+         * bottom of it. So the rect is scaled into the viewport it is actually being drawn in,
+         * which keeps the picture where the picture would be as a proportion of the screen. That
+         * ratio is 1 in every other mode, so this is arithmetic that changes nothing unless asked.
+         */
+        const sx = window.innerWidth / 1920;
+        const sy = window.innerHeight / 1080;
         const el = plane();
-        if (el) Object.assign(el.style, { left: `${x}px`, top: `${y}px`, width: `${w}px`, height: `${h}px` });
+        if (el) {
+          Object.assign(el.style, {
+            left: `${x * sx}px`, top: `${y * sy}px`,
+            width: `${w * sx}px`, height: `${h * sy}px`,
+          });
+        }
         log("setDisplayRect", x, y, w, h);
       },
       setDisplayMethod(m) { guard("setDisplayMethod"); log("setDisplayMethod", m); },

@@ -1,6 +1,5 @@
 import { memo, useRef } from "react";
 import { Text } from "./Text";
-import { Icon } from "./Icon";
 import { ScrollIndicator } from "./ScrollIndicator";
 import { RAIL_ROW_BASE, useWindowed } from "../hooks/useWindowed";
 import { useViewport } from "../hooks/useViewport";
@@ -8,25 +7,29 @@ import { useViewport } from "../hooks/useViewport";
 /**
  * The category rail.
  *
- * Settings is a single small key in the header rather than a row of its own, so the
- * categories start level with the channels beside them. A full width row pushed the whole
- * rail down and left the two lists out of step, which the checklist's grid alignment rule
- * exists to prevent.
+ * Its own header carries a subheader naming what the column is and how many of them there are,
+ * and nothing else. The application's name and its two keys moved up to the panel's title bar,
+ * which spans both columns: an application level control sitting inside this column made it look
+ * like part of the categories, and there was nowhere to put a second one.
  *
- * The cursor treats it as position zero, above the first category, so it is still reached
+ * What is left is the One UI shape for a list: a quiet subheader, a count, then the rows. The
+ * channel column beside it carries the same shape, and the two subheaders share a line, so the
+ * two lists start level. That is the checklist's grid alignment rule, and it is the reason
+ * nothing here is allowed to grow taller than its neighbour.
+ *
+ * The cursor treats the title bar as position zero, above the first category, so it is reached
  * by pressing up and nothing sits outside the four directional path.
  */
 interface Props {
   categories: { name: string; count: number }[];
   /** Which category the channel list is showing. */
   selected: number;
-  /** Which row the remote is on. Zero is Settings, so a category is index + 1. */
+  /** Which row the remote is on. Zero is the title bar, so a category is index + 1. */
   cursor: number;
   /** So an arriving playlist is not announced as a playlist with nothing in it. */
   loading: boolean;
   focused: boolean;
   scale: number;
-  onSettings: () => void;
   /** Must be stable, or every row rebuilds on every press. */
   onSelect: (index: number) => void;
 }
@@ -67,7 +70,7 @@ const Row = memo(function Row({ name, count, index, selected, showing, top, heig
  * of them, and on entry hardware that walk is not free.
  */
 export const Sidebar = memo(function Sidebar({
-  categories, selected, cursor, loading, focused, scale, onSettings, onSelect,
+  categories, selected, cursor, loading, focused, scale, onSelect,
 }: Props) {
   const viewport = useRef<HTMLDivElement>(null);
   const height = useViewport(viewport);
@@ -96,31 +99,17 @@ export const Sidebar = memo(function Sidebar({
   return (
     <nav className={`rail pane ${focused ? "focused" : ""}`}>
       {/*
-        * The application's name on the left and its Settings key on the right.
+        * What this column is, and how many are in it.
         *
-        * The key used to sit beside a "CATEGORIES" subheader at the far end of the rail,
-        * which put it a few pixels from the channel column's own heading and made it read as
-        * though it belonged to the channels. Paired with the name it plainly belongs to the
-        * application, which is what it opens.
-        *
-        * It stays in the header rather than becoming a row, because checklist 1.3 keeps other
-        * selectable areas away from the top and the bottom of a vertically scrollable list.
+        * "Categories" is a fixed English word and the count beside it is not, which is the same
+        * pairing every row below uses. It is a subheader rather than a title: One UI chunks a
+        * list with one, and it is deliberately quieter than the category name in the column
+        * beside it, because that one names something the viewer chose and this one names the
+        * furniture.
         */}
       <div className="pane-head">
-        <p className="rail-brand">SimpleIPTV</p>
-        <button
-          type="button"
-          className={`gear ${cursor === 0 ? "selected" : ""}`}
-          onClick={onSettings}
-          aria-label="Settings"
-        >
-          <Icon name="settings" />
-          {/* In an element of its own rather than bare, so that it is a flex item the
-              stylesheet can reach. A loose text node becomes an anonymous flex item, which
-              no selector matches, and the margin that stands in for flex gap on the older
-              sets could not be applied to it. */}
-          <span>Settings</span>
-        </button>
+        <p className="panel-title">Categories</p>
+        {!!categories.length && <span className="count">{categories.length}</span>}
       </div>
 
       <div className="viewport" ref={viewport}>

@@ -28,7 +28,36 @@ export function press(code: number) {
 /** Whether the channel panel is open, which the app expresses by removing the away class. */
 export const panelOpen = () => !document.querySelector(".panel")?.classList.contains("away");
 
-export async function mountApp(playlist: string) {
+/**
+ * Let a debounce land.
+ *
+ * The interface deliberately answers some keys in two stages, so that holding one down is
+ * not thirty times the work of pressing it once: the rail cursor moves on the press and the
+ * channel column follows once the pressing stops. A test that asserts on the column has to
+ * wait for the second stage, and one that asserts on the cursor must not.
+ */
+export async function settle(ms = 260) {
+  await act(async () => { await new Promise((r) => setTimeout(r, ms)); });
+}
+
+export interface MountOptions {
+  /** Resume the last watched channel, with the id to remember as having been on. */
+  resume?: string;
+  /**
+   * Whether to wait for the playlist to land before returning.
+   *
+   * Almost everything wants to, and asserts on a running application. The exception is
+   * anything about what the very first render looks like, where waiting is the difference
+   * between "the panel is never open" and "the panel ends up closed", and the second of
+   * those was the old behaviour.
+   */
+  awaitPlaylist?: boolean;
+}
+
+export async function mountApp(
+  playlist: string,
+  { resume, awaitPlaylist = true }: MountOptions = {},
+) {
   vi.resetModules();
   played = [];
 
@@ -56,13 +85,18 @@ export async function mountApp(playlist: string) {
   localStorage.setItem("simpleiptv.settings", JSON.stringify({
     playlists: [{ id: "pl-1", name: "Test", url: "http://list.invalid/a.m3u" }],
     activePlaylistId: "pl-1",
-    resumeLast: false,
+    resumeLast: !!resume,
     panelTimeout: 0,
   }));
+  // Written before the app mounts, because App decides which view to open on during its very
+  // first render by reading this. That is the whole point of it: deciding later meant the
+  // panel opened and was then closed again, in front of the viewer.
+  if (resume) localStorage.setItem("simpleiptv.last", resume);
   vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, text: async () => playlist }));
 
   const { default: App } = await import("../../src/App");
   const view = render(<App />);
+  if (!awaitPlaylist) return view;
   // Let the playlist land.
   await act(async () => { await Promise.resolve(); });
   await act(async () => { await new Promise((r) => setTimeout(r, 0)); });

@@ -22,3 +22,23 @@ export function applyMetrics(): void {
   root.setProperty("--logo-w", `${LOGO_BOX.width}px`);
   root.setProperty("--logo-h", `${LOGO_BOX.height}px`);
 }
+
+/**
+ * A duration token, read out of the stylesheet, in milliseconds.
+ *
+ * The other direction to applyMetrics, and deliberately so rather than for symmetry. Sizes
+ * belong to the code because the code computes with them; motion belongs to CSS because the
+ * reduced motion query rewrites it. Publishing a duration from here would set it as an
+ * inline style on <html>, which outranks every stylesheet rule including that query, so the
+ * one viewer who asked for no motion would get it anyway.
+ *
+ * So where the code has to know how long something takes, it asks rather than restates. The
+ * panel's dormancy is the case: rows stop being drawn once the panel has finished leaving,
+ * and "finished leaving" is whatever the stylesheet says it is, including zero.
+ */
+export function cssMs(name: string): number {
+  const raw = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  const value = Number.parseFloat(raw);
+  if (!Number.isFinite(value)) return 0;
+  return raw.endsWith("ms") ? value : raw.endsWith("s") ? value * 1000 : 0;
+}

@@ -110,11 +110,23 @@ tv.close();
 // ---- this laptop, unthrottled -------------------------------------------------------
 console.log("Measuring this machine...");
 const chrome = findChrome();
+if (!chrome) {
+  // Unchecked, this reached spawn(undefined, ...) and threw something about the argument type
+  // rather than about there being no browser.
+  console.error("No Chrome, Chromium or Edge found in the usual places. Pass --chrome=/path.");
+  process.exit(2);
+}
 const child = spawn(chrome, [
   "--remote-debugging-port=9334",
   `--user-data-dir=${mkdtempSync(join(tmpdir(), "tv-cal-"))}`,
-  "--no-first-run", "--no-default-browser-check", "--headless=new", "about:blank",
+  "--no-first-run", "--no-default-browser-check", "--headless=new", "--no-sandbox",
+  "about:blank",
 ], { stdio: "ignore" });
+/* Registered before anything can throw. Nothing killed this browser on a failure path, and a
+   POSIX child outlives the parent that exited, so an interrupted calibration left a headless
+   Chrome holding port 9334 and its profile behind: the next attempt then attached to that one
+   and measured it instead. */
+process.on("exit", () => { try { child.kill(); } catch { /* already gone */ } });
 
 const local = await connect(9334);
 await local.send("Runtime.enable");

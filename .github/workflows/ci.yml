@@ -13,6 +13,9 @@ concurrency:
 jobs:
   check:
     runs-on: ubuntu-latest
+    # A backstop, not an estimate. Anything here that hangs rather than fails would otherwise
+    # burn the six hour default, and a Chrome that dies mid run is a realistic way to hang.
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5
 
@@ -41,3 +44,80 @@ jobs:
       # only be exercised on hardware nobody in CI has, which is to say never.
       - name: Spacing is the same with and without flex gap
         run: npm run tv:gap
+
+  # ---------------------------------------------------------------------------------
+  # The app, in the actual browser engines Samsung ships.
+  #
+  # A separate job because it downloads a couple of hundred megabytes of Chromium and
+  # takes minutes rather than seconds, and because it is the one thing here that has to
+  # run on Linux: the pinned old builds run there reliably and on a current macOS they
+  # variously segfault, so a developer's laptop gets a best effort and CI gets the truth.
+  #
+  # Two engines, not seven, and engine-parity.mjs argues the case at length. The short
+  # version is that the build targets the oldest and the stylesheet uses nothing newer,
+  # so every year in between runs a strict superset of what the app asks for.
+  # ---------------------------------------------------------------------------------
+  engines:
+    runs-on: ubuntu-latest
+    # Longer, because a new engine is a couple of hundred megabytes to fetch.
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      # Keyed on the resolved snapshot positions, so a new engine in platforms.json fetches
+      # and everything else is already on disk.
+      - name: Cache the pinned engines
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/simpleiptv-engines
+          key: engines-${{ runner.os }}-${{ hashFiles('scripts/tv/platforms.json', 'scripts/tv/engines.lock.json') }}
+
+      - run: npm ci
+      - run: npm run build
+
+      # Nothing throws on a 2020 engine, and the layout lands in the same place there as on
+      # a 2025 one. This is what catches a builtin the old engine lacks, which the type
+      # checker cannot see because the types describe the language rather than the browser,
+      # and which esbuild does not polyfill because it lowers syntax and not methods.
+      - name: Same behaviour on Chromium 69 and 120
+        run: npm run tv:engines
+
+  # ---------------------------------------------------------------------------------
+  # Frame times on the weakest set Samsung has sold since 2020.
+  #
+  # One budget, on the floor, because everything newer is faster. Allowed to fail the
+  # build: the throttle is a ratio between two machines and a CI runner is not the
+  # machine it was calibrated against, so this is a regression alarm rather than an
+  # absolute measurement. Read the numbers, do not merge on the tick alone.
+  # ---------------------------------------------------------------------------------
+  budget:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+
+      # No playlist argument any more, and that is a fix rather than a tidy up.
+      #
+      # It used to be passed here because the simulator only knew the playlist that happened to
+      # be in its Chrome profile, and a fresh runner has no profile: the app came up on its first
+      # run screen, the readiness check refused to measure it, and this job exited 2 on every
+      # single run. Being continue-on-error, the workflow stayed green and the budget was never
+      # once evaluated in CI.
+      #
+      # The harness now owns the playlist. It fetches iptv-org's index, serves it locally and
+      # asserts it into the profile's settings every run, so a fresh runner and a laptop measure
+      # the same 12,732 channels and neither needs telling.
+      - name: Within the floor profile's budget
+        run: npm run tv:budget

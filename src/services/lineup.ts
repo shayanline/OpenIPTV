@@ -23,6 +23,24 @@ export const FAVOURITES = "Favourites";
 export const wrap = (index: number, length: number) =>
   length < 1 ? 0 : ((index % length) + length) % length;
 
+/**
+ * Where the cursor in the channel column lands, with or without a search field above the rows.
+ *
+ * The field is index -1, so a searched column is a ring of `count + 1` places and a category is a
+ * ring of `count`. Expressed by shifting the whole thing up by one before wrapping and back down
+ * afterwards, which is the only way to wrap a range that starts below zero without a special case
+ * at each end. The special cases are what this replaces: they had the field reachable by pressing
+ * up from the first row and unreachable from the last, so a viewer at the bottom of a long list
+ * of results had to walk back up through all of them to change what they had typed.
+ *
+ * Wrapping at all, rather than stopping, because the rows below it wrap: the column is one list
+ * to walk whether or not a keyboard is sitting on top of it.
+ */
+export function stepColumn(index: number, delta: number, count: number, withField: boolean) {
+  if (!withField) return wrap(index + delta, count);
+  return wrap(index + 1 + delta, count + 1) - 1;
+}
+
 export interface ChannelList {
   name: string;
   channels: Channel[];

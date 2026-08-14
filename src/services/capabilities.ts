@@ -8,9 +8,10 @@
  * Whether `gap` does anything on a flex container.
  *
  * It arrived for grid in Chromium 66 and for flex only in 84. The televisions this app is
- * built for sit between those two: Chromium 76 on the 2020 and 2021 sets, and 69 at the
- * floor the simulator measures against. On those, every flex gap in the stylesheet is parsed,
- * accepted and then ignored, so the interface draws with no spacing anywhere.
+ * built for sit between those two: Chromium 69 on the 2020 sets, 76 on the 2021 ones, and
+ * 85 on 2022, which is the first year that has it. On the older ones every flex gap in the
+ * stylesheet is parsed, accepted and then ignored, so the interface draws with no spacing
+ * anywhere. scripts/tv/platforms.json holds the whole matrix.
  *
  * `@supports (gap: 1px)` cannot tell them apart, because it asks whether the property and
  * value are understood and they are, for grid. The only honest test is to lay two things out

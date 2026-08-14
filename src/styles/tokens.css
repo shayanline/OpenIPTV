@@ -145,9 +145,23 @@
    * channel name on one. 1064 of 1920 leaves 856 of picture, where the previous 1224 left
    * 696. Checklist 1.7 asks for the total information on screen to be reduced.
    */
+  /*
+   * The third term used to be --s6 and belonged to nothing.
+   *
+   * 424 and 576 make 1000, the panel was 1064, and the 64 pixels between them were a strip of
+   * panel background with no content in it: visible on screen as dead space down the right hand
+   * side, and measurable as the channel column ending at 1000 while its own surface carried on to
+   * 1064. Nothing referred to it, so nothing was using it.
+   *
+   * The width is now the two columns plus a stated margin, and the columns have the difference.
+   * 32 here plus the window's own 16 pixel inset puts the last pixel of a row 48 from the panel's
+   * edge, which is --safe-x: the trailing margin is the same overscan allowance as the leading one
+   * rather than a number that happened to be left over. The panel is still 1064 of 1920, and the
+   * channel names have 32 more pixels before they have to truncate.
+   */
   --rail-w: 424px;
-  --list-w: 576px;
-  --panel-w: calc(var(--rail-w) + var(--list-w) + var(--s6));
+  --list-w: 608px;
+  --panel-w: calc(var(--rail-w) + var(--list-w) + var(--s4));
 
   /* Type scale. The TV guidelines set a floor for legibility at distance and ask for line
      spacing of 1.2 to 1.4. --scale is the viewer's text size preference. */

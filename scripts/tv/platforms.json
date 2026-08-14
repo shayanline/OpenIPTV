@@ -1,0 +1,100 @@
+{
+  "$comment": [
+    "Samsung's published engine matrix, in one place, because it was in three and two of",
+    "them were wrong. vite.config.ts and services/capabilities.ts both said the 2020 sets",
+    "run Chromium 76. They run 69. Only floor.json had it right, and a fact stated three",
+    "times is a fact that drifts, which is the same reasoning that moved the row height into",
+    "services/metrics.",
+    "",
+    "Everything here is quoted from the Web Engine Specifications page, not inferred. The",
+    "hardware numbers are not here, because Samsung does not publish them: see floor.json.",
+    "",
+    "'arrives' lists the things an engine gained that the one below it lacks, restricted to",
+    "what this application could plausibly want. It is the answer to 'can we use X yet',",
+    "which otherwise gets answered from memory."
+  ],
+  "source": "https://developer.samsung.com/smarttv/develop/specifications/web-engine-specifications.html",
+  "checked": "2026-08-13",
+  "supportedFrom": "5.5",
+  "platforms": [
+    {
+      "tizen": "5.5",
+      "year": 2020,
+      "chromium": 69,
+      "chromiumFull": "69.0.3497.106",
+      "userAgent": "Mozilla/5.0 (SMART-TV; LINUX; Tizen 5.5) AppleWebKit/537.36 (KHTML, like Gecko) 69.0.3497.106.1/5.5 TV Safari/537.36",
+      "snapshotNear": 576753,
+      "floor": true,
+      "arrives": [],
+      "lacks": [
+        "flex gap (Chromium 84), which is why capabilities.ts probes for it",
+        "min(), max() and clamp() (79)",
+        "optional chaining and nullish coalescing (80), which the es2019 build target lowers",
+        "inset (87), aspect-ratio (88), :focus-visible (86)",
+        "String.matchAll (73), Object.fromEntries (73), Array.at (92), String.replaceAll (85)",
+        "queueMicrotask (71), which React feature detects and falls back to a Promise for"
+      ]
+    },
+    {
+      "tizen": "6.0",
+      "year": 2021,
+      "chromium": 76,
+      "chromiumFull": "76.0.3809.146",
+      "userAgent": "Mozilla/5.0 (SMART-TV; LINUX; Tizen 6.0) AppleWebKit/537.36 (KHTML, like Gecko) 76.0.3809.146/6.0 TV Safari/537.36",
+      "snapshotNear": 681094,
+      "arrives": ["String.matchAll", "Object.fromEntries", "queueMicrotask", "Promise.allSettled"]
+    },
+    {
+      "tizen": "6.5",
+      "year": 2022,
+      "chromium": 85,
+      "chromiumFull": "85.0.4183.93",
+      "userAgent": "Mozilla/5.0 (SMART-TV; LINUX; Tizen 6.5) AppleWebKit/537.36 (KHTML, like Gecko) 85.0.4183.93/6.5 TV Safari/537.36",
+      "snapshotNear": 800218,
+      "arrives": [
+        "optional chaining and nullish coalescing",
+        "min(), max(), clamp()",
+        "flex gap",
+        ":focus-visible",
+        "String.replaceAll"
+      ]
+    },
+    {
+      "tizen": "7.0",
+      "year": 2023,
+      "chromium": 94,
+      "chromiumFull": "94.0.4606.31",
+      "userAgent": "Mozilla/5.0 (SMART-TV; LINUX; Tizen 7.0) AppleWebKit/537.36 (KHTML, like Gecko) 94.0.4606.31/7.0 TV Safari/537.36",
+      "snapshotNear": 911515,
+      "arrives": ["inset", "aspect-ratio", "Array.at", "Object.hasOwn"]
+    },
+    {
+      "tizen": "8.0",
+      "year": 2024,
+      "chromium": 108,
+      "chromiumFull": "108.0.5359.1",
+      "userAgent": "Mozilla/5.0 (SMART-TV; LINUX; Tizen 8.0) AppleWebKit/537.36 (KHTML, like Gecko) 108.0.5359.1/8.0 TV Safari/537.36",
+      "snapshotNear": 1067848,
+      "arrives": [":has()", "container queries", "Array.findLast"]
+    },
+    {
+      "tizen": "9.0",
+      "year": 2025,
+      "chromium": 120,
+      "chromiumFull": "120.0.6099.5",
+      "userAgent": "Mozilla/5.0 (SMART-TV; LINUX; Tizen 9.0) AppleWebKit/537.36 (KHTML, like Gecko) 120.0.6099.5/9.0 TV Safari/537.36",
+      "snapshotNear": 1217362,
+      "ceiling": true,
+      "arrives": ["nesting", "text-wrap: balance", "Array.toSorted"]
+    },
+    {
+      "tizen": "10.0",
+      "year": 2026,
+      "chromium": 130,
+      "chromiumFull": "130.0.6723.44",
+      "userAgent": "Mozilla/5.0 (SMART-TV; LINUX; Tizen 10.0) AppleWebKit/537.36 (KHTML, like Gecko) 130.0.6723.44/10.0 TV Safari/537.36",
+      "snapshotNear": 1356013,
+      "arrives": ["@starting-style", "field-sizing"]
+    }
+  ]
+}

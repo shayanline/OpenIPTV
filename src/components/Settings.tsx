@@ -5,14 +5,16 @@ import { KeyGuide } from "./KeyGuide";
 import { About } from "./settings/About";
 import { Appearance } from "./settings/Appearance";
 import { Behaviour } from "./settings/Behaviour";
+import { Diagnostics } from "./settings/Diagnostics";
 import { Playlists } from "./settings/Playlists";
 
-type Section = "appearance" | "playlists" | "behaviour" | "about";
+type Section = "appearance" | "playlists" | "behaviour" | "diagnostics" | "about";
 
 const SECTIONS: { id: Section; label: string }[] = [
   { id: "appearance", label: "Appearance" },
   { id: "playlists", label: "Playlists" },
   { id: "behaviour", label: "Watching" },
+  { id: "diagnostics", label: "Diagnostics" },
   { id: "about", label: "About" },
 ];
 
@@ -178,6 +180,7 @@ export function Settings({ onClose }: { onClose: () => void }) {
         {section === "appearance" && <Appearance />}
         {section === "playlists" && <Playlists onAsking={ask} />}
         {section === "behaviour" && <Behaviour onAsking={ask} />}
+        {section === "diagnostics" && <Diagnostics />}
         {section === "about" && <About />}
       </div>
     </div>
