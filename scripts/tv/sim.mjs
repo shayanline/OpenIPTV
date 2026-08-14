@@ -44,6 +44,7 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { cpus, arch, loadavg } from "node:os";
 import { connect, findChrome, arg, has, factor } from "./cdp.mjs";
+import { LAUNCH_MARKS, LAUNCH_DEADLINE_MS, launchWatcher } from "./launch-marks.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const read = (name) => JSON.parse(readFileSync(join(here, name), "utf8"));
@@ -746,7 +747,18 @@ await cdp.send("Page.addScriptToEvaluateOnNewDocument", {
    * after scrolling a list, and the two scroll phases came out anywhere between 2 and 9 stalls
    * against an allowance of 5 depending on it.
    */
-  source: `try {
+  source: `(function () { try {
+    /*
+     * Nothing to seed on a document that cannot hold an application.
+     *
+     * This script runs on every new document, and the launch measurement goes via about:blank
+     * on purpose, where the origin is opaque and every storage access throws SecurityError.
+     * Caught by the handler at the foot of this script, that printed "could not seed a
+     * playlist" on every single run: a harness crying wolf about the one thing it has to be
+     * trusted on, from a page with no app in it. Two of them, in fact, since sessionStorage
+     * and localStorage each throw in turn as the guards are added one at a time.
+     */
+    if (location.protocol === "about:" || location.protocol === "data:") return;
     var KEY = "simpleiptv.settings";
     var settings = {};
     try { settings = JSON.parse(localStorage.getItem(KEY)) || {}; } catch (e) { settings = {}; }
@@ -761,13 +773,20 @@ await cdp.send("Page.addScriptToEvaluateOnNewDocument", {
     if (${measuring}) {
       settings.panelTimeout = 0;
       settings.showClock = false;
-      if (!sessionStorage.getItem("sim.startedClean")) {
-        sessionStorage.setItem("sim.startedClean", "1");
-        localStorage.removeItem("simpleiptv.last");
-      }
+      /* Its own try, because this script runs on every new document and about:blank has an
+         opaque origin where sessionStorage throws SecurityError. Inside the outer try that
+         threw before the playlist was written, and every run opened with "could not seed a
+         playlist" from a document that has no application in it, which is a harness crying
+         wolf about the one thing it must be trusted on. */
+      try {
+        if (!sessionStorage.getItem("sim.startedClean")) {
+          sessionStorage.setItem("sim.startedClean", "1");
+          localStorage.removeItem("simpleiptv.last");
+        }
+      } catch (e) { /* no storage here, so there is no last channel to forget either */ }
     }
     localStorage.setItem(KEY, JSON.stringify(settings));
-  } catch (e) { console.log("[tv] could not seed a playlist", e); }`,
+  } catch (e) { console.log("[tv] could not seed a playlist", e); } })();`,
 });
 
 cdp.on("Runtime.consoleAPICalled", ({ type, args }) => {
@@ -1078,98 +1097,41 @@ if (has("bench") || has("profile")) {
    * interface appearing and the rows arriving, which is the playlist being read off flash and
    * parsed. Neither of those is a mystery and neither is measured anywhere else.
    */
-  const LAUNCH = {
-    /*
-     * The engine having fetched, compiled and run the bundle, before the app has done anything.
-     *
-     * Here to make the rest attributable. Without it, a first paint that moves from 700ms to
-     * 2400ms could be the bundle getting bigger, the engine being busy, or the application
-     * doing something before it draws, and those have nothing in common except the symptom.
-     * With a module script, DOMContentLoaded is the point the module finished executing, so
-     * this is the engine's share and everything after it is ours.
-     */
-    "the bundle ran": {
-      find: "(performance.getEntriesByType('navigation')[0] || {}).domContentLoadedEventEnd",
-      allowed: 1500,
-    },
-    /*
-     * The browser's own answer rather than ours, since it is the only one that knows when it
-     * actually put ink on the screen.
-     *
-     * It returns the entry's own timestamp, which is the whole reason a test may return a
-     * number at all. Timed like the others, by noting when the loop first saw it, first paint
-     * came out *after* the interface it must precede: the entry only appears in the timeline
-     * once the frame has been presented, and the loop then needs a frame of its own to look,
-     * so a 600ms paint was reported as 1100ms. Two marks in the wrong order is the kind of
-     * result that gets a measurement disbelieved as a whole, quite rightly.
-     */
-    "first paint": {
-      find: "(performance.getEntriesByType('paint')"
-        + ".filter(function (e) { return e.name === 'first-contentful-paint'; })[0] || {})"
-        + ".startTime",
-      allowed: 1600,
-    },
-    "the interface": { find: "!!document.querySelector('#root *')", allowed: 2000 },
-    // `.window .row` is a real channel, not the eight skeletons: those are drawn straight
-    // into the viewport, so a mark on `.row` alone would report the placeholder as the list
-    // and hide the whole of the wait it is standing in for.
-    "the channel rows": { find: "!!document.querySelector('.window .row')", allowed: 5800 },
-    "the channel named": {
-      find: "!!(document.querySelector('.pb-title') || {}).textContent",
-      allowed: 6200,
-    },
+  /*
+   * What each mark is allowed to cost on the floor. The marks themselves are defined in
+   * launch-marks.mjs, because on-set.mjs measures the same five on a real television, where
+   * these allowances mean nothing: they are this profile's, about a third above the worst of
+   * three quiet rounds.
+   */
+  const LAUNCH_ALLOWED = {
+    "the bundle ran": 1500,
+    "first paint": 1600,
+    "the interface": 2000,
+    "the channel rows": 5800,
+    "the channel named": 6200,
   };
 
-  /**
-   * Long enough that a slow launch is reported as slow rather than as absent.
-   *
-   * A mark that never arrives is a failure, so this only decides how long to wait before
-   * calling it one. Thirty seconds against a measured two is deliberately far out: the
-   * interesting failure is a mark that cannot happen at all, and giving a merely slow launch
-   * room to finish is what keeps those two apart.
+  /*
+   * An allowance for every mark and a mark for every allowance, or this table quietly stops
+   * applying the day a mark is renamed. The same rule the journey allowances are held to
+   * below, and the reason both exist is that a gate which cannot fail is not a gate.
    */
-  const LAUNCH_DEADLINE_MS = 30000;
-
-  /**
-   * Watch for each of them, in the page, from the first frame of the document.
-   *
-   * It has to be installed before the navigation rather than after it, which is the whole
-   * reason this is a script on the new document and not a poll from here: by the time a
-   * command from this process could arrive, first paint has already happened and the answer
-   * would be however long the round trip took.
-   *
-   * A test answers with a number to be timed at that number, and with anything else truthy to
-   * be timed now. Everything the document can be asked about is a "now": the row either exists
-   * this frame or it does not. Anything the browser timed itself has to be read from the
-   * browser, or the mark reports when this loop looked rather than when the thing happened.
-   *
-   * Written in ES5 because it is inlined into a page pretending to be Chromium 69, and while
-   * the engine underneath is whatever Chrome is installed, matching the pretence costs
-   * nothing. No try/catch either: a selector that has been renamed out of the app should stop
-   * the loop dead and report "never", not quietly retry until the deadline and read as a slow
-   * launch.
-   */
-  const watcher = `(function () {
-    var tests = [${Object.entries(LAUNCH)
-      .map(([label, { find }]) => `[${JSON.stringify(label)}, function () { return ${find}; }]`)
-      .join(",\n      ")}];
-    var marks = {};
-    window.__launch = { marks: marks, done: false };
-    function tick() {
-      for (var i = tests.length - 1; i >= 0; i--) {
-        var answer = tests[i][1]();
-        if (answer) {
-          marks[tests[i][0]] = Math.round(
-            typeof answer === "number" ? answer : performance.now(),
-          );
-          tests.splice(i, 1);
-        }
-      }
-      if (tests.length) requestAnimationFrame(tick);
-      else window.__launch.done = true;
+  const marksWithoutAllowance = Object.keys(LAUNCH_MARKS)
+    .filter((label) => LAUNCH_ALLOWED[label] === undefined);
+  const allowancesWithoutMark = Object.keys(LAUNCH_ALLOWED)
+    .filter((label) => LAUNCH_MARKS[label] === undefined);
+  if (marksWithoutAllowance.length || allowancesWithoutMark.length) {
+    console.error("The launch marks and their allowances have drifted apart:");
+    if (marksWithoutAllowance.length) {
+      console.error(`  no allowance for: ${marksWithoutAllowance.join(", ")}`);
     }
-    requestAnimationFrame(tick);
-  })();`;
+    if (allowancesWithoutMark.length) {
+      console.error(`  no such mark: ${allowancesWithoutMark.join(", ")}`);
+    }
+    process.exit(2);
+  }
+
+  const watcher = launchWatcher();
 
   /**
    * Start the application again, and time what the viewer waits for.
@@ -1434,7 +1396,7 @@ if (has("bench") || has("profile")) {
 
   const marks = await launch();
   console.log(`\n  ${"launch".padEnd(22)}${"ms".padStart(8)}`);
-  for (const label of Object.keys(LAUNCH)) {
+  for (const label of Object.keys(LAUNCH_MARKS)) {
     console.log(`  ${label.padEnd(22)}${String(marks[label] ?? "never").padStart(8)}`);
   }
   console.log("  a relaunch, with the last channel known, which is what a launch is");
@@ -1623,7 +1585,7 @@ if (has("bench") || has("profile")) {
    * finished starting. Both mean the launch was not measured, and the whole reason this
    * section exists is that an unmeasured launch has been free to get a second slower.
    */
-  for (const [label, { allowed }] of Object.entries(LAUNCH)) {
+  for (const [label, allowed] of Object.entries(LAUNCH_ALLOWED)) {
     const at = marks[label];
     if (at === undefined) {
       failures.push(`${label}: never happened within ${LAUNCH_DEADLINE_MS / 1000}s, `

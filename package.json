@@ -25,7 +25,8 @@
     "test:watch": "vitest",
     "tv:gap": "node scripts/tv/gap-parity.mjs",
     "tv:engines": "node scripts/tv/engine-parity.mjs",
-    "tv:budget": "node scripts/tv/sim.mjs --floor --bench --budget"
+    "tv:budget": "node scripts/tv/sim.mjs --floor --bench --budget",
+    "tv:on-set": "node scripts/tv/on-set.mjs"
   },
   "keywords": [],
   "author": "",

@@ -169,6 +169,70 @@ particular machines, so it stops being true if either changes: a different lapto
 upgrade that moves the set to a newer Chromium, or a Chrome release here that shifts the baseline.
 The profile records what it measured against and `npm run tv` says so when that no longer matches.
 
+## On the set itself
+
+Everything above measures a laptop pretending to be a television. `npm run tv:on-set` measures
+the television, over sdb, through the web inspector:
+
+```bash
+npm run tv:on-set                                   # launch marks, then the interface at rest
+npm run tv:on-set -- --stream=https://host/x.m3u8   # and what a picture costs
+npm run tv:on-set -- --tv=192.168.0.107 --seconds=20
+```
+
+It exists because the simulator cannot answer three questions and never will. Its picture is
+always hls.js, so every playback number it prints comes from the wrong engine. Its CPU is a clock
+divider on one thread rather than silicon. And its AVPlay is a shim that agrees with whatever the
+app asks, where the real one has opinions: it refuses `blob:` and `data:` URLs, it will not read a
+local playlist at all, and it keeps `EXT-X-MEDIA-SEQUENCE` in a signed 32 bit integer.
+
+What it reports, in one run against a 2025 set (Tizen 9.0, Chromium 120, four cores, 2GB):
+
+```
+  launch, on a relaunch with the playlist already cached
+    the bundle ran            70ms
+    first paint              315ms
+    the interface            200ms
+    the channel rows         200ms
+    the channel named        200ms
+
+  at rest, nothing playing        9% of one core, median frame 17ms
+  playing, via AVPlay            25% of one core, playhead moved 10081ms in 10s
+```
+
+Marks sharing a value happened inside one frame, which the run says out loud so three identical
+numbers do not read as a broken harness. The launch is a relaunch, so V8's code cache is warm and
+the bundle's compile cost is understated: a genuinely cold start cannot be instrumented this way,
+because the inspector only exists once the app is already running.
+
+The playback phase also reports the manifest before asking the player to read it, which turns a
+stall into an explanation:
+
+```
+  the manifest
+    651688 bytes, 3600 segments, 0 variants listed
+    media sequence 1786136377908738  OVER 2^31, so AVPlay cannot play this
+    playhead      moved 0ms in 8s -> STALLED, the picture is not moving
+    live window   0|2000
+```
+
+Prediction first, then the measurement agreeing with it. That is the shape to keep: a harness that
+only reports numbers cannot be wrong about anything.
+
+Three things about attaching cost an evening each and are written into the script:
+
+- **`sdb shell 0 debug <app>` needs `-s <serial>`.** Without it the set answers `closed` and says
+  nothing about why, even with exactly one television paired.
+- **That command never exits.** It holds the debug session open, so waiting for it to finish waits
+  for ever. It is spawned and the port is read off its output.
+- **AVPlay's requests are invisible to the inspector.** With `Network.enable` on and a channel
+  playing, CDP saw zero requests for it while a page `fetch()` to the same URL was seen at once.
+  Its HTTP client is native, which is also why it announces itself as `samsung-agent/1.1`. Nothing
+  in the page can see, rewrite or proxy what the player fetches.
+
+It is not a gate. It needs hardware on the network, so it cannot run in CI and must never block
+anything. Read it before a release, and after any change to the player or the launch path.
+
 ## The playlist and artwork it all runs against
 
 12,732 channels in 175 categories, 2.7MB of text, a logo on nearly every channel and names in a
