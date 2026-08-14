@@ -38,7 +38,8 @@ function fakeAVPlay() {
     getCurrentTime: () => currentTime,
     setDisplayRect: () => calls.push("setDisplayRect"),
     setDisplayMethod: (m: string) => calls.push(`setDisplayMethod:${m}`),
-    setStreamingProperty: (k: string) => calls.push(`setStreamingProperty:${k}`),
+    // The value as well as the key, since what is asked for matters as much as when.
+    setStreamingProperty: (k: string, v: string) => calls.push(`setStreamingProperty:${k}=${v}`),
     setTimeoutForBuffering: (s: number) => calls.push(`setTimeoutForBuffering:${s}`),
     suspend: () => calls.push("suspend"),
     restore: () => calls.push("restore"),
@@ -89,6 +90,22 @@ test("starting a channel calls AVPlay in the order its states require", () => {
   assert.ok(at("setStreamingProperty") > at("open:"), "configured before open");
   assert.ok(at("prepareAsync") > at("setStreamingProperty"), "configured after prepare");
   assert.equal(order.filter((c) => c === "play").length, 0, "played before it was ready");
+});
+
+test("the adaptive request starts low and asks the set to skip nothing", () => {
+  player.play("http://example.invalid/a.m3u8");
+  const asked = av.calls.find((c) => c.startsWith("setStreamingProperty:ADAPTIVE_INFO"));
+
+  // Starting on the lowest rendition is what makes zapping feel immediate, and the adaptive
+  // logic climbs from there.
+  assert.ok(asked?.includes("STARTBITRATE=LOWEST"), `asked for ${asked}`);
+  /*
+   * SKIPBITRATE is not to come back. Samsung documents it as both "the bit rate to ignore
+   * during streaming" and "the bandwidth to use after a skip operation", and under the first
+   * reading `SKIPBITRATE=LOWEST` forbids the very rendition STARTBITRATE has just asked for.
+   * Nothing in this app skips anywhere, so there is no reading of it that we want.
+   */
+  assert.ok(!asked?.includes("SKIPBITRATE"), `asked for ${asked}`);
 });
 
 test("the picture is only reported once the engine says it is ready", () => {

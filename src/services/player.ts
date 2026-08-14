@@ -392,14 +392,25 @@ export class Player {
       av.setDisplayRect(0, 0, 1920, 1080);
       av.setDisplayMethod?.(AVPLAY_MODE[this.fit]);
 
-      // IDLE only. Joining on the lowest rendition puts a picture up quickly and the
-      // adaptive logic climbs from there, which is what makes zapping feel immediate.
-      //
-      // Worth knowing that this does nothing for a good many channels: plenty of playlists
-      // point straight at a single rendition rather than at a master, and with no ladder
-      // to choose from there is no choice to influence. It costs nothing where it does not
-      // apply, and helps on the ones that do offer variants.
-      av.setStreamingProperty?.("ADAPTIVE_INFO", "STARTBITRATE=LOWEST|SKIPBITRATE=LOWEST");
+      /*
+       * IDLE only. Joining on the lowest rendition puts a picture up quickly and the
+       * adaptive logic climbs from there, which is what makes zapping feel immediate.
+       *
+       * `SKIPBITRATE=LOWEST` used to be here beside it and was costing quality. Samsung
+       * documents that parameter twice and the two disagree: the adaptive streaming guide
+       * calls it "bit rate to ignore during streaming", the AVPlay reference calls it "the
+       * bandwidth to use after a skip operation". Under the first reading the pair asked the
+       * set to start on the lowest rendition and to ignore the lowest rendition, in one
+       * string, which is either contradictory or a way of skipping the rendition we had just
+       * chosen. Neither is what anyone wanted, and nothing here skips: there is no timeline
+       * to skip along.
+       *
+       * Worth knowing that this does nothing for a good many channels: plenty of playlists
+       * point straight at a single rendition rather than at a master, and with no ladder to
+       * choose from there is no choice to influence. It costs nothing where it does not
+       * apply, and helps on the ones that do offer variants.
+       */
+      av.setStreamingProperty?.("ADAPTIVE_INFO", "STARTBITRATE=LOWEST");
 
       // How long to wait for a channel that is not coming, which is a different setting
       // from how much to buffer. The buffer itself is left at the ten seconds Samsung
