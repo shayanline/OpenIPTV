@@ -63,6 +63,8 @@ export interface Tuner {
   shown: Channel | null;
   busy: boolean;
   paused: boolean;
+  /** How full the buffer is while connecting, where the engine reports it, and null otherwise. */
+  filling: number | null;
   /** The engine's own name for the fault, or empty when there is none. */
   fault: string;
   /** Seconds the channel now tuning has been tuning, so a slow one can say so. */
@@ -89,6 +91,7 @@ export function useTuner(options: TunerOptions): Tuner {
   const [busy, setBusy] = useState(false);
   const [paused, setPaused] = useState(false);
   const [fault, setFault] = useState("");
+  const [filling, setFilling] = useState<number | null>(null);
   const [waited, setWaited] = useState(0);
   const [retryIn, setRetryIn] = useState(0);
   const [attempt, setAttempt] = useState(0);
@@ -136,10 +139,19 @@ export function useTuner(options: TunerOptions): Tuner {
     const onEvent = (e: PlayerEvent) => {
       if (e.type === "buffering") {
         setBusy(true);
+        /*
+         * How full the buffer is, when the engine says so, and nothing when it does not.
+         *
+         * Only the television reports this, so a browser shows what it always showed. Kept as
+         * null rather than 0 for the difference between "no progress reported" and "reported
+         * nothing yet": a nought on screen reads as a channel that is getting nowhere.
+         */
+        if (e.percent !== undefined) setFilling(Math.min(100, Math.max(0, Math.round(e.percent))));
         return;
       }
       if (e.type === "playing") {
         setBusy(false);
+        setFilling(null);
         setFault("");
         setPaused(false);
         /*
@@ -378,7 +390,7 @@ export function useTuner(options: TunerOptions): Tuner {
 
   return {
     current, preview, shown: preview ?? current,
-    busy, paused, fault, waited, retryIn, attempt,
+    busy, paused, filling, fault, waited, retryIn, attempt,
     start, retune, clear, step: step as (delta: number) => void, setPlaying, togglePause,
   };
 }

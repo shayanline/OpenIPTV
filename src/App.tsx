@@ -1197,6 +1197,7 @@ export default function App() {
           channel={current.name}
           busy={busy}
           paused={paused}
+          filling={tuner.filling}
           waited={tuner.waited}
           fault={fault}
           retryIn={tuner.retryIn}

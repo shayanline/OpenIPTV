@@ -32,9 +32,24 @@ const loadHls = () => {
 
 interface AVPlayListener {
   onbufferingstart?: () => void;
+  /** How full the buffer is, 0 to 100, which is the only honest thing to show while waiting. */
+  onbufferingprogress?: (percent: number) => void;
   onbufferingcomplete?: () => void;
   onstreamcompleted?: () => void;
   onerror?: (code: string) => void;
+  /** The same failure with the engine's own sentence attached, where the firmware sends one. */
+  onerrormsg?: (code: string, message: string) => void;
+  /**
+   * Everything else the player wants to say, of which one matters here.
+   *
+   * PLAYER_MSG_HTTP_ERROR_CODE carries the status the server actually returned. Without it a
+   * refusal and a dead host are both PLAYER_ERROR_CONNECTION_FAILED, and the viewer is told
+   * "the TV could not reach this channel's server" when the truth was a 403 and no amount of
+   * waiting will help. The other events are resolution and bitrate changes during adaptive
+   * playback, which are worth having later for a badge that reports what is playing rather
+   * than what the playlist claims.
+   */
+  onevent?: (id: string, data: string) => void;
 }
 
 /** The states AVPlay moves through. Most calls are legal in only some of them. */
@@ -86,7 +101,8 @@ declare global {
 }
 
 export type PlayerEvent =
-  | { type: "buffering" }
+  /** `percent` is how full the buffer is, where the engine will say, and absent otherwise. */
+  | { type: "buffering"; percent?: number }
   | { type: "playing" }
   | { type: "ended" }
   /** `code` is the engine's own name for the fault, which the UI turns into a cause and
@@ -128,6 +144,16 @@ const codeOf = (e: unknown): string => {
   const o = e as { name?: string; message?: string } | null;
   return o?.name || o?.message || String(e);
 };
+
+/**
+ * The engine's fault with the server's status alongside it, where there is one.
+ *
+ * "http 403" rather than a bare number, so that a status can never be mistaken for part of the
+ * engine's own name, and so the mapping in services/errors.ts can look for one without matching
+ * any three digits that happen to appear in a message.
+ */
+const withStatus = (code: string, status: string): string =>
+  status && !code.includes(status) ? `${code} (http ${status})` : code;
 
 /**
  * The surface AVPlay draws into.
@@ -420,11 +446,33 @@ export class Player {
       // own watchdog gives up and reports a bare timeout instead.
       try { av.setTimeoutForBuffering?.(15); } catch { /* older firmware may not have it */ }
 
+      /**
+       * What the server said, kept until something fails and then spent on the explanation.
+       *
+       * AVPlay reports the HTTP status through onevent and the failure through onerror, in that
+       * order and as two separate facts. Neither is much use alone: 403 with no failure is a
+       * segment that will be retried, and PLAYER_ERROR_CONNECTION_FAILED with no status cannot
+       * tell a refusal from a dead host. Joined, the viewer gets told the truth.
+       */
+      let status = "";
+
       av.setListener({
         onbufferingstart: () => this.emit({ type: "buffering" }),
+        onbufferingprogress: (percent) => this.emit({ type: "buffering", percent }),
         onbufferingcomplete: () => this.emit({ type: "playing" }),
         onstreamcompleted: () => this.emit({ type: "ended" }),
-        onerror: (code) => this.fail(String(code)),
+        onevent: (id, data) => {
+          if (String(id) === "PLAYER_MSG_HTTP_ERROR_CODE") status = String(data).trim();
+        },
+        /*
+         * onerrormsg where the firmware sends one, onerror otherwise, and never both: they
+         * describe one failure, and `fail` keeps the first explanation on purpose, so whichever
+         * arrives first is the one the viewer sees. The message is appended rather than
+         * substituted because services/errors.ts matches on the code.
+         */
+        onerror: (code) => this.fail(withStatus(String(code), status)),
+        onerrormsg: (code, message) =>
+          this.fail(withStatus(`${String(code)} ${String(message)}`.trim(), status)),
       });
 
       this.emit({ type: "buffering" });

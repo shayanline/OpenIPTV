@@ -14,7 +14,39 @@ export interface Reason {
   fix: string;
 }
 
+/*
+ * Order matters here, and the first three entries are why.
+ *
+ * The TV reports a status and a fault as two separate things, and services/player.ts joins them
+ * into one string: "PLAYER_ERROR_CONNECTION_FAILED (http 403)". A status is the more specific of
+ * the two, so it has to be tested first. Matched the other way round, every refusal, every
+ * missing stream and every failing server would answer with the engine's generic "could not
+ * reach the server", which is what this app said before it asked for the status at all.
+ */
 const REASONS: { match: RegExp; reason: Reason }[] = [
+  {
+    // Both shapes: the status this app now joins onto the engine's name, and a bare one, which
+    // is what hls.js hands over when it decides to include the response code and nothing else.
+    match: /http (403|451)|\b(403|451)\b|GEO/i,
+    reason: {
+      why: "The broadcaster is refusing this connection.",
+      fix: "Streams are often restricted to the country they are broadcast in.",
+    },
+  },
+  {
+    match: /http 40[0-9]|\b404\b/i,
+    reason: {
+      why: "The address in the playlist no longer points at a stream.",
+      fix: "Refresh the playlist in Settings to pull the current addresses.",
+    },
+  },
+  {
+    match: /http 5[0-9][0-9]/i,
+    reason: {
+      why: "This channel's server is failing.",
+      fix: "Nothing here will fix it, and it often comes back on its own.",
+    },
+  },
   {
     match: /CONNECTION_FAILED|NETWORK|manifestLoad|levelLoad|fragLoad|TIMEOUT/i,
     reason: {
@@ -30,17 +62,10 @@ const REASONS: { match: RegExp; reason: Reason }[] = [
     },
   },
   {
-    match: /INVALID_URI|NO_SUCH_FILE|404/i,
+    match: /INVALID_URI|NO_SUCH_FILE/i,
     reason: {
       why: "The address in the playlist no longer points at a stream.",
       fix: "Refresh the playlist in Settings to pull the current addresses.",
-    },
-  },
-  {
-    match: /GEO|403|451/i,
-    reason: {
-      why: "The broadcaster is not allowing this connection.",
-      fix: "Streams are often restricted to the country they are broadcast in.",
     },
   },
   {

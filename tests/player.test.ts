@@ -92,6 +92,47 @@ test("starting a channel calls AVPlay in the order its states require", () => {
   assert.equal(order.filter((c) => c === "play").length, 0, "played before it was ready");
 });
 
+test("the status the server sent reaches the explanation, not just the engine's own name", () => {
+  player.play("http://example.invalid/a.m3u8");
+  // Two facts, in the order the TV sends them: the status through onevent, the failure through
+  // onerror. Joined, because CONNECTION_FAILED alone cannot tell a refusal from a dead host.
+  av.listener?.onevent?.("PLAYER_MSG_HTTP_ERROR_CODE", "403");
+  av.listener?.onerror?.("PLAYER_ERROR_CONNECTION_FAILED");
+
+  const fault = events.find((e) => e.type === "error");
+  assert.equal(fault?.type, "error");
+  assert.match(fault.code, /PLAYER_ERROR_CONNECTION_FAILED/, "the engine's name is kept");
+  assert.match(fault.code, /http 403/, "and the status is carried with it");
+});
+
+test("a failure with a message keeps both, and only reports once", () => {
+  player.play("http://example.invalid/a.m3u8");
+  av.listener?.onerrormsg?.("PLAYER_ERROR_NOT_SUPPORTED_FILE", "codec not supported");
+  // The same failure arriving twice is one failure: onerror and onerrormsg describe one event,
+  // and the first explanation is the one that survives.
+  av.listener?.onerror?.("PLAYER_ERROR_NOT_SUPPORTED_FILE");
+
+  const faults = events.filter((e) => e.type === "error");
+  assert.equal(faults.length, 1, "reported twice");
+  assert.match(faults[0].code, /codec not supported/);
+});
+
+test("buffering progress is passed on, and is absent when the engine says nothing", () => {
+  player.play("http://example.invalid/a.m3u8");
+  av.listener?.onbufferingstart?.();
+  av.listener?.onbufferingprogress?.(42);
+
+  const buffering = events.filter((e) => e.type === "buffering");
+  /*
+   * Found rather than indexed. play() reports buffering itself before the engine is even asked,
+   * so the progress report is the third of three here, and an index would be asserting the
+   * order of events that have no reason to keep one.
+   */
+  assert.equal(buffering.find((e) => e.percent !== undefined)?.percent, 42);
+  // A start that said nothing about progress must not read as nought per cent.
+  assert.ok(buffering.some((e) => e.percent === undefined), "the start invented a figure");
+});
+
 test("the adaptive request starts low and asks the set to skip nothing", () => {
   player.play("http://example.invalid/a.m3u8");
   const asked = av.calls.find((c) => c.startsWith("setStreamingProperty:ADAPTIVE_INFO"));

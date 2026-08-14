@@ -38,11 +38,15 @@ const SLOW_AFTER_S = 8;
  */
 const FAULT_SETTLE_MS = 500;
 
-export function PictureState({ channel, busy, paused, waited, fault, retryIn, attempt, attempts }: {
+export function PictureState({
+  channel, busy, paused, filling, waited, fault, retryIn, attempt, attempts,
+}: {
   /** The channel this is about, named only when something has gone wrong with it. */
   channel: string;
   busy: boolean;
   paused: boolean;
+  /** How full the buffer is, where the engine says, and null where it does not. */
+  filling: number | null;
   /** Seconds spent waiting for this channel to start. */
   waited: number;
   /** The engine's name for the fault, or empty when there is none. */
@@ -117,7 +121,17 @@ export function PictureState({ channel, busy, paused, waited, fault, retryIn, at
     return (
       <div className="plate picture-state" role="status">
         <span className="spinner" aria-hidden="true" />
-        <p className="picture-state-word">Connecting</p>
+        {/*
+          * The television reports how full its buffer is, so say so rather than turning a
+          * ring at somebody. It is the difference between a channel that is arriving slowly
+          * and one that is not arriving, which is the question a viewer is actually asking,
+          * and it is the one thing on this screen that a spinner cannot answer.
+          *
+          * Only the set sends it. In a browser this is null and the word is what it was.
+          */}
+        <p className="picture-state-word">
+          {filling === null ? "Connecting" : `Connecting ${filling}%`}
+        </p>
         {waited >= SLOW_AFTER_S && (
           <p className="picture-state-note">This channel is being slow. Still trying&hellip;</p>
         )}

@@ -20,6 +20,15 @@ const cases: [string, RegExp][] = [
   ["TIMEOUT", /could not reach/i],
   ["STREAM_ENDED", /stopped broadcasting/i],
   ["NOT_SUPPORTED", /nothing playable/i],
+  /*
+   * The status the server sent, which the TV reports separately from the fault and the player
+   * joins onto it. These have to beat the engine's own name for the failure, because a refusal
+   * and a dead host both arrive as CONNECTION_FAILED and only the status can tell them apart.
+   */
+  ["PLAYER_ERROR_CONNECTION_FAILED (http 403)", /refusing this connection/i],
+  ["PLAYER_ERROR_CONNECTION_FAILED (http 451)", /refusing this connection/i],
+  ["PLAYER_ERROR_CONNECTION_FAILED (http 404)", /no longer points/i],
+  ["PLAYER_ERROR_CONNECTION_FAILED (http 502)", /server is failing/i],
 ];
 
 for (const [code, expected] of cases) {
@@ -43,6 +52,14 @@ test("no explanation leaks a raw engine code into the prose", () => {
   }
 });
 
-test("a geo block is not blamed on the viewer's network", () => {
-  assert.match(explain("403").why, /not allowing/i);
+test("a refusal is blamed on the broadcaster rather than on the viewer's network", () => {
+  /*
+   * The point of this one is the blame, not the wording, which is why it no longer pins the
+   * sentence: it asked for "not allowing" and failed the day that became "refusing", which
+   * taught nobody anything. A viewer told to check their network over a 403 goes and reboots a
+   * router for a channel that was never going to play.
+   */
+  const { why, fix } = explain("403");
+  assert.match(why, /broadcaster/i);
+  assert.ok(!/network|could not reach/i.test(`${why} ${fix}`), `blamed the network: ${why} ${fix}`);
 });
