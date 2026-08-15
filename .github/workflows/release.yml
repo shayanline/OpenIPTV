@@ -117,6 +117,28 @@ jobs:
           umask 077
           printf '%s' "$AUTHOR_P12" | base64 -d > "$RUNNER_TEMP/author.p12"
           printf '%s' "$DISTRIBUTOR_P12" | base64 -d > "$RUNNER_TEMP/distributor.p12"
+
+          # Each certificate is opened here, before the Tizen CLI sees it, because the CLI's account
+          # of a bad one is "An error has occurred" in a log file on a machine that is about to be
+          # destroyed. openssl says which of the two it is and whether the bytes even survived the
+          # trip through a secret: the digest is printed so it can be compared with the file on the
+          # machine that uploaded it, and a digest gives nothing away.
+          bad=""
+          for name in author distributor; do
+            digest=$(shasum -a 256 "$RUNNER_TEMP/$name.p12" | cut -c1-16)
+            size=$(wc -c < "$RUNNER_TEMP/$name.p12" | tr -d ' ')
+            if PW="$(eval echo "\$$(echo "$name" | tr '[:lower:]' '[:upper:]')_PASSWORD")" \
+               openssl pkcs12 -in "$RUNNER_TEMP/$name.p12" -nokeys -noout -passin env:PW 2>/dev/null; then
+              echo "$name.p12: $size bytes, digest $digest, opens with its password"
+            else
+              echo "$name.p12: $size bytes, digest $digest, DOES NOT open with the password given"
+              bad="yes"
+            fi
+          done
+          if [ -n "$bad" ]; then
+            echo "One of the certificates and its password disagree, so signing would fail anyway."
+            exit 1
+          fi
           tizen security-profiles add -n SimpleIPTV \
             -a "$RUNNER_TEMP/author.p12" -p "$AUTHOR_PASSWORD" \
             -d "$RUNNER_TEMP/distributor.p12" --dist-password "$DISTRIBUTOR_PASSWORD"
