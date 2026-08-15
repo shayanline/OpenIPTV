@@ -337,14 +337,29 @@ html.tizen, html.tizen body, html.tizen #root, html.tizen .app { background: tra
  * fixed English word, and text-transform on a script with no cases does nothing, while on a
  * Turkish or Greek name it can do something wrong.
  */
+/*
+ * A subheader, and unmistakably not a row.
+ *
+ * It used to differ from a channel or a category by two pixels of type and nothing else: 22px
+ * against 24px, the same weight, the same colour, and a count in the same pill every row wears. So
+ * `label` on the left and `count` on the right was the shape of a list item, drawn in the colour of
+ * a list item, and it read as one that simply had no highlight on it.
+ *
+ * One UI's subheader is the quieter, smaller thing that gives a group its context, so this is four
+ * signals at once rather than one: smaller again, dimmer, heavier and tracked. Heavier and dimmer
+ * together are what make it read as a label rather than as faded content, and the tracking is what
+ * the eye picks up before it has read the word. Sentence case, because One UI does not shout its
+ * subheaders in capitals, whatever Material does.
+ */
 .panel-title {
   display: block;
   min-width: 0;
   margin: 0;
   overflow: hidden;
-  color: var(--text-2);
-  font-size: var(--t-label);
-  font-weight: 400;
+  color: var(--text-3);
+  font-size: var(--t-caption);
+  font-weight: 600;
+  letter-spacing: 0.06em;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -525,6 +540,22 @@ html.tizen, html.tizen body, html.tizen #root, html.tizen .app { background: tra
   font-variant-numeric: tabular-nums;
 }
 .count { min-width: 44px; text-align: center; }
+/*
+ * In a header the figure is plain, because the pill was the other half of the confusion.
+ *
+ * A pill on the right is what a row carries, and a count of categories is not the same kind of thing
+ * as a channel's quality badge: one says how long this list is, the other is a property of the item
+ * it sits on. Tracked to match the word beside it, and tabular figures are inherited so the number
+ * does not shuffle as the list is filtered.
+ */
+.pane-head .count {
+  min-width: 0;
+  padding: 0;
+  border-radius: 0;
+  background: none;
+  color: var(--text-3);
+  letter-spacing: 0.06em;
+}
 .pane.focused .row.selected .count,
 .pane.focused .row.selected .ch-badge {
   background: rgba(0, 0, 0, 0.12);
