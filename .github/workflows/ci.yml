@@ -1,11 +1,17 @@
 name: CI
 
+# Prose cannot fail a build, and three minutes of Chromium proves nothing about a paragraph. The
+# filter is on the paths rather than on the jobs, so a documentation commit skips the runner
+# entirely instead of starting one to decide it has nothing to do. Nothing under these paths is
+# read by the build, the tests or any of the tv: gates.
 on:
   push:
     branches: [master, main]
+    paths-ignore: ["**.md", "docs/**", ".github/ISSUE_TEMPLATE/**"]
   pull_request:
+    paths-ignore: ["**.md", "docs/**", ".github/ISSUE_TEMPLATE/**"]
   # So the engine and budget jobs can be run deliberately, rather than only as a side effect of
-  # pushing something.
+  # pushing something, and so a documentation commit can still be checked on purpose.
   workflow_dispatch:
 
 # A second push to the same branch makes the first run pointless.
@@ -54,14 +60,13 @@ jobs:
       # is a file nothing else parses, so nothing else would notice. It has been broken in this
       # repository before.
       #
-      # libxml2-utils is installed because xmllint is not on the runner image and the images team
-      # has twice declined to add it. Without this the step exits 127 and everything after it in the
-      # job never runs, which is a green tick on a check that never happened.
+      # Parsed with the expat that comes with the runner's Python rather than with xmllint, which
+      # is not on the image and which the images team has twice declined to add. Installing
+      # libxml2-utils to run one well formedness check cost fifteen seconds of apt on every run,
+      # almost all of it `apt-get update`, and expat rejects exactly the same files while needing
+      # nothing installed at all. It reports the line and column, which xmllint also did.
       - name: Validate the widget manifest
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends libxml2-utils
-          xmllint --noout public/config.xml
+        run: python3 -c "from xml.dom.minidom import parse; parse('public/config.xml')"
 
       # The committed WebAssembly cannot be rebuilt here, because it needs Samsung's own Emscripten
       # fork, so the next best thing is proving that what is committed is what the recorded source
@@ -104,11 +109,17 @@ jobs:
 
       # Keyed on the resolved snapshot positions, so a new engine in platforms.json fetches
       # and everything else is already on disk.
+      #
+      # restore-keys is what makes that last sentence true. Without it an exact key miss restores
+      # nothing at all, so adding one engine would re-download every engine, which is a couple of
+      # hundred megabytes each and turns a fifty second job into a several minute one. The prefix
+      # match hands back the previous cache and engines.mjs then fetches only what is missing.
       - name: Cache the pinned engines
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/openiptv-engines
           key: engines-${{ runner.os }}-${{ hashFiles('scripts/tv/platforms.json', 'scripts/tv/engines.lock.json') }}
+          restore-keys: engines-${{ runner.os }}-
 
       - run: npm ci
       - run: npm run build

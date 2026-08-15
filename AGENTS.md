@@ -148,7 +148,8 @@ Break one of these and the app fails on hardware no test here owns. The reasonin
   widget rather than whoever reads the source. hls.js is Apache-2.0 and its notice does not survive
   minification, so nothing else carries it.
 - **`public/config.xml` must stay well formed XML**, or the Tizen CLI will not package it and
-  nothing else parses the file. CI runs `xmllint` on it. `object-src 'self'` in the CSP is load
+  nothing else parses the file. CI parses it and fails on anything malformed. `object-src 'self'`
+  in the CSP is load
   bearing: the AVPlay picture is a hardware plane bound to an `<object>`, and `'none'` gives
   sound with no picture.
 
