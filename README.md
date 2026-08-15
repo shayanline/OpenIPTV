@@ -7,45 +7,32 @@ An IPTV player for Samsung TVs. Give it the address of an M3U playlist and it pl
 It comes with no channels of its own and reports nothing to anybody. It talks to the playlist and
 the streams you point it at, and what you add stays on the television.
 
-**[Try it in a browser](https://shayanline.github.io/OpenIPTV)**, which is the same build as the
-one on the television, published from the latest release. Arrow keys and Enter stand in for the
-D-pad and OK.
+**[Try it in a browser](https://shayanline.github.io/OpenIPTV)**, the same build as the one on the
+television. Arrow keys and Enter stand in for the D-pad and OK.
 
 ## A look at it
 
 |  |  |  |
 |:--|:--|:--|
 | [<img src="docs/screenshots/01-first-run.png" alt="The first run screen, asking for the address of an M3U playlist">](docs/screenshots/01-first-run.png) | [<img src="docs/screenshots/02-channels.png" alt="The channel list, with categories down the left and channels beside them">](docs/screenshots/02-channels.png) | [<img src="docs/screenshots/03-categories.png" alt="The category rail, with Sport highlighted and its channels listed">](docs/screenshots/03-categories.png) |
-| **Add a playlist.** The only thing it asks for, and the only thing it needs. | **Watch.** Categories on the left, channels beside them, the picture behind. | **Browse.** The categories are the playlist's own, in the order it wrote them. |
+| **Add** | **Watch** | **Browse** |
 | [<img src="docs/screenshots/04-search.png" alt="Search, with the query news typed and two matching channels shown">](docs/screenshots/04-search.png) | [<img src="docs/screenshots/05-favourites.png" alt="A channel starred as a favourite, with a Favourites category appearing at the top of the rail">](docs/screenshots/05-favourites.png) | [<img src="docs/screenshots/06-settings.png" alt="The Watching section of Settings, showing picture size, resume, the channel fix and the list timeout">](docs/screenshots/06-settings.png) |
-| **Search.** Across the whole playlist, not just the category showing. | **Favourite.** The green key. A Favourites category appears once there is one. | **Adjust.** Picture size, resuming, and the fix for channels that stop. |
-
-Those channel names are invented, because the application ships with no channels and it would be
-odd to advertise somebody else's. The dark area to the right of the panel is where the picture
-goes: on a television the video sits on a hardware plane underneath the page, so it cannot appear
-in a screenshot of the application, and in a browser there is nothing playing here to capture.
-
-`npm run screenshots` retakes all six from the built application, so they cannot drift away from
-what it actually looks like.
+| **Search** | **Favourite** | **Adjust** |
 
 ## Disclaimer
 
 This is a player, and it ships with nothing to play. No channel list, no playlist and no stream
-address is bundled with it or built into it, and the project provides no content of any kind. What
-you see is whatever the playlist you supply happens to contain, which is a file this project cannot
-see, host, index or influence.
+address is bundled with it, and the project provides no content of any kind. What you see is
+whatever the playlist you supply happens to contain.
 
 The project is not affiliated with, endorsed by or connected to any broadcaster, channel or
-streaming service. Whether you are entitled to watch what a playlist points at is between you, the
-person who gave you the address and the people who own what is at the end of it, so please make sure
-you have the right to access whatever you add.
+streaming service. Please make sure you have the right to access whatever you add.
 
 ## What it does
 
 - Plays any extended M3U playlist, in any language. Channel names appear exactly as the playlist
   writes them.
 - Up and down change channel at the picture, in every state, including a channel that has failed.
-  Nothing can leave you stuck on a dead stream.
 - Keeps favourites, searches the whole playlist, and tunes to a channel number you dial.
 - Comes back to the channel you were watching when you switch the television on.
 - Holds as many playlists as you like and switches between them.
@@ -61,8 +48,7 @@ A Samsung TV from 2020 or later, which is Tizen 5.5 upwards. Or any current desk
 
 Samsung ties app signing to the individual television, so a widget signed for one set is refused
 by another with a certificate error. Each release attaches a built `OpenIPTV.wgt`, worth trying
-if you already have a signing profile that covers your TV. Otherwise sign it yourself, which is
-the route below.
+if you already have a signing profile that covers your TV. Otherwise sign it yourself.
 
 The TV has to be in developer mode either way:
 
@@ -85,16 +71,13 @@ The first launch asks for a playlist address and nothing else.
 
 You need Node 22.18 or newer and Tizen Studio, where the CLI alone is enough. In Certificate
 Manager create an author certificate, then a Samsung distributor certificate for your own
-television. The generic Tizen distributor certificate signs without complaint and is then
-refused by a retail set at install. Call the profile `OpenIPTV`, or set `SIGNING_PROFILE` to
-whatever you called it.
+television. Call the profile `OpenIPTV`, or set `SIGNING_PROFILE` to whatever you called it.
 
-Three things about that certificate catch people out, and each one stops the process rather than
-warning you:
+Three things about that certificate stop the process rather than warning you:
 
-- Certificate Manager offers the **Samsung** certificate type only once the Samsung Certificate
-  Extension is installed, through the Tizen Studio Package Manager. Without it the only choice is
-  the Tizen type, which is the one a retail television refuses.
+- The **Samsung** certificate type appears only once the Samsung Certificate Extension is
+  installed, through the Tizen Studio Package Manager. The generic Tizen type signs without
+  complaint and is then refused by a retail set at install.
 - Creating the distributor certificate signs you in with a **Samsung account**.
 - Your **television must be on, in developer mode and connected** at that moment, because that is
   when its identifier is read into the certificate.
@@ -110,26 +93,21 @@ TV_IP=192.168.0.10 npm run deploy    # builds, signs, installs, launches
 
 ## Watch in a browser
 
-[shayanline.github.io/OpenIPTV](https://shayanline.github.io/OpenIPTV) is the latest release, built
-from its tag and published automatically. Nothing is installed and nothing is sent anywhere: the
-playlist you add is held in your own browser.
+[shayanline.github.io/OpenIPTV](https://shayanline.github.io/OpenIPTV) is the latest release.
+Nothing is installed and nothing is sent anywhere: the playlist you add is held in your own
+browser.
 
-Or run it yourself, which is the same thing from source:
+Or run it from source, which is the same thing:
 
 ```bash
 npm ci
 npm run dev      # then open the address it prints
 ```
 
-Arrow keys and Enter do what the remote's D-pad and OK do. Playback here goes through hls.js
-instead of the TV's own decoder, so a stream whose host refuses cross origin requests fails in a
-browser and plays perfectly well on the set.
-
-The hosted page adds one restriction of its own, which is the browser's rule rather than the app's.
-It is served over https, so a playlist or a stream at a plain `http` address is blocked as mixed
-content and never reaches the app at all. That is worth knowing before you conclude the app is
-broken, because a great many public playlists are `http`. Neither `npm run dev` nor a television is
-subject to it.
+Playback in a browser goes through hls.js instead of the TV's own decoder, so a stream whose host
+refuses cross origin requests fails here and plays perfectly well on the set. The hosted page is
+also served over https, so a playlist or a stream at a plain `http` address is blocked as mixed
+content before it reaches the app. Neither `npm run dev` nor a television is subject to that.
 
 ## Your playlist
 
@@ -173,36 +151,27 @@ The yellow key, from anywhere.
 ## When something does not work
 
 - **A channel will not play.** It retries after 4, 8 and 15 seconds and then stops. Press down
-  for the next one, which works even while the fault is on screen. Public playlists are often
-  half dead.
+  for the next one, which works even while the fault is on screen.
 - **The install fails with a certificate error, 118 or -12.** The distributor certificate is not
   issued for this television. See the signing note above.
 - **A coloured key does nothing.** Settings, then Diagnostics, lists every key press the app
   receives. A button missing from that list never reached the app, so the set is keeping it.
 - **A channel shows a picture for a moment and then stops.** Turn on Compatibility mode in
   Watching. Some channels publish a playlist this television reads incorrectly, and the app can
-  serve it a corrected copy. Leave it off otherwise: while it is on, the TV fetches those playlists
-  itself, which uses a little more of your connection. Settings, then Diagnostics, says whether it
-  is working.
+  serve it a corrected copy. Leave it off otherwise, because while it is on the TV fetches those
+  playlists itself and uses a little more of your connection.
 - **Logos are slow to appear.** Turn Channel logos off in Appearance.
 - **A stream plays on the TV but not in a browser.** The host is refusing cross origin requests.
   There is nothing to fix in the app.
 
 ## Contributing
 
-Issues and pull requests are welcome. [The design notes](docs/design.md) explain why the
-interface is shaped the way it is, [the testing notes](docs/testing.md) cover what runs against
-the televisions nobody here owns, and [AGENTS.md](AGENTS.md) is the short version for anyone, or
-anything, working in the repository.
-
-Run `npm run check` before opening a pull request. [CONTRIBUTING.md](CONTRIBUTING.md) has the rest,
-and [publishing](docs/publishing.md) covers releases and what submitting to Samsung's store involves.
+Issues and pull requests are welcome. Run `npm run check` before opening one.
+[CONTRIBUTING.md](CONTRIBUTING.md) has the rest, [the design notes](docs/design.md) explain why the
+interface is shaped the way it is, and [the testing notes](docs/testing.md) cover what runs against
+the televisions nobody here owns.
 
 ## Licence
 
-MIT, in [LICENSE](LICENSE).
-
-Four other projects travel inside the built application, and their notices are in
-[THIRD-PARTY-NOTICES.md](public/THIRD-PARTY-NOTICES.md) with their licence texts beside it. That
-file sits in `public/` so it is packaged into the widget itself, since the obligation is toward
-whoever installs the application and not only toward whoever reads this page.
+MIT, in [LICENSE](LICENSE). The projects that travel inside the built application are listed in
+[THIRD-PARTY-NOTICES.md](public/THIRD-PARTY-NOTICES.md), with their licence texts beside it.
