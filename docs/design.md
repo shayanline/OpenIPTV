@@ -298,6 +298,40 @@ Diagnostics reports the state, because "the toggle appears to have done nothing"
 unanswerable: it distinguishes a television without the socket bindings from one that has simply
 never needed them.
 
+## Frosted glass, and why this app cannot have it over a picture
+
+Samsung's recent sets draw their own on screen displays as blurred glass rather than as flat
+translucent panels, and One UI's [visual depth guidance](https://developer.samsung.com/one-ui/structure/visual-depth.html)
+describes the technique: blur applied evenly across a backdrop, always paired with a dim, since blur
+alone weakens readability rather than helping it. The obvious question is why this app's panels are
+dim without being blurred, and the answer is not taste.
+
+**The browser has no picture to blur.** On a television the video is decoded to a hardware plane that
+the display pipeline composites *underneath* the browser, and the page shows it through a transparent
+hole. `backdrop-filter` samples what is behind an element within the page, and behind these panels
+there is nothing: measured on a 2025 set, with AVPlay reporting `PLAYING` and its clock at 97
+seconds, a capture of the page is pure black everywhere the picture is. The firmware supports the
+property, `CSS.supports("backdrop-filter", "blur(20px)")` answers true, and it would blur an empty
+region.
+
+Two further reasons it stays off even where it would work, over the app's own content:
+
+- The sets from 2020 and 2021 run Chromium 69 and the property arrived in 76, so a blurred panel
+  would look like a different application depending on the year of the television.
+- Each blurred surface is promoted to its own full screen compositing layer, and Samsung's memory
+  guidance singles out stacked full screen layers as a thing not to do on a device with this little
+  headroom.
+
+So the parts of the language that carry the meaning are adopted and the part that cannot work is
+skipped: a single translucent surface over the picture, a soft shadow marking its edge rather than a
+gradient that fades out with no edge at all, and a hairline dividing what is inside it instead of a
+second panel with a second shadow. That last one is why the channel name and the keys that act on it
+are one box in two parts rather than two boxes.
+
+If a blurred surface is ever wanted, the place it would be honest is a dialog over the settings
+sheet, where what sits behind genuinely is page content, and it would need a `@supports` query and a
+frame time measurement on the floor profile before it earned its place.
+
 ## Why a web app
 
 A Tizen web app is a packaged web app, so a TV player can be written with ordinary web tooling.

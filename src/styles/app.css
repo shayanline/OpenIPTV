@@ -1487,6 +1487,18 @@ input.wrong { border-color: var(--danger); }
  * changes at all. As one card with a rule across it they read as a single statement and the eye
  * has to work out which half it is looking at.
  */
+/*
+ * One panel in two parts, rather than two panels.
+ *
+ * The name of the channel and the keys that act on it were two boxes with eight pixels between
+ * them, which is two things to read and two edges to find in a glance at the bottom of a picture.
+ * They are one surface now, divided by a hairline, which is how One UI groups things that belong
+ * together: the depth guidance layers a single surface over content and separates what is inside it
+ * with a line, rather than stacking surfaces that each cast their own shadow.
+ *
+ * The surface, its rounding and its shadow all live here now, so the halves inside carry nothing but
+ * their padding. `overflow: hidden` is what makes the hairline stop where the rounding starts.
+ */
 .pb-stack {
   position: absolute;
   right: var(--safe-x);
@@ -1494,8 +1506,10 @@ input.wrong { border-color: var(--danger); }
   left: var(--safe-x);
   display: flex;
   flex-direction: column;
-  /* Close enough to read as one thing in two parts, far enough to read as two parts. */
-  gap: var(--s1);
+  border-radius: var(--r-lg);
+  background: var(--over-video);
+  box-shadow: var(--lift);
+  overflow: hidden;
   z-index: var(--z-notice);
   animation: pb-in var(--t-med) var(--ease-enter);
 }
@@ -1504,9 +1518,6 @@ input.wrong { border-color: var(--danger); }
   align-items: center;
   gap: var(--s3);
   padding: var(--s3) var(--s4);
-  border-radius: var(--r-lg);
-  background: var(--over-video);
-  box-shadow: var(--lift);
 }
 @keyframes pb-in { from { transform: translateY(16px); opacity: 0; } }
 
@@ -1566,12 +1577,12 @@ input.wrong { border-color: var(--danger); }
  * of the scale for the one line that explains how to use the thing.
  */
 /* A box of its own beneath the banner, matching its width and its surface. */
+/* The lower half of that one panel. A hairline rather than a gap, and no surface of its own: the
+   keys are part of the thing naming the channel, not a second announcement beneath it. */
 .hints.pb-hints {
   justify-content: center;
   padding: var(--s2) var(--s4);
-  border-radius: var(--r-lg);
-  background: var(--over-video);
-  box-shadow: var(--lift);
+  border-top: 1px solid var(--line);
 }
 
 /* ===================================================================== dialogs ==== */
@@ -2022,7 +2033,8 @@ input.wrong { border-color: var(--danger); }
 .no-flex-gap .form > * + * { margin-top: var(--s1); }
 .no-flex-gap .pad > * + * { margin-top: var(--s2); }
 .no-flex-gap .picture-state > * + * { margin-top: var(--s2); }
-.no-flex-gap .pb-stack > * + * { margin-top: var(--s1); }
+/* Nothing for .pb-stack any more: its two halves are divided by a hairline and their own padding,
+   so there is no gap left to stand in for on the sets that lack it. */
 
 /*
  * Children that already carry a margin of their own.
