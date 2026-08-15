@@ -87,15 +87,25 @@ that runs even when the build fails or is cancelled.
 
 ## Cutting a release
 
+Write the entry in [CHANGELOG.md](../CHANGELOG.md) first, under the version about to be cut, because
+the release notes are read from it and a tag cannot be moved once anybody has pulled it.
+
 ```bash
 npm version patch          # or minor, which writes package.json and makes the commit
 git push && git push --tags
 ```
 
+The tag carries no `v`. `.npmrc` sets `tag-version-prefix` to nothing so `npm version` writes `1.0.0`
+rather than `v1.0.0`, and the workflow triggers on a tag beginning with a digit. The reason is that
+Samsung's version is the one that has to be right and Samsung accepts no prefix, so keeping the two
+identical means there is nothing to strip and nothing to get wrong.
+
 The workflow then checks that the tag and `package.json` agree and that the version fits what Samsung
 accepts, which is `major.minor.micro` bounded at 255, 255 and 65535, with each release strictly
 greater than the last one uploaded. A four part version is only legal for multi architecture packages
-and a build suffix is refused outright.
+and a build suffix is refused outright, so `1.0.0-beta.1` is not available even as a private
+rehearsal. A beta belongs in the alpha test and the phased rollout described below, not in the
+version string.
 
 ## Then the manual half, in the order the forms come
 

@@ -7,6 +7,10 @@ An IPTV player for Samsung TVs. Give it the address of an M3U playlist and it pl
 It comes with no channels of its own and reports nothing to anybody. It talks to the playlist and
 the streams you point it at, and what you add stays on the television.
 
+**[Try it in a browser](https://shayanline.github.io/OpenIPTV)**, which is the same build as the
+one on the television, published from the latest release. Arrow keys and Enter stand in for the
+D-pad and OK.
+
 ## Disclaimer
 
 This is a player, and it ships with nothing to play. No channel list, no playlist and no stream
@@ -89,7 +93,11 @@ TV_IP=192.168.0.10 npm run deploy    # builds, signs, installs, launches
 
 ## Watch in a browser
 
-The same app, no television involved:
+[shayanline.github.io/OpenIPTV](https://shayanline.github.io/OpenIPTV) is the latest release, built
+from its tag and published automatically. Nothing is installed and nothing is sent anywhere: the
+playlist you add is held in your own browser.
+
+Or run it yourself, which is the same thing from source:
 
 ```bash
 npm ci
@@ -99,6 +107,12 @@ npm run dev      # then open the address it prints
 Arrow keys and Enter do what the remote's D-pad and OK do. Playback here goes through hls.js
 instead of the TV's own decoder, so a stream whose host refuses cross origin requests fails in a
 browser and plays perfectly well on the set.
+
+The hosted page adds one restriction of its own, which is the browser's rule rather than the app's.
+It is served over https, so a playlist or a stream at a plain `http` address is blocked as mixed
+content and never reaches the app at all. That is worth knowing before you conclude the app is
+broken, because a great many public playlists are `http`. Neither `npm run dev` nor a television is
+subject to it.
 
 ## Your playlist
 

@@ -7,9 +7,14 @@ name: Release
 # and attaches the widget to a GitHub release. It does not submit anything to Samsung: the TV Seller
 # Office has no API of any kind, so every step from uploading the package onwards is a web form that
 # a person fills in. docs/publishing.md is the runbook for that half.
+#
+# The tag is the version and carries no prefix, because Samsung's is the version that matters and
+# Samsung takes `major.minor.micro` and nothing else. A `v` would have to be stripped in every place
+# that compares the tag with package.json or with the manifest, and one of those places would
+# eventually forget. Matching on a leading digit keeps every other tag out of here.
 on:
   push:
-    tags: ["v*"]
+    tags: ["[0-9]*"]
   # So a release can be rehearsed without cutting a tag. Nothing is published in that case.
   workflow_dispatch:
     inputs:
@@ -57,9 +62,9 @@ jobs:
       # contradicts. Samsung is stricter still: each field is bounded, and a version that collides
       # with one already uploaded is refused, so this checks the shape as well as the match.
       - name: The tag matches the version, and Samsung will accept its shape
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: startsWith(github.ref, 'refs/tags/')
         run: |
-          tag="${GITHUB_REF_NAME#v}"
+          tag="$GITHUB_REF_NAME"
           declared=$(node -p "require('./package.json').version")
           if [ "$tag" != "$declared" ]; then
             echo "The tag says $tag and package.json says $declared. Nothing is built until they agree."
@@ -73,19 +78,40 @@ jobs:
       # Tizen Studio is not on any hosted runner, so the command line half of it is installed here.
       # Only the web CLI is needed: packaging a widget is signing a zip, and none of the IDE, the
       # emulator or the TV extensions take part in it.
+      # Restored before the install step, which then skips the download entirely. Keyed on the
+      # version in the URL, so bumping 6.1 fetches a fresh one rather than resurrecting the old.
+      - name: Cache the Tizen CLI
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/tizen-studio
+          key: tizen-studio-${{ runner.os }}-6.1
+
       - name: Install the Tizen CLI
         run: |
           sudo apt-get update -qq
-          # gnome-keyring and dbus-x11 are not optional on Linux, and the reason is in the next step:
+          # gnome-keyring and dbus-x11 are not optional on Linux, and the reason is two steps down:
           # the CLI keeps certificate passwords in the login keyring rather than in profiles.xml.
+          # Java is here because the CLI is Java, and zip because it shells out to it to build the
+          # widget. libxml2-utils used to be in this list and never had a caller, because the
+          # manifest is parsed in CI and nothing here reads XML.
           sudo apt-get install -y --no-install-recommends \
-            zip libxml2-utils openjdk-17-jre-headless dbus-x11 gnome-keyring
-          # 6.1 is the newest the download server publishes, checked rather than assumed. If this
-          # ever 404s, the directory listing at download.tizen.org/sdk/Installer/ says what exists.
-          curl -sSfL -o /tmp/tizen-cli.bin \
-            "https://download.tizen.org/sdk/Installer/tizen-studio_6.1/web-cli_Tizen_Studio_6.1_ubuntu-64.bin"
-          chmod +x /tmp/tizen-cli.bin
-          /tmp/tizen-cli.bin --accept-license "$HOME/tizen-studio"
+            zip openjdk-17-jre-headless dbus-x11 gnome-keyring
+
+          # Asking the restored copy to identify itself, rather than trusting that a cache hit means
+          # a working toolchain. A partial or stale restore answers nothing and gets replaced, so
+          # the cache can never be the reason a release fails, only the reason one is quicker.
+          if ! "$HOME/tizen-studio/tools/ide/bin/tizen" version >/dev/null 2>&1; then
+            # 6.1 is the newest the download server publishes, checked rather than assumed. If this
+            # ever 404s, the directory listing at download.tizen.org/sdk/Installer/ says what exists.
+            curl -sSfL -o /tmp/tizen-cli.bin \
+              "https://download.tizen.org/sdk/Installer/tizen-studio_6.1/web-cli_Tizen_Studio_6.1_ubuntu-64.bin"
+            chmod +x /tmp/tizen-cli.bin
+            /tmp/tizen-cli.bin --accept-license "$HOME/tizen-studio"
+          fi
+
+          # The installer creates this and a cache of tizen-studio alone does not, since nothing
+          # certificate shaped is worth carrying between runs.
+          mkdir -p "$HOME/tizen-studio-data/profile"
           echo "$HOME/tizen-studio/tools/ide/bin" >> "$GITHUB_PATH"
 
       # Both certificates arrive base64 encoded, are written outside the workspace so they cannot be
@@ -208,20 +234,107 @@ jobs:
           shasum -a 256 OpenIPTV.wgt > OpenIPTV.wgt.sha256
           cat OpenIPTV.wgt.sha256
 
+      # The notes are the changelog entry for this version, so the file in the repository and the
+      # release page cannot end up saying different things. A tag with no entry fails here rather
+      # than publishing an empty release, because a tag cannot be moved once somebody has pulled it
+      # and the alternative is editing the notes by hand afterwards, which nobody remembers to do.
+      - name: Take the release notes from the changelog
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          # Stated rather than inherited. The default shell is already `bash -e`, but without this
+          # the step reads as though the extraction failing would simply produce an empty file and
+          # carry on, which is the behaviour you get running it anywhere else.
+          set -euo pipefail
+          python3 - "$GITHUB_REF_NAME" <<'PY' > release-notes.md
+          import re, sys
+          version = sys.argv[1]
+          text = open("CHANGELOG.md", encoding="utf-8").read()
+          found = re.search(rf"^## {re.escape(version)}\s*$(.*?)(?=^## |\Z)", text, re.M | re.S)
+          if not found or not found.group(1).strip():
+              sys.exit(f"CHANGELOG.md has no entry for {version}. Write one before tagging.")
+          print(found.group(1).strip())
+          PY
+          cat >> release-notes.md <<'MD'
+
+          ---
+
+          Try it in a browser at https://shayanline.github.io/OpenIPTV, built from this tag.
+          Install it on your own television with the Tizen CLI, or read the README for the step by
+          step. `OpenIPTV.wgt.sha256` is the checksum of the attached widget.
+
+          **This widget is signed for the televisions its distributor certificate was issued for,
+          so it will refuse to install on any other set.** That is how Tizen sideloading works
+          rather than a restriction chosen here: sign your own build with your own certificate,
+          which the README explains, and it installs on your television. When this application is
+          submitted to Samsung, the store replaces the signature with its own.
+          MD
+          cat release-notes.md
+
       - name: Attach it to the release
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
         with:
           files: |
             build/OpenIPTV.wgt
             build/OpenIPTV.wgt.sha256
           generate_release_notes: true
-          body: |
-            Install it on your own television with the Tizen CLI, or read the README for the
-            step by step. `OpenIPTV.wgt.sha256` is the checksum of the attached widget.
+          body_path: release-notes.md
 
-            **This widget is signed for the televisions its distributor certificate was issued
-            for, so it will refuse to install on any other set.** That is how Tizen sideloading
-            works rather than a restriction chosen here: sign your own build with your own
-            certificate, which the README explains, and it installs on your television. When this
-            application is submitted to Samsung, the store replaces the signature with its own.
+  # ---------------------------------------------------------------------------------
+  # The same application, in a browser.
+  #
+  # A television is a high bar for trying something out: the widget only installs on the sets its
+  # distributor certificate names, so for anybody who is not already set up to sign, the honest
+  # answer to "what does it look like" used to be a screenshot. The web build is the same source
+  # and the same bundle, on the hls.js path rather than the AVPlay one, so it answers that question
+  # without asking anybody to own the right television.
+  #
+  # A separate job because a job takes one environment and the one above is already `release`, and
+  # deploying Pages requires `github-pages`. It rebuilds rather than carrying dist/ across, which
+  # costs four seconds against the ceremony of an artifact upload and download.
+  #
+  # Only on a tag. A dry run rehearses signing, and quietly replacing what the world is looking at
+  # is not a rehearsal.
+  # ---------------------------------------------------------------------------------
+  pages:
+    needs: release
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    permissions:
+      pages: write
+      # Pages verifies the deployment came from this workflow rather than accepting the token on
+      # its own, which is what this is for.
+      id-token: write
+
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - run: npm ci
+      # vite.config.ts sets `base: "./"` so every asset reference is relative, which the television
+      # needs because it loads the widget off the filesystem. A project Pages site is served from
+      # /OpenIPTV/ rather than from the root, and relative paths satisfy both without a second build.
+      - run: npm run build
+
+      - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
+        with:
+          # So the first tagged release turns Pages on by itself instead of failing against a
+          # setting somebody has to remember to click.
+          enablement: true
+
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: dist
+
+      - id: deploy
+        uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5.0.0
