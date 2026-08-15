@@ -1499,11 +1499,19 @@ input.wrong { border-color: var(--danger); }
  * The surface, its rounding and its shadow all live here now, so the halves inside carry nothing but
  * their padding. `overflow: hidden` is what makes the hairline stop where the rounding starts.
  */
+/*
+ * As wide as what is in it, and no wider.
+ *
+ * It used to stretch the full width of the screen with a channel name at one end and nothing at the
+ * other, which is a bar across a programme rather than a label on it. Absolutely positioned with a
+ * left and a bottom and no right, so it shrinks to fit, and capped so a long name in two scripts
+ * cannot push it off the far edge. What a viewer looks at is now the size of what it says.
+ */
 .pb-stack {
   position: absolute;
-  right: var(--safe-x);
   bottom: var(--safe-y);
   left: var(--safe-x);
+  max-width: calc(100% - var(--safe-x) * 2);
   display: flex;
   flex-direction: column;
   border-radius: var(--r-lg);
@@ -1577,10 +1585,39 @@ input.wrong { border-color: var(--danger); }
  * of the scale for the one line that explains how to use the thing.
  */
 /* A box of its own beneath the banner, matching its width and its surface. */
+/*
+ * Glass on the two surfaces that float over a programme, as far as a television allows.
+ *
+ * One UI pairs a blur with a dim and asks for neither alone, so this is both: a lighter surface, and
+ * a blur of whatever is behind it. Where that pairing pays off is the desktop build and any set whose
+ * picture is in the page, because there the blur has pixels to sample.
+ *
+ * On a Samsung set it has fewer than you would hope, and this is worth writing down rather than
+ * rediscovering. The picture is decoded to a hardware plane that the display pipeline composites
+ * underneath the browser, so the region behind these panels is a transparent hole rather than video:
+ * measured on a 2025 set with AVPlay reporting PLAYING and its clock at 97 seconds, a capture of the
+ * page is black everywhere the picture is. So the blur costs a compositing layer and the lighter
+ * surface is what actually changes the look, by letting more of the programme through.
+ *
+ * Behind @supports rather than a script, which is why this is not a second capability branch to
+ * argue about: Chromium 69 on the 2020 and 2021 sets does not have the property and never enters
+ * this block, so those keep the heavier surface they need to stay readable.
+ */
+@supports (backdrop-filter: blur(1px)) {
+  .panel,
+  .pb-stack {
+    background: var(--over-video-glass);
+    backdrop-filter: blur(24px);
+  }
+}
+
 /* The lower half of that one panel. A hairline rather than a gap, and no surface of its own: the
    keys are part of the thing naming the channel, not a second announcement beneath it. */
+/* Aligned to the left, with the name above it, so both halves start on the same vertical line and
+   the eye travels straight down rather than back to the middle. Centring them made sense while this
+   was the width of the screen and stopped making sense the moment it was not. */
 .hints.pb-hints {
-  justify-content: center;
+  justify-content: flex-start;
   padding: var(--s2) var(--s4);
   border-top: 1px solid var(--line);
 }

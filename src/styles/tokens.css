@@ -31,6 +31,14 @@
   --surface-2: rgba(40, 40, 46, 0.94);
   --surface-3: rgba(56, 56, 62, 0.94);
   --over-video: rgba(13, 13, 15, 0.92);
+  /*
+   * The same surface for a set that can blur what is behind it.
+   *
+   * Lighter, because a blur is what lets a panel be thinner without becoming hard to read, and that
+   * is the whole of One UI's blur and dim pairing: neither on its own. Only ever used inside an
+   * @supports query, so the 2020 and 2021 sets keep the heavier surface they can read.
+   */
+  --over-video-glass: rgba(13, 13, 15, 0.78);
   /* Full screen, with nothing behind worth keeping, so it stays opaque. */
   --sheet: #0a0a0b;
 

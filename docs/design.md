@@ -314,23 +314,40 @@ seconds, a capture of the page is pure black everywhere the picture is. The firm
 property, `CSS.supports("backdrop-filter", "blur(20px)")` answers true, and it would blur an empty
 region.
 
-Two further reasons it stays off even where it would work, over the app's own content:
+**What is done about it.** The channel list and the banner ask for the blur anyway, behind an
+`@supports` query, together with a lighter surface: `--over-video-glass` at 0.78 rather than the 0.92
+those panels used to carry. That pairing is what One UI's guidance actually prescribes, and each half
+earns its place differently.
 
-- The sets from 2020 and 2021 run Chromium 69 and the property arrived in 76, so a blurred panel
-  would look like a different application depending on the year of the television.
-- Each blurred surface is promoted to its own full screen compositing layer, and Samsung's memory
-  guidance singles out stacked full screen layers as a thing not to do on a device with this little
-  headroom.
+The lighter surface is the half a viewer sees on a television. More of the programme comes through the
+panel, which is the look those newer sets have, and it is the only part of the effect that does not
+need pixels the browser has never been given.
 
-So the parts of the language that carry the meaning are adopted and the part that cannot work is
-skipped: a single translucent surface over the picture, a soft shadow marking its edge rather than a
-gradient that fades out with no edge at all, and a hairline dividing what is inside it instead of a
-second panel with a second shadow. That last one is why the channel name and the keys that act on it
-are one box in two parts rather than two boxes.
+The blur is the half that pays off in a desktop browser, where the picture is a `<video>` element in
+the page and there is something to sample. On a set it is a no-op, so the question is whether a no-op
+costs anything, and it was worth measuring rather than assuming. Opening and closing the panel five
+times on a 2025 set, with the blur and then with the same surface and no blur:
 
-If a blurred surface is ever wanted, the place it would be honest is a dialog over the settings
-sheet, where what sits behind genuinely is page content, and it would need a `@supports` query and a
-frame time measurement on the floor profile before it earned its place.
+| | With the blur | Blur off |
+|:--|--:|--:|
+| Process CPU | 70% | 75% |
+| Median frame | 17ms | 17ms |
+| Worst frame | 67ms | 83ms |
+| Frames over 50ms | 2 | 2 |
+
+Both runs are the same within noise, and the 70% belongs to the panel sliding and its logos rather
+than to the blur. So the blur is free here, which is the opposite of what the fear was, and the
+earlier worry about stacked compositing layers stays valid only for stacking them: these two surfaces
+never overlap, since the banner belongs to the picture and the panel covers it.
+
+The sets from 2020 and 2021 run Chromium 69, which does not have the property, so they never enter
+the block and keep the heavier surface they need to stay readable. That is why this costs no
+capability branch to reason about: it is a feature query rather than a decision the code makes.
+
+The rest of the language is adopted where it always applied: one surface over the picture rather than
+two, a soft shadow marking its edge rather than a gradient that fades out with no edge at all, and a
+hairline dividing what is inside it. That last one is why the channel name and the keys that act on it
+are one box in two parts.
 
 ## Why a web app
 
