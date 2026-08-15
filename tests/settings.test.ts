@@ -30,7 +30,7 @@ test("a file written by an older version keeps working, and gains the new defaul
   assert.equal(s.fontId, "serif", "what was saved is kept");
   assert.equal(s.showClock, false);
   assert.equal(s.aspectId, "fill", "what is new arrives at its default");
-  assert.equal(s.panelTimeout, 15);
+  assert.equal(s.panelTimeout, 4);
 });
 
 test("nonsense in the store falls back to defaults rather than throwing", async () => {

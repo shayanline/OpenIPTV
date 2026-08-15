@@ -69,8 +69,9 @@ export function Behaviour({ onAsking }: { onAsking: (asking: boolean) => void })
       <Row label="Hide the channel list after" hint="When you stop pressing anything">
         <Choice
           options={[
-            { id: "8", label: "8 seconds" }, { id: "15", label: "15 seconds" },
-            { id: "30", label: "30 seconds" }, { id: "0", label: "Never" },
+            { id: "4", label: "4 seconds" }, { id: "8", label: "8 seconds" },
+            { id: "15", label: "15 seconds" }, { id: "30", label: "30 seconds" },
+            { id: "0", label: "Never" },
           ]}
           value={String(s.panelTimeout)}
           onChange={(id) => s.set("panelTimeout", Number(id))}

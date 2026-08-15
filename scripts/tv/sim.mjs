@@ -728,7 +728,7 @@ await cdp.send("Page.addScriptToEvaluateOnNewDocument", {
   /*
    * Two settings a measurement must not be at the mercy of.
    *
-   * `panelTimeout` defaults to fifteen seconds, and once a channel is playing the app arms a
+   * `panelTimeout` defaults to four seconds, and once a channel is playing the app arms a
    * timer to put the panel away. The channel list phases settle for three seconds and then
    * press forty times, twice, so they cross that comfortably: the panel could close halfway
    * through a phase named after scrolling it, and nothing rechecked. `showClock` defaults on

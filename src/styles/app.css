@@ -647,7 +647,7 @@ html.tizen, html.tizen body, html.tizen #root, html.tizen .app { background: tra
  *
  * Two seconds and transform and opacity only, so it composites without repainting and reads as
  * breathing rather than blinking. It only exists while the channel list is open, which closes
- * itself after fifteen seconds, so nothing is animating over a programme.
+ * itself a few seconds after the last press, so nothing is animating over a programme.
  */
 .playing-dot {
   position: relative;
