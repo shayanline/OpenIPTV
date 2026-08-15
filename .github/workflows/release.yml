@@ -76,7 +76,10 @@ jobs:
       - name: Install the Tizen CLI
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends zip libxml2-utils openjdk-17-jre-headless
+          # gnome-keyring and dbus-x11 are not optional on Linux, and the reason is in the next step:
+          # the CLI keeps certificate passwords in the login keyring rather than in profiles.xml.
+          sudo apt-get install -y --no-install-recommends \
+            zip libxml2-utils openjdk-17-jre-headless dbus-x11 gnome-keyring
           # 6.1 is the newest the download server publishes, checked rather than assumed. If this
           # ever 404s, the directory listing at download.tizen.org/sdk/Installer/ says what exists.
           curl -sSfL -o /tmp/tizen-cli.bin \
@@ -94,8 +97,19 @@ jobs:
       # for the store, which strips this signature and applies its own, and it is the reason the
       # release notes say plainly that the asset is a submission build rather than something a
       # stranger can sideload.
-      - name: Register the signing profile
+      #
+      # Registering the profile and signing with it are one step rather than two because on Linux
+      # the CLI does not keep the password in profiles.xml at all. `security-profiles add` hands it
+      # to tools/certificate-encryptor/secret-tool, which writes it to the GNOME login keyring, and
+      # `package` reads it back with a lookup against that same keyring. A hosted runner has no
+      # session bus and no keyring, so the store quietly does nothing, the add still reports
+      # "Succeed to add" because it never checks, and signing later fails with
+      # "CertificationException: Invaild password" against a password that is perfectly correct.
+      # Both commands therefore run inside one `dbus-run-session` with the keyring unlocked, since
+      # a second step would be a second session and the secret would not be there.
+      - name: Register the signing profile, then package and sign
         env:
+          SIGNING_PROFILE: OpenIPTV
           AUTHOR_P12: ${{ secrets.TIZEN_AUTHOR_P12 }}
           AUTHOR_PASSWORD: ${{ secrets.TIZEN_AUTHOR_PASSWORD }}
           DISTRIBUTOR_P12: ${{ secrets.TIZEN_DISTRIBUTOR_P12 }}
@@ -139,29 +153,30 @@ jobs:
             echo "One of the certificates and its password disagree, so signing would fail anyway."
             exit 1
           fi
-          tizen security-profiles add -n OpenIPTV \
-            -a "$RUNNER_TEMP/author.p12" -p "$AUTHOR_PASSWORD" \
-            -d "$RUNNER_TEMP/distributor.p12" --dist-password "$DISTRIBUTOR_PASSWORD"
+          # The keyring is created here and dies with the runner, so what unlocks it is a constant
+          # rather than a secret. Everything that needs the password lives inside this one session.
+          dbus-run-session -- bash -euo pipefail -c '
+            echo openiptv-ci | gnome-keyring-daemon --unlock
 
-          # And tell the CLI to read the file it just wrote.
-          #
-          # `security-profiles add` writes to tizen-studio-data/profile/profiles.xml while `package`
-          # reads whichever file the CLI configuration names, which on a fresh install is the sample
-          # that ships inside the toolchain. The two never meet, so packaging signed with a
-          # placeholder and failed with "CertificationException: Invaild password", which sounds like
-          # a wrong password and is really a wrong file. The CLI prints this advice itself, at the end
-          # of a step that reports success.
-          tizen cli-config "profiles.path=$HOME/tizen-studio-data/profile/profiles.xml"
+            tizen security-profiles add -n OpenIPTV \
+              -a "$RUNNER_TEMP/author.p12" -p "$AUTHOR_PASSWORD" \
+              -d "$RUNNER_TEMP/distributor.p12" --dist-password "$DISTRIBUTOR_PASSWORD"
 
-      # scripts/package.sh needs no changes to run here: it already takes the profile name and the
-      # CLI location from the environment, stamps the version into the manifest and writes the widget
-      # to build/.
-      - name: Package and sign
-        env:
-          SIGNING_PROFILE: OpenIPTV
-          TIZEN_CLI: ${{ github.workspace }}/../tizen-studio/tools/ide/bin/tizen
-        run: |
-          npm run package
+            # And tell the CLI to read the file it just wrote.
+            #
+            # `security-profiles add` writes to tizen-studio-data/profile/profiles.xml while
+            # `package` reads whichever file the CLI configuration names, which on a fresh install
+            # is the sample that ships inside the toolchain. The two never meet, so packaging signed
+            # with a placeholder and failed with the same "Invaild password" as an unreachable
+            # keyring does. The CLI prints this advice itself, at the end of a step that reports
+            # success.
+            tizen cli-config "profiles.path=$HOME/tizen-studio-data/profile/profiles.xml"
+
+            # scripts/package.sh needs no changes to run here: it takes the profile name from the
+            # environment, finds the CLI on PATH, stamps the version into the manifest and writes
+            # the widget to build/.
+            npm run package
+          '
           ls -l build/
 
       # The Tizen CLI answers a failure with "An error has occurred. See the log file", and then the
