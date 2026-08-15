@@ -18,6 +18,7 @@ npm run build       # required before any of the gates below
 npm run tv:gap      # spacing parity for the sets without flex gap
 npm run tv:engines  # the app in a real Chromium 69 and 120
 npm run tv:budget   # frame times and the launch, on the floor profile, as a pass or fail
+npm run wasm:check  # the committed WebAssembly matches its source and its worker
 ```
 
 `npm run check` and `npm run build` for anything. The three `tv:` gates need a build first and
@@ -48,7 +49,7 @@ it is not a gate and never runs in CI.
 src/
   App.tsx                  the screen stack and the key routing, and nothing else
   types.ts                 Channel, and the shapes the parser produces
-  meta.ts                  version and repository URL, injected at build time
+  meta.ts                  the repository URL, and the version Vite injects from package.json
   services/m3u.ts          playlist parser, tolerant of the ways M3U is abused
   services/lineup.ts       which lists exist, and where channel up and down land
   services/search.ts       ranked matching over the whole playlist, capped per rank
@@ -81,6 +82,8 @@ scripts/
   package.sh               build and sign
   deploy.sh                build, install over sdb and launch
   icon.mjs                 redraw public/icon.png from public/icon.svg
+  wasm-check.mjs           the committed WebAssembly still holds together, without the toolchain
+  store-assets.mjs         the six pictures Samsung's store form asks for, from the real build
   stamp-version.mjs        write package.json's version into config.xml at package time
   tv/                      run the app under the TV's measured constraints
   tv/platforms.json        Samsung's engine matrix, the only copy of it
@@ -139,6 +142,11 @@ Break one of these and the app fails on hardware no test here owns. The reasonin
   when it is not needed.** A fixed port plus a worker terminated without closing leaves the
   socket held, and the next attempt cannot bind: the symptom is AVPlay reporting
   `CONNECTION_FAILED` against a server that looks perfectly healthy.
+- **A new runtime dependency has to be written into `public/THIRD-PARTY-NOTICES.md` by hand.** That
+  file and the licence texts beside it are in `public/` rather than the repository root on purpose,
+  because Vite copies that directory verbatim and the obligation is toward whoever installs the
+  widget rather than whoever reads the source. hls.js is Apache-2.0 and its notice does not survive
+  minification, so nothing else carries it.
 - **`public/config.xml` must stay well formed XML**, or the Tizen CLI will not package it and
   nothing else parses the file. CI runs `xmllint` on it. `object-src 'self'` in the CSP is load
   bearing: the AVPlay picture is a hardware plane bound to an `<object>`, and `'none'` gives

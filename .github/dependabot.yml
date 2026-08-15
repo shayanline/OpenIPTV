@@ -1,0 +1,21 @@
+# There are four runtime dependencies and the rest is build tooling, so a weekly check is cheap and
+# rarely noisy. Grouped, because a week of separate patch bumps to Vite's own dependencies is five
+# pull requests that all say the same thing.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      development:
+        dependency-type: development
+        update-types: [minor, patch]
+
+  # Kept up to date deliberately, because the workflows pin actions by commit rather than by tag: a
+  # pinned SHA is only safe if something is watching for the next one.
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly

@@ -177,7 +177,7 @@ the television, over sdb, through the web inspector:
 ```bash
 npm run tv:on-set                                   # launch marks, then the interface at rest
 npm run tv:on-set -- --stream=https://host/x.m3u8   # and what a picture costs
-npm run tv:on-set -- --tv=192.168.0.107 --seconds=20
+npm run tv:on-set -- --tv=192.168.1.100 --seconds=20
 ```
 
 It exists because the simulator cannot answer three questions and never will. Its picture is

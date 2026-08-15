@@ -4,7 +4,7 @@
  *
  *   npm run tv:on-set
  *   npm run tv:on-set -- --stream=https://example.com/channel.m3u8
- *   npm run tv:on-set -- --tv=192.168.0.107 --seconds=20
+ *   npm run tv:on-set -- --tv=192.168.1.100 --seconds=20
  *
  * Everything else in scripts/tv/ measures a laptop pretending to be a set. This attaches to
  * the real one over sdb, drives it through the web inspector, and reports what the app costs

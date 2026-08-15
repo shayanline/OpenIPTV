@@ -3,10 +3,31 @@ dist/
 build/
 *.wgt
 *.tsbuildinfo
-.env
 .DS_Store
 .playwright-cli/
 .vscode/
 .idea/
 coverage/
 *.log
+
+# Signing material. Nothing here is tracked today and nothing should be: an author certificate is
+# permanent, unrecoverable and tied to the published application, and a distributor certificate
+# carries the identifiers of the televisions it was issued for. The README tells every reader to
+# create their own, so this is the guard for the one who creates it inside the checkout.
+*.p12
+*.pfx
+*.pem
+*.cer
+*.crt
+*.key
+profiles.xml
+author-signature.xml
+signature*.xml
+
+# Vite reads .env.local and the mode specific variants too, which the single .env above missed.
+.env*
+
+# Coding agent scratch directories.
+.claude/
+.cursor/
+.windsurf/

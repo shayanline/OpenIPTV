@@ -1,9 +1,23 @@
 # SimpleIPTV
 
+[![CI](https://github.com/shayanline/SimpleIPTV/actions/workflows/ci.yml/badge.svg)](https://github.com/shayanline/SimpleIPTV/actions/workflows/ci.yml)
+
 An IPTV player for Samsung TVs. Give it the address of an M3U playlist and it plays what is in it.
 
 It comes with no channels of its own and reports nothing to anybody. It talks to the playlist and
 the streams you point it at, and what you add stays on the television.
+
+## Disclaimer
+
+This is a player, and it ships with nothing to play. No channel list, no playlist and no stream
+address is bundled with it or built into it, and the project provides no content of any kind. What
+you see is whatever the playlist you supply happens to contain, which is a file this project cannot
+see, host, index or influence.
+
+The project is not affiliated with, endorsed by or connected to any broadcaster, channel or
+streaming service. Whether you are entitled to watch what a playlist points at is between you, the
+person who gave you the address and the people who own what is at the end of it, so please make sure
+you have the right to access whatever you add.
 
 ## What it does
 
@@ -38,8 +52,9 @@ The TV has to be in developer mode either way:
 Then, with Samsung's Tizen CLI on that computer:
 
 ```bash
+cd <wherever you downloaded the widget>     # -n takes a name, resolved from where you are
 sdb connect <tv-ip>:26101
-sdb devices                                  # the third column is the name to install to
+sdb devices                                # the third column is the name to install to
 tizen install -n SimpleIPTV.wgt -t "<name>"
 ```
 
@@ -52,6 +67,16 @@ Manager create an author certificate, then a Samsung distributor certificate for
 television. The generic Tizen distributor certificate signs without complaint and is then
 refused by a retail set at install. Call the profile `SimpleIPTV`, or set `SIGNING_PROFILE` to
 whatever you called it.
+
+Three things about that certificate catch people out, and each one stops the process rather than
+warning you:
+
+- Certificate Manager offers the **Samsung** certificate type only once the Samsung Certificate
+  Extension is installed, through the Tizen Studio Package Manager. Without it the only choice is
+  the Tizen type, which is the one a retail television refuses.
+- Creating the distributor certificate signs you in with a **Samsung account**.
+- Your **television must be on, in developer mode and connected** at that moment, because that is
+  when its identifier is read into the certificate.
 
 ```bash
 git clone https://github.com/shayanline/SimpleIPTV.git
@@ -139,8 +164,14 @@ interface is shaped the way it is, [the testing notes](docs/testing.md) cover wh
 the televisions nobody here owns, and [AGENTS.md](AGENTS.md) is the short version for anyone, or
 anything, working in the repository.
 
-Run `npm run check` before opening a pull request.
+Run `npm run check` before opening a pull request. [CONTRIBUTING.md](CONTRIBUTING.md) has the rest,
+and [publishing](docs/publishing.md) covers releases and what submitting to Samsung's store involves.
 
 ## Licence
 
-MIT. See [LICENSE](LICENSE).
+MIT, in [LICENSE](LICENSE).
+
+Four other projects travel inside the built application, and their notices are in
+[THIRD-PARTY-NOTICES.md](public/THIRD-PARTY-NOTICES.md) with their licence texts beside it. That
+file sits in `public/` so it is packaged into the widget itself, since the obligation is toward
+whoever installs the application and not only toward whoever reads this page.

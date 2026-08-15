@@ -1,0 +1,155 @@
+name: Release
+
+# A tag is the trigger, because a release is a decision rather than a consequence of pushing.
+#
+# What this can and cannot do is worth stating plainly at the top, since the boundary is not
+# obvious. It builds the application, signs it with the certificates from this repository's secrets,
+# and attaches the widget to a GitHub release. It does not submit anything to Samsung: the TV Seller
+# Office has no API of any kind, so every step from uploading the package onwards is a web form that
+# a person fills in. docs/publishing.md is the runbook for that half.
+on:
+  push:
+    tags: ["v*"]
+  # So a release can be rehearsed without cutting a tag. Nothing is published in that case.
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        description: Build and sign, but attach nothing
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    # The signing keys live in an environment rather than in plain repository secrets, so they are
+    # unreachable from a pull request and can be held behind a protection rule. The author
+    # certificate is the one thing here that cannot be replaced: lose it and the application can
+    # never be updated again, only republished as a different app with a different name.
+    environment: release
+
+    permissions:
+      # Only for the last step, which creates the release.
+      contents: write
+
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - run: npm ci
+
+      # The same gates as every other push. A release that skips them is a release nobody checked,
+      # and the two hardware gates are exactly the ones that catch what a laptop hides.
+      - run: npm run check
+      - run: npm run build
+      - run: npm run tv:gap
+      - run: npm run wasm:check
+
+      # The tag and package.json have to agree, or the widget claims a version the About screen
+      # contradicts. Samsung is stricter still: each field is bounded, and a version that collides
+      # with one already uploaded is refused, so this checks the shape as well as the match.
+      - name: The tag matches the version, and Samsung will accept its shape
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          declared=$(node -p "require('./package.json').version")
+          if [ "$tag" != "$declared" ]; then
+            echo "The tag says $tag and package.json says $declared. Nothing is built until they agree."
+            exit 1
+          fi
+          if ! printf '%s' "$tag" | grep -Eq '^([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.([0-9]{1,4}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5])$'; then
+            echo "Samsung takes major.minor.micro only, bounded at 255.255.65535, so $tag would be refused."
+            exit 1
+          fi
+
+      # Tizen Studio is not on any hosted runner, so the command line half of it is installed here.
+      # Only the web CLI is needed: packaging a widget is signing a zip, and none of the IDE, the
+      # emulator or the TV extensions take part in it.
+      - name: Install the Tizen CLI
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends zip libxml2-utils openjdk-17-jre-headless
+          # 6.1 is the newest the download server publishes, checked rather than assumed. If this
+          # ever 404s, the directory listing at download.tizen.org/sdk/Installer/ says what exists.
+          curl -sSfL -o /tmp/tizen-cli.bin \
+            "https://download.tizen.org/sdk/Installer/tizen-studio_6.1/web-cli_Tizen_Studio_6.1_ubuntu-64.bin"
+          chmod +x /tmp/tizen-cli.bin
+          /tmp/tizen-cli.bin --accept-license "$HOME/tizen-studio"
+          echo "$HOME/tizen-studio/tools/ide/bin" >> "$GITHUB_PATH"
+
+      # Both certificates arrive base64 encoded, are written outside the workspace so they cannot be
+      # picked up by anything that archives the checkout, and are deleted in a step that runs even
+      # when the build fails.
+      #
+      # A note on what this signature is worth. The distributor certificate is issued against
+      # specific televisions, so this widget installs on those sets and nowhere else. That is fine
+      # for the store, which strips this signature and applies its own, and it is the reason the
+      # release notes say plainly that the asset is a submission build rather than something a
+      # stranger can sideload.
+      - name: Register the signing profile
+        env:
+          AUTHOR_P12: ${{ secrets.TIZEN_AUTHOR_P12 }}
+          AUTHOR_PASSWORD: ${{ secrets.TIZEN_AUTHOR_PASSWORD }}
+          DISTRIBUTOR_P12: ${{ secrets.TIZEN_DISTRIBUTOR_P12 }}
+          DISTRIBUTOR_PASSWORD: ${{ secrets.TIZEN_DISTRIBUTOR_PASSWORD }}
+        run: |
+          if [ -z "$AUTHOR_P12" ] || [ -z "$DISTRIBUTOR_P12" ]; then
+            echo "No signing certificates are configured, so there is nothing to sign with."
+            echo "docs/publishing.md lists the four secrets this needs."
+            exit 1
+          fi
+          umask 077
+          printf '%s' "$AUTHOR_P12" | base64 -d > "$RUNNER_TEMP/author.p12"
+          printf '%s' "$DISTRIBUTOR_P12" | base64 -d > "$RUNNER_TEMP/distributor.p12"
+          tizen security-profiles add -n SimpleIPTV \
+            -a "$RUNNER_TEMP/author.p12" -p "$AUTHOR_PASSWORD" \
+            -d "$RUNNER_TEMP/distributor.p12" --dist-password "$DISTRIBUTOR_PASSWORD"
+
+      # scripts/package.sh needs no changes to run here: it already takes the profile name and the
+      # CLI location from the environment, stamps the version into the manifest and writes the widget
+      # to build/.
+      - name: Package and sign
+        env:
+          SIGNING_PROFILE: SimpleIPTV
+          TIZEN_CLI: ${{ github.workspace }}/../tizen-studio/tools/ide/bin/tizen
+        run: |
+          npm run package
+          ls -l build/
+
+      # Deleted whether or not any of the above worked. `if: always()` rather than a trap, so a
+      # cancelled run cleans up too.
+      - name: Forget the certificates
+        if: always()
+        run: rm -f "$RUNNER_TEMP/author.p12" "$RUNNER_TEMP/distributor.p12"
+
+      - name: Checksum what is being published
+        run: |
+          cd build
+          shasum -a 256 SimpleIPTV.wgt > SimpleIPTV.wgt.sha256
+          cat SimpleIPTV.wgt.sha256
+
+      - name: Attach it to the release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
+        with:
+          files: |
+            build/SimpleIPTV.wgt
+            build/SimpleIPTV.wgt.sha256
+          generate_release_notes: true
+          body: |
+            Install it on your own television with the Tizen CLI, or read the README for the
+            step by step. `SimpleIPTV.wgt.sha256` is the checksum of the attached widget.
+
+            **This widget is signed for the televisions its distributor certificate was issued
+            for, so it will refuse to install on any other set.** That is how Tizen sideloading
+            works rather than a restriction chosen here: sign your own build with your own
+            certificate, which the README explains, and it installs on your television. When this
+            application is submitted to Samsung, the store replaces the signature with its own.

@@ -136,7 +136,7 @@ const BENCHMARK_PLAYLIST = "https://iptv-org.github.io/iptv/index.m3u";
  *
  * Downloaded once and then served from here, which is not a convenience. Fetched from the
  * CDN on every run, the launch measurement would be timing github.io: 2.7MB arrives in
- * whatever time the office wifi feels like, and the mark that is supposed to say how long
+ * whatever time the network feels like, and the mark that is supposed to say how long
  * the application takes to read a playlist would move by a second between runs for reasons
  * that have nothing to do with the application. Served from localhost the bytes are
  * identical, constant, and there whether or not this machine is online.
@@ -818,7 +818,7 @@ console.log(`  engine     ${profile.platform}, Chromium ${profile.chromium}`
 // Spelled out against what the set actually reports, because a bare throttle figure reads
 // like a multiple of the TV when it is a multiple of this laptop.
 console.log(`  cpu        ${cpu}x slower per core than this machine`
-  + `${floor ? `, ie ${profile.slowerThanReference}x slower than your S90D` : ""} (${trust})`);
+  + `${floor ? `, ie ${profile.slowerThanReference}x slower than the reference set` : ""} (${trust})`);
 console.log(`  heap       ${heapMB}MB${harsh > 1 ? ` of ${profile.jsHeapLimitMB}MB` : ""}`);
 console.log(`  cores      ${cores}${harsh > 1 ? ` of ${profile.cores}` : ""}`
   + `, though only the main thread is slowed`);

@@ -1,0 +1,80 @@
+name: Something is not working
+description: A channel that will not play, a key that does nothing, anything the app gets wrong.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Most of what makes a television bug fixable is knowing which television. Settings, then
+        Diagnostics, lists what the set reports about itself and every key its remote sends, and
+        copying it here saves a round of questions.
+
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected and what the screen actually showed.
+      placeholder: |
+        I pressed down at the picture to change channel and the banner named the next channel, but
+        the picture stayed on the previous one until I pressed OK.
+    validations:
+      required: true
+
+  - type: input
+    id: television
+    attributes:
+      label: Which television
+      description: >
+        The model and the year if you know it, and whether this is a TV at all: the same build runs
+        in a desktop browser, and a fault that only happens in a browser is a different bug.
+      placeholder: Samsung 2021 QN90A, or "desktop Chrome 141"
+    validations:
+      required: true
+
+  - type: input
+    id: tizen
+    attributes:
+      label: Tizen version
+      description: Settings, then Diagnostics, reports it. Leave it blank if you cannot get that far.
+      placeholder: "7.0"
+
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: The Diagnostics screen
+      description: >
+        Whatever it says, pasted or photographed. The engine, the memory, the picture path in use and
+        the compatibility state are the four that usually explain a fault on their own.
+
+  - type: dropdown
+    id: compatibility
+    attributes:
+      label: Is compatibility mode on?
+      description: Settings, then Watching. It is off unless you turned it on.
+      options:
+        - "Off, the default"
+        - "On"
+        - "I do not know"
+
+  - type: textarea
+    id: playlist
+    attributes:
+      label: The playlist, if it is involved
+      description: >
+        Please do not paste a private or paid playlist address, or anything with a username or a
+        password in it. What helps is the shape of the file: how many channels, whether the failing
+        entry is HLS or something else, and if you can share one problematic entry with the host
+        removed, that is usually enough.
+
+  - type: checkboxes
+    id: checked
+    attributes:
+      label: Before opening this
+      options:
+        - label: >
+            I read the troubleshooting section in the README, since a channel that will not play is
+            often the playlist rather than the app.
+          required: false
+        - label: >
+            This is not a security problem. Those go through SECURITY.md privately instead.
+          required: true

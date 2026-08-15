@@ -1,0 +1,8 @@
+# The generated Emscripten glue is one 119KB line. Marked so GitHub folds it in a diff and keeps it
+# out of the language statistics, because nobody reviews it and nothing about it is hand written.
+public/wasm/manifest-socket.js linguist-generated=true
+public/wasm/manifest-socket.wasm binary
+
+# The two shell scripts run on a television developer's machine over sdb, so they must keep unix line
+# endings whatever a contributor's editor prefers.
+*.sh text eol=lf

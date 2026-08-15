@@ -4,12 +4,24 @@ on:
   push:
     branches: [master, main]
   pull_request:
+  # So the engine and budget jobs can be run deliberately, rather than only as a side effect of
+  # pushing something.
+  workflow_dispatch:
 
 # A second push to the same branch makes the first run pointless.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# Nothing here writes to the repository, so nothing here needs to be able to. Stated explicitly
+# because the default for an older account is still read and write, and a token that can push is
+# worth having only if something needs to push.
+permissions:
+  contents: read
+
+# Actions are pinned to a commit rather than a tag, since a tag can be moved to point at different
+# code and this workflow runs on every pull request from anybody. The tag is in the comment so a
+# human can still read what version it is, and dependabot keeps the pins moving.
 jobs:
   check:
     runs-on: ubuntu-latest
@@ -17,12 +29,13 @@ jobs:
     # burn the six hour default, and a Chrome that dies mid run is a realistic way to hang.
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
-          # The test script runs TypeScript through Node's own type stripping, which is only
-          # on by default from 22.18. Read from .nvmrc so the version lives in one place.
+          # Read from .nvmrc so the version lives in one place. The floor is 22.18 because that is
+          # where the tooling this project uses settled, and vite.config.ts explains at length why
+          # the tests run through Vitest rather than Node's own type stripping.
           node-version-file: .nvmrc
           cache: npm
 
@@ -31,13 +44,33 @@ jobs:
       # Lint, typecheck and unit tests, which is what `npm run check` is.
       - run: npm run check
 
+      # Formatting is deliberately not a gate. Biome's formatter disagrees with this codebase in 71
+      # files, almost all of it wanting to explode hand aligned argument lists and object literals
+      # into something several lines longer, and the alignment here is a considered choice rather
+      # than an accident. `npm run format:check` still exists for anyone who wants its opinion.
       - run: npm run build
 
-      # The widget manifest has to be well formed XML or the Tizen CLI will not package it,
-      # and it is a file nothing else parses, so nothing else would notice. It has been
-      # broken in this repository before.
+      # The widget manifest has to be well formed XML or the Tizen CLI will not package it, and it
+      # is a file nothing else parses, so nothing else would notice. It has been broken in this
+      # repository before.
+      #
+      # libxml2-utils is installed because xmllint is not on the runner image and the images team
+      # has twice declined to add it. Without this the step exits 127 and everything after it in the
+      # job never runs, which is a green tick on a check that never happened.
       - name: Validate the widget manifest
-        run: xmllint --noout public/config.xml
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends libxml2-utils
+          xmllint --noout public/config.xml
+
+      # The committed WebAssembly cannot be rebuilt here, because it needs Samsung's own Emscripten
+      # fork, so the next best thing is proving that what is committed is what the recorded source
+      # produced, and that the module and its worker still agree about the nineteen socket functions
+      # the platform supplies. That mismatch is a failure this project has already paid for once.
+      - name: The committed WebAssembly matches its source
+        run: |
+          shasum -a 256 -c wasm/checksums.txt
+          node scripts/wasm-check.mjs
 
       # The televisions this is built for have no flex gap, so the stylesheet carries a
       # second set of spacing rules that no browser here ever uses. Without this they would
@@ -62,9 +95,9 @@ jobs:
     # Longer, because a new engine is a couple of hundred megabytes to fetch.
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version-file: .nvmrc
           cache: npm
@@ -72,7 +105,7 @@ jobs:
       # Keyed on the resolved snapshot positions, so a new engine in platforms.json fetches
       # and everything else is already on disk.
       - name: Cache the pinned engines
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: ~/.cache/simpleiptv-engines
           key: engines-${{ runner.os }}-${{ hashFiles('scripts/tv/platforms.json', 'scripts/tv/engines.lock.json') }}
@@ -100,8 +133,8 @@ jobs:
     continue-on-error: true
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v6
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version-file: .nvmrc
           cache: npm
@@ -119,5 +152,44 @@ jobs:
       # The harness now owns the playlist. It fetches iptv-org's index, serves it locally and
       # asserts it into the profile's settings every run, so a fresh runner and a laptop measure
       # the same 12,732 channels and neither needs telling.
+      # Written to the run summary as well as the log, because a job that is allowed to fail reports
+      # itself green in the checks list: without this, the numbers nobody is supposed to merge on the
+      # tick alone are buried in the log of a job that looks like it passed.
       - name: Within the floor profile's budget
-        run: npm run tv:budget
+        run: |
+          set -o pipefail
+          npm run tv:budget 2>&1 | tee /tmp/budget.txt
+        continue-on-error: true
+
+      - name: Put the numbers where they can be read
+        if: always()
+        run: |
+          echo '## Performance budget, on the floor profile' >> "$GITHUB_STEP_SUMMARY"
+          echo '' >> "$GITHUB_STEP_SUMMARY"
+          echo 'A regression alarm rather than a verdict: the throttle is a ratio between two named' >> "$GITHUB_STEP_SUMMARY"
+          echo 'machines and a shared runner is neither of them.' >> "$GITHUB_STEP_SUMMARY"
+          echo '' >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          tail -40 /tmp/budget.txt >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || echo "the run produced nothing" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+  # ---------------------------------------------------------------------------------
+  # What a new dependency would bring with it.
+  #
+  # Four runtime dependencies and one of them is only used off the television, so this is
+  # cheap and almost never fires. It is here because the thing being protected is a widget
+  # that installs on somebody's television, where nothing can be patched in a hurry.
+  # ---------------------------------------------------------------------------------
+  dependencies:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/dependency-review-action@2031cfc080254a8a887f58cffee85186f0e49e48 # v4
+        with:
+          fail-on-severity: high
+          # A copyleft licence in something that ships inside the widget would be a licensing
+          # problem rather than a security one, and THIRD-PARTY-NOTICES.md is what would need
+          # rewriting, so it is worth being told at the point somebody proposes it.
+          deny-licenses: AGPL-3.0, GPL-2.0, GPL-3.0

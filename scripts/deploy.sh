@@ -26,7 +26,7 @@ TIZEN="${TIZEN_CLI:-${TOOLS:-}/ide/bin/tizen}"
 # the message below rather than tripping `set -e` inside the assignment.
 PAIRED="$("$SDB" devices 2>/dev/null | awk 'NR>1 {split($1,a,":"); print a[1]; exit}' || true)"
 TV_IP="${TV_IP:-$PAIRED}"
-[ -n "$TV_IP" ] || { echo "Set TV_IP, for example TV_IP=192.168.0.107 ./scripts/deploy.sh"; exit 1; }
+[ -n "$TV_IP" ] || { echo "Set TV_IP, for example TV_IP=192.168.1.100 ./scripts/deploy.sh"; exit 1; }
 
 # Always rebuild. This used to reuse whatever .wgt happened to be in build/, so editing the
 # app and running deploy installed last week's widget and then reported success. A deploy
@@ -37,7 +37,7 @@ echo "Connecting to $TV_IP..."
 "$SDB" connect "$TV_IP:26101" >/dev/null || true
 
 # -F so the dots in an address are dots rather than any character, and the trailing colon so
-# that 192.168.0.10 does not match 192.168.0.107.
+# that 192.168.1.10 does not match 192.168.1.100.
 "$SDB" devices | grep -qF "$TV_IP:" || {
   echo "No device at $TV_IP. The TV must be in developer mode with this machine's IP set,"
   echo "and restarted afterwards, before port 26101 opens."

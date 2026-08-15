@@ -12,8 +12,16 @@
   <content src="index.html"/>
 
   <!-- Keep the id from the Tizen Studio scaffold, so an install replaces rather than
-       duplicates the app already on the TV. -->
+       duplicates the app already on the TV. Once the app is submitted to Samsung this id is
+       permanent: it can never be changed, no other app may reuse it, and every update has to
+       carry it. -->
   <tizen:application id="qQHcuw4fHz.SimpleIPTV" package="qQHcuw4fHz" required_version="2.4"/>
+
+  <!-- The screen this is drawn for, which the store's automated check requires: Samsung's own
+       publishing guide walks through this exact rejection, because a hand written manifest has
+       nothing to inject it. The interface is laid out for 1920 by 1080 and the sets scale it,
+       which is why one declaration is enough. -->
+  <feature name="http://tizen.org/feature/screen.size.normal.1080.1920"/>
 
   <!-- internet: fetch the playlist and the streams.
        tv.inputdevice: receive the coloured and channel keys.
