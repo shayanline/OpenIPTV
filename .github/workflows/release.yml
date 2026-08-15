@@ -143,6 +143,16 @@ jobs:
             -a "$RUNNER_TEMP/author.p12" -p "$AUTHOR_PASSWORD" \
             -d "$RUNNER_TEMP/distributor.p12" --dist-password "$DISTRIBUTOR_PASSWORD"
 
+          # And tell the CLI to read the file it just wrote.
+          #
+          # `security-profiles add` writes to tizen-studio-data/profile/profiles.xml while `package`
+          # reads whichever file the CLI configuration names, which on a fresh install is the sample
+          # that ships inside the toolchain. The two never meet, so packaging signed with a
+          # placeholder and failed with "CertificationException: Invaild password", which sounds like
+          # a wrong password and is really a wrong file. The CLI prints this advice itself, at the end
+          # of a step that reports success.
+          tizen cli-config "profiles.path=$HOME/tizen-studio-data/profile/profiles.xml"
+
       # scripts/package.sh needs no changes to run here: it already takes the profile name and the
       # CLI location from the environment, stamps the version into the manifest and writes the widget
       # to build/.
