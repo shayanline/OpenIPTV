@@ -1,6 +1,6 @@
 # Third party notices
 
-SimpleIPTV itself is MIT licensed, and its terms are in [LICENSE](../LICENSE). The software below is
+OpenIPTV itself is MIT licensed, and its terms are in [LICENSE](../LICENSE). The software below is
 other people's work, and this file exists because some of it travels inside every widget this
 project builds rather than staying in the repository.
 

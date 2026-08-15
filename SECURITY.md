@@ -1,7 +1,7 @@
 # Reporting a security problem
 
 Please report it privately through
-[GitHub's private vulnerability reporting](https://github.com/shayanline/SimpleIPTV/security/advisories/new)
+[GitHub's private vulnerability reporting](https://github.com/shayanline/OpenIPTV/security/advisories/new)
 rather than opening an issue, and I will reply as soon as I can. This is one person working on a
 television app in his spare time, so there is no bounty and no service level agreement, only an
 honest attempt to fix what you find.

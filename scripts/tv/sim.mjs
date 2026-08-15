@@ -145,7 +145,7 @@ const BENCHMARK_PLAYLIST = "https://iptv-org.github.io/iptv/index.m3u";
  * copy that never expired would quietly become a different benchmark from the one the URL
  * names, and one that expired every run would put the CDN back in the measurement.
  */
-const PLAYLIST_CACHE = join(tmpdir(), "simpleiptv-tv-sim-playlist.m3u");
+const PLAYLIST_CACHE = join(tmpdir(), "openiptv-tv-sim-playlist.m3u");
 const PLAYLIST_TTL_MS = 24 * 60 * 60 * 1000;
 
 /** Anything started here dies with this process, however it ends. */
@@ -602,7 +602,7 @@ if (measuring) {
 }
 
 // A stable profile, so a playlist added once stays added, the way it would on the set.
-const userDir = join(tmpdir(), "simpleiptv-tv-sim");
+const userDir = join(tmpdir(), "openiptv-tv-sim");
 mkdirSync(userDir, { recursive: true });
 const child = spawn(chrome, [
   `--remote-debugging-port=${port}`,
@@ -759,7 +759,7 @@ await cdp.send("Page.addScriptToEvaluateOnNewDocument", {
      * and localStorage each throw in turn as the guards are added one at a time.
      */
     if (location.protocol === "about:" || location.protocol === "data:") return;
-    var KEY = "simpleiptv.settings";
+    var KEY = "openiptv.settings";
     var settings = {};
     try { settings = JSON.parse(localStorage.getItem(KEY)) || {}; } catch (e) { settings = {}; }
     var url = ${JSON.stringify(playlist)};
@@ -781,7 +781,7 @@ await cdp.send("Page.addScriptToEvaluateOnNewDocument", {
       try {
         if (!sessionStorage.getItem("sim.startedClean")) {
           sessionStorage.setItem("sim.startedClean", "1");
-          localStorage.removeItem("simpleiptv.last");
+          localStorage.removeItem("openiptv.last");
         }
       } catch (e) { /* no storage here, so there is no last channel to forget either */ }
     }
@@ -1415,7 +1415,7 @@ if (has("bench") || has("profile")) {
   const cached = await ev(`(async function () {
     try {
       var db = await new Promise(function (ok, no) {
-        var q = indexedDB.open("simpleiptv", 1);
+        var q = indexedDB.open("openiptv", 1);
         q.onsuccess = function () { ok(q.result); };
         q.onerror = function () { no(new Error("no database")); };
       });

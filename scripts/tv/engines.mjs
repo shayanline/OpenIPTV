@@ -34,7 +34,7 @@ import { fileURLToPath } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const LOCK = join(here, "engines.lock.json");
-const CACHE = join(homedir(), ".cache", "simpleiptv-engines");
+const CACHE = join(homedir(), ".cache", "openiptv-engines");
 const BUCKET = "https://commondatastorage.googleapis.com/chromium-browser-snapshots";
 
 const MAC = { zip: "chrome-mac.zip", bin: "chrome-mac/Chromium.app/Contents/MacOS/Chromium" };

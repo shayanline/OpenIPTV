@@ -6,8 +6,8 @@ import { keys, read, readJSON, remove, write } from "../services/store";
 import * as disk from "../services/disk";
 import { whenIdle } from "../services/idle";
 
-const FAVOURITES_KEY = "simpleiptv.favourites";
-const LAST_KEY = "simpleiptv.last";
+const FAVOURITES_KEY = "openiptv.favourites";
+const LAST_KEY = "openiptv.last";
 
 /**
  * The cached playlist, keyed by the address it came from.
@@ -27,7 +27,7 @@ const LAST_KEY = "simpleiptv.last";
  * network at all, so having it synchronously is worth more than having it beside the text.
  */
 const cacheKey = (url: string) => `playlist:${url}`;
-const stampKey = (url: string) => `simpleiptv.at.${url}`;
+const stampKey = (url: string) => `openiptv.at.${url}`;
 
 /**
  * Where the playlist text used to live.
@@ -36,7 +36,7 @@ const stampKey = (url: string) => `simpleiptv.at.${url}`;
  * writes synchronously on the main thread. See services/disk for why each of those matters.
  * The prefix survives only so the sweep can clear what older versions of the app wrote.
  */
-const LEGACY_PREFIX = "simpleiptv.cache.";
+const LEGACY_PREFIX = "openiptv.cache.";
 
 /**
  * How old a cached playlist may be before it is worth going back to the network.
@@ -282,7 +282,7 @@ export const useChannels = create<State>((set, get) => {
       }
       const stamps = new Set(useSettings.getState().playlists.map((p) => stampKey(p.url)));
       for (const key of keys()) {
-        if (key.startsWith("simpleiptv.at.") && !stamps.has(key)) remove(key);
+        if (key.startsWith("openiptv.at.") && !stamps.has(key)) remove(key);
       }
     },
 

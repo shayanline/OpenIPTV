@@ -6,7 +6,7 @@ export function About() {
       <h3>About</h3>
       <div className="about">
         <div>
-          <h4>SimpleIPTV</h4>
+          <h4>OpenIPTV</h4>
           <p>Version {APP_VERSION}</p>
           <p className="link">{REPO_URL}</p>
           <p className="sheet-lead">

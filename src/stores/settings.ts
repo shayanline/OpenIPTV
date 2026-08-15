@@ -73,7 +73,7 @@ interface Settings {
   activePlaylist: () => Playlist | undefined;
 }
 
-const KEY = "simpleiptv.settings";
+const KEY = "openiptv.settings";
 
 // A fresh install ships with no playlist. There is no neutral one to choose: any list
 // bundled here would be a decision about what somebody in some country should watch, made

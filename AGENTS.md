@@ -1,4 +1,4 @@
-# Working on SimpleIPTV
+# Working on OpenIPTV
 
 An IPTV player for Samsung Tizen TVs, and the same build runs in a desktop browser. It ships
 with no channels: the viewer adds an extended M3U address and the app plays what that playlist

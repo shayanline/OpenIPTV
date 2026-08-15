@@ -1,5 +1,5 @@
 {
-  "name": "simple-iptv",
+  "name": "open-iptv",
   "version": "0.2.0",
   "description": "IPTV player for Samsung Tizen TVs",
   "scripts": {
@@ -68,10 +68,10 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/shayanline/SimpleIPTV.git"
+    "url": "git+https://github.com/shayanline/OpenIPTV.git"
   },
   "bugs": {
-    "url": "https://github.com/shayanline/SimpleIPTV/issues"
+    "url": "https://github.com/shayanline/OpenIPTV/issues"
   },
-  "homepage": "https://github.com/shayanline/SimpleIPTV#readme"
+  "homepage": "https://github.com/shayanline/OpenIPTV#readme"
 }

@@ -37,7 +37,7 @@ if (!chrome) {
   process.exit(1);
 }
 
-const userDir = join(tmpdir(), "simpleiptv-icon");
+const userDir = join(tmpdir(), "openiptv-icon");
 mkdirSync(userDir, { recursive: true });
 const child = spawn(chrome, [
   "--headless=new",

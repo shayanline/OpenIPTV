@@ -9,7 +9,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 # The Samsung profile whose distributor certificate is bound to this TV's DUID. A generic
 # Tizen distributor certificate signs cleanly but a retail set rejects it at install with
 # "Check certificate error [118, -12]".
-PROFILE="${SIGNING_PROFILE:-SimpleIPTV}"
+PROFILE="${SIGNING_PROFILE:-OpenIPTV}"
 
 # Tizen Studio installs to different places depending on how it was set up, so look
 # rather than assume, and say something useful when it is missing.
@@ -72,5 +72,5 @@ if [ -z "$WGT" ]; then
   exit 1
 fi
 mkdir -p "$ROOT/build"
-mv "$WGT" "$ROOT/build/SimpleIPTV.wgt"
-echo "build/SimpleIPTV.wgt  ($(du -h "$ROOT/build/SimpleIPTV.wgt" | cut -f1))"
+mv "$WGT" "$ROOT/build/OpenIPTV.wgt"
+echo "build/OpenIPTV.wgt  ($(du -h "$ROOT/build/OpenIPTV.wgt" | cut -f1))"

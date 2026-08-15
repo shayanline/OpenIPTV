@@ -79,7 +79,7 @@ export const repairState = () => ({ state, port, why, upstream: serving, hosts: 
  * way: one diagnosis covers the sixty odd channels behind it. Capped, because this is a hint
  * rather than a record, and an unbounded list in localStorage is a leak with a long fuse.
  */
-const HOSTS_KEY = "simpleiptv.repair.hosts";
+const HOSTS_KEY = "openiptv.repair.hosts";
 const HOSTS_MAX = 32;
 
 const hostOf = (url: string): string => {

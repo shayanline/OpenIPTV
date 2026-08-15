@@ -74,7 +74,7 @@ export function serve(dist, port) {
  * of day as three of them. Nothing else here is non deterministic.
  */
 export const SEED = `(() => {
-  localStorage.setItem("simpleiptv.settings", JSON.stringify({
+  localStorage.setItem("openiptv.settings", JSON.stringify({
     playlists: [{ id: "pl-1", name: "Parity", url: "/playlist.m3u" }],
     activePlaylistId: "pl-1", resumeLast: false, panelTimeout: 0, showClock: false,
   }));

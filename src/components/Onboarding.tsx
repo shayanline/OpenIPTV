@@ -70,7 +70,7 @@ export function Onboarding({ onAdd, onExit }: {
   return (
     <div className="onboard">
       <div className="onboard-box" ref={box}>
-        <h1>SimpleIPTV</h1>
+        <h1>OpenIPTV</h1>
         <p className="lead">
           Add the address of an M3U playlist to get started. Anything you add stays on this
           device, and you can add more or change it later in Settings.
@@ -98,7 +98,7 @@ export function Onboarding({ onAdd, onExit }: {
           items={[
             { keys: ["\u2191", "\u2193"], label: "Move" },
             { keys: ["OK"], label: "Add it" },
-            { keys: ["Return"], label: "Close SimpleIPTV" },
+            { keys: ["Return"], label: "Close OpenIPTV" },
           ]}
         />
       </div>

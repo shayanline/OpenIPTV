@@ -93,7 +93,7 @@ export async function mountApp(
     },
   }));
 
-  localStorage.setItem("simpleiptv.settings", JSON.stringify({
+  localStorage.setItem("openiptv.settings", JSON.stringify({
     playlists: [{ id: "pl-1", name: "Test", url: "http://list.invalid/a.m3u" }],
     activePlaylistId: "pl-1",
     resumeLast: !!resume,
@@ -102,7 +102,7 @@ export async function mountApp(
   // Written before the app mounts, because App decides which view to open on during its very
   // first render by reading this. That is the whole point of it: deciding later meant the
   // panel opened and was then closed again, in front of the viewer.
-  if (resume) localStorage.setItem("simpleiptv.last", resume);
+  if (resume) localStorage.setItem("openiptv.last", resume);
   vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, text: async () => playlist }));
 
   const { default: App } = await import("../../src/App");

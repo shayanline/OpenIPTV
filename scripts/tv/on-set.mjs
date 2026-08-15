@@ -28,7 +28,7 @@ import { join } from "node:path";
 import { connect, arg } from "./cdp.mjs";
 import { LAUNCH_MARKS, LAUNCH_DEADLINE_MS, launchWatcher } from "./launch-marks.mjs";
 
-const APP = "qQHcuw4fHz.SimpleIPTV";
+const APP = "5mzc7dQsGK.OpenIPTV";
 const SECONDS = Number(arg("seconds") ?? 10);
 const STREAM = arg("stream");
 /** Where a sideloaded widget lives, which is the URL a relaunch navigates to. */

@@ -31,7 +31,7 @@ import { tmpdir, cpus, arch } from "node:os";
 const here = dirname(fileURLToPath(import.meta.url));
 const profilePath = join(here, "profile.json");
 const profile = JSON.parse(readFileSync(profilePath, "utf8"));
-const APP = "qQHcuw4fHz.SimpleIPTV";
+const APP = "5mzc7dQsGK.OpenIPTV";
 
 /**
  * Deliberately plain work: integer maths, string building and array sorting, the things a

@@ -79,7 +79,7 @@ http://example.invalid/14.m3u8
 
 /** The same shape the harness seeds, with the panel left open long enough to photograph. */
 const SEED = `(() => {
-  localStorage.setItem("simpleiptv.settings", JSON.stringify({
+  localStorage.setItem("openiptv.settings", JSON.stringify({
     playlists: [{ id: "pl-1", name: "Example", url: "/store-playlist.m3u" }],
     activePlaylistId: "pl-1", resumeLast: false, panelTimeout: 0, showClock: true,
   }));
@@ -151,7 +151,7 @@ const browser = spawn(chrome, [
   "--no-first-run",
   "--no-sandbox",
   // A fresh profile every run, so nothing is photographed out of the disk cache from last time.
-  `--user-data-dir=${mkdtempSync(join(tmpdir(), "simpleiptv-store-"))}`,
+  `--user-data-dir=${mkdtempSync(join(tmpdir(), "openiptv-store-"))}`,
   "about:blank",
 ], { stdio: "ignore" });
 

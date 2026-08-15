@@ -139,7 +139,7 @@ jobs:
             echo "One of the certificates and its password disagree, so signing would fail anyway."
             exit 1
           fi
-          tizen security-profiles add -n SimpleIPTV \
+          tizen security-profiles add -n OpenIPTV \
             -a "$RUNNER_TEMP/author.p12" -p "$AUTHOR_PASSWORD" \
             -d "$RUNNER_TEMP/distributor.p12" --dist-password "$DISTRIBUTOR_PASSWORD"
 
@@ -158,7 +158,7 @@ jobs:
       # to build/.
       - name: Package and sign
         env:
-          SIGNING_PROFILE: SimpleIPTV
+          SIGNING_PROFILE: OpenIPTV
           TIZEN_CLI: ${{ github.workspace }}/../tizen-studio/tools/ide/bin/tizen
         run: |
           npm run package
@@ -190,20 +190,20 @@ jobs:
       - name: Checksum what is being published
         run: |
           cd build
-          shasum -a 256 SimpleIPTV.wgt > SimpleIPTV.wgt.sha256
-          cat SimpleIPTV.wgt.sha256
+          shasum -a 256 OpenIPTV.wgt > OpenIPTV.wgt.sha256
+          cat OpenIPTV.wgt.sha256
 
       - name: Attach it to the release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
         with:
           files: |
-            build/SimpleIPTV.wgt
-            build/SimpleIPTV.wgt.sha256
+            build/OpenIPTV.wgt
+            build/OpenIPTV.wgt.sha256
           generate_release_notes: true
           body: |
             Install it on your own television with the Tizen CLI, or read the README for the
-            step by step. `SimpleIPTV.wgt.sha256` is the checksum of the attached widget.
+            step by step. `OpenIPTV.wgt.sha256` is the checksum of the attached widget.
 
             **This widget is signed for the televisions its distributor certificate was issued
             for, so it will refuse to install on any other set.** That is how Tizen sideloading

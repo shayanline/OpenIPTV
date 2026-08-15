@@ -23,7 +23,7 @@ export function ExitDialog({ watching, onCancel }: {
 }) {
   return (
     <Confirm
-      title="Close SimpleIPTV?"
+      title="Close OpenIPTV?"
       body="You can open it again from the Apps row."
       confirmLabel="Close"
       /* "Keep watching" is only true if they are. This dialog is also reachable from the channel

@@ -48,7 +48,7 @@ export const PanelHeader = memo(function PanelHeader({
           * name is the text beside it, and hearing it twice is worse than not hearing the picture.
           */}
         <img className="brand-mark" src="./icon.svg" alt="" aria-hidden="true" />
-        <p className="rail-brand">SimpleIPTV</p>
+        <p className="rail-brand">OpenIPTV</p>
       </div>
       <div className="panel-keys">
         {/*

@@ -80,7 +80,7 @@ const afterIdle = () => new Promise((r) => setTimeout(r, 600));
 const seedCache = (s: Awaited<ReturnType<typeof load>>, text: string, ageMs: number) => {
   const url = s.useSettings.getState().playlists[0].url;
   disk.set(`playlist:${url}`, text);
-  localStorage.setItem(`simpleiptv.at.${url}`, String(Date.now() - ageMs));
+  localStorage.setItem(`openiptv.at.${url}`, String(Date.now() - ageMs));
   return url;
 };
 
@@ -180,7 +180,7 @@ test("a refresh that finds the same bytes does not parse or rewrite them", async
   // objects walk straight past every memo in the interface for no reason at all.
   assert.equal(s.useChannels.getState().channels, shown, "the playlist was parsed twice");
   // Stamped anyway, or the next launch would go back to the network immediately.
-  assert.ok(Number(localStorage.getItem(`simpleiptv.at.${url}`)) > Date.now() - 5000);
+  assert.ok(Number(localStorage.getItem(`openiptv.at.${url}`)) > Date.now() - 5000);
 });
 
 test("switching playlist calls off a refresh queued for the old one", async () => {
@@ -318,15 +318,15 @@ test("the sweep drops cached playlists nothing is configured to watch", async ()
 test("the sweep clears the playlists older versions kept in localStorage", async () => {
   const s = await load();
   configure(s);
-  localStorage.setItem("simpleiptv.cache.pl-old", PLAYLIST);
-  localStorage.setItem("simpleiptv.cache.pl-old.at", "123");
-  localStorage.setItem("simpleiptv.favourites", '["keep-me"]');
+  localStorage.setItem("openiptv.cache.pl-old", PLAYLIST);
+  localStorage.setItem("openiptv.cache.pl-old.at", "123");
+  localStorage.setItem("openiptv.favourites", '["keep-me"]');
 
   await s.useChannels.getState().sweep();
 
-  assert.equal(localStorage.getItem("simpleiptv.cache.pl-old"), null);
-  assert.equal(localStorage.getItem("simpleiptv.cache.pl-old.at"), null);
-  assert.equal(localStorage.getItem("simpleiptv.favourites"), '["keep-me"]', "took too much");
+  assert.equal(localStorage.getItem("openiptv.cache.pl-old"), null);
+  assert.equal(localStorage.getItem("openiptv.cache.pl-old.at"), null);
+  assert.equal(localStorage.getItem("openiptv.favourites"), '["keep-me"]', "took too much");
 });
 
 test("editing a playlist's address does not serve the old one from cache", async () => {

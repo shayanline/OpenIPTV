@@ -1,6 +1,6 @@
-# SimpleIPTV
+# OpenIPTV
 
-[![CI](https://github.com/shayanline/SimpleIPTV/actions/workflows/ci.yml/badge.svg)](https://github.com/shayanline/SimpleIPTV/actions/workflows/ci.yml)
+[![CI](https://github.com/shayanline/OpenIPTV/actions/workflows/ci.yml/badge.svg)](https://github.com/shayanline/OpenIPTV/actions/workflows/ci.yml)
 
 An IPTV player for Samsung TVs. Give it the address of an M3U playlist and it plays what is in it.
 
@@ -39,7 +39,7 @@ A Samsung TV from 2020 or later, which is Tizen 5.5 upwards. Or any current desk
 ## Install on a Samsung TV
 
 Samsung ties app signing to the individual television, so a widget signed for one set is refused
-by another with a certificate error. Each release attaches a built `SimpleIPTV.wgt`, worth trying
+by another with a certificate error. Each release attaches a built `OpenIPTV.wgt`, worth trying
 if you already have a signing profile that covers your TV. Otherwise sign it yourself, which is
 the route below.
 
@@ -55,7 +55,7 @@ Then, with Samsung's Tizen CLI on that computer:
 cd <wherever you downloaded the widget>     # -n takes a name, resolved from where you are
 sdb connect <tv-ip>:26101
 sdb devices                                # the third column is the name to install to
-tizen install -n SimpleIPTV.wgt -t "<name>"
+tizen install -n OpenIPTV.wgt -t "<name>"
 ```
 
 The first launch asks for a playlist address and nothing else.
@@ -65,7 +65,7 @@ The first launch asks for a playlist address and nothing else.
 You need Node 22.18 or newer and Tizen Studio, where the CLI alone is enough. In Certificate
 Manager create an author certificate, then a Samsung distributor certificate for your own
 television. The generic Tizen distributor certificate signs without complaint and is then
-refused by a retail set at install. Call the profile `SimpleIPTV`, or set `SIGNING_PROFILE` to
+refused by a retail set at install. Call the profile `OpenIPTV`, or set `SIGNING_PROFILE` to
 whatever you called it.
 
 Three things about that certificate catch people out, and each one stops the process rather than
@@ -79,13 +79,13 @@ warning you:
   when its identifier is read into the certificate.
 
 ```bash
-git clone https://github.com/shayanline/SimpleIPTV.git
-cd SimpleIPTV
+git clone https://github.com/shayanline/OpenIPTV.git
+cd OpenIPTV
 npm ci
 TV_IP=192.168.0.10 npm run deploy    # builds, signs, installs, launches
 ```
 
-`npm run package` stops after writing `build/SimpleIPTV.wgt`, for installing by hand.
+`npm run package` stops after writing `build/OpenIPTV.wgt`, for installing by hand.
 
 ## Watch in a browser
 
@@ -102,7 +102,7 @@ browser and plays perfectly well on the set.
 
 ## Your playlist
 
-Any extended M3U over http or https. SimpleIPTV reads `tvg-id`, `tvg-name`, `tvg-logo`,
+Any extended M3U over http or https. OpenIPTV reads `tvg-id`, `tvg-name`, `tvg-logo`,
 `group-title` and `tvg-quality`, groups channels by `group-title` in the order the file
 introduces them, and interprets nothing else. Channels with no group go to Uncategorised.
 

@@ -10,7 +10,7 @@ import assert from "node:assert/strict";
  * active playlist is removed.
  */
 
-const KEY = "simpleiptv.settings";
+const KEY = "openiptv.settings";
 
 const load = () => {
   vi.resetModules();

@@ -7,7 +7,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-APP_ID="qQHcuw4fHz.SimpleIPTV"
+APP_ID="5mzc7dQsGK.OpenIPTV"
 
 # The toolchain lives in one of two places: a full Tizen Studio install, or the smaller
 # set the VS Code extension unpacks. Take whichever is present.
@@ -54,7 +54,7 @@ SERIAL="$(printf '%s\n' "$LINE" | awk '{print $1}')"
 # survives. $3 alone truncated it.
 NAME="$(printf '%s\n' "$LINE" | awk '{ $1=""; $2=""; sub(/^[ \t]+/, ""); print }')"
 
-"$TIZEN" install -n "$ROOT/build/SimpleIPTV.wgt" -t "$NAME"
+"$TIZEN" install -n "$ROOT/build/OpenIPTV.wgt" -t "$NAME"
 
 # Launching is allowed to fail, and when it does the script says so rather than claiming
 # success on the next line.

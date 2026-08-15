@@ -13,7 +13,7 @@
   full bleed gradient, and nothing else.
 -->
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img"
-     aria-label="SimpleIPTV">
+     aria-label="OpenIPTV">
   <defs>
     <!-- A squircle rather than a rounded rectangle, which is the shape One UI puts app
          icons in, and the corners stay transparent so the set can mask its own way. -->

@@ -79,7 +79,7 @@ Both certificates live in `~/SamsungCertificate/<profile>/` after Certificate Ma
 Encode them without newlines:
 
 ```bash
-base64 -i ~/SamsungCertificate/SimpleIPTV/author.p12 | tr -d '\n' | pbcopy
+base64 -i ~/SamsungCertificate/OpenIPTV/author.p12 | tr -d '\n' | pbcopy
 ```
 
 The workflow writes them under `RUNNER_TEMP`, never into the workspace, and deletes them in a step
@@ -101,7 +101,7 @@ and a build suffix is refused outright.
 
 1. **Applications, then Create.** Choose Tizen Web Application, and enter a management name.
 
-2. **App Package.** Upload `SimpleIPTV.wgt` from the release. An automated pre test runs immediately
+2. **App Package.** Upload `OpenIPTV.wgt` from the release. An automated pre test runs immediately
    and only a package that passes it can be registered. Three things in this repository exist to get
    past that test: the `<feature>` element declaring the screen size in `public/config.xml`, which a
    hand written manifest has nothing to inject and whose absence is the pre test failure Samsung's own

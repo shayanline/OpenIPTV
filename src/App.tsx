@@ -1242,7 +1242,7 @@ export default function App() {
             * cannot drift: scripts/icon.mjs renders the bitmap from this vector.
             */}
           <img className="splash-mark" src="./icon.svg" alt="" aria-hidden="true" />
-          <h1>SimpleIPTV</h1>
+          <h1>OpenIPTV</h1>
           <p>{loading ? "Loading the playlist\u2026" : "That playlist has no channels in it."}</p>
           {/* Under the line it belongs to rather than above the name, so the eye reads the mark, then
               what is happening, and the moving thing is last: a spinner at the top of a column drags

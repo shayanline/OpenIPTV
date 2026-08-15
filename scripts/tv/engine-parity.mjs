@@ -101,7 +101,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 async function attempt(tv, binary, cdpPort, pinned) {
   const browser = spawn(binary, [
     `--remote-debugging-port=${cdpPort}`,
-    `--user-data-dir=${mkdtempSync(join(tmpdir(), `simpleiptv-engine-${tv.tizen}-`))}`,
+    `--user-data-dir=${mkdtempSync(join(tmpdir(), `openiptv-engine-${tv.tizen}-`))}`,
     "--headless=new", "--window-size=1920,1080", "--force-device-scale-factor=1",
     "--no-first-run", "--no-default-browser-check", "--disable-web-security",
     "--autoplay-policy=no-user-gesture-required", "--hide-scrollbars",

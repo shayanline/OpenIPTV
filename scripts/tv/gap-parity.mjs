@@ -124,7 +124,7 @@ async function main() {
      * or the heap cap. It also means the two walks no longer share a warm cache between runs,
      * so a cold profile and a warm one cannot disagree about the layout.
      */
-    `--user-data-dir=${mkdtempSync(join(tmpdir(), "simpleiptv-gap-"))}`,
+    `--user-data-dir=${mkdtempSync(join(tmpdir(), "openiptv-gap-"))}`,
     "--headless=new", "--window-size=1920,1080", "--no-first-run", "--no-default-browser-check",
     // Linux runners have no unprivileged user namespaces, so the sandbox refuses to start and
     // this gate is a blocking step. See the longer note in engine-parity.

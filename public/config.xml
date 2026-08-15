@@ -6,16 +6,20 @@
      <widget> tag this file is not well formed and libxml2, which the Tizen CLI and the WRT
      both use, refuses to parse it. -->
 <widget xmlns="http://www.w3.org/ns/widgets" xmlns:tizen="http://tizen.org/ns/widgets"
-        id="http://simpleiptv.local/SimpleIPTV" version="0.0.0" viewmodes="maximized">
-  <name>SimpleIPTV</name>
+        id="http://openiptv.local/OpenIPTV" version="0.0.0" viewmodes="maximized">
+  <name>OpenIPTV</name>
   <icon src="icon.png"/>
   <content src="index.html"/>
 
-  <!-- Keep the id from the Tizen Studio scaffold, so an install replaces rather than
-       duplicates the app already on the TV. Once the app is submitted to Samsung this id is
-       permanent: it can never be changed, no other app may reuse it, and every update has to
-       carry it. -->
-  <tizen:application id="qQHcuw4fHz.SimpleIPTV" package="qQHcuw4fHz" required_version="2.4"/>
+  <!-- A fresh id, minted when the project was renamed from its first name, which was already
+       taken on Samsung's store. It replaced the one Tizen Studio scaffolded, so a set carrying
+       the old app treats this as a different application and installs it alongside rather than
+       over it: remove the old one by hand.
+
+       Do not change it again. Once the app is submitted this id is permanent, no other app may
+       reuse it, and every update has to carry it, so the moment to have chosen was before the
+       first submission and that moment is now. -->
+  <tizen:application id="5mzc7dQsGK.OpenIPTV" package="5mzc7dQsGK" required_version="2.4"/>
 
   <!-- The screen this is drawn for, which the store's automated check requires: Samsung's own
        publishing guide walks through this exact rejection, because a hand written manifest has

@@ -30,7 +30,7 @@
 
 import { whenIdle } from "./idle";
 
-const DB_NAME = "simpleiptv";
+const DB_NAME = "openiptv";
 const DB_VERSION = 1;
 
 /**
