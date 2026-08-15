@@ -993,7 +993,21 @@ export default function App() {
       case KEY.LEFT:
         event.preventDefault();
         // Out of the channel column into the rail, which is the gesture that opened it reversed.
-        if (pane === "list") setPane("rail");
+        if (pane === "list") {
+          /*
+           * And onto the category the column is showing, never onto the title bar.
+           *
+           * The rail cursor is left at zero by walking up into the bar and back down into the
+           * channels, so a later press of left landed on Search and Settings: a row the viewer
+           * had left, two rows above where they were looking. Search and Settings are reached
+           * by going up, which is the only way they should be reached.
+           */
+          if (cursor === 0) {
+            cursorRef.current = category + 1;
+            setCursor(category + 1);
+          }
+          setPane("rail");
+        }
         // Within the title bar first, since left and right move inside whatever is showing
         // before they leave it.
         else if (cursor === 0 && headerKey === "settings") setHeaderKey("search");

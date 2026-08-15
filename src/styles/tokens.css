@@ -31,24 +31,6 @@
   --surface-2: rgba(40, 40, 46, 0.94);
   --surface-3: rgba(56, 56, 62, 0.94);
   --over-video: rgba(13, 13, 15, 0.92);
-  /*
-   * The same surface for a set that can blur what is behind it.
-   *
-   * 0.86 rather than the 0.78 this started at, and the difference is the blur that a television
-   * cannot give us. Two compositors are involved and only the second one has the picture: the
-   * browser lays out the page and resolves backdrop-filter with nothing behind these panels but a
-   * transparent hole, then the display pipeline blends that finished page over the video plane. Alpha
-   * survives to the second stage, so the programme does come through. A blur cannot reach it.
-   *
-   * So on a set the tint is the only control over how much comes through, and it comes through
-   * unsoftened: judged against a deliberately unkind scene of white panels and saturated blocks,
-   * 0.78 let a yellow shape read straight through the channel names, and 0.86 muted it to a
-   * suggestion while still reading as glass. In a browser, where the picture is a video element in
-   * the page and the blur does its work, the extra density costs nothing worth having.
-   *
-   * Only ever used inside an @supports query, so the 2020 and 2021 sets keep their own surface.
-   */
-  --over-video-glass: rgba(13, 13, 15, 0.86);
   /* Full screen, with nothing behind worth keeping, so it stays opaque. */
   --sheet: #0a0a0b;
 
