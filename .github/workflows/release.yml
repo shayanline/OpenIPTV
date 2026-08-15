@@ -326,12 +326,13 @@ jobs:
       # /OpenIPTV/ rather than from the root, and relative paths satisfy both without a second build.
       - run: npm run build
 
-      - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
-        with:
-          # So the first tagged release turns Pages on by itself instead of failing against a
-          # setting somebody has to remember to click.
-          enablement: true
-
+      # There is no actions/configure-pages step here, and its absence is deliberate twice over.
+      # Its only job is to report a base path for frameworks that need one baked in at build time,
+      # and this build needs none because `base: "./"` makes every reference relative. Asking it to
+      # switch Pages on instead, with `enablement: true`, fails with "Resource not accessible by
+      # integration": creating the site takes an administration scope that GITHUB_TOKEN cannot be
+      # granted, so it can only ever use a site that already exists. The site is enabled once, by
+      # hand, with `gh api -X POST repos/OWNER/REPO/pages -f build_type=workflow`.
       - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
           path: dist
