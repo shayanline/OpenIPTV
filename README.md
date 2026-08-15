@@ -11,6 +11,23 @@ the streams you point it at, and what you add stays on the television.
 one on the television, published from the latest release. Arrow keys and Enter stand in for the
 D-pad and OK.
 
+## A look at it
+
+|  |  |  |
+|:--|:--|:--|
+| [<img src="docs/screenshots/01-first-run.png" alt="The first run screen, asking for the address of an M3U playlist">](docs/screenshots/01-first-run.png) | [<img src="docs/screenshots/02-channels.png" alt="The channel list, with categories down the left and channels beside them">](docs/screenshots/02-channels.png) | [<img src="docs/screenshots/03-categories.png" alt="The category rail, with Sport highlighted and its channels listed">](docs/screenshots/03-categories.png) |
+| **Add a playlist.** The only thing it asks for, and the only thing it needs. | **Watch.** Categories on the left, channels beside them, the picture behind. | **Browse.** The categories are the playlist's own, in the order it wrote them. |
+| [<img src="docs/screenshots/04-search.png" alt="Search, with the query news typed and two matching channels shown">](docs/screenshots/04-search.png) | [<img src="docs/screenshots/05-favourites.png" alt="A channel starred as a favourite, with a Favourites category appearing at the top of the rail">](docs/screenshots/05-favourites.png) | [<img src="docs/screenshots/06-settings.png" alt="The Watching section of Settings, showing picture size, resume, the channel fix and the list timeout">](docs/screenshots/06-settings.png) |
+| **Search.** Across the whole playlist, not just the category showing. | **Favourite.** The green key. A Favourites category appears once there is one. | **Adjust.** Picture size, resuming, and the fix for channels that stop. |
+
+Those channel names are invented, because the application ships with no channels and it would be
+odd to advertise somebody else's. The dark area to the right of the panel is where the picture
+goes: on a television the video sits on a hardware plane underneath the page, so it cannot appear
+in a screenshot of the application, and in a browser there is nothing playing here to capture.
+
+`npm run screenshots` retakes all six from the built application, so they cannot drift away from
+what it actually looks like.
+
 ## Disclaimer
 
 This is a player, and it ships with nothing to play. No channel list, no playlist and no stream

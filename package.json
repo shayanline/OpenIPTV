@@ -29,7 +29,8 @@
     "tv:on-set": "node scripts/tv/on-set.mjs",
     "wasm:check": "node scripts/wasm-check.mjs",
     "wasm:sums": "node scripts/wasm-check.mjs --write",
-    "store:assets": "node scripts/store-assets.mjs"
+    "store:assets": "node scripts/store-assets.mjs",
+    "screenshots": "node scripts/screenshots.mjs"
   },
   "keywords": [
     "iptv",

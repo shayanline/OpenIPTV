@@ -83,7 +83,9 @@ scripts/
   deploy.sh                build, install over sdb and launch
   icon.mjs                 redraw public/icon.png from public/icon.svg
   wasm-check.mjs           the committed WebAssembly still holds together, without the toolchain
+  present.mjs              the invented playlist, and the server, that both picture scripts share
   store-assets.mjs         the six pictures Samsung's store form asks for, from the real build
+  screenshots.mjs          the six pictures in the README, from the real build
   stamp-version.mjs        write package.json's version into config.xml at package time
   tv/                      run the app under the TV's measured constraints
   tv/platforms.json        Samsung's engine matrix, the only copy of it
