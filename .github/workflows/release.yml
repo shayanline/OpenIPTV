@@ -132,6 +132,23 @@ jobs:
           npm run package
           ls -l build/
 
+      # The Tizen CLI answers a failure with "An error has occurred. See the log file", and then the
+      # runner is destroyed with the log inside it. Whatever it wrote is the only account of what went
+      # wrong, so it is printed here rather than lost. Both paths, because the CLI names its log
+      # relative to the working directory and writes it under the home directory.
+      - name: What the Tizen CLI said, if it failed
+        if: failure()
+        run: |
+          for log in "$HOME/tizen-studio-data/cli/logs/cli.log" \
+                     "$GITHUB_WORKSPACE/tizen-studio-data/cli/logs/cli.log"; do
+            if [ -f "$log" ]; then
+              echo "----- $log"
+              tail -80 "$log"
+            fi
+          done
+          echo "----- java, since the CLI signs through it"
+          java -version 2>&1 || echo "no java on the path"
+
       # Deleted whether or not any of the above worked. `if: always()` rather than a trap, so a
       # cancelled run cleans up too.
       - name: Forget the certificates
