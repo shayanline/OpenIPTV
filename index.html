@@ -11,7 +11,27 @@
     <title>SimpleIPTV</title>
   </head>
   <body>
-    <div id="root"></div>
+    <!--
+      The mark, for the second before the bundle runs.
+
+      A television spends roughly a second between the launcher tile and the first thing this app
+      draws, and it spent all of it black, which reads as a set that has not understood the press.
+      This is the same vector the launcher tile uses, shown as soon as the document parses, and React
+      clears the container when it mounts so nothing has to remove it.
+
+      Written with inline styles and nothing newer than Chromium 69, on purpose. The stylesheet is
+      inside the bundle and therefore not here yet, `inset` does not exist on a 2020 set, and neither
+      does flex `gap`, which is why the name is spaced with a margin instead.
+    -->
+    <div id="root">
+      <div style="position: absolute; top: 0; right: 0; bottom: 0; left: 0; display: flex;
+                  flex-direction: column; align-items: center; justify-content: center;
+                  background: #000000">
+        <img src="./icon.svg" alt="" width="148" height="148" style="border-radius: 28px" />
+        <p style="margin: 20px 0 0; font: 600 40px system-ui, -apple-system, sans-serif;
+                  color: #ffffff">SimpleIPTV</p>
+      </div>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

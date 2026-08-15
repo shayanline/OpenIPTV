@@ -47,6 +47,18 @@ test("a launch never claims the playlist is empty before it has looked", async (
   assert.equal(splash(), LOADING);
 });
 
+test("the launch screen carries the app's own mark", async () => {
+  /*
+   * The first thing a viewer sees after pressing the launcher tile, and it used to be a word on a
+   * black screen, which does not look like the tile they pressed starting up. The same vector the
+   * launcher draws, so `npm run icon` cannot leave the two disagreeing.
+   */
+  await mountApp(PLAYLIST, { awaitPlaylist: false });
+  const mark = document.querySelector(".splash .splash-mark");
+  assert.equal(mark?.getAttribute("src"), "./icon.svg", "no mark on the launch screen");
+  assert.equal(mark?.getAttribute("aria-hidden"), "true", "the mark is decorative beside the name");
+});
+
 test("the splash goes once the channels are there", async () => {
   await mountApp(PLAYLIST, { awaitPlaylist: false });
   await settle();

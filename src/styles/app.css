@@ -759,6 +759,13 @@ html.tizen, html.tizen body, html.tizen #root, html.tizen .app { background: tra
   justify-content: center;
   gap: var(--s2);
 }
+/* Large enough to be the subject of the screen at three metres, and the same rounding the launcher
+   gives it, so the tile a viewer just pressed appears to have grown into this. */
+.splash-mark {
+  width: calc(148px * var(--scale));
+  height: calc(148px * var(--scale));
+  border-radius: var(--r-lg);
+}
 .splash h1 { margin: 0; font-size: var(--t-hero); font-weight: 600; }
 .splash p { margin: 0; color: var(--text-2); font-size: var(--t-body); }
 .hints.splash-keys { margin-top: var(--s2); }
@@ -924,10 +931,15 @@ html.tizen, html.tizen body, html.tizen #root, html.tizen .app { background: tra
   overflow: hidden;
 }
 .sheet-rail h2 {
+  /* The left margin is the row's own inner padding, so the title sits on the same vertical line as
+     the section names under it rather than hanging outside them. */
   margin: 0 0 var(--s3) var(--s2);
   font-size: var(--t-hero);
   font-weight: 600;
 }
+/* The rows stop short of the divider on their right, the same clearance the panel's channel column
+   keeps on its left, so the highlight never touches the line. */
+.sheet-rail .rail-scroll .row { margin-right: var(--s2); }
 .sheet-rail .rail-scroll { flex: 1; overflow-y: auto; }
 .sheet-rail .sheet-lead { margin: var(--s3) 0 0 var(--s2); }
 /* Down the foot of the rail, one item per line, since the rail is a column. */
@@ -941,9 +953,23 @@ html.tizen, html.tizen body, html.tizen #root, html.tizen .app { background: tra
 /* The settings sheet is short enough to scroll natively rather than window. Checklist 1.2
    wants an indicator when content runs past a page, and here the scrollbar itself is it,
    styled down to a quiet rail. */
+/*
+ * The divider between the section list and the section, which the sheet was missing.
+ *
+ * The channel panel has separated its navigation column from the content beside it with this
+ * hairline for some time, One UI's own treatment for exactly that relationship, and this screen has
+ * the same relationship drawn without it: two columns told apart only by which one the highlight
+ * happens to be in. Same border, same token, on the content rather than on the rail, so the two
+ * screens are one pattern.
+ *
+ * The clearance after it stays at --s5 rather than dropping to the panel's --s3, because what sits
+ * to the right here is a reading column of labels and their explanations rather than a list of
+ * names, and the wider margin is what One UI's layout guidance asks of one.
+ */
 .sheet-body {
   flex: 1;
   padding: calc(var(--safe-y) + var(--s3)) var(--safe-x) var(--safe-y) var(--s5);
+  border-left: 1px solid var(--line);
   overflow-y: auto;
 }
 .sheet-body::-webkit-scrollbar { width: 4px; }

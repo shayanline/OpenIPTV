@@ -47,8 +47,10 @@ export function Behaviour({ onAsking }: { onAsking: (asking: boolean) => void })
         * so the whole meaning was carried by the hint, in the smallest type on the screen. Now the
         * label says what they are looking at and the hint says only what it costs.
         */}
+      {/* Thirty characters, because One UI asks that a setting's name stay within thirty one so it
+          cannot spill onto a second line. "Fix channels that stop after a moment" was thirty six. */}
       <Row
-        label="Fix channels that stop after a moment"
+        label="Fix channels that stop playing"
         hint="Repairs a playlist this TV reads wrongly. Uses a little more data."
       >
         <Toggle

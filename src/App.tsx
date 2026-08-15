@@ -1237,9 +1237,19 @@ export default function App() {
         */}
       {configured && !channels.length && (
         <div className="splash">
-          {loading && <div className="spinner" />}
+          {/*
+            * The mark above the name, because this is the first thing a viewer sees after choosing
+            * the app and a launcher tile that turns into a word on a black screen does not look like
+            * the same application starting. The same file the launcher itself draws, so the two
+            * cannot drift: scripts/icon.mjs renders the bitmap from this vector.
+            */}
+          <img className="splash-mark" src="./icon.svg" alt="" aria-hidden="true" />
           <h1>SimpleIPTV</h1>
           <p>{loading ? "Loading the playlist\u2026" : "That playlist has no channels in it."}</p>
+          {/* Under the line it belongs to rather than above the name, so the eye reads the mark, then
+              what is happening, and the moving thing is last: a spinner at the top of a column drags
+              attention off the words it is supposed to be explaining. */}
+          {loading && <div className="spinner" />}
           {!loading && (
             <KeyGuide
               className="splash-keys"
