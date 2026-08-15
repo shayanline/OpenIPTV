@@ -73,6 +73,24 @@ export function Settings({ onClose }: { onClose: () => void }) {
   }, [focusFirst]);
 
   /**
+   * Back to the section list, and take the highlight with it.
+   *
+   * Controls in the body are lit by `:focus`, and a browser keeps focus exactly where it was unless
+   * something moves it, so going back to the rail left two things lit at once: the section under the
+   * rail's cursor and the option the viewer had just stepped away from. Two highlights on one screen
+   * is the interface saying the cursor is in two places.
+   *
+   * Blurring rather than a class, because the focus is real rather than decorative. The stale one was
+   * still the document's active element, so it was the thing a stray click or any key this screen did
+   * not intercept would have operated, on a row the viewer had already left.
+   */
+  const leaveBody = useCallback(() => {
+    const focused = document.activeElement;
+    if (focused instanceof HTMLElement && bodyRef.current?.contains(focused)) focused.blur();
+    setInSections(true);
+  }, []);
+
+  /**
    * A section with nothing to operate keeps the focus on the rail.
    *
    * About is all prose, so leaving the rail for it took the highlight off the rail and then
@@ -85,8 +103,8 @@ export function Settings({ onClose }: { onClose: () => void }) {
    * Before paint, so the rail's highlight never visibly flickers off and back.
    */
   useLayoutEffect(() => {
-    if (!inSections && !asking && !hasTargets()) setInSections(true);
-  }, [inSections, asking, section, hasTargets]);
+    if (!inSections && !asking && !hasTargets()) leaveBody();
+  }, [inSections, asking, section, hasTargets, leaveBody]);
 
   // Settings takes the whole remote while it is open, so App stops handling keys and
   // this owns navigation. Left and right move between the rail and the body, which is
@@ -141,9 +159,9 @@ export function Settings({ onClose }: { onClose: () => void }) {
     if ([KEY.UP, KEY.DOWN, KEY.LEFT, KEY.RIGHT].includes(code as never)) {
       event.preventDefault();
       const moved = move(code);
-      if (!moved && code === KEY.LEFT) setInSections(true);
+      if (!moved && code === KEY.LEFT) leaveBody();
     }
-  }, [asking, inSections, onClose, move, enterBody]);
+  }, [asking, inSections, onClose, move, enterBody, leaveBody]);
 
   useRemote(onKey);
 
