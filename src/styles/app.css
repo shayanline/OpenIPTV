@@ -137,7 +137,8 @@ html.tizen, html.tizen body, html.tizen #root, html.tizen .app { background: tra
      because two rules need it and they must agree: the strip below is this wide, and the
      slide has to travel this much further to take it off the screen with everything else. */
   --panel-shadow-w: 104px;
-  background: var(--over-video);
+  /* background-color rather than the shorthand, so the frosted layers set below survive it. */
+  background-color: var(--over-video);
   transition: transform var(--t-panel) var(--ease-enter);
 }
 /*
@@ -838,7 +839,13 @@ html.tizen, html.tizen body, html.tizen #root, html.tizen .app { background: tra
   align-items: center;
   gap: var(--s1) var(--s4);
   color: var(--text-2);
-  font-size: var(--t-label);
+  /*
+   * Caption size, which is the one rule every guide in the application takes its size from: the
+   * banner and the panel measured 22px and identical badges of 35 pixels, and the settings rail was
+   * already a size smaller, so this brings the two loud ones down to meet the quiet one. A guide is
+   * read once and then remembered, so it does not need the room a channel name needs.
+   */
+  font-size: var(--t-caption);
   /*
    * One key, drawn as a badge, sized from here.
    *
@@ -979,7 +986,6 @@ html.tizen, html.tizen body, html.tizen #root, html.tizen .app { background: tra
   align-items: flex-start;
   gap: var(--s1);
   margin: var(--s3) 0 0 var(--s2);
-  font-size: var(--t-caption);
 }
 /* The settings sheet is short enough to scroll natively rather than window. Checklist 1.2
    wants an indicator when content runs past a page, and here the scrollbar itself is it,
@@ -1515,7 +1521,7 @@ input.wrong { border-color: var(--danger); }
   display: flex;
   flex-direction: column;
   border-radius: var(--r-lg);
-  background: var(--over-video);
+  background-color: var(--over-video);
   box-shadow: var(--lift);
   overflow: hidden;
   z-index: var(--z-notice);
@@ -1606,10 +1612,47 @@ input.wrong { border-color: var(--danger); }
 @supports (backdrop-filter: blur(1px)) {
   .panel,
   .pb-stack {
-    background: var(--over-video-glass);
+    background-color: var(--over-video-glass);
     backdrop-filter: blur(24px);
   }
 }
+
+/*
+ * The frost itself, built rather than sampled.
+ *
+ * A blur cannot make a Samsung set look like this, and it is worth being exact about why: the picture
+ * is decoded to a hardware plane the display pipeline composites underneath the browser, so the
+ * region behind these panels is a transparent hole rather than video, and backdrop-filter has nothing
+ * to sample. Measured, not assumed: a capture of the page while AVPlay reported PLAYING at 97 seconds
+ * is black everywhere the picture is.
+ *
+ * What makes Samsung's own panels read as glass is not only the blur, though. It is three things a
+ * page can draw for itself, and all three are here:
+ *
+ *   the light along the top edge, brightest where the surface catches it and gone by halfway down,
+ *   which is what tells the eye it is looking at a sheet rather than at a flat tint,
+ *
+ *   a fine grain across the whole face, which is what glass does to light passing through it and the
+ *   detail whose absence makes a translucent panel look like a plastic overlay,
+ *
+ *   and a hairline of light along the edge itself, which the banner already carries in its shadow
+ *   token and the panel gets here.
+ *
+ * Every set gets these, including the 2020 and 2021 ones that have no blur at all, so a television
+ * old enough to miss the effect entirely still gets most of the look. The grain is an inline SVG
+ * rasterised once and tiled, deliberately not an image file: it costs no request, it cannot go
+ * missing, and at 4 percent it is felt rather than seen.
+ */
+.panel,
+.pb-stack {
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.075), rgba(255, 255, 255, 0) 46%),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23g)' opacity='0.04'/%3E%3C/svg%3E");
+  background-repeat: no-repeat, repeat;
+  background-size: 100% 100%, 160px 160px;
+}
+/* The lit edge, on the panel only: the banner has one already, inside var(--lift). */
+.panel { box-shadow: inset -1px 0 0 rgba(255, 255, 255, 0.07); }
 
 /* The lower half of that one panel. A hairline rather than a gap, and no surface of its own: the
    keys are part of the thing naming the channel, not a second announcement beneath it. */
