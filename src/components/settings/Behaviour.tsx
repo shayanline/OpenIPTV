@@ -4,6 +4,7 @@ import { useChannels } from "../../stores/channels";
 import { Choice, Row, Toggle } from "./Field";
 import { Confirm } from "../Confirm";
 import { forgetAll } from "../../services/disk";
+import { forgetRepairHosts, stopRepair } from "../../services/repair";
 
 export function Behaviour({ onAsking }: { onAsking: (asking: boolean) => void }) {
   const s = useSettings();
@@ -29,6 +30,29 @@ export function Behaviour({ onAsking }: { onAsking: (asking: boolean) => void })
           s.set("sortAlphabetically", v);
           await load();
         }} />
+      </Row>
+      {/*
+        * Last of the toggles, because it is the one nobody should need.
+        *
+        * Written for what the viewer sees rather than what it does. "Signed 32 bit media
+        * sequence" is the truth and no help; "shows a picture for a moment and stops" is what
+        * they are looking at when they come here. The warning about the connection is honest:
+        * the television fetches each playlist itself while this is on.
+        */}
+      <Row
+        label="Compatibility mode"
+        hint="For channels that show a picture for a moment and then stop. Uses a little more of
+              your connection, so leave it off unless you need it."
+      >
+        <Toggle
+          value={s.compatibility}
+          onChange={(v) => {
+            s.set("compatibility", v);
+            // Turning it off has to take effect now, not at the next channel: the socket and its
+            // refresh loop are exactly what the viewer just asked to be rid of.
+            if (!v) stopRepair();
+          }}
+        />
       </Row>
       <Row label="Hide the channel list after" hint="When you stop pressing anything">
         <Choice
@@ -70,6 +94,9 @@ export function Behaviour({ onAsking }: { onAsking: (asking: boolean) => void })
             s.reset();
             clearPersonal();
             void forgetAll();
+            // The fourth store, and the same rule: "everything" has to mean everything, and which
+            // hosts this television cannot read is a diagnosis it made rather than a fact.
+            forgetRepairHosts();
             ask(false);
             void load(true);
           }}

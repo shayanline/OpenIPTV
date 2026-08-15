@@ -46,7 +46,13 @@
   -->
   <tizen:content-security-policy>
     default-src 'self';
-    script-src 'self';
+    <!-- 'wasm-unsafe-eval' is what lets a WebAssembly module compile at all under a policy, and
+         Chromium refuses one without it. It buys nothing an attacker wants that script-src 'self'
+         did not already allow: the module is ours, it ships in the widget, and nothing loads a
+         module from anywhere else. It is here for services/repair.ts, which serves a corrected
+         playlist to the set's own player over a loopback socket, and only when the viewer has
+         turned compatibility on. -->
+    script-src 'self' 'wasm-unsafe-eval';
     style-src 'self' 'unsafe-inline';
     img-src * data: blob:;
     media-src * blob:;

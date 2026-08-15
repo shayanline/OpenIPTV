@@ -294,6 +294,7 @@ export default function App() {
     onNamed: chrome.holdBanner,
     onPicture: chrome.raiseBanner,
     onFault: chrome.lowerBanner,
+    compatibility: settings.compatibility,
   });
   const { current, busy, paused, fault } = tuner;
   /** The channel as it is now, for callbacks that run between renders. */

@@ -109,7 +109,8 @@ The yellow key, from anywhere.
 
 - **Appearance**: font, text size, channel numbers, logos, clock.
 - **Playlists**: add, edit, remove, switch, refresh.
-- **Watching**: picture size, resuming, sorting A to Z, how long the channel list stays open.
+- **Watching**: picture size, resuming, sorting A to Z, compatibility mode, how long the channel
+  list stays open.
 - **Diagnostics**: what this television is, and every key its remote sends.
 - **About**: version, and where to find the source.
 
@@ -122,6 +123,11 @@ The yellow key, from anywhere.
   issued for this television. See the signing note above.
 - **A coloured key does nothing.** Settings, then Diagnostics, lists every key press the app
   receives. A button missing from that list never reached the app, so the set is keeping it.
+- **A channel shows a picture for a moment and then stops.** Turn on Compatibility mode in
+  Watching. Some channels publish a playlist this television reads incorrectly, and the app can
+  serve it a corrected copy. Leave it off otherwise: while it is on, the TV fetches those playlists
+  itself, which uses a little more of your connection. Settings, then Diagnostics, says whether it
+  is working.
 - **Logos are slow to appear.** Turn Channel logos off in Appearance.
 - **A stream plays on the TV but not in a browser.** The host is refusing cross origin requests.
   There is nothing to fix in the app.

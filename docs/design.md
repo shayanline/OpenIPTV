@@ -244,6 +244,60 @@ Three things keep it from growing without bound:
   which tainting forbids, so it works on a television, where a packaged app declares the origins
   it may reach, and quietly does not in a desktop browser, where most hosts refuse the fetch.
 
+## Compatibility mode, and why it is off
+
+One firmware defect is worth a whole feature. AVPlay keeps `EXT-X-MEDIA-SEQUENCE` in a **signed**
+32 bit integer, and some packagers derive that field from a microsecond clock, so it arrives with
+sixteen digits. The set then plays one segment, reports the entire live stream as 2000ms, and
+stops. Measured on a 2025 model by serving it manifests that differed in one property:
+
+| Sequence in the manifest | What AVPlay did |
+|--:|:--|
+| 2,147,483,000, just under 2³¹ | played, and reported its window correctly |
+| 2,147,484,000, just over 2³¹ | reported the whole stream as 2000ms |
+| 4,294,966,000, just under 2³² | the same failure, so the field is signed |
+
+The size of the playlist has nothing to do with it: 3600 segments and 813KB played perfectly well
+with a small sequence. One number is the whole problem.
+
+Repairing it means changing that number, and there is nowhere on the television to put the result.
+AVPlay refuses `blob:` and `data:` URLs, refuses a `file://` playlist, and fetches over its own
+native HTTP client, which nothing in the page can see: with the inspector's network domain open and
+a channel playing, CDP recorded zero requests for it. What it does accept is `http://127.0.0.1`,
+proven by pointing it at a live loopback port (`NOT_SUPPORTED_FORMAT`, so it connected and read the
+bytes) against dead ones (`CONNECTION_FAILED`).
+
+So the app serves it. Tizen provides real sockets to WebAssembly, needing only the internet
+privilege we already declare, and `services/repair` fetches the playlist, renumbers the sequence,
+and hands it to the set's own player from a socket inside the widget. Hardware decode is kept: 23%
+of one core against 25% through a hosted rewriter and 64% through hls.js.
+
+Two details in the rewrite only showed themselves on hardware, and both are in
+`services/manifest.ts`. The sequence is produced by **counting segments** across refreshes rather
+than by any arithmetic on the upstream's field, because that field is a microsecond clock advancing
+about two million per segment, so a subtraction or a modulus still jumps by millions between one
+refresh and the next: the set answered that by resetting to the live edge every few seconds. And
+the declared target duration is **inflated to 20 seconds** rather than the true 2, because a player
+starts about three target durations from the end of a live window. Declaring the truth started
+AVPlay 6 seconds from the live edge, where it sat for twelve seconds with its buffer at 97% waiting
+for data that only arrives at real time, long enough for the app's own watchdog to call the picture
+frozen before it had begun. Declared at 20, it starts 90 seconds into the window and plays at once.
+
+**And it is off by default**, which is the important half. Everything above is a workaround for one
+defect, and the majority of channels never meet it, so:
+
+- nothing is probed until a channel has actually failed, so a working channel pays nothing at all
+- the test answers yes for that one defect only, so a channel that is off the air or sending an
+  undecodable codec is reported honestly rather than "repaired" for another twelve seconds
+- the verdict is remembered per host, across launches, so the failure is paid once rather than
+  every evening
+- the socket is closed the moment a channel that does not need it starts, and the refetching stops
+  while the application is hidden
+
+Diagnostics reports the state, because "the toggle appears to have done nothing" is otherwise
+unanswerable: it distinguishes a television without the socket bindings from one that has simply
+never needed them.
+
 ## Why a web app
 
 A Tizen web app is a packaged web app, so a TV player can be written with ordinary web tooling.

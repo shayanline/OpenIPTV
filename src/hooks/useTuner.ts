@@ -2,6 +2,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Player, type PlayerEvent } from "../services/player";
 import { releaseLogos } from "../services/logos";
 import { nextChannel } from "../services/lineup";
+import {
+  knownToNeedRepair, pauseRepair, repair, rememberNeedsRepair, repairState, resumeRepair,
+  stopRepair,
+} from "../services/repair";
 import type { Fit } from "../services/player";
 import type { Channel } from "../types";
 
@@ -52,6 +56,11 @@ export interface TunerOptions {
   onPicture: () => void;
   /** The channel failed. The card over the picture says everything, so the banner goes. */
   onFault: () => void;
+  /**
+   * Whether the viewer has turned compatibility on, which is the only thing that allows a
+   * channel to be played through a playlist this application has repaired.
+   */
+  compatibility: boolean;
 }
 
 export interface Tuner {
@@ -84,7 +93,7 @@ export interface Tuner {
 }
 
 export function useTuner(options: TunerOptions): Tuner {
-  const { list, fit, video, rememberLast, onNamed, onPicture, onFault } = options;
+  const { list, fit, video, rememberLast, onNamed, onPicture, onFault, compatibility } = options;
 
   const [current, setCurrent] = useState<Channel | null>(null);
   const [preview, setPreview] = useState<Channel | null>(null);
@@ -209,7 +218,13 @@ export function useTuner(options: TunerOptions): Tuner {
       if (document.hidden) {
         player.current?.hide();
         releaseLogos();
-      } else player.current?.show();
+        // The socket stays, the refetching stops: bandwidth is the expensive half and nobody is
+        // watching. See services/repair.
+        pauseRepair();
+      } else {
+        player.current?.show();
+        resumeRepair();
+      }
     };
     document.addEventListener("visibilitychange", onVisibility);
     return () => document.removeEventListener("visibilitychange", onVisibility);
@@ -245,6 +260,47 @@ export function useTuner(options: TunerOptions): Tuner {
    * Deliberately not through start(): that resets the count of attempts already made, and an
    * automatic retry calling it would retry for ever.
    */
+  /**
+   * Where a channel is played from, which is the one place that decides it.
+   *
+   * Almost always the channel's own address, and that path costs nothing: no fetch, no worker,
+   * no wait. A host already known to defeat this television's playlist parser is repaired first,
+   * which means the application serves the corrected playlist to the set's own player. Both
+   * `start` and `retune` go through here so the two cannot come to disagree, and `repair` is
+   * idempotent: asked twice for the same stream it hands back the address it is already serving.
+   *
+   * The token is what makes it safe to be asynchronous. A viewer holding the channel key can
+   * start three channels while one repair is in flight, and only the newest tune may reach the
+   * player: without this, an old repair landing late would tune away from what they are watching.
+   */
+  /**
+   * The toggle as it is now, read from a ref because `tuneTo` must not be rebuilt when it changes.
+   *
+   * Rebuilding it would rebuild `start` and `retune` with it, and those are handed to the key
+   * handler and to the retry effect: a new identity means the effect that schedules retries tears
+   * itself down and starts again, which resets the countdown a viewer is watching.
+   */
+  const wantsRepair = useRef(compatibility);
+  wantsRepair.current = compatibility;
+
+  const tuneToken = useRef(0);
+  const tuneTo = useCallback((channel: Channel) => {
+    tuneToken.current += 1;
+    const token = tuneToken.current;
+    const play = (url: string) => {
+      if (tuneToken.current !== token) return;
+      player.current?.play(url);
+    };
+
+    if (!wantsRepair.current || !knownToNeedRepair(channel.url)) {
+      // Nothing here needs the socket, so let go of one that is still open from a channel before.
+      if (repairState().state === "serving") stopRepair();
+      play(channel.url);
+      return;
+    }
+    void repair(channel.url).then((repaired) => play(repaired?.url ?? channel.url));
+  }, []);
+
   const retune = useCallback(() => {
     const channel = currentRef.current;
     if (!channel) return;
@@ -254,8 +310,41 @@ export function useTuner(options: TunerOptions): Tuner {
     setWaited(0);
     setRetryIn(0);
     announced.current = "";
-    player.current?.play(channel.url);
-  }, []);
+    tuneTo(channel);
+  }, [tuneTo]);
+
+  /**
+   * Once per channel, ask whether this is the fault we can repair.
+   *
+   * Only after a failure, and only with compatibility on. Probing before playing would put a
+   * playlist fetch in front of every channel change to help the few that need it, and the
+   * ordinary case must stay untouched.
+   *
+   * The test is narrow on purpose. `repair` answers with an address only for a playlist whose
+   * media sequence overflows the set's parser, so a channel that is off the air or sending an
+   * undecodable codec falls straight through to the retries below and the viewer is told what
+   * actually happened. Telling somebody a dead channel is being repaired would be a lie that
+   * costs them another twelve seconds.
+   *
+   * Marked as attempted before the await, so a fault that repeats while the fetch is in flight
+   * cannot start a second one.
+   */
+  const repairAsked = useRef("");
+  useEffect(() => {
+    if (!fault || !current || !compatibility) return;
+    if (repairAsked.current === current.id) return;
+    repairAsked.current = current.id;
+
+    let live = true;
+    void repair(current.url).then((repaired) => {
+      if (!live || !repaired) return;
+      // Remembered by host, so the next channel from the same source skips the failure entirely,
+      // this launch and the next.
+      rememberNeedsRepair(current.url);
+      retune();
+    });
+    return () => { live = false; };
+  }, [fault, current, compatibility, retune]);
 
   /**
    * Try a failed channel again, on its own, while the viewer watches.
@@ -321,11 +410,13 @@ export function useTuner(options: TunerOptions): Tuner {
     hooks.current.onNamed();
 
     rememberLast(channel.id);
-    player.current?.play(channel.url);
-  }, [rememberLast]);
+    tuneTo(channel);
+  }, [rememberLast, tuneTo]);
 
   const clear = useCallback(() => {
     player.current?.stop();
+    // Nothing is playing, so nothing needs a socket listening on the set's loopback address.
+    stopRepair();
     window.clearTimeout(retryTimer.current);
     window.clearTimeout(zapTimer.current);
     currentRef.current = null;

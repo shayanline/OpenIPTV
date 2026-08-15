@@ -87,6 +87,17 @@ interface Settings {
   resumeLast: boolean;
   panelTimeout: number;
   sortAlphabetically: boolean;
+  /**
+   * Whether to repair playlists this television cannot read, on the television.
+   *
+   * Off by default and deliberately so. It exists for one firmware defect: AVPlay keeps a
+   * playlist's media sequence in a signed 32 bit integer, and a packager that numbers segments
+   * from a microsecond clock overflows it, so the channel shows one frame and stops. Repairing it
+   * means the application serving a corrected playlist to the set's own player over a loopback
+   * socket, which is a great deal of machinery to have running for the majority of viewers who
+   * never meet such a channel.
+   */
+  compatibility: boolean;
 
   set: <K extends keyof Settings>(key: K, value: Settings[K]) => void;
   addPlaylist: (name: string, url: string) => void;
@@ -123,6 +134,8 @@ const DEFAULTS = {
      deciding reads as the television interrupting them. */
   panelTimeout: 15,
   sortAlphabetically: false,
+  /* Off. Nothing that only some channels need should cost the others anything. */
+  compatibility: false,
 };
 
 /**

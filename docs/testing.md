@@ -233,6 +233,56 @@ Three things about attaching cost an evening each and are written into the scrip
 It is not a gate. It needs hardware on the network, so it cannot run in CI and must never block
 anything. Read it before a release, and after any change to the player or the launch path.
 
+## Rebuilding the loopback socket module
+
+`wasm/manifest-socket.c` is compiled with **Samsung's own Emscripten fork**, not a current
+Emscripten: the socket extension exists only there. The built `public/wasm/manifest-socket.js` and
+`.wasm` are committed, so `npm ci && npm run build` needs none of this. Rebuild only when the C
+changes.
+
+```bash
+# Samsung's fork, 1.39.4.7, December 2021. No login needed.
+curl -sL -o emscripten-mac.zip \
+  "https://developer.samsung.com/smarttv/file/5717993e-b16b-4402-a0a4-61617a607398"
+unzip -q emscripten-mac.zip && xattr -dr com.apple.quarantine emscripten-release-bundle
+
+# Two patches, both to their SDK rather than to us:
+#   1. emcc 1.39 imports distutils, removed in Python 3.12. Point `python` at 3.11.
+#   2. tools/system_libs.py builds their own C++17 sources with -std=c++14. sed it to c++17.
+ln -sf /opt/homebrew/opt/python@3.11/bin/python3.11 /tmp/pybin/python
+sed -i '' "s/'-std=c++14'/'-std=c++17'/g" .../fastcomp/emscripten/tools/system_libs.py
+
+PATH=/tmp/pybin:$PATH EM_CONFIG=./.emscripten EMCC_WASM_BACKEND=1 \
+  .../fastcomp/emscripten/emcc wasm/manifest-socket.c -o public/wasm/manifest-socket.js -Os \
+  -s ENVIRONMENT=worker -s ENVIRONMENT_MAY_BE_TIZEN -s FORCE_FILESYSTEM=1 -s INVOKE_RUN=0 \
+  -s "EXPORTED_FUNCTIONS=['_set_manifest','_start_server','_serve_once','_stop_server']" \
+  -s "EXTRA_EXPORTED_RUNTIME_METHODS=['cwrap']"
+```
+
+`.emscripten` points `LLVM_ROOT` at `fastcomp/bin` (clang 10, the upstream backend). The bundle's
+nested `fastcomp/fastcomp/bin` is clang 6 with no `llc`, so fastcomp cannot be used on macOS at all.
+
+**The part that cost a night.** The SDK maps every POSIX call onto the firmware in
+`src/library_tizen_socket_host.js`:
+
+```js
+_wasm_accept__host: true,
+_wasm_accept: 'tizentvwasm.SocketsHostBindings.accept',
+```
+
+but `src/modules.js` only links those libraries inside `if (FILESYSTEM)`, and even with the
+filesystem forced on the generated glue still asked for bare `__wasm_*` globals that nothing
+defined, so the module died with `ReferenceError: __wasm_accept is not defined`.
+`public/wasm/manifest-socket.worker.js` supplies them from `tizentvwasm.SocketsHostBindings`. It
+hands over the **function objects** and never calls them: calling one from JavaScript is refused
+outright with `Cannot call host binding function from JS`, while passing it to a wasm module is not,
+because the caller is then the engine. All nineteen bind.
+
+Verifying it needs the television. `npm run tv:on-set -- --stream=<url>` reports whether a manifest
+is repairable and whether the playhead moves, and the feature's own end to end path is: toggle off,
+a telewebion channel fails with `[STALLED]`; toggle on, the same channel plays and Diagnostics reads
+`serving on port N`.
+
 ## The playlist and artwork it all runs against
 
 12,732 channels in 175 categories, 2.7MB of text, a logo on nearly every channel and names in a

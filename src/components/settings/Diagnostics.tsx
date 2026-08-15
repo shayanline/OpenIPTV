@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { KEY, keyGrants, supportedKeys } from "../../hooks/useRemote";
 import { supportsFlexGap } from "../../services/capabilities";
 import * as disk from "../../services/disk";
+import { repairState } from "../../services/repair";
 import { APP_VERSION } from "../../meta";
 
 /**
@@ -35,6 +36,21 @@ interface Press {
 
 /** Long enough to show a pattern, short enough to read from a sofa. */
 const KEPT = 8;
+
+/**
+ * What the repair is doing, in one line a viewer can read out over the telephone.
+ *
+ * Deliberately says how many hosts have been diagnosed even when nothing is serving, because that
+ * is what distinguishes a television that has repaired something before from one that never has.
+ */
+function compatibilityFact(): string {
+  const { state, port, why, hosts } = repairState();
+  const known = hosts.length ? `, ${hosts.length} host${hosts.length === 1 ? "" : "s"} known` : "";
+  if (state === "serving") return `serving on port ${port}${known}`;
+  if (state === "starting") return `starting${known}`;
+  if (state === "unavailable") return `not available on this TV: ${why}`;
+  return `idle${known}`;
+}
 
 function Fact({ label, value }: { label: string; value: string }) {
   return (
@@ -135,6 +151,14 @@ export function Diagnostics() {
         {facts.current.map((f) => <Fact key={f.label} label={f.label} value={f.value} />)}
         {/* Not in `facts`, because that is read once during render and this arrives later. */}
         <Fact label="Cached" value={cache} />
+        {/*
+          * Compatibility, read on every render rather than once, because it is the one fact here
+          * that changes while somebody is looking at it: a channel repaired in the last minute
+          * moves this from idle to serving. It is also the only way to tell "this television
+          * cannot do it" from "nothing has needed it yet", which is the first question anybody
+          * asks when the toggle appears to have done nothing.
+          */}
+        <Fact label="Compatibility" value={compatibilityFact()} />
       </div>
 
       <h4 className="diag-heading">Keys</h4>

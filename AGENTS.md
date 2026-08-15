@@ -55,6 +55,8 @@ src/
   services/player.ts       one interface over AVPlay and hls.js
   services/errors.ts       engine error codes to something a viewer can act on
   services/playlistUrl.ts  what cannot possibly be a playlist address, checked offline
+  services/manifest.ts     reading and repairing a playlist, as pure functions
+  services/repair.ts       serving a repaired playlist to AVPlay over a loopback socket
   services/logos.ts        decode logos once, at the size they are drawn, and queue the work
   services/capabilities.ts what the engine can actually do, measured rather than assumed
   services/metrics.ts      the measurements the stylesheet shares with the code
@@ -71,6 +73,8 @@ src/
   hooks/useViewport.ts     the measured height a windowed list is laid out against
   hooks/usePointerAwake.ts whether a pointer is in use, for the on screen pad
   components/              panels, dialogs, and the debug Smart Remote
+wasm/manifest-socket.c     the loopback HTTP server, built with Samsung's Emscripten fork
+public/wasm/               the built module and the worker that owns its socket
   components/settings/     one file per section of the settings sheet
   styles/                  the whole stylesheet, tokens then app, since no component has one
 scripts/
@@ -123,6 +127,18 @@ Break one of these and the app fails on hardware no test here owns. The reasonin
 - **Nothing interprets playlist content.** Names, groups and languages appear exactly as the
   file writes them. No bundled channels, no analytics, no network calls beyond the playlist,
   the streams and the logos.
+- **Compatibility mode is off by default and must stay opt in.** It exists for one firmware
+  defect: AVPlay holds a playlist's media sequence in a *signed* 32 bit integer, so a packager
+  numbering segments from a microsecond clock overflows it and the channel shows one frame and
+  stops. The repair means serving a corrected playlist to the set's own player over a loopback
+  socket, which is real machinery, so the ordinary path must never touch it. Three rules keep
+  that true: nothing is probed before a channel has actually failed, `needsRepair` answers yes
+  for that one defect only, and a verdict is remembered per host so nobody pays the diagnosis
+  twice. Anything that would make a working channel pay for this is a bug.
+- **The socket is opened by `services/repair` and nothing else, on an ephemeral port, and closed
+  when it is not needed.** A fixed port plus a worker terminated without closing leaves the
+  socket held, and the next attempt cannot bind: the symptom is AVPlay reporting
+  `CONNECTION_FAILED` against a server that looks perfectly healthy.
 - **`public/config.xml` must stay well formed XML**, or the Tizen CLI will not package it and
   nothing else parses the file. CI runs `xmllint` on it. `object-src 'self'` in the CSP is load
   bearing: the AVPlay picture is a hardware plane bound to an `<object>`, and `'none'` gives
