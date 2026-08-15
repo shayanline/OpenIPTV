@@ -23,20 +23,37 @@ beforeEach(() => {
 
 test("a file written by an older version keeps working, and gains the new defaults", async () => {
   // No aspectId, no panelTimeout: a release before either existed.
-  localStorage.setItem(KEY, JSON.stringify({ fontId: "serif", showClock: false }));
+  localStorage.setItem(KEY, JSON.stringify({ showClock: false, resumeLast: false }));
   const { useSettings } = await load();
   const s = useSettings.getState();
 
-  assert.equal(s.fontId, "serif", "what was saved is kept");
-  assert.equal(s.showClock, false);
+  assert.equal(s.showClock, false, "what was saved is kept");
+  assert.equal(s.resumeLast, false);
   assert.equal(s.aspectId, "fill", "what is new arrives at its default");
   assert.equal(s.panelTimeout, 4);
+});
+
+test("a setting that no longer exists is dropped rather than carried for ever", async () => {
+  /*
+   * `fontId` was real until the type face setting was removed, and it did nothing on a television
+   * even while it existed. An install that had chosen one would otherwise keep the key in its
+   * settings file indefinitely, written back on every change, meaning nothing.
+   */
+  localStorage.setItem(KEY, JSON.stringify({ fontId: "serif", showClock: false }));
+  const { useSettings } = await load();
+
+  assert.equal("fontId" in useSettings.getState(), false, "a dead setting came back to life");
+  assert.equal(useSettings.getState().showClock, false, "the rest of the file was thrown away with it");
+
+  useSettings.getState().set("showClock", true);
+  const written = JSON.parse(localStorage.getItem(KEY) ?? "{}");
+  assert.equal("fontId" in written, false, "it was written back out again");
 });
 
 test("nonsense in the store falls back to defaults rather than throwing", async () => {
   localStorage.setItem(KEY, "{not json");
   const { useSettings } = await load();
-  assert.equal(useSettings.getState().fontId, "system");
+  assert.equal(useSettings.getState().showClock, true);
 });
 
 test("what is written back is data, never the actions", async () => {

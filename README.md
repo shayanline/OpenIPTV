@@ -132,7 +132,7 @@ broadcast rather than continuing from where you stopped, because live television
 
 The yellow key, from anywhere.
 
-- **Appearance**: font, text size, channel numbers, logos, clock.
+- **Appearance**: text size, channel numbers, logos, clock, sorting.
 - **Playlists**: add, edit, remove, switch, refresh.
 - **Watching**: picture size, resuming, sorting A to Z, compatibility mode, how long the channel
   list stays open.

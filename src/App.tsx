@@ -359,9 +359,7 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    const root = document.documentElement;
-    root.style.setProperty("--font", settings.font().stack);
-    root.style.setProperty("--scale", String(settings.scale()));
+    document.documentElement.style.setProperty("--scale", String(settings.scale()));
   }, [settings]);
 
 

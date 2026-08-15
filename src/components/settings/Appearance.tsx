@@ -1,4 +1,4 @@
-import { FONTS, FONT_SIZES, useSettings } from "../../stores/settings";
+import { FONT_SIZES, useSettings } from "../../stores/settings";
 import { useChannels } from "../../stores/channels";
 import { Choice, Row, Toggle } from "./Field";
 
@@ -7,14 +7,13 @@ export function Appearance() {
   // `load` because sorting rebuilds the lists from the playlist that is already in hand: the order
   // is applied while the channels are read, so nothing changes on screen until they are read again.
   const { channels, load } = useChannels();
-  const font = s.font();
   /**
-   * The preview, in the script the viewer is actually going to read.
+   * The preview, in the writing the viewer is actually going to read.
    *
-   * A pangram in English tells someone whose playlist is in Persian, Greek or Thai nothing
-   * whatsoever about whether the font they have just chosen can draw it. The names in the
-   * loaded playlist are the only honest sample, so the preview is three of them, and the
-   * pangram is the fallback for when nothing is loaded yet.
+   * It previews the text size now that the type face has gone, and the sample is still taken from
+   * the playlist rather than invented: a line of English tells somebody whose channels are named in
+   * Persian, Greek or Thai nothing about whether the size they have chosen is comfortable for the
+   * names they will be reading. The pangram is the fallback for when nothing is loaded yet.
    */
   const sample = channels.length
     ? channels.slice(0, 3).map((c) => c.name).join("   \u00b7   ")
@@ -22,13 +21,6 @@ export function Appearance() {
   return (
     <>
       <h3>Appearance</h3>
-      <Row label="Font" hint={font.note}>
-        <Choice
-          options={FONTS.map((f) => ({ id: f.id, label: f.label }))}
-          value={s.fontId}
-          onChange={(id) => s.set("fontId", id)}
-        />
-      </Row>
       {/*
         * Every row here says what it changes, including the three that used to say nothing.
         *
@@ -64,7 +56,7 @@ export function Appearance() {
           onChange={(v) => { s.set("sortAlphabetically", v); load(); }}
         />
       </Row>
-      <p className="preview" style={{ fontFamily: font.stack }} dir="auto">
+      <p className="preview" dir="auto">
         {sample}
       </p>
       <p className="sheet-lead">

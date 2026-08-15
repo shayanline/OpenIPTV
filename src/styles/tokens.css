@@ -174,7 +174,15 @@
   --t-caption: calc(20px * var(--scale));
   --lh: 1.35;
 
-  /* Set by the app from the viewer's font preference. */
+  /*
+   * The set's own interface font, and no longer a preference.
+   *
+   * system-ui resolves to One UI Sans on a Samsung television, which is what the rest of the set is
+   * drawn in, and to the platform font everywhere else. A choice of families used to sit in front of
+   * this and did nothing on a television, since the alternatives named faces no Tizen set carries
+   * and every one of them fell back here. It stays a token rather than being written inline, because
+   * two stylesheets and the pre-render frame in index.html all have to agree about it.
+   */
   --font: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 
   /*

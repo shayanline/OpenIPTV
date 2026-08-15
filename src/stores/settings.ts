@@ -4,53 +4,12 @@ import { readJSON, write } from "../services/store";
 /**
  * Everything the viewer can change, persisted to localStorage.
  *
- * Fonts are whatever the device already has. Nothing is bundled: a webfont adds weight to
- * every launch, and the choice of which script to bundle would be a guess about who is
- * watching. The families below are generic, so each resolves to something sensible
- * wherever the app runs, and the device supplies the glyphs for the playlist's language.
+ * The type face is not among them, and deliberately so. It was offered for a while and it did
+ * nothing on a television: the alternatives named families no Tizen set carries, so every choice
+ * resolved back to the one font the device has, and the setting only worked on the desktop build
+ * nobody watches television in. Whatever the set draws its own interface in is what this uses, and
+ * the device supplies the glyphs for the playlist's language.
  */
-
-export interface FontChoice {
-  id: string;
-  label: string;
-  stack: string;
-  note?: string;
-}
-
-export const FONTS: FontChoice[] = [
-  {
-    id: "system",
-    label: "System",
-    // system-ui resolves to One UI Sans on a Samsung TV, which is what the rest of the
-    // set is drawn in, and to the platform font everywhere else.
-    stack: 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif',
-    note: "The device's own interface font",
-  },
-  {
-    id: "sans",
-    label: "Sans serif",
-    stack: '"Noto Sans", Arial, Helvetica, sans-serif',
-    // "Script" means a writing system to a typographer and a program to everybody else, so the note
-    // says what it is for instead: a playlist in Persian, Greek or Thai drawn without missing boxes.
-    note: "Best for names in other alphabets",
-  },
-  {
-    id: "serif",
-    label: "Serif",
-    // A note like the other three, and not only for symmetry: the hint sits on its own line under
-    // the label, so the one font without a note made that line vanish as the viewer moved across
-    // the four chips, which reads as the interface flinching rather than as a font having nothing
-    // to say for itself.
-    note: "Softer edges, at the cost of some sharpness at a distance",
-    stack: '"Noto Serif", Georgia, "Times New Roman", serif',
-  },
-  {
-    id: "mono",
-    label: "Monospace",
-    stack: '"Noto Sans Mono", Menlo, Consolas, monospace',
-    note: "Aligns channel numbers neatly",
-  },
-];
 
 /**
  * What to do with a picture that is not the shape of the screen.
@@ -82,7 +41,6 @@ export interface Playlist {
 }
 
 interface Settings {
-  fontId: string;
   fontSizeId: string;
   playlists: Playlist[];
   activePlaylistId: string;
@@ -111,7 +69,6 @@ interface Settings {
   removePlaylist: (id: string) => void;
   updatePlaylist: (id: string, name: string, url: string) => void;
   reset: () => void;
-  font: () => FontChoice;
   scale: () => number;
   activePlaylist: () => Playlist | undefined;
 }
@@ -122,7 +79,6 @@ const KEY = "simpleiptv.settings";
 // bundled here would be a decision about what somebody in some country should watch, made
 // by the app rather than by them. The first run asks for a URL instead.
 const DEFAULTS = {
-  fontId: "system",
   fontSizeId: "m",
   playlists: [] as Playlist[],
   activePlaylistId: "",
@@ -176,12 +132,23 @@ function freshId(existing: Playlist[]): string {
 function load(): typeof DEFAULTS {
   // Merged rather than replaced, so a settings file written by an older version keeps working
   // when new keys appear.
-  return { ...DEFAULTS, ...readJSON<Partial<typeof DEFAULTS>>(KEY, {}) };
+  const saved = readJSON<Record<string, unknown>>(KEY, {});
+  const merged = { ...DEFAULTS } as Record<string, unknown>;
+  /*
+   * And only keys this version knows, so a setting that has been removed does not live on in the
+   * file for ever. The type face was a real one: every install that had chosen a font kept carrying
+   * `fontId` after the setting itself was gone, written back on every change, meaning nothing and
+   * explaining nothing to whoever read the file next.
+   */
+  for (const key of Object.keys(DEFAULTS)) {
+    if (key in saved) merged[key] = saved[key];
+  }
+  return merged as typeof DEFAULTS;
 }
 
 function persist(state: Settings) {
   const { set: _s, addPlaylist: _a, removePlaylist: _r, updatePlaylist: _u,
-          reset: _re, font: _f, scale: _sc, activePlaylist: _ap, ...data } = state;
+          reset: _re, scale: _sc, activePlaylist: _ap, ...data } = state;
   write(KEY, JSON.stringify(data));
 }
 
@@ -229,7 +196,6 @@ export const useSettings = create<Settings>((set, get) => ({
     persist(get());
   },
 
-  font: () => FONTS.find((f) => f.id === get().fontId) ?? FONTS[0],
   scale: () => FONT_SIZES.find((s) => s.id === get().fontSizeId)?.scale ?? 1,
   activePlaylist: () =>
     get().playlists.find((p) => p.id === get().activePlaylistId) ?? get().playlists[0],
