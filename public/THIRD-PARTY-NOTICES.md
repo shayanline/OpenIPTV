@@ -12,7 +12,7 @@ package.
 
 ## Shipped inside the application
 
-**hls.js**, version 1.6.16, Apache License 2.0, Copyright 2017 Dailymotion. Loaded only in a
+**hls.js**, version 1.7.0, Apache License 2.0, Copyright 2017 Dailymotion. Loaded only in a
 desktop browser, where the television's own decoder does not exist, and imported on demand from
 `src/services/player.ts` so it becomes a separate chunk. Parts of it derive from
 videojs-contrib-hls, Copyright 2013 to 2015 Brightcove, under the same licence, and both notices are
