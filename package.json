@@ -46,7 +46,7 @@
   "type": "module",
   "private": true,
   "dependencies": {
-    "hls.js": "1.6.16",
+    "hls.js": "1.7.0",
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "zustand": "5.0.14"
