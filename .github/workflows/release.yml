@@ -293,12 +293,14 @@ jobs:
   # deploying Pages requires `github-pages`. It rebuilds rather than carrying dist/ across, which
   # costs four seconds against the ceremony of an artifact upload and download.
   #
-  # Only on a tag. A dry run rehearses signing, and quietly replacing what the world is looking at
-  # is not a rehearsal.
+  # A tag publishes, and a dry run never does, because quietly replacing what the world is looking
+  # at is not a rehearsal. Turning the dry run off by hand publishes too, which is the way to put
+  # the site back without inventing a version: the page is the current build of whatever ref was
+  # dispatched, and the widget is the thing versions are for.
   # ---------------------------------------------------------------------------------
   pages:
     needs: release
-    if: startsWith(github.ref, 'refs/tags/')
+    if: startsWith(github.ref, 'refs/tags/') || github.event.inputs.dry-run == 'false'
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
