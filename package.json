@@ -28,7 +28,7 @@
     "tv:budget": "node scripts/tv/sim.mjs --floor --bench --budget",
     "tv:on-set": "node scripts/tv/on-set.mjs",
     "wasm:check": "node scripts/wasm-check.mjs",
-    "wasm:sums": "shasum -a 256 wasm/manifest-socket.c public/wasm/manifest-socket.js public/wasm/manifest-socket.wasm public/wasm/manifest-socket.worker.js",
+    "wasm:sums": "node scripts/wasm-check.mjs --write",
     "store:assets": "node scripts/store-assets.mjs"
   },
   "keywords": [

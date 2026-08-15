@@ -9,4 +9,4 @@
 b1d1e5b7ec98d25e2800672ee022809d6df83b5cb44fb12eda44fd90da78e50f  wasm/manifest-socket.c
 eaff60fc0da533f898ef0869efb725b06a83449f2c3b1ccc5e25e4df2d01a2b1  public/wasm/manifest-socket.js
 370890a2c7e257eed498636b9b62f21e86f3e46ddaeb5dbd8bd4e45ead4fb452  public/wasm/manifest-socket.wasm
-25cc2ed0ef698675afbc177aa482488f9c3d5c046a4a6ebfb2e6b4323cb78c34  public/wasm/manifest-socket.worker.js
+291e22248b874afe8d6db8c93dfc2555e7735a85ebd2550926292d10117ae394  public/wasm/manifest-socket.worker.js

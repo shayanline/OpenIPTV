@@ -16,18 +16,34 @@ const BROKEN = [
 ].join("\n");
 const HEALTHY = BROKEN.replace("1786136377905810", "42");
 
-/** A worker that answers as the television does, or refuses in the way a set without it would. */
-function fakeWorker(behaviour: "listens" | "refuses" | "silent") {
+/**
+ * A worker that answers as the television does, or refuses in the way a set without it would.
+ *
+ * `built` records every instance, because how many were made is the thing several of these tests are
+ * about: one per channel change was the fault a viewer noticed.
+ */
+function fakeWorker(behaviour: "listens" | "refuses" | "silent" | "deaf") {
   const sent: unknown[] = [];
+  const built: Fake[] = [];
   class Fake {
     onmessage: ((e: { data: unknown }) => void) | null = null;
     onerror: ((e: { message: string }) => void) | null = null;
     terminated = false;
+    constructor() { built.push(this); }
     postMessage(message: unknown) {
       sent.push(message);
       const type = (message as { type?: string })?.type;
+      if (type === "stop") {
+        // As the real worker does: close the socket, then say so, which is what allows the main
+        // thread to terminate this without leaking the descriptor. A deaf one binds normally and
+        // then never answers, which is the case the acknowledgement timeout exists for.
+        if (behaviour !== "deaf") {
+          setTimeout(() => this.onmessage?.({ data: { type: "stopped" } }), 0);
+        }
+        return;
+      }
       if (type !== "start") return;
-      if (behaviour === "listens") {
+      if (behaviour === "listens" || behaviour === "deaf") {
         setTimeout(() => this.onmessage?.({ data: { type: "listening", port: 45678 } }), 0);
       } else if (behaviour === "refuses") {
         setTimeout(() => this.onmessage?.({
@@ -38,7 +54,7 @@ function fakeWorker(behaviour: "listens" | "refuses" | "silent") {
     terminate() { this.terminated = true; }
   }
   vi.stubGlobal("Worker", Fake as unknown as typeof Worker);
-  return sent;
+  return { sent, built };
 }
 
 /**
@@ -66,7 +82,7 @@ afterEach(() => {
 });
 
 test("a playlist the set can read is not repaired, and no socket is opened", async () => {
-  const sent = fakeWorker("listens");
+  const { sent } = fakeWorker("listens");
   const { repair, repairState } = await load();
 
   assert.equal(await repair("https://host.example/healthy/index.m3u8"), null);
@@ -86,7 +102,7 @@ test("a playlist the set cannot read is served from a loopback address", async (
 });
 
 test("the same stream asked for twice does not start a second server", async () => {
-  const sent = fakeWorker("listens");
+  const { sent } = fakeWorker("listens");
   const { repair } = await load();
 
   const first = await repair(UPSTREAM);
@@ -121,7 +137,7 @@ test("as the window slides, the number served advances by the segments that drop
     text: async () => window(slid, clock + slid * 2_000_000),
   })));
 
-  const fakes: unknown[] = fakeWorker("listens");
+  const { sent: fakes } = fakeWorker("listens");
   vi.useFakeTimers({ shouldAdvanceTime: true });
   const { repair } = await load();
 
@@ -164,6 +180,101 @@ test("stopping lets go of the socket, and a later channel can start a new one", 
 
   const again = await repair(UPSTREAM);
   assert.ok(again, "it could not serve again after being stopped");
+});
+
+test("the socket is closed before the worker is killed", async () => {
+  /*
+   * The fault a viewer found by changing channel quickly. This used to post "stop" and call
+   * terminate() on the next line, and postMessage is delivered asynchronously while terminate is
+   * immediate, so the worker died before it ever saw the message.
+   *
+   * That matters because the descriptor belongs to the application and not to the worker: the
+   * platform's bindings run outside the worker's memory, so killing it leaks a listening socket for
+   * the life of the app, and enough of them exhausts what the platform will hand out.
+   */
+  const { sent, built } = fakeWorker("listens");
+  const { repair, stopRepair } = await load();
+
+  await repair(UPSTREAM);
+  stopRepair();
+
+  assert.equal(built[0].terminated, false, "it was killed before the socket could be closed");
+  assert.ok(sent.some((m) => (m as { type: string }).type === "stop"), "it was never asked to stop");
+
+  await new Promise((r) => setTimeout(r, 5));          // the worker's acknowledgement
+  assert.equal(built[0].terminated, true, "it was not killed once the socket was closed");
+});
+
+test("a worker that stops answering is killed anyway, rather than left running", async () => {
+  vi.useFakeTimers({ shouldAdvanceTime: true });
+  const { built } = fakeWorker("deaf");
+  const { repair, stopRepair } = await load();
+
+  await repair(UPSTREAM);
+  stopRepair();
+  assert.equal(built[0].terminated, false);
+
+  await vi.advanceTimersByTimeAsync(1600);            // past the acknowledgement timeout
+  assert.equal(built[0].terminated, true, "a silent worker was left running for ever");
+});
+
+test("a channel needing no repair leaves the socket listening rather than closing it", async () => {
+  /*
+   * The other half of the same fault. Tearing down on every switch away from a repaired channel
+   * meant closing a socket and discarding a compiled WebAssembly module, then building both again
+   * on the way back, and walking a channel list crosses that boundary once per press.
+   */
+  const { built } = fakeWorker("listens");
+  const { repair, idleRepair, repairState } = await load();
+
+  await repair(UPSTREAM);
+  idleRepair();
+
+  const idled = repairState();
+  assert.equal(idled.state, "listening");
+  assert.equal(idled.port, 45678, "the port was given up");
+  assert.equal(idled.upstream, "", "it still claims to be serving something");
+  assert.equal(built.length, 1);
+  assert.equal(built[0].terminated, false, "the worker was killed for a channel that just did not need it");
+
+  // And coming back is free: the same worker, the same port, no second module compiled.
+  const again = await repair(UPSTREAM);
+  assert.equal(again?.url, "http://127.0.0.1:45678/live.m3u8");
+  assert.equal(built.length, 1, "a second worker was created for a socket that was already open");
+});
+
+test("walking up and down a list of channels creates one worker, not one per press", async () => {
+  const { built } = fakeWorker("listens");
+  const { repair, idleRepair } = await load();
+
+  for (let press = 0; press < 6; press += 1) {
+    await repair(UPSTREAM);                            // a channel that needs the repair
+    idleRepair();                                      // and one that does not
+  }
+  assert.equal(built.length, 1, `${built.length} workers for six round trips`);
+});
+
+test("a slow answer for a channel nobody is watching cannot take over the socket", async () => {
+  /*
+   * Two channels from the same source in quick succession. Both fetches are in flight at once, and
+   * whichever finished last used to decide what the socket served, which could be the channel the
+   * viewer had already left while the player was asking for the new one.
+   */
+  fakeWorker("listens");
+  const second = "https://host.example/live/second.m3u8";
+  const slow = new Map([[UPSTREAM, 40], [second, 5]]);  // the first channel answers late
+  vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+    await new Promise((r) => setTimeout(r, slow.get(String(url)) ?? 0));
+    return { ok: true, text: async () => BROKEN };
+  }));
+
+  const { repair, repairState } = await load();
+  const first = repair(UPSTREAM);
+  const latest = repair(second);
+
+  assert.equal(await latest !== null, true, "the channel actually being watched was not repaired");
+  assert.equal(await first, null, "the abandoned channel was still allowed to publish");
+  assert.equal(repairState().upstream, second, "the socket is serving the wrong channel");
 });
 
 test("a verdict about a host survives a relaunch", async () => {

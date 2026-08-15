@@ -69,6 +69,8 @@ interface AVPlay {
   /** Only ever read, and only to tell a playing picture from a frozen one. */
   getCurrentTime?(): number;
   setStreamingProperty?(key: string, value: string): void;
+  /** IDLE only, like setStreamingProperty. Optional because the older sets may not have it. */
+  setBufferingParam?(option: string, unit: string, amount: number): void;
   suspend?(): void;
   restore?(): void;
   setTimeoutForBuffering?(seconds: number): void;
@@ -438,12 +440,40 @@ export class Player {
        */
       av.setStreamingProperty?.("ADAPTIVE_INFO", "STARTBITRATE=LOWEST");
 
-      // How long to wait for a channel that is not coming, which is a different setting
-      // from how much to buffer. The buffer itself is left at the ten seconds Samsung
-      // ships, on their own advice that the defaults are not to be modified. This only
-      // shortens the wait: the player is documented to hang thirty seconds on a connection
-      // failure, and cutting that to fifteen means AVPlay names the fault before the app's
-      // own watchdog gives up and reports a bare timeout instead.
+      /*
+       * How much to have in hand before starting, which is not how much to keep afterwards.
+       *
+       * Samsung ships ten seconds here and advises against changing the defaults, which was
+       * worth measuring rather than believing. On the set, one property changed at a time and
+       * the same channel each time:
+       *
+       *   default, 10s   the picture started moving 2875ms after play()
+       *   4 seconds       873ms
+       *   2 seconds       842ms
+       *
+       * Two thirds of a zap spent waiting, and the reason is worth stating because it explains
+       * why it never looked this way on every channel. A live playlist hands the player a
+       * window ending at the live edge, so the last few seconds of a ten second buffer can only
+       * arrive as fast as real time produces them, and a viewer watches the percentage climb to
+       * the high eighties and stop with the first frame already decoded underneath it. Channels
+       * repaired by services/repair never showed it, because that manifest declares a twenty
+       * second target duration and the player therefore starts a minute inside content it
+       * already holds.
+       *
+       * The obvious worry is that a smaller buffer stutters later. It does not, because this
+       * governs the initial fill and not what is kept in hand: sixty seconds of the same
+       * channel gave one buffering event and no frozen second at four seconds, against two
+       * events and one frozen second at Samsung's default. Two seconds buys nothing over four
+       * and leaves less room, so four it is, and the resume buffer is left alone.
+       */
+      try {
+        av.setBufferingParam?.("PLAYER_BUFFER_FOR_PLAY", "PLAYER_BUFFER_SIZE_IN_SECOND", 4);
+      } catch { /* older firmware may not have it, and the default is only slower */ }
+
+      // How long to wait for a channel that is not coming. This only shortens the wait: the
+      // player is documented to hang thirty seconds on a connection failure, and cutting that
+      // to fifteen means AVPlay names the fault before the app's own watchdog gives up and
+      // reports a bare timeout instead.
       try { av.setTimeoutForBuffering?.(15); } catch { /* older firmware may not have it */ }
 
       /**

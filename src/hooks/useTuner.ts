@@ -3,8 +3,7 @@ import { Player, type PlayerEvent } from "../services/player";
 import { releaseLogos } from "../services/logos";
 import { nextChannel } from "../services/lineup";
 import {
-  knownToNeedRepair, pauseRepair, repair, rememberNeedsRepair, repairState, resumeRepair,
-  stopRepair,
+  idleRepair, knownToNeedRepair, pauseRepair, repair, rememberNeedsRepair, resumeRepair, stopRepair,
 } from "../services/repair";
 import type { Fit } from "../services/player";
 import type { Channel } from "../types";
@@ -293,8 +292,16 @@ export function useTuner(options: TunerOptions): Tuner {
     };
 
     if (!wantsRepair.current || !knownToNeedRepair(channel.url)) {
-      // Nothing here needs the socket, so let go of one that is still open from a channel before.
-      if (repairState().state === "serving") stopRepair();
+      /*
+       * Nothing here needs the repair, so it goes quiet rather than away.
+       *
+       * This used to tear the worker down, which closed a socket and threw away a compiled
+       * WebAssembly module on every switch away from a repaired channel, and built both again on
+       * every switch back. Walking a list of channels crosses that boundary once per press, and a
+       * viewer doing it quickly found the consequence: the socket was leaking, because the platform
+       * holds the descriptor for the application rather than for the worker.
+       */
+      idleRepair();
       play(channel.url);
       return;
     }

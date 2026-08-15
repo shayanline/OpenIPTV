@@ -47,6 +47,10 @@ function compatibilityFact(): string {
   const { state, port, why, hosts } = repairState();
   const known = hosts.length ? `, ${hosts.length} host${hosts.length === 1 ? "" : "s"} known` : "";
   if (state === "serving") return `serving on port ${port}${known}`;
+  // Bound and quiet, which is where a channel needing no repair leaves it. Named separately from
+  // idle because the two look identical to a viewer and mean different things to anybody reading a
+  // fault report: this one has already proved the television can do it.
+  if (state === "listening") return `listening on port ${port}, nothing to repair${known}`;
   if (state === "starting") return `starting${known}`;
   if (state === "unavailable") return `not available on this TV: ${why}`;
   return `idle${known}`;

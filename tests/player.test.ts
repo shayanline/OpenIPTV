@@ -41,6 +41,8 @@ function fakeAVPlay() {
     // The value as well as the key, since what is asked for matters as much as when.
     setStreamingProperty: (k: string, v: string) => calls.push(`setStreamingProperty:${k}=${v}`),
     setTimeoutForBuffering: (s: number) => calls.push(`setTimeoutForBuffering:${s}`),
+    setBufferingParam: (option: string, unit: string, amount: number) =>
+      calls.push(`setBufferingParam:${option},${unit},${amount}`),
     suspend: () => calls.push("suspend"),
     restore: () => calls.push("restore"),
     setListener: (l: Record<string, (arg?: unknown) => void>) => { av.listener = l; },
@@ -329,11 +331,30 @@ test("an abort the app caused itself is not reported as a fault", async () => {
   browser.stop();
 });
 
+test("how much to buffer before starting is asked for while the player will still accept it", () => {
+  /*
+   * Both of these are IDLE only, so after open and before prepareAsync or they throw and the
+   * channel never starts. Four seconds rather than the ten Samsung ships, because on the set that
+   * was the difference between the picture moving 873ms after play and 2875ms after it, and sixty
+   * seconds of the same channel stuttered no more at four than at ten.
+   */
+  player.play("http://example.invalid/a.m3u8");
+  av.prepared?.ok();
+
+  const asked = av.calls.indexOf(
+    "setBufferingParam:PLAYER_BUFFER_FOR_PLAY,PLAYER_BUFFER_SIZE_IN_SECOND,4",
+  );
+  assert.ok(asked !== -1, `never asked: ${av.calls.join(" ")}`);
+  assert.ok(av.calls.findIndex((c) => c.startsWith("open")) < asked, "asked before the stream was open");
+  assert.ok(asked < av.calls.indexOf("prepareAsync"), "asked once it was too late to be accepted");
+});
+
 test("firmware without the optional calls does not stop a channel starting", () => {
-  // Older sets lack setTimeoutForBuffering and setDisplayMethod. An app that assumes them
-  // throws on open and plays nothing at all.
+  // Older sets lack setTimeoutForBuffering, setBufferingParam and setDisplayMethod. An app that
+  // assumes them throws on open and plays nothing at all.
   const bare = fakeAVPlay() as Partial<ReturnType<typeof fakeAVPlay>>;
   delete bare.setTimeoutForBuffering;
+  delete bare.setBufferingParam;
   delete bare.setDisplayMethod;
   delete bare.suspend;
   (window as unknown as { webapis: unknown }).webapis = { avplay: bare };

@@ -20,11 +20,42 @@
  *
  * Run by CI and by `npm run wasm:check`. Exits 1 with a plain sentence about what is wrong.
  */
-import { readFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { readFileSync, writeFileSync } from "node:fs";
 
 const GLUE = "public/wasm/manifest-socket.js";
 const WORKER = "public/wasm/manifest-socket.worker.js";
 const MODULE = "public/wasm/manifest-socket.wasm";
+const SOURCE = "wasm/manifest-socket.c";
+const SUMS = "wasm/checksums.txt";
+
+/**
+ * Rewrite the checksums, header and all, when the module has been deliberately rebuilt.
+ *
+ * Here rather than as a shell one liner in package.json, which is how it was first written and how
+ * it broke: `npm run` prints two lines of its own before the command's output, and redirecting that
+ * into the file left npm's banner in the middle of it, which shasum then reported as malformed lines
+ * while still checking the four real ones.
+ */
+const HEADER = `# What the committed WebAssembly was built from, so a change to one without the other is caught.
+#
+# The module needs Samsung's own fork of Emscripten, which CI cannot install, so the built files are
+# committed and this file ties them to the source. Editing the C without rebuilding, or replacing a
+# binary without touching the C, fails the check until somebody regenerates this deliberately.
+#
+# The build recipe, including the two patches Samsung's SDK needs, is in docs/testing.md.
+# Regenerate with: npm run wasm:sums
+`;
+
+if (process.argv.includes("--write")) {
+  const lines = [SOURCE, GLUE, MODULE, WORKER].map((file) => {
+    const digest = createHash("sha256").update(readFileSync(file)).digest("hex");
+    return `${digest}  ${file}`;
+  });
+  writeFileSync(SUMS, `${HEADER}${lines.join("\n")}\n`);
+  console.log(`Recorded ${lines.length} checksums in ${SUMS}.`);
+  process.exit(0);
+}
 
 /** The C the application drives through cwrap, from services/repair by way of the worker. */
 const REQUIRED_EXPORTS = ["_set_manifest", "_start_server", "_serve_once", "_stop_server"];

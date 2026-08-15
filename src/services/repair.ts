@@ -39,7 +39,20 @@ export interface Repair {
   upstream: string;
 }
 
-type State = "idle" | "starting" | "serving" | "unavailable";
+/**
+ * How long to give the worker to close the socket before killing it.
+ *
+ * It only has to answer one message and make one call, so this is generous. It exists because the
+ * alternative is worse in a way that took a viewer to notice: see teardown.
+ */
+const STOP_ACK_MS = 1500;
+
+/**
+ * idle means the worker is up and the port is bound with nothing being served, which is where a
+ * channel that needs no repair leaves it. ready would be a better word for it, except that the
+ * distinction that matters to everything outside this file is whether a stream is being served.
+ */
+type State = "idle" | "starting" | "serving" | "listening" | "unavailable";
 
 let worker: Worker | null = null;
 let state: State = "idle";
@@ -50,6 +63,7 @@ let sequence = 0;                       // the number given to the first of them
 let refresh: number | undefined;
 let waiting: ((port: number) => void)[] = [];
 let why = "";                           // why it is unavailable, for Diagnostics
+let generation = 0;                     // which tune the answer in flight belongs to
 
 /** Whether this television can do it at all, once it has been asked. */
 export const repairState = () => ({ state, port, why, upstream: serving, hosts: [...hosts] });
@@ -118,12 +132,45 @@ function post(message: unknown) {
   worker?.postMessage(message);
 }
 
+/**
+ * Close everything, and wait for the socket to actually be closed before killing the worker.
+ *
+ * The first version of this posted "stop" and called terminate() on the next line, which does not
+ * work and produced the fault a viewer found by changing channel quickly: postMessage is delivered
+ * asynchronously, terminate() is immediate, so the worker died before it ever dequeued the message
+ * and stop_server() was never called.
+ *
+ * That would be harmless if the socket belonged to the worker, and it does not. The descriptor is
+ * held by the platform on behalf of the whole application, because tizentvwasm's bindings run
+ * outside the worker's memory, so killing the worker leaks a listening socket for the life of the
+ * app. Do that on every channel change and a viewer walking down a list of channels eventually
+ * exhausts what the platform will give out, at which point start_server fails, compatibility
+ * reports itself unavailable, and the repair stops working until the app is restarted.
+ *
+ * So the worker acknowledges the stop and is killed when it does, or after a timeout if it has
+ * stopped answering, which is the only case where killing it blind is the best available answer.
+ */
 function teardown(reason: string) {
   window.clearInterval(refresh);
   refresh = undefined;
-  post({ type: "stop" });
-  worker?.terminate();
+
+  const dying = worker;
   worker = null;
+  if (dying) {
+    let killed = false;
+    const kill = () => {
+      if (killed) return;
+      killed = true;
+      dying.terminate();
+    };
+    dying.onmessage = ({ data }) => {
+      if (data?.type === "stopped") kill();
+    };
+    dying.onerror = kill;
+    dying.postMessage({ type: "stop" });
+    window.setTimeout(kill, STOP_ACK_MS);
+  }
+
   port = 0;
   serving = "";
   published = [];
@@ -146,7 +193,9 @@ function teardown(reason: string) {
  * repair anything never compiles a WebAssembly module at all.
  */
 function begin(): Promise<number> {
-  if (state === "serving") return Promise.resolve(port);
+  // Already listening, whether or not anything is being served, so there is nothing to start: this
+  // is what makes a switch back to a repaired channel immediate rather than another module compile.
+  if (state === "serving" || state === "listening") return Promise.resolve(port);
   if (state === "unavailable") return Promise.resolve(0);
   if (state === "starting") return new Promise((resolve) => waiting.push(resolve));
 
@@ -173,7 +222,9 @@ function begin(): Promise<number> {
       if (data?.type === "listening") {
         window.clearTimeout(timer);
         port = Number(data.port);
-        state = "serving";
+        // Bound, with nothing being served yet. The caller sets serving once it has published a
+        // manifest, so a socket that came up and was never given anything cannot claim otherwise.
+        state = "listening";
         why = "";
         const held = waiting;
         waiting = [];
@@ -209,11 +260,24 @@ export async function repair(upstream: string): Promise<Repair | null> {
     return { url: local(), upstream };
   }
 
+  /*
+   * Which tune this belongs to, so that a slow answer for a channel nobody is watching any more
+   * cannot take over the socket.
+   *
+   * Both awaits below are long enough for a viewer to have moved on: the playlist can be 650KB and
+   * starting the worker compiles a WebAssembly module. Without this, two channels from the same
+   * source in quick succession raced, and whichever fetch happened to finish last decided what the
+   * socket served, which could be the previous channel while the player was asking for the new one.
+   */
+  generation += 1;
+  const mine = generation;
+  const stale = () => mine !== generation;
+
   const text = await read(upstream);
-  if (text === null || !needsRepair(text)) return null;
+  if (stale() || text === null || !needsRepair(text)) return null;
 
   const bound = await begin();
-  if (!bound) return null;
+  if (!bound || stale()) return null;
 
   /*
    * The base is taken once, from the first playlist seen for this stream, and every later refresh
@@ -224,6 +288,7 @@ export async function repair(upstream: string): Promise<Repair | null> {
   published = [];
   sequence = 0;
   publish(text);
+  state = "serving";
 
   window.clearInterval(refresh);
   refresh = window.setInterval(() => void update(), REFRESH_MS);
@@ -292,6 +357,31 @@ export function resumeRepair(): void {
   // and the player is about to ask for whatever we are holding.
   void update();
   refresh = window.setInterval(() => void update(), REFRESH_MS);
+}
+
+/**
+ * Stop serving this stream, and keep the socket.
+ *
+ * What a channel that needs no repair leaves behind, and the difference between this and stopping
+ * altogether is the whole fix for changing channel quickly. Tearing the worker down meant closing a
+ * socket and killing a WebAssembly module on every switch away from a repaired channel, then
+ * compiling that module again on every switch back, and a viewer walking up and down a list crosses
+ * that boundary once per press.
+ *
+ * A bound socket that nobody is polling costs nothing measurable: the worker stops looking for
+ * connections when this is called, and there is no timer left running on either side.
+ */
+export function idleRepair(): void {
+  if (state !== "serving") return;
+  window.clearInterval(refresh);
+  refresh = undefined;
+  post({ type: "idle" });
+  serving = "";
+  published = [];
+  sequence = 0;
+  // Any answer still in flight now belongs to nobody.
+  generation += 1;
+  state = "listening";
 }
 
 /**

@@ -14,11 +14,18 @@
  * Messages in
  *   { type: "start" }              bind and begin serving
  *   { type: "manifest", text }     replace what is served
- *   { type: "stop" }               close the socket and go quiet
+ *   { type: "idle" }               stop looking for connections, keep the port
+ *   { type: "stop" }               close the socket and say so
  * Messages out
  *   { type: "listening", port }    the port the platform gave us
  *   { type: "served" }             one request answered
+ *   { type: "stopped" }            the socket is closed, so it is safe to be terminated
  *   { type: "error", reason }      anything that went wrong, once
+ *
+ * That last one out is load bearing. The socket belongs to the application rather than to this
+ * worker, because the platform's bindings live outside this thread, so a worker terminated without
+ * closing it leaks a listening socket for as long as the app runs. The main thread waits for
+ * "stopped" before killing this, and a viewer changing channel quickly is what found that out.
  */
 
 /**
@@ -131,16 +138,25 @@ function start() {
   pump();
 }
 
-function stop() {
+/** Stop looking for connections, and keep the port. What a channel needing no repair leaves. */
+function idle() {
   if (timer !== null) {
     clearTimeout(timer);
     timer = null;
   }
+  if (api) api.setManifest("");        // nothing to hand out until something is published again
+}
+
+function stop() {
+  idle();
   if (api) {
     try {
       api.stopServer();
     } catch (e) { /* going away regardless */ }
   }
+  // Said even if there was nothing to close, because the main thread is waiting on this to know it
+  // can terminate us, and a silence it has to time out of is a second and a half of nothing.
+  self.postMessage({ type: "stopped" });
 }
 
 /*
@@ -166,10 +182,17 @@ function handle(message) {
       pending = message.text;
       return;
     }
-    if (api.setManifest(message.text) !== 0) fail("the manifest is too large to serve");
+    if (api.setManifest(message.text) !== 0) {
+      fail("the manifest is too large to serve");
+      return;
+    }
+    // Back to looking for connections, since a manifest arriving after an idle period means a
+    // repaired channel has started again and the player is about to ask for it.
+    if (timer === null && api) pump();
     return;
   }
   if (message.type === "start") start();
+  if (message.type === "idle") idle();
   if (message.type === "stop") stop();
 }
 
