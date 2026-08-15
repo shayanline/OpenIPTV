@@ -1022,6 +1022,23 @@ html.tizen, html.tizen body, html.tizen #root, html.tizen .app { background: tra
 }
 .sheet-lead { margin: 0 0 var(--s3); color: var(--text-2); font-size: var(--t-label); }
 
+/*
+ * Whole pixel line boxes in the About text, which is a parity fix rather than a typographic one.
+ *
+ * Line height here is unitless, so 22px type at 1.35 asks for lines of 29.7px. Chromium 69 rounds a
+ * line box to a whole pixel and Chromium 120 does not, and About is the one screen with enough
+ * stacked prose for that third of a pixel to accumulate: nineteen lines put the block 5.7px taller on
+ * the newer engine, past the parity gate's four pixel tolerance. Asking for whole numbers makes the
+ * two engines agree by construction instead of by luck.
+ *
+ * Worth knowing how this was found, because it was nearly missed twice. The gate passes locally while
+ * standing in with this machine's Chrome, since the pinned Chromium 120 will not start on macOS, and
+ * it says so in its output. CI runs the real pinned engines, so the first honest run of this gate was
+ * the first push, and it failed on exactly the difference a shortened paragraph had appeared to fix.
+ */
+.about p,
+.about h4 { line-height: calc(32px * var(--scale)); }
+
 /* One setting per line, label left, control right, so four directional movement down the
    column is unambiguous. A toggle belongs on the right of its row, per One UI's lists. */
 .field {
