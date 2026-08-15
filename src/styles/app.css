@@ -308,6 +308,15 @@ html.tizen, html.tizen body, html.tizen #root, html.tizen .app { background: tra
 /* Both panes carry a header of the same height, so their lists start on the same line.
    The checklist wants focusable objects on a grid, and two columns of rows that begin at
    different heights is exactly the ragged layout it warns about. */
+/* The header's glyph and its word are one thing, so the count can keep the far edge to itself.
+   Loose children of a header that spreads them would put the word in the middle of the column. */
+.pane-head-label {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  min-width: 0;
+}
+
 .pane-head {
   display: flex;
   align-items: center;
@@ -1933,6 +1942,7 @@ input.wrong { border-color: var(--danger); }
    the stylesheet has a fallback without anybody having to know which ones currently matter,
    and so that giving the header a third child is not quietly a regression on a 2020 set. */
 .no-flex-gap .pane-head > * + * { margin-left: var(--s2); }
+.no-flex-gap .pane-head-label > * + * { margin-left: var(--s2); }
 .no-flex-gap .row > * + * { margin-left: var(--s2); }
 .no-flex-gap .field > * + * { margin-left: var(--s3); }
 .no-flex-gap .pl > * + * { margin-left: var(--s1); }

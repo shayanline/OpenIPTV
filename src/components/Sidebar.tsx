@@ -1,4 +1,5 @@
 import { memo, useRef } from "react";
+import { Icon } from "./Icon";
 import { Text } from "./Text";
 import { ScrollIndicator } from "./ScrollIndicator";
 import { RAIL_ROW_BASE, useWindowed } from "../hooks/useWindowed";
@@ -108,7 +109,15 @@ export const Sidebar = memo(function Sidebar({
         * furniture.
         */}
       <div className="pane-head">
-        <p className="panel-title">Categories</p>
+        {/*
+          * The glyph and the word travel together in a wrapper of their own, because the header
+          * spreads its children to the edges so the count sits at the far side: a third child left
+          * loose would push the word into the middle of the column.
+          */}
+        <span className="pane-head-label">
+          <Icon name="categories" />
+          <p className="panel-title">Categories</p>
+        </span>
         {!!categories.length && <span className="count">{categories.length}</span>}
       </div>
 

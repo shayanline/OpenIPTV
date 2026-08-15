@@ -4,7 +4,9 @@ import { Choice, Row, Toggle } from "./Field";
 
 export function Appearance() {
   const s = useSettings();
-  const { channels } = useChannels();
+  // `load` because sorting rebuilds the lists from the playlist that is already in hand: the order
+  // is applied while the channels are read, so nothing changes on screen until they are read again.
+  const { channels, load } = useChannels();
   const font = s.font();
   /**
    * The preview, in the script the viewer is actually going to read.
@@ -27,14 +29,41 @@ export function Appearance() {
           onChange={(id) => s.set("fontId", id)}
         />
       </Row>
-      <Row label="Text size">
+      {/*
+        * Every row here says what it changes, including the three that used to say nothing.
+        *
+        * A label alone answers "what is this called" and not "what happens if I turn it off", and
+        * these three were the ambiguous ones: numbers could plausibly mean dialling rather than
+        * showing, a clock could be anywhere on the screen, and text size could be the channel names
+        * alone rather than the whole interface. A viewer at three metres should not have to try a
+        * setting to find out what it does.
+        */}
+      <Row label="Text size" hint="Applies to everything in the app">
         <Choice options={FONT_SIZES} value={s.fontSizeId} onChange={(id) => s.set("fontSizeId", id)} />
       </Row>
-      <Row label="Channel numbers"><Toggle value={s.showNumbers} onChange={(v) => s.set("showNumbers", v)} /></Row>
-      <Row label="Channel logos" hint="Turn off on a slow connection">
+      <Row label="Channel numbers" hint="Shown beside each name in the list">
+        <Toggle value={s.showNumbers} onChange={(v) => s.set("showNumbers", v)} />
+      </Row>
+      <Row label="Channel logos" hint="Fetched from your playlist, so turning them off saves data">
         <Toggle value={s.showLogos} onChange={(v) => s.set("showLogos", v)} />
       </Row>
-      <Row label="Clock"><Toggle value={s.showClock} onChange={(v) => s.set("showClock", v)} /></Row>
+      <Row label="Clock" hint="In the corner while the channel list is open">
+        <Toggle value={s.showClock} onChange={(v) => s.set("showClock", v)} />
+      </Row>
+      {/*
+        * Sorting lives here rather than under Watching, where it used to be.
+        *
+        * It changes the order of the list on this screen's own terms, beside the two rows that decide
+        * what else that list shows. Watching is about the picture, and a channel order is not part of
+        * the picture: it was there only because it is not about the picture, which is a reason to
+        * exclude it from somewhere rather than a reason to put it here.
+        */}
+      <Row label="Sort channels A to Z" hint="Otherwise they stay in the order your playlist sent them">
+        <Toggle
+          value={s.sortAlphabetically}
+          onChange={(v) => { s.set("sortAlphabetically", v); load(); }}
+        />
+      </Row>
       <p className="preview" style={{ fontFamily: font.stack }} dir="auto">
         {sample}
       </p>

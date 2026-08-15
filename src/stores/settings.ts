@@ -30,11 +30,18 @@ export const FONTS: FontChoice[] = [
     id: "sans",
     label: "Sans serif",
     stack: '"Noto Sans", Arial, Helvetica, sans-serif',
-    note: "Widest script coverage where the device has it",
+    // "Script" means a writing system to a typographer and a program to everybody else, so the note
+    // says what it is for instead: a playlist in Persian, Greek or Thai drawn without missing boxes.
+    note: "Best for names in other alphabets",
   },
   {
     id: "serif",
     label: "Serif",
+    // A note like the other three, and not only for symmetry: the hint sits on its own line under
+    // the label, so the one font without a note made that line vanish as the viewer moved across
+    // the four chips, which reads as the interface flinching rather than as a font having nothing
+    // to say for itself.
+    note: "Softer edges, at the cost of some sharpness at a distance",
     stack: '"Noto Serif", Georgia, "Times New Roman", serif',
   },
   {

@@ -70,7 +70,7 @@ export function Playlists({ onAsking }: { onAsking: (asking: boolean) => void })
       <h3>Playlists</h3>
       {note && <p className="sheet-lead" role="status">{note}</p>}
       <p className="sheet-lead">
-        Any extended M3U works. {channels.length} channels loaded from the active one.
+        Any M3U playlist address works. {channels.length} channels loaded from the active one.
         Playlists are stored on this device only.
       </p>
       {!s.playlists.length && (
@@ -130,7 +130,7 @@ export function Playlists({ onAsking }: { onAsking: (asking: boolean) => void })
           <label htmlFor="pl-name">Name</label>
           <input id="pl-name" value={name} onChange={(e) => setName(e.target.value)}
                  placeholder="Taken from the address" />
-          <label htmlFor="pl-url">URL</label>
+          <label htmlFor="pl-url">Address</label>
           <input id="pl-url" value={url} spellCheck={false}
                  className={problem ? "wrong" : ""}
                  aria-invalid={problem ? true : undefined}

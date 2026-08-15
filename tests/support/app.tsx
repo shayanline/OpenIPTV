@@ -52,11 +52,21 @@ export interface MountOptions {
    * those was the old behaviour.
    */
   awaitPlaylist?: boolean;
+  /**
+   * How long the stand in player takes to report a picture, in milliseconds.
+   *
+   * Zero, and synchronous, for almost everything: those tests are about which key does what and
+   * waiting would only make them slow. But a channel that arrives in the same tick as the request
+   * never leaves the app visibly busy, and some behaviour only exists while it is: the banner is
+   * held without a countdown for exactly that period, which is where it was found staying up for
+   * ever. Anything asserting on that has to let the channel take a moment, as a real one does.
+   */
+  slowPicture?: number;
 }
 
 export async function mountApp(
   playlist: string,
-  { resume, awaitPlaylist = true }: MountOptions = {},
+  { resume, awaitPlaylist = true, slowPicture = 0 }: MountOptions = {},
 ) {
   vi.resetModules();
   played = [];
@@ -74,9 +84,10 @@ export async function mountApp(
       setFit() {}
       play(url: string) {
         played.push(url);
-        // A picture arrives at once, so the tests are about the interface rather than
-        // about waiting.
-        this.emit({ type: "playing" });
+        // A picture arrives at once, so the tests are about the interface rather than about
+        // waiting, unless a test has asked for a channel that takes a moment to join.
+        if (slowPicture) setTimeout(() => this.emit({ type: "playing" }), slowPicture);
+        else this.emit({ type: "playing" });
       }
       resume(url: string) { this.play(url); }
     },

@@ -98,7 +98,7 @@ const QUERY_SETTLE_MS = 150;
  *
  * The rule is that a layer only appears when nothing above it is open, which is what
  * stops the interface piling up on itself. Choosing a channel closes the panel, so the
- * banner appears with the name and holds while the channel tunes, and five seconds after
+ * banner appears with the name and holds while the channel tunes, and eight seconds after
  * the picture arrives that goes too and only the programme is left.
  *
  * Layer 1.1 is why a broken channel does not interrupt anything. It takes no focus and
@@ -372,7 +372,7 @@ export default function App() {
   /**
    * Hold the banner open while the channel is still coming.
    *
-   * Its five seconds are counted from the press, and joining a stream can take four times
+   * Its eight seconds are counted from the press, and joining a stream can take twice
    * that: the name went away, the picture had not arrived, and the viewer was left with a
    * black screen and a turning ring that said nothing about what they were waiting for.
    * Checklist 4.5 wants a task that is under way to say so, and what the viewer needs said
@@ -384,9 +384,35 @@ export default function App() {
     chrome.holdBanner();
   }, [busy, current, view, chrome.holdBanner]);
 
+  /**
+   * And when the waiting ends, whatever ended it, the eight seconds begin.
+   *
+   * The other half of the effect above, without which a held banner could stay up for ever. The
+   * countdown used to be restarted only by a picture arriving, and an arrival is announced once per
+   * channel, so anything that made the app busy again on a channel it had already announced left the
+   * banner held with nothing to lower it. Pausing and playing was the reliable way to see it, and it
+   * went away on right or back only because those clear every overlay at once.
+   *
+   * settleBanner refuses to raise a banner that is already down, so this cannot resurrect one after
+   * a stall recovers.
+   */
+  useEffect(() => {
+    if (busy || !current || view !== "watch") return;
+    chrome.settleBanner();
+  }, [busy, current, view, chrome.settleBanner]);
+
   /** The rail cursor as it is now, for presses that arrive faster than renders. */
   const cursorRef = useRef(cursor);
   cursorRef.current = cursor;
+
+  /**
+   * Which column the cursor was in before it went up into the title bar.
+   *
+   * Search and Settings sit above both columns, so leaving them downward has to land where the
+   * viewer came from rather than always in the categories. A ref rather than state because it is
+   * read by the key handler between renders, and nothing on screen depends on it.
+   */
+  const barFrom = useRef<"rail" | "list">("rail");
 
 
   // The channel panel withdraws on its own once there is a picture behind it to withdraw
@@ -912,16 +938,59 @@ export default function App() {
       watch();
     };
 
+    /*
+     * Up and down cycle through the title bar and whichever column the cursor is in.
+     *
+     * The categories have always worked this way, because Search and Settings sit at row zero of
+     * the rail with the categories below them, so walking up off the first category reaches them
+     * and walking down comes back. The channel column had no such route: the only way to those two
+     * keys from a channel was left into the rail, up to the top, and then back again, which is
+     * three presses to reach something a viewer can see directly above where they are looking.
+     *
+     * So the bar is now the row above both columns rather than above one of them, and which column
+     * the cursor left is remembered, because coming back to the categories from a channel list
+     * would be the interface deciding the viewer meant something they did not press.
+     *
+     * The search field is left out of it. While searching, the thing above the results is the field
+     * being typed into, and putting the title bar above that as well would make one press mean two
+     * different things depending on how the column got there.
+     */
+    const inBar = pane === "rail" && cursor === 0;
+    const atTop = index <= 0;
+    const atBottom = index >= column.length - 1;
+    const enterBar = (from: "rail" | "list") => {
+      barFrom.current = from;
+      setPane("rail");
+      moveCursor(0);
+    };
+
     switch (code) {
       case KEY.UP:
         event.preventDefault();
-        if (pane === "list") setIndex((i) => stepColumn(i, -1, column.length, searching));
-        else nudgeCursor(-1);
+        if (pane === "list") {
+          if (!searching && atTop) enterBar("list");
+          else setIndex((i) => stepColumn(i, -1, column.length, searching));
+        } else if (inBar && barFrom.current === "list") {
+          // Back to the column it came from, at the bottom, which is what the rail does when it
+          // wraps off the bar onto the last category.
+          setPane("list");
+          setIndex(Math.max(0, column.length - 1));
+        } else {
+          if (cursor === 1) barFrom.current = "rail";
+          nudgeCursor(-1);
+        }
         break;
       case KEY.DOWN:
         event.preventDefault();
-        if (pane === "list") setIndex((i) => stepColumn(i, 1, column.length, searching));
-        else nudgeCursor(1);
+        if (pane === "list") {
+          if (!searching && atBottom) enterBar("list");
+          else setIndex((i) => stepColumn(i, 1, column.length, searching));
+        } else if (inBar && barFrom.current === "list") {
+          setPane("list");                     // exactly where it was, which is the whole point
+        } else {
+          if (cursor === lists.length) barFrom.current = "rail";
+          nudgeCursor(1);
+        }
         break;
       case KEY.LEFT:
         event.preventDefault();

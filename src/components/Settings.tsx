@@ -1,6 +1,7 @@
 import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import { KEY, useRemote } from "../hooks/useRemote";
 import { useSpatialNav } from "../hooks/useSpatialNav";
+import { Icon, type IconName } from "./Icon";
 import { KeyGuide } from "./KeyGuide";
 import { About } from "./settings/About";
 import { Appearance } from "./settings/Appearance";
@@ -10,12 +11,21 @@ import { Playlists } from "./settings/Playlists";
 
 type Section = "appearance" | "playlists" | "behaviour" | "diagnostics" | "about";
 
-const SECTIONS: { id: Section; label: string }[] = [
-  { id: "appearance", label: "Appearance" },
-  { id: "playlists", label: "Playlists" },
-  { id: "behaviour", label: "Watching" },
-  { id: "diagnostics", label: "Diagnostics" },
-  { id: "about", label: "About" },
+/**
+ * The sections, in the order the rail lists them, each with the glyph beside its name.
+ *
+ * A glyph per section because five words in a column are five words to read, and a viewer looking
+ * for the picture size is looking for a shape they remember rather than reading the list again. They
+ * are outline glyphs rather than filled ones: the rail is a list to walk, and the filled family is
+ * reserved for status and transport, which is why the gear that opens this sheet is filled and the
+ * one inside it is not.
+ */
+const SECTIONS: { id: Section; label: string; icon: IconName }[] = [
+  { id: "appearance", label: "Appearance", icon: "appearance" },
+  { id: "playlists", label: "Playlists", icon: "playlists" },
+  { id: "behaviour", label: "Watching", icon: "tv" },
+  { id: "diagnostics", label: "Diagnostics", icon: "diagnostics" },
+  { id: "about", label: "About", icon: "about" },
 ];
 
 export function Settings({ onClose }: { onClose: () => void }) {
@@ -152,7 +162,14 @@ export function Settings({ onClose }: { onClose: () => void }) {
                 enterBody();
               }}
             >
-              {s.label}
+              <Icon name={s.icon} />
+              {/*
+                * The name in an element of its own rather than as a bare text node, so the
+                * stylesheet can reach it: the 2020 and 2021 sets have no flex gap, and the margin
+                * that stands in for it applies to elements, which an anonymous text node is not.
+                * The glyph and the word would touch on exactly the televisions tv:gap exists for.
+                */}
+              <span className="row-label">{s.label}</span>
             </button>
           ))}
         </div>

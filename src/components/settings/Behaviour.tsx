@@ -22,14 +22,16 @@ export function Behaviour({ onAsking }: { onAsking: (asking: boolean) => void })
       >
         <Choice options={ASPECTS} value={s.aspectId} onChange={(id) => s.set("aspectId", id)} />
       </Row>
-      <Row label="Resume the last channel" hint="Start playing it when the app opens">
+      {/*
+        * The hint says only what the label does not. "Resume the last channel" and "start playing
+        * it" are the same sentence twice, and the one fact a viewer cannot get from the label is
+        * when it happens.
+        *
+        * Sorting used to sit below this row and now lives under Appearance, beside the other two
+        * settings that decide what the channel list shows.
+        */}
+      <Row label="Resume the last channel" hint="When the app opens">
         <Toggle value={s.resumeLast} onChange={(v) => s.set("resumeLast", v)} />
-      </Row>
-      <Row label="Sort channels A to Z" hint="Otherwise the playlist's own order is kept">
-        <Toggle value={s.sortAlphabetically} onChange={async (v) => {
-          s.set("sortAlphabetically", v);
-          await load();
-        }} />
       </Row>
       {/*
         * Last of the toggles, because it is the one nobody should need.
@@ -39,10 +41,15 @@ export function Behaviour({ onAsking }: { onAsking: (asking: boolean) => void })
         * they are looking at when they come here. The warning about the connection is honest:
         * the television fetches each playlist itself while this is on.
         */}
+      {/*
+        * The label names the symptom, because "compatibility mode" is a phrase from a settings menu
+        * and not from anybody's living room: it tells a viewer nothing about whether they need it,
+        * so the whole meaning was carried by the hint, in the smallest type on the screen. Now the
+        * label says what they are looking at and the hint says only what it costs.
+        */}
       <Row
-        label="Compatibility mode"
-        hint="For channels that show a picture for a moment and then stop. Uses a little more of
-              your connection, so leave it off unless you need it."
+        label="Fix channels that stop after a moment"
+        hint="Repairs a playlist this TV reads wrongly. Uses a little more data."
       >
         <Toggle
           value={s.compatibility}
@@ -54,11 +61,16 @@ export function Behaviour({ onAsking }: { onAsking: (asking: boolean) => void })
           }}
         />
       </Row>
+      {/*
+        * "Never" rather than "keep it open", because the label reads into its options: "hide the
+        * channel list after keep it open" is not a sentence, and the viewer has to read the other
+        * three chips to work out what the row is even asking.
+        */}
       <Row label="Hide the channel list after" hint="When you stop pressing anything">
         <Choice
           options={[
             { id: "8", label: "8 seconds" }, { id: "15", label: "15 seconds" },
-            { id: "30", label: "30 seconds" }, { id: "0", label: "Keep it open" },
+            { id: "30", label: "30 seconds" }, { id: "0", label: "Never" },
           ]}
           value={String(s.panelTimeout)}
           onChange={(id) => s.set("panelTimeout", Number(id))}
@@ -72,8 +84,10 @@ export function Behaviour({ onAsking }: { onAsking: (asking: boolean) => void })
           * a single playlist already stops to confirm, so going unguarded here would be the
           * one press that undoes everything.
           */}
+        {/* "Defaults" is a word from a manual. The dialog behind this button already says what
+            happens in the viewer's own terms, that the app goes back to how it started. */}
         <button type="button" className="btn flat danger" onClick={() => ask(true)}>
-          Reset everything to defaults
+          Start the app over
         </button>
       </div>
 

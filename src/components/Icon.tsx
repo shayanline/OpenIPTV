@@ -41,9 +41,55 @@ const paths: Record<string, React.ReactNode> = {
       <path d="M8.6 21h6.8" />
     </>
   ),
+  /* Groups of things, for the heading above the category list. Four panes rather than a stack of
+     lines, because a stack of lines is what the channel column beneath it already looks like and
+     the two headings sit a few centimetres apart. */
+  categories: (
+    <>
+      <rect x="3.4" y="4.4" width="7.2" height="6.4" rx="1.6" />
+      <rect x="13.4" y="4.4" width="7.2" height="6.4" rx="1.6" />
+      <rect x="3.4" y="13.2" width="7.2" height="6.4" rx="1.6" />
+      <rect x="13.4" y="13.2" width="7.2" height="6.4" rx="1.6" />
+    </>
+  ),
+  /* A letter, for the settings section that is mostly type: the font, its size, and what else is
+     drawn beside a channel name. A brush or a palette would say "theme", and there is no theme
+     here to change. */
+  appearance: (
+    <>
+      <path d="M5.6 19.4L11.4 4.8h1.2l5.8 14.6" />
+      <path d="M8.1 14.6h7.8" />
+    </>
+  ),
+  /* Addresses in a list, which is what a playlist is here: not the channels themselves but the
+     handful of sources they come from. */
+  playlists: (
+    <>
+      <circle cx="4.9" cy="7" r="1.1" />
+      <circle cx="4.9" cy="12" r="1.1" />
+      <circle cx="4.9" cy="17" r="1.1" />
+      <path d="M9.4 7h10.2" />
+      <path d="M9.4 12h10.2" />
+      <path d="M9.4 17h10.2" />
+    </>
+  ),
+  /* A trace, for the screen that reports what this television is. It reads as measurement rather
+     than repair, which is what the section does: it says, it does not mend. */
+  diagnostics: (
+    <path d="M2.8 12.4h4.6l2.5-6.2 3.1 11.6 2.4-5.4h5.8" />
+  ),
+  /* The version and the licence. A circle with an i, and deliberately close to `warn` above,
+     since both are the same gesture: a round outline saying something quietly. */
+  about: (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 11.2v5.4" />
+      <path d="M12 7.6v.1" />
+    </>
+  ),
 };
 
-type IconName = keyof typeof paths;
+export type IconName = keyof typeof paths;
 
 export function Icon({ name }: { name: IconName }) {
   const solid = SOLID.has(name);

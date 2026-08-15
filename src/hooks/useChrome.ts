@@ -48,6 +48,8 @@ export interface Chrome {
   /** Hold the banner up with no countdown, for as long as something is still happening. */
   holdBanner: () => void;
   lowerBanner: () => void;
+  /** Give a banner that is already up its countdown, and leave one that is down alone. */
+  settleBanner: () => void;
   say: (message: string) => void;
   /** Add a digit to the number being dialled, and return the number so far. */
   dial: (digit: number, onSettled: (channel: number) => void) => void;
@@ -80,21 +82,55 @@ export function useChrome(): Chrome {
     window.clearTimeout(digitTimer.current);
   }, []);
 
-  const raiseBanner = useCallback(() => {
-    setBanner(true);
-    window.clearTimeout(noticeTimer.current);
-    noticeTimer.current = window.setTimeout(() => setBanner(false), NOTICE_MS);
+  /**
+   * Whether the banner is up, readable between renders.
+   *
+   * settleBanner has to know without being told, and it can be called from an effect that runs
+   * before React has re-rendered whatever raised it.
+   */
+  const up = useRef(false);
+  const show = useCallback((visible: boolean) => {
+    up.current = visible;
+    setBanner(visible);
   }, []);
+
+  const raiseBanner = useCallback(() => {
+    show(true);
+    window.clearTimeout(noticeTimer.current);
+    noticeTimer.current = window.setTimeout(() => show(false), NOTICE_MS);
+  }, [show]);
 
   const holdBanner = useCallback(() => {
     window.clearTimeout(noticeTimer.current);
-    setBanner(true);
-  }, []);
+    show(true);
+  }, [show]);
 
   const lowerBanner = useCallback(() => {
     window.clearTimeout(noticeTimer.current);
-    setBanner(false);
-  }, []);
+    show(false);
+  }, [show]);
+
+  /**
+   * Start the countdown on a banner that is already up, and do nothing to one that is not.
+   *
+   * The banner used to be able to stay up for ever, and this is what closes that. holdBanner
+   * deliberately cancels the countdown, because a channel that takes fifteen seconds to join should
+   * keep saying which channel it is, and the countdown was then restarted by the arrival of a
+   * picture. But an arrival is announced once per channel, quite rightly, so anything that made the
+   * app busy again on a channel it had already announced left a held banner with nothing to take it
+   * down: pausing and playing was the reliable way in, and pressing right or back cleared it only
+   * because those clear everything.
+   *
+   * So the countdown now begins whenever the waiting ends, whatever ended it. It refuses to raise a
+   * banner that is down, which is the other half of the same problem: a stall recovering used to
+   * treat itself as an arrival, and since OK dismisses an arrival, OK could not get past the banner
+   * to open the channel list.
+   */
+  const settleBanner = useCallback(() => {
+    if (!up.current) return;
+    window.clearTimeout(noticeTimer.current);
+    noticeTimer.current = window.setTimeout(() => show(false), NOTICE_MS);
+  }, [show]);
 
   const say = useCallback((message: string) => {
     setToast(message);
@@ -127,14 +163,14 @@ export function useChrome(): Chrome {
     window.clearTimeout(toastTimer.current);
     window.clearTimeout(digitTimer.current);
     dialled.current = "";
-    setBanner(false);
+    show(false);                          // through show, so settleBanner cannot believe it is up
     setToast("");
     setDigits("");
-  }, []);
+  }, [show]);
 
   return {
     banner, toast, digits,
     showing: banner || !!toast || !!digits,
-    raiseBanner, holdBanner, lowerBanner, say, dial, commitDigits, clear,
+    raiseBanner, holdBanner, lowerBanner, settleBanner, say, dial, commitDigits, clear,
   };
 }
