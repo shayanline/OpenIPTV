@@ -101,9 +101,17 @@ jobs:
           DISTRIBUTOR_P12: ${{ secrets.TIZEN_DISTRIBUTOR_P12 }}
           DISTRIBUTOR_PASSWORD: ${{ secrets.TIZEN_DISTRIBUTOR_PASSWORD }}
         run: |
-          if [ -z "$AUTHOR_P12" ] || [ -z "$DISTRIBUTOR_P12" ]; then
-            echo "No signing certificates are configured, so there is nothing to sign with."
-            echo "docs/publishing.md lists the four secrets this needs."
+          missing=""
+          [ -n "$AUTHOR_P12" ] || missing="$missing TIZEN_AUTHOR_P12"
+          [ -n "$AUTHOR_PASSWORD" ] || missing="$missing TIZEN_AUTHOR_PASSWORD"
+          [ -n "$DISTRIBUTOR_P12" ] || missing="$missing TIZEN_DISTRIBUTOR_P12"
+          [ -n "$DISTRIBUTOR_PASSWORD" ] || missing="$missing TIZEN_DISTRIBUTOR_PASSWORD"
+          if [ -n "$missing" ]; then
+            # Named rather than counted, and the passwords are checked as well as the certificates:
+            # without this an unset password reaches the Tizen CLI as an empty one and fails several
+            # steps later, complaining about a keystore rather than about a secret nobody set.
+            echo "These secrets are not set on the release environment:$missing"
+            echo "docs/publishing.md explains what each one is and how to produce it."
             exit 1
           fi
           umask 077
