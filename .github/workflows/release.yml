@@ -190,9 +190,9 @@ jobs:
             # A fresh hosted runner has no profile document. `security-profiles add` reads the
             # configured file before it appends the new profile, so a missing file fails with
             # "Not found a file of security profiles".
-            printf '%s\n' \
-              '<?xml version="1.0" encoding="UTF-8" standalone="no"?>' \
-              '<profiles active="" version="3.1"></profiles>' \
+            printf "%s\n" \
+              "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"no\"?>" \
+              "<profiles active=\"\" version=\"3.1\"></profiles>" \
               > "$HOME/tizen-studio-data/profile/profiles.xml"
             tizen cli-config "profiles.path=$HOME/tizen-studio-data/profile/profiles.xml"
             tizen security-profiles add -n OpenIPTV \
