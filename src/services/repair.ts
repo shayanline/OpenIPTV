@@ -1,8 +1,9 @@
+import type HlsType from "hls.js";
 import { needsRepair, renderPlaylist, windowOf } from "./manifest";
 import { readJSON, write } from "./store";
 
 /**
- * Serving a repaired playlist to the set's own player, from inside the application.
+ * Serving a repaired playlist to the set's or browser's player, from inside the application.
  *
  * Only one channel plays at a time, so there is one server, one socket and one manifest. It is
  * started when a channel needs it and stopped when nothing does, because a listening socket and a
@@ -37,6 +38,8 @@ export interface Repair {
   url: string;
   /** The address this stands in for, so a second request for the same stream is free. */
   upstream: string;
+  /** Whether the browser player should repair manifests through its hls.js loader. */
+  browser: boolean;
 }
 
 /**
@@ -64,6 +67,10 @@ let refresh: number | undefined;
 let waiting: ((port: number) => void)[] = [];
 let why = "";                           // why it is unavailable, for Diagnostics
 let generation = 0;                     // which tune the answer in flight belongs to
+const browserRepairs = new Set<string>();
+
+const onTizen = (): boolean =>
+  typeof window !== "undefined" && !!window.webapis?.avplay;
 
 /** Whether this television can do it at all, once it has been asked. */
 export const repairState = () => ({ state, port, why, upstream: serving, hosts: [...hosts] });
@@ -108,15 +115,16 @@ export function rememberNeedsRepair(url: string): void {
 /** Part of resetting everything to defaults: a diagnosis is personal to one television. */
 export function forgetRepairHosts(): void {
   hosts = new Set();
+  browserRepairs.clear();
   write(HOSTS_KEY, JSON.stringify([]));
 }
 
 /**
  * Fetch a playlist as text, or nothing.
  *
- * A widget is not subject to CORS, which is what makes this possible at all: the addresses these
- * playlists live on allow one origin, and a page would be refused. Failure is not an error worth
- * reporting: the channel is about to fail anyway and the player will say so in its own words.
+ * The Tizen widget is not subject to CORS. A browser can do this only when the playlist host
+ * allows the page's origin. Failure is not an error worth reporting: the channel is about to fail
+ * anyway and the player will say so in its own words.
  */
 async function read(url: string): Promise<string | null> {
   try {
@@ -257,7 +265,7 @@ export async function repair(upstream: string): Promise<Repair | null> {
   if (state === "unavailable") return null;
 
   if (serving === upstream && state === "serving") {
-    return { url: local(), upstream };
+    return { url: local(), upstream, browser: false };
   }
 
   /*
@@ -276,6 +284,19 @@ export async function repair(upstream: string): Promise<Repair | null> {
   const text = await read(upstream);
   if (stale() || text === null || !needsRepair(text)) return null;
 
+  if (!onTizen()) {
+    if (!browserRepairs.has(upstream)) {
+      try {
+        const { default: Hls } = await import("hls.js") as { default: typeof HlsType };
+        if (stale() || !Hls.isSupported()) return null;
+      } catch {
+        return null;
+      }
+      browserRepairs.add(upstream);
+    }
+    return { url: upstream, upstream, browser: true };
+  }
+
   const bound = await begin();
   if (!bound || stale()) return null;
 
@@ -293,7 +314,7 @@ export async function repair(upstream: string): Promise<Repair | null> {
   window.clearInterval(refresh);
   refresh = window.setInterval(() => void update(), REFRESH_MS);
 
-  return { url: local(), upstream };
+  return { url: local(), upstream, browser: false };
 }
 
 /** The address the player is given. */

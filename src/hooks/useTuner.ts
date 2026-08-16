@@ -286,9 +286,9 @@ export function useTuner(options: TunerOptions): Tuner {
   const tuneTo = useCallback((channel: Channel) => {
     tuneToken.current += 1;
     const token = tuneToken.current;
-    const play = (url: string) => {
+    const play = (url: string, browserRepair = false) => {
       if (tuneToken.current !== token) return;
-      player.current?.play(url);
+      player.current?.play(url, browserRepair);
     };
 
     if (!wantsRepair.current || !knownToNeedRepair(channel.url)) {
@@ -305,7 +305,8 @@ export function useTuner(options: TunerOptions): Tuner {
       play(channel.url);
       return;
     }
-    void repair(channel.url).then((repaired) => play(repaired?.url ?? channel.url));
+    void repair(channel.url).then((repaired) =>
+      play(repaired?.url ?? channel.url, repaired?.browser ?? false));
   }, []);
 
   const retune = useCallback(() => {

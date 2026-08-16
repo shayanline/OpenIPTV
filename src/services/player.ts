@@ -1,4 +1,5 @@
 import type HlsType from "hls.js";
+import { createRepairingPlaylistLoader } from "./browserRepair";
 
 /**
  * hls.js is fetched only when something is actually going to use it.
@@ -310,7 +311,7 @@ export class Player {
   private onPlaying = () => this.emit({ type: "playing" });
   private onWaiting = () => this.emit({ type: "buffering" });
 
-  play(url: string) {
+  play(url: string, browserRepair = false) {
     /*
      * Wound down, not destroyed.
      *
@@ -335,7 +336,7 @@ export class Player {
     window.clearTimeout(this.watchdog);
     this.watchdog = window.setTimeout(() => this.fail("TIMEOUT"), START_TIMEOUT_MS);
     if (onTizen()) this.playAVPlay(url);
-    else void this.playBrowser(url);
+    else void this.playBrowser(url, browserRepair);
   }
 
   /**
@@ -570,7 +571,7 @@ export class Player {
     } catch { /* nothing to restore */ }
   }
 
-  private async playBrowser(url: string) {
+  private async playBrowser(url: string, browserRepair: boolean) {
     const video = this.video;
     if (!video) return;
     this.emit({ type: "buffering" });
@@ -603,6 +604,7 @@ export class Player {
      * so every frame behind the playhead is memory spent on something nobody can ask for.
      */
     const hls = new Hls({
+      pLoader: browserRepair ? createRepairingPlaylistLoader(Hls) : undefined,
       // Nothing here touches how far behind live to sit. That is the standard's business,
       // and the default already follows it.
       //

@@ -111,16 +111,16 @@ export interface Window {
 }
 
 /**
- * The tail of a playlist, as segments this television can be given.
+ * The tail of a playlist, as segments the player can be given.
  *
  * Trimmed to the tail not because size is the problem, which it is not, but because this runs on
  * the television: a shorter list is fewer bytes to copy into the module on every refresh, and
  * nobody watching live television needs two hours of history.
  *
- * Addresses are made absolute, because the player will fetch them relative to 127.0.0.1 and there
- * is nothing there. They are resolved against the address the playlist actually came from, which
- * is not always the one that was asked for: a redirect is normal, and some hosts serve playlists
- * from one machine and segments from another.
+ * Addresses are made absolute, because a repaired manifest can be served from another origin.
+ * They are resolved against the address the playlist actually came from, which is not always the
+ * one that was asked for: a redirect is normal, and some hosts serve playlists from one machine
+ * and segments from another.
  */
 export function windowOf(text: string, from: string): Window {
   const lines = text.split("\n");

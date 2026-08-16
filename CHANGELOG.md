@@ -2,10 +2,18 @@
 
 Notable changes, newest first, in the format of [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-Versions are whole numbers in three parts with no prefix and no suffix, because that is the only
-shape Samsung's store accepts and the widget, the tag and the About screen all have to agree. There
-is therefore no `1.0.0-beta`: a build that is not ready for everybody is distributed through
-Samsung's alpha test or a phased rollout, which [publishing](docs/publishing.md) explains.
+## 1.0.1
+
+### Added
+
+- **Compatibility repair in desktop browsers.** Compatibility mode now repairs affected live
+  playlists through hls.js as well as through the Tizen player. Browser playback still requires
+  the playlist host to allow cross origin requests.
+
+### Fixed
+
+- **Restored channel focus when opening the menu.** The currently playing channel remains selected,
+  including after a playlist refresh and for channels outside the first visible screen.
 
 ## 1.0.0
 

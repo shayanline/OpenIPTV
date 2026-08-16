@@ -157,8 +157,8 @@ The yellow key, from anywhere.
 - **A coloured key does nothing.** Settings, then Diagnostics, lists every key press the app
   receives. A button missing from that list never reached the app, so the set is keeping it.
 - **A channel shows a picture for a moment and then stops.** Turn on Compatibility mode in
-  Watching. Some channels publish a playlist this television reads incorrectly, and the app can
-  serve it a corrected copy. Leave it off otherwise, because while it is on the TV fetches those
+  Watching. Some channels publish a playlist this player reads incorrectly, and the app can
+  serve it a corrected copy. Leave it off otherwise, because while it is on the app fetches those
   playlists itself and uses a little more of your connection.
 - **Logos are slow to appear.** Turn Channel logos off in Appearance.
 - **A stream plays on the TV but not in a browser.** The host is refusing cross origin requests.

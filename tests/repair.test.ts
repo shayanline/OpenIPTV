@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import assert from "node:assert/strict";
 
+vi.mock("hls.js", () => ({ default: { isSupported: () => true } }));
+
 /**
  * The service that decides whether to repair a stream, and remembers the answer.
  *
@@ -25,6 +27,7 @@ const HEALTHY = BROKEN.replace("1786136377905810", "42");
 function fakeWorker(behaviour: "listens" | "refuses" | "silent" | "deaf") {
   const sent: unknown[] = [];
   const built: Fake[] = [];
+  vi.stubGlobal("webapis", { avplay: {} });
   class Fake {
     onmessage: ((e: { data: unknown }) => void) | null = null;
     onerror: ((e: { message: string }) => void) | null = null;
@@ -88,6 +91,14 @@ test("a playlist the set can read is not repaired, and no socket is opened", asy
   assert.equal(await repair("https://host.example/healthy/index.m3u8"), null);
   assert.equal(sent.length, 0, "a worker was started for a channel that did not need one");
   assert.equal(repairState().state, "idle");
+});
+
+test("a browser repair keeps the source URL for hls.js", async () => {
+  const { repair } = await load();
+
+  const repaired = await repair(UPSTREAM);
+
+  assert.deepEqual(repaired, { url: UPSTREAM, upstream: UPSTREAM, browser: true });
 });
 
 test("a playlist the set cannot read is served from a loopback address", async () => {

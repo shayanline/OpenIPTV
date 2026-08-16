@@ -51,7 +51,7 @@ export function Behaviour({ onAsking }: { onAsking: (asking: boolean) => void })
           cannot spill onto a second line. "Fix channels that stop after a moment" was thirty six. */}
       <Row
         label="Fix channels that stop playing"
-        hint="Repairs a playlist this TV reads wrongly. Uses a little more data."
+        hint="Repairs a playlist the player reads wrongly. Uses a little more data."
       >
         <Toggle
           value={s.compatibility}

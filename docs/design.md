@@ -277,6 +277,13 @@ privilege we already declare, and `services/repair` fetches the playlist, renumb
 and hands it to the set's own player from a socket inside the widget. Hardware decode is kept: 23%
 of one core against 25% through a hosted rewriter and 64% through hls.js.
 
+In a desktop browser, the same functions in `services/manifest` run through hls.js's playlist
+loader instead. The loader keeps hls.js responsible for network requests and live refreshes, then
+passes only damaged media playlists through the existing window and sequence logic. This path
+needs the source to allow CORS, and it applies to browsers where hls.js has a media source. A
+browser using native HLS still receives the original playlist because it has no equivalent loader
+hook.
+
 Two details in the rewrite only showed themselves on hardware, and both are in
 `services/manifest.ts`. The sequence is produced by **counting segments** across refreshes rather
 than by any arithmetic on the upstream's field, because that field is a microsecond clock advancing
