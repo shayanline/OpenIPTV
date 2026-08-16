@@ -184,11 +184,16 @@ jobs:
           dbus-run-session -- bash -euo pipefail -c '
             echo openiptv-ci | gnome-keyring-daemon --unlock
 
-            # Tell the CLI where the writable profile file lives before creating the profile.
+            # Give the CLI an empty profile document before creating the profile, then point it at
+            # that document.
             #
-            # A fresh hosted runner has no profile file at the default location, so running
-            # `security-profiles add` first fails with "Not found a file of security profiles".
-            # The CLI creates the configured file when the profile is added.
+            # A fresh hosted runner has no profile document. `security-profiles add` reads the
+            # configured file before it appends the new profile, so a missing file fails with
+            # "Not found a file of security profiles".
+            cat > "$HOME/tizen-studio-data/profile/profiles.xml" <<'XML'
+            <?xml version="1.0" encoding="UTF-8" standalone="no"?>
+            <profiles active="" version="3.1"></profiles>
+            XML
             tizen cli-config "profiles.path=$HOME/tizen-studio-data/profile/profiles.xml"
             tizen security-profiles add -n OpenIPTV \
               -a "$RUNNER_TEMP/author.p12" -p "$AUTHOR_PASSWORD" \
