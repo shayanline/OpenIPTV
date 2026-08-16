@@ -296,11 +296,18 @@ for data that only arrives at real time, long enough for the app's own watchdog 
 frozen before it had begun. Declared at 20, it starts 90 seconds into the window and plays at once.
 
 **And it is off by default**, which is the important half. Everything above is a workaround for one
-defect, and the majority of channels never meet it, so:
+defect, and the majority of channels never meet it. When enabled, the selected playlist is checked
+before tuning so a channel that needs repair does not show one frame and stall:
 
-- nothing is probed until a channel has actually failed, so a working channel pays nothing at all
+- a working channel uses its original address after the check, while a damaged channel uses the
+  repaired address before AVPlay starts
+- the check measures the longest segment, including a master playlist's variants, so AVPlay gets
+  one second beyond that duration before starting
+- a healthy verdict is remembered per playlist address in a bounded cache, so later launches do not
+  block on the same preflight fetch. The cache is revalidated with HTTP validators when available,
+  or with a fresh manifest comparison, and a changed diagnosis starts the normal repair path again
 - the test answers yes for that one defect only, so a channel that is off the air or sending an
-  undecodable codec is reported honestly rather than "repaired" for another twelve seconds
+  undecodable codec is played directly and reported honestly
 - the verdict is remembered per host, across launches, so the failure is paid once rather than
   every evening
 - the socket is closed the moment a channel that does not need it starts, and the refetching stops

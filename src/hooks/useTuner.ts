@@ -3,7 +3,8 @@ import { Player, type PlayerEvent } from "../services/player";
 import { releaseLogos } from "../services/logos";
 import { nextChannel } from "../services/lineup";
 import {
-  idleRepair, knownToNeedRepair, pauseRepair, repair, rememberNeedsRepair, resumeRepair, stopRepair,
+  idleRepair, pauseRepair, prepare, repair, rememberNeedsRepair, revalidate, resumeRepair,
+  stopRepair,
 } from "../services/repair";
 import type { Fit } from "../services/player";
 import type { Channel } from "../types";
@@ -254,19 +255,11 @@ export function useTuner(options: TunerOptions): Tuner {
   }, [busy, current?.id]);
 
   /**
-   * Try the channel that is already on again, from nothing.
-   *
-   * Deliberately not through start(): that resets the count of attempts already made, and an
-   * automatic retry calling it would retry for ever.
-   */
-  /**
    * Where a channel is played from, which is the one place that decides it.
    *
-   * Almost always the channel's own address, and that path costs nothing: no fetch, no worker,
-   * no wait. A host already known to defeat this television's playlist parser is repaired first,
-   * which means the application serves the corrected playlist to the set's own player. Both
-   * `start` and `retune` go through here so the two cannot come to disagree, and `repair` is
-   * idempotent: asked twice for the same stream it hands back the address it is already serving.
+   * Compatibility mode checks the playlist before tuning, so a stream this television cannot read
+   * never has to show its first frame and then stall. When the check finds nothing to repair, the
+   * original address is used.
    *
    * The token is what makes it safe to be asynchronous. A viewer holding the channel key can
    * start three channels while one repair is in flight, and only the newest tune may reach the
@@ -286,14 +279,14 @@ export function useTuner(options: TunerOptions): Tuner {
   const tuneTo = useCallback((channel: Channel) => {
     tuneToken.current += 1;
     const token = tuneToken.current;
-    const play = (url: string, browserRepair = false) => {
+    const play = (url: string, browserRepair = false, bufferSeconds?: number) => {
       if (tuneToken.current !== token) return;
-      player.current?.play(url, browserRepair);
+      player.current?.play(url, browserRepair, bufferSeconds);
     };
 
-    if (!wantsRepair.current || !knownToNeedRepair(channel.url)) {
+    if (!wantsRepair.current) {
       /*
-       * Nothing here needs the repair, so it goes quiet rather than away.
+       * Compatibility is off, so the original stream is used without probing it.
        *
        * This used to tear the worker down, which closed a socket and threw away a compiled
        * WebAssembly module on every switch away from a repaired channel, and built both again on
@@ -305,10 +298,41 @@ export function useTuner(options: TunerOptions): Tuner {
       play(channel.url);
       return;
     }
-    void repair(channel.url).then((repaired) =>
-      play(repaired?.url ?? channel.url, repaired?.browser ?? false));
+    void prepare(channel.url).then((target) => {
+      if (tuneToken.current !== token) return;
+      if (!wantsRepair.current || !target) {
+        idleRepair();
+        play(channel.url);
+        return;
+      }
+      if (!target.repaired) {
+        idleRepair();
+        play(channel.url, false, target.bufferSeconds);
+        return;
+      }
+      play(target.url, target.browser, target.bufferSeconds);
+
+      if (target.cached) {
+        void revalidate(channel.url).then((changed) => {
+          if (!changed || tuneToken.current !== token || !wantsRepair.current) return;
+          setFault("");
+          setPaused(false);
+          setBusy(true);
+          setWaited(0);
+          setRetryIn(0);
+          announced.current = "";
+          tuneTo(channel);
+        });
+      }
+    });
   }, []);
 
+  /**
+   * Try the channel that is already on again, from nothing.
+   *
+   * Deliberately not through start(): that resets the count of attempts already made, and an
+   * automatic retry calling it would retry for ever.
+   */
   const retune = useCallback(() => {
     const channel = currentRef.current;
     if (!channel) return;
@@ -324,9 +348,8 @@ export function useTuner(options: TunerOptions): Tuner {
   /**
    * Once per channel, ask whether this is the fault we can repair.
    *
-   * Only after a failure, and only with compatibility on. Probing before playing would put a
-   * playlist fetch in front of every channel change to help the few that need it, and the
-   * ordinary case must stay untouched.
+   * The normal path has already checked before tuning. This second check covers a probe that
+   * timed out or a stream that changed between the probe and the failure.
    *
    * The test is narrow on purpose. `repair` answers with an address only for a playlist whose
    * media sequence overflows the set's parser, so a channel that is off the air or sending an
@@ -478,12 +501,12 @@ export function useTuner(options: TunerOptions): Tuner {
       setPaused(false);
       setBusy(true);
       setWaited(0);
-      player.current?.resume(channel.url);
+      tuneTo(channel);
     } else {
       setPaused(true);
       player.current?.pause();
     }
-  }, []);
+  }, [tuneTo]);
 
   const togglePause = useCallback(() => setPlaying(paused), [paused, setPlaying]);
 

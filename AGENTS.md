@@ -137,9 +137,13 @@ Break one of these and the app fails on hardware no test here owns. The reasonin
   numbering segments from a microsecond clock overflows it and the channel shows one frame and
   stops. The repair means serving a corrected playlist to the set's own player over a loopback
   socket, which is real machinery, so the ordinary path must never touch it. Three rules keep
-  that true: nothing is probed before a channel has actually failed, `needsRepair` answers yes
-  for that one defect only, and a verdict is remembered per host so nobody pays the diagnosis
-  twice. Anything that would make a working channel pay for this is a bug.
+  that true: it stays opt in, `needsRepair` answers yes for that one defect only, and a broken-host
+  verdict is remembered per host so nobody pays the same diagnosis twice. When enabled, the selected
+  playlist is checked before tuning so a broken channel does not show one frame and stall. The same
+  check measures segment duration, including variant playlists, and gives AVPlay enough initial
+  buffer without changing the source URL for healthy streams. Healthy verdicts are remembered per
+  playlist address in a bounded cache, then revalidated with HTTP validators or a fresh manifest
+  comparison.
 - **The socket is opened by `services/repair` and nothing else, on an ephemeral port, and closed
   when it is not needed.** A fixed port plus a worker terminated without closing leaves the
   socket held, and the next attempt cannot bind: the symptom is AVPlay reporting

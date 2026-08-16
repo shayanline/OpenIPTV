@@ -93,6 +93,102 @@ test("a playlist the set can read is not repaired, and no socket is opened", asy
   assert.equal(repairState().state, "idle");
 });
 
+test("preflight keeps a healthy master on its source and measures its child segments", async () => {
+  const { sent } = fakeWorker("listens");
+  const master = [
+    "#EXTM3U",
+    "#EXT-X-STREAM-INF:BANDWIDTH=1",
+    "high.m3u8",
+    "",
+  ].join("\n");
+  const child = [
+    "#EXTM3U",
+    "#EXT-X-TARGETDURATION:10",
+    "#EXT-X-MEDIA-SEQUENCE:42",
+    "#EXTINF:10.0,",
+    "segment.ts",
+    "",
+  ].join("\n");
+  vi.stubGlobal("fetch", vi.fn(async (url: string) => ({
+    ok: true,
+    url,
+    text: async () => url.endsWith("high.m3u8") ? child : master,
+  })));
+
+  const { prepare } = await load();
+  const target = await prepare(UPSTREAM);
+
+  assert.equal(target?.url, UPSTREAM);
+  assert.equal(target?.repaired, false);
+  assert.equal(target?.bufferSeconds, 11);
+  assert.equal(sent.length, 0, "a healthy master opened the repair socket");
+});
+
+test("a healthy diagnosis survives a relaunch and skips the next preflight fetch", async () => {
+  const { prepare } = await load();
+  const first = await prepare("https://host.example/healthy/index.m3u8");
+  assert.equal(first?.repaired, false);
+  assert.equal(fetch.mock.calls.length, 1);
+
+  const next = await load();
+  const second = await next.prepare("https://host.example/healthy/index.m3u8");
+
+  assert.equal(second?.url, "https://host.example/healthy/index.m3u8");
+  assert.equal(second?.repaired, false);
+  assert.equal(fetch.mock.calls.length, 1);
+});
+
+test("revalidation uses HTTP validators and rediagnoses changed playlists", async () => {
+  let version = 1;
+  const fetchMock = vi.fn(async (_url: string, init?: { headers?: Record<string, string> }) => {
+    const validators = init?.headers ?? {};
+    if (version === 1 && validators["If-None-Match"] === '"v1"') {
+      return {
+        ok: false,
+        status: 304,
+        url: UPSTREAM,
+        headers: { get: () => '"v1"' },
+        text: async () => "",
+      };
+    }
+    return {
+      ok: true,
+      status: 200,
+      url: UPSTREAM,
+      headers: { get: (name: string) => name === "etag" ? `"v${version}"` : "" },
+      text: async () => version === 1 ? HEALTHY : BROKEN,
+    };
+  });
+  vi.stubGlobal("fetch", fetchMock);
+
+  const { prepare, revalidate, knownToNeedRepair } = await load();
+  await prepare(UPSTREAM);
+  assert.equal(await revalidate(UPSTREAM), false);
+  assert.equal(fetchMock.mock.calls[1][1]?.headers?.["If-None-Match"], '"v1"');
+
+  version = 2;
+  assert.equal(await revalidate(UPSTREAM), true);
+  assert.equal(knownToNeedRepair(UPSTREAM), true);
+});
+
+test("a failure forces a fresh diagnosis when a cached healthy playlist changes", async () => {
+  let playlist = HEALTHY;
+  vi.stubGlobal("fetch", vi.fn(async () => ({
+    ok: true,
+    text: async () => playlist,
+  })));
+
+  const { prepare, repair } = await load();
+  await prepare("https://host.example/healthy/index.m3u8");
+  playlist = BROKEN;
+  fakeWorker("listens");
+
+  const repaired = await repair("https://host.example/healthy/index.m3u8");
+
+  assert.ok(repaired, "the changed playlist was not repaired");
+  assert.equal(fetch.mock.calls.length, 2);
+});
+
 test("a browser repair keeps the source URL for hls.js", async () => {
   const { repair } = await load();
 

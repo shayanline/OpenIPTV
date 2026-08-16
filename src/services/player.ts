@@ -1,5 +1,6 @@
 import type HlsType from "hls.js";
 import { createRepairingPlaylistLoader } from "./browserRepair";
+import { DEFAULT_INITIAL_BUFFER_SECONDS } from "./manifest";
 
 /**
  * hls.js is fetched only when something is actually going to use it.
@@ -311,7 +312,11 @@ export class Player {
   private onPlaying = () => this.emit({ type: "playing" });
   private onWaiting = () => this.emit({ type: "buffering" });
 
-  play(url: string, browserRepair = false) {
+  play(
+    url: string,
+    browserRepair = false,
+    bufferSeconds = DEFAULT_INITIAL_BUFFER_SECONDS,
+  ) {
     /*
      * Wound down, not destroyed.
      *
@@ -335,7 +340,7 @@ export class Player {
     // this point is a failure as far as the viewer is concerned.
     window.clearTimeout(this.watchdog);
     this.watchdog = window.setTimeout(() => this.fail("TIMEOUT"), START_TIMEOUT_MS);
-    if (onTizen()) this.playAVPlay(url);
+    if (onTizen()) this.playAVPlay(url, bufferSeconds);
     else void this.playBrowser(url, browserRepair);
   }
 
@@ -406,7 +411,7 @@ export class Player {
    * called from, but close destroys the instance and the pipeline has to be rebuilt, which
    * is exactly the wrong thing to do when someone is holding the channel key down.
    */
-  private playAVPlay(url: string) {
+  private playAVPlay(url: string, bufferSeconds: number) {
     const av = window.webapis!.avplay!;
     try {
       ensureSurface();
@@ -450,6 +455,7 @@ export class Player {
        *
        *   default, 10s   the picture started moving 2875ms after play()
        *   4 seconds       873ms
+       *   6 seconds       one complete five second segment, with room for its boundary
        *   2 seconds       842ms
        *
        * Two thirds of a zap spent waiting, and the reason is worth stating because it explains
@@ -462,13 +468,17 @@ export class Player {
        * already holds.
        *
        * The obvious worry is that a smaller buffer stutters later. It does not, because this
-       * governs the initial fill and not what is kept in hand: sixty seconds of the same
-       * channel gave one buffering event and no frozen second at four seconds, against two
-       * events and one frozen second at Samsung's default. Two seconds buys nothing over four
-       * and leaves less room, so four it is, and the resume buffer is left alone.
+       * governs the initial fill and not what is kept in hand. Four seconds is too short for a
+       * channel whose segments last five seconds, so six gives AVPlay one complete segment and
+       * a little room at the boundary. The preflight can raise this for a channel with longer
+       * segments, while the resume buffer is left alone.
        */
       try {
-        av.setBufferingParam?.("PLAYER_BUFFER_FOR_PLAY", "PLAYER_BUFFER_SIZE_IN_SECOND", 4);
+        av.setBufferingParam?.(
+          "PLAYER_BUFFER_FOR_PLAY",
+          "PLAYER_BUFFER_SIZE_IN_SECOND",
+          bufferSeconds,
+        );
       } catch { /* older firmware may not have it, and the default is only slower */ }
 
       // How long to wait for a channel that is not coming. This only shortens the wait: the

@@ -15,6 +15,16 @@
 /** The largest value AVPlay can hold. Anything above it overflows the set's parser. */
 export const SEQUENCE_CEILING = 2_147_483_647;
 
+/** The shortest initial buffer that gives the common five second streams a full segment. */
+export const DEFAULT_INITIAL_BUFFER_SECONDS = 6;
+
+/**
+ * Leave one second beyond the longest segment, while keeping the measured default for shorter
+ * streams.
+ */
+export const initialBufferSeconds = (longestSegment: number): number =>
+  Math.max(DEFAULT_INITIAL_BUFFER_SECONDS, Math.ceil(longestSegment) + 1);
+
 /**
  * How much of the window to publish, in seconds.
  *

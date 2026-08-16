@@ -334,19 +334,28 @@ test("an abort the app caused itself is not reported as a fault", async () => {
 test("how much to buffer before starting is asked for while the player will still accept it", () => {
   /*
    * Both of these are IDLE only, so after open and before prepareAsync or they throw and the
-   * channel never starts. Four seconds rather than the ten Samsung ships, because on the set that
-   * was the difference between the picture moving 873ms after play and 2875ms after it, and sixty
-   * seconds of the same channel stuttered no more at four than at ten.
+   * channel never starts. Six seconds leaves room for a five second segment while staying below
+   * the ten seconds Samsung ships.
    */
   player.play("http://example.invalid/a.m3u8");
   av.prepared?.ok();
 
   const asked = av.calls.indexOf(
-    "setBufferingParam:PLAYER_BUFFER_FOR_PLAY,PLAYER_BUFFER_SIZE_IN_SECOND,4",
+    "setBufferingParam:PLAYER_BUFFER_FOR_PLAY,PLAYER_BUFFER_SIZE_IN_SECOND,6",
   );
   assert.ok(asked !== -1, `never asked: ${av.calls.join(" ")}`);
   assert.ok(av.calls.findIndex((c) => c.startsWith("open")) < asked, "asked before the stream was open");
   assert.ok(asked < av.calls.indexOf("prepareAsync"), "asked once it was too late to be accepted");
+});
+
+test("a longer diagnosed segment can raise the initial buffer", () => {
+  player.play("http://example.invalid/a.m3u8", false, 11);
+  av.prepared?.ok();
+
+  assert.ok(
+    av.calls.includes("setBufferingParam:PLAYER_BUFFER_FOR_PLAY,PLAYER_BUFFER_SIZE_IN_SECOND,11"),
+    "the diagnosed buffer was not passed to AVPlay",
+  );
 });
 
 test("firmware without the optional calls does not stop a channel starting", () => {

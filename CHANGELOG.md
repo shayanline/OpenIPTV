@@ -2,6 +2,26 @@
 
 Notable changes, newest first, in the format of [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## 1.0.2
+
+### Fixed
+
+- **First playback of affected live playlists on Samsung TVs.** Compatibility mode now diagnoses
+  oversized HLS media sequences before AVPlay starts and serves a repaired loopback playlist when
+  required. This covers master playlists and variant playlists, while healthy streams continue using
+  their original addresses.
+- **Startup buffering for long segments.** AVPlay receives a measured initial buffer based on the
+  longest diagnosed segment, which prevents first playback stalls on channels with longer segments.
+- **Compatibility socket lifecycle.** Repaired playlist serving keeps the socket and WebAssembly
+  worker reusable while idle, closes it safely when stopped, and avoids truncated manifest responses.
+
+### Performance
+
+- **Persistent diagnosis cache.** Healthy and repaired diagnoses are remembered per playlist address
+  in a bounded cache. Cached healthy channels start without waiting for a preflight fetch, then
+  revalidate in the background with HTTP validators or a fresh manifest comparison. A changed
+  playlist starts diagnosis and repair again.
+
 ## 1.0.1
 
 ### Added

@@ -1,5 +1,7 @@
 import type HlsType from "hls.js";
-import { needsRepair, renderPlaylist, windowOf } from "./manifest";
+import {
+  initialBufferSeconds, needsRepair, readPlaylist, renderPlaylist, windowOf,
+} from "./manifest";
 import { readJSON, write } from "./store";
 
 /**
@@ -32,6 +34,7 @@ const REFRESH_MS = 6000;
  * asked again on every channel.
  */
 const READY_MS = 8000;
+const READ_TIMEOUT_MS = 5000;
 
 export interface Repair {
   /** Where the player should be pointed instead of upstream. */
@@ -40,6 +43,15 @@ export interface Repair {
   upstream: string;
   /** Whether the browser player should repair manifests through its hls.js loader. */
   browser: boolean;
+}
+
+export interface PlaybackTarget extends Repair {
+  /** Whether the loopback or browser manifest repair is being used. */
+  repaired: boolean;
+  /** The initial AVPlay buffer required by the diagnosed segment duration. */
+  bufferSeconds: number;
+  /** Whether the target came from a persisted healthy diagnosis without a playlist fetch. */
+  cached?: boolean;
 }
 
 /**
@@ -63,11 +75,13 @@ let port = 0;
 let serving = "";                       // the upstream currently being repaired
 let published: string[] = [];           // the addresses in the window last served, in order
 let sequence = 0;                       // the number given to the first of them
+let servingBufferSeconds = initialBufferSeconds(0);
 let refresh: number | undefined;
 let waiting: ((port: number) => void)[] = [];
 let why = "";                           // why it is unavailable, for Diagnostics
 let generation = 0;                     // which tune the answer in flight belongs to
 const browserRepairs = new Set<string>();
+const revalidating = new Map<string, Promise<boolean>>();
 
 const onTizen = (): boolean =>
   typeof window !== "undefined" && !!window.webapis?.avplay;
@@ -88,6 +102,57 @@ export const repairState = () => ({ state, port, why, upstream: serving, hosts: 
  */
 const HOSTS_KEY = "openiptv.repair.hosts";
 const HOSTS_MAX = 32;
+const DIAGNOSES_KEY = "openiptv.repair.diagnoses";
+const DIAGNOSES_MAX = 128;
+
+interface Diagnosis {
+  url: string;
+  repaired: boolean;
+  bufferSeconds: number;
+  etag: string;
+  lastModified: string;
+}
+
+const isDiagnosis = (value: unknown): value is Diagnosis => {
+  if (!value || typeof value !== "object") return false;
+  const diagnosis = value as Partial<Diagnosis>;
+  return (
+    typeof diagnosis.url === "string" &&
+    typeof diagnosis.repaired === "boolean" &&
+    typeof diagnosis.bufferSeconds === "number" &&
+    Number.isFinite(diagnosis.bufferSeconds) &&
+    typeof diagnosis.etag === "string" &&
+    typeof diagnosis.lastModified === "string"
+  );
+};
+
+const storedDiagnoses = readJSON<unknown>(DIAGNOSES_KEY, []);
+let diagnoses = Array.isArray(storedDiagnoses)
+  ? storedDiagnoses.filter(isDiagnosis).slice(0, DIAGNOSES_MAX)
+  : [];
+
+function diagnosisFor(url: string): Diagnosis | undefined {
+  return diagnoses.find((candidate) => candidate.url === url);
+}
+
+function rememberDiagnosis(
+  url: string,
+  repaired: boolean,
+  bufferSeconds: number,
+  source: PlaylistSource,
+): void {
+  diagnoses = [
+    {
+      url,
+      repaired,
+      bufferSeconds,
+      etag: source.etag,
+      lastModified: source.lastModified,
+    },
+    ...diagnoses.filter((diagnosis) => diagnosis.url !== url),
+  ].slice(0, DIAGNOSES_MAX);
+  write(DIAGNOSES_KEY, JSON.stringify(diagnoses));
+}
 
 const hostOf = (url: string): string => {
   try {
@@ -115,25 +180,97 @@ export function rememberNeedsRepair(url: string): void {
 /** Part of resetting everything to defaults: a diagnosis is personal to one television. */
 export function forgetRepairHosts(): void {
   hosts = new Set();
+  diagnoses = [];
+  revalidating.clear();
   browserRepairs.clear();
   write(HOSTS_KEY, JSON.stringify([]));
+  write(DIAGNOSES_KEY, JSON.stringify([]));
 }
 
 /**
  * Fetch a playlist as text, or nothing.
  *
  * The Tizen widget is not subject to CORS. A browser can do this only when the playlist host
- * allows the page's origin. Failure is not an error worth reporting: the channel is about to fail
- * anyway and the player will say so in its own words.
+ * allows the page's origin. A failed check is not an error worth reporting: the player still owns
+ * the original stream and will say so in its own words.
  */
-async function read(url: string): Promise<string | null> {
+interface PlaylistSource {
+  text: string;
+  url: string;
+  etag: string;
+  lastModified: string;
+  notModified: boolean;
+}
+
+async function read(url: string, validators?: Diagnosis): Promise<PlaylistSource | null> {
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), READ_TIMEOUT_MS);
+  const headers: Record<string, string> = {};
+  if (validators?.etag) headers["If-None-Match"] = validators.etag;
+  if (validators?.lastModified) headers["If-Modified-Since"] = validators.lastModified;
   try {
-    const response = await fetch(url, { cache: "no-store" });
+    const response = await fetch(url, { cache: "no-store", signal: controller.signal, headers });
+    const etag = response.headers?.get("etag") ?? validators?.etag ?? "";
+    const lastModified = response.headers?.get("last-modified") ?? validators?.lastModified ?? "";
+    if (response.status === 304) {
+      return {
+        text: "",
+        url: response.url || url,
+        etag,
+        lastModified,
+        notModified: true,
+      };
+    }
     if (!response.ok) return null;
-    return await response.text();
+    return {
+      text: await response.text(),
+      url: response.url || url,
+      etag,
+      lastModified,
+      notModified: false,
+    };
   } catch {
     return null;
+  } finally {
+    window.clearTimeout(timeout);
   }
+}
+
+function variantUrls(text: string, from: string): string[] {
+  const lines = text.split(/\r?\n/).map((line) => line.trim());
+  const urls: string[] = [];
+  for (let i = 0; i < lines.length; i += 1) {
+    if (!lines[i].startsWith("#EXT-X-STREAM-INF")) continue;
+    const uri = lines[i + 1] ?? "";
+    if (!uri || uri.startsWith("#")) continue;
+    try {
+      urls.push(new URL(uri, from).href);
+    } catch {
+      urls.push(uri);
+    }
+  }
+  return urls;
+}
+
+/**
+ * Find the longest media segment in this playlist or its variant playlists.
+ *
+ * A master playlist does not carry segment durations itself. Reading its children lets a stream
+ * such as Iran Press keep adaptive playback while still receiving enough initial AVPlay buffer.
+ */
+async function longestSegment(source: PlaylistSource, seen = new Set<string>()): Promise<number> {
+  if (seen.has(source.url)) return 0;
+  seen.add(source.url);
+
+  const playlist = readPlaylist(source.text);
+  if (!playlist.variants) return playlist.longest;
+
+  let longest = playlist.longest;
+  const children = await Promise.all(variantUrls(source.text, source.url).map((url) => read(url)));
+  for (const child of children) {
+    if (child && !child.notModified) longest = Math.max(longest, await longestSegment(child, seen));
+  }
+  return longest;
 }
 
 function post(message: unknown) {
@@ -183,6 +320,7 @@ function teardown(reason: string) {
   serving = "";
   published = [];
   sequence = 0;
+  servingBufferSeconds = initialBufferSeconds(0);
   if (reason) {
     state = "unavailable";
     why = reason;
@@ -249,13 +387,12 @@ function begin(): Promise<number> {
 }
 
 /**
- * Repair a stream, and answer with where to play it from.
+ * Preflight a channel before AVPlay starts.
  *
- * Returns null whenever this cannot help, which includes a playlist that is not damaged in the
- * one way this repairs. The caller then reports the original fault, because a viewer told "this
- * is being fixed" about a channel that is simply off the air has been told a lie.
+ * Healthy streams keep their original address, while the diagnosed segment duration still informs
+ * the initial buffer. A stream with the known sequence defect is returned with its repaired address.
  */
-export async function repair(upstream: string): Promise<Repair | null> {
+export async function prepare(upstream: string, force = false): Promise<PlaybackTarget | null> {
   /*
    * A television that cannot do this is asked once, and the answer is kept for the session.
    *
@@ -265,7 +402,28 @@ export async function repair(upstream: string): Promise<Repair | null> {
   if (state === "unavailable") return null;
 
   if (serving === upstream && state === "serving") {
-    return { url: local(), upstream, browser: false };
+    return {
+      url: local(),
+      upstream,
+      browser: false,
+      repaired: true,
+      bufferSeconds: servingBufferSeconds,
+    };
+  }
+
+  generation += 1;
+  const mine = generation;
+  const stale = () => mine !== generation;
+  const cached = force ? undefined : diagnosisFor(upstream);
+  if (cached && !cached.repaired) {
+    return {
+      url: upstream,
+      upstream,
+      browser: false,
+      repaired: false,
+      bufferSeconds: cached.bufferSeconds,
+      cached: true,
+    };
   }
 
   /*
@@ -277,12 +435,25 @@ export async function repair(upstream: string): Promise<Repair | null> {
    * source in quick succession raced, and whichever fetch happened to finish last decided what the
    * socket served, which could be the previous channel while the player was asking for the new one.
    */
-  generation += 1;
-  const mine = generation;
-  const stale = () => mine !== generation;
+  const source = await read(upstream);
+  if (stale() || source === null || source.notModified) return null;
 
-  const text = await read(upstream);
-  if (stale() || text === null || !needsRepair(text)) return null;
+  const longest = await longestSegment(source);
+  if (stale()) return null;
+  const bufferSeconds = initialBufferSeconds(longest);
+  if (!needsRepair(source.text)) {
+    rememberDiagnosis(upstream, false, bufferSeconds, source);
+    return {
+      url: upstream,
+      upstream,
+      browser: false,
+      repaired: false,
+      bufferSeconds,
+    };
+  }
+
+  rememberDiagnosis(upstream, true, bufferSeconds, source);
+  rememberNeedsRepair(upstream);
 
   if (!onTizen()) {
     if (!browserRepairs.has(upstream)) {
@@ -294,7 +465,7 @@ export async function repair(upstream: string): Promise<Repair | null> {
       }
       browserRepairs.add(upstream);
     }
-    return { url: upstream, upstream, browser: true };
+    return { url: upstream, upstream, browser: true, repaired: true, bufferSeconds };
   }
 
   const bound = await begin();
@@ -308,13 +479,63 @@ export async function repair(upstream: string): Promise<Repair | null> {
   serving = upstream;
   published = [];
   sequence = 0;
-  publish(text);
+  servingBufferSeconds = bufferSeconds;
+  publish(source.text, source.url);
   state = "serving";
 
   window.clearInterval(refresh);
   refresh = window.setInterval(() => void update(), REFRESH_MS);
 
-  return { url: local(), upstream, browser: false };
+  return { url: local(), upstream, browser: false, repaired: true, bufferSeconds };
+}
+
+/**
+ * Validate a cached diagnosis without delaying the current tune.
+ *
+ * Conditional requests use the server's validator when it supplies one. If the playlist changed,
+ * the small diagnosis is repeated and the caller can retune through the normal compatibility path.
+ */
+export function revalidate(upstream: string): Promise<boolean> {
+  const existing = revalidating.get(upstream);
+  if (existing) return existing;
+
+  const cached = diagnosisFor(upstream);
+  if (!cached) return Promise.resolve(false);
+
+  const run = (async () => {
+    const source = await read(upstream, cached);
+    if (!source || source.notModified) return false;
+    const longest = await longestSegment(source);
+    const next = {
+      repaired: needsRepair(source.text),
+      bufferSeconds: initialBufferSeconds(longest),
+    };
+    if (diagnoses.find((diagnosis) => diagnosis.url === upstream) !== cached) return false;
+
+    const changed =
+      cached.repaired !== next.repaired || cached.bufferSeconds !== next.bufferSeconds;
+    rememberDiagnosis(upstream, next.repaired, next.bufferSeconds, source);
+    if (next.repaired) rememberNeedsRepair(upstream);
+    return changed;
+  })().finally(() => {
+    revalidating.delete(upstream);
+  });
+
+  revalidating.set(upstream, run);
+  return run;
+}
+
+/**
+ * Repair a stream after a playback fault, returning null when the known manifest defect is absent.
+ */
+export async function repair(upstream: string): Promise<Repair | null> {
+  const target = await prepare(upstream, true);
+  if (!target?.repaired) return null;
+  return {
+    url: target.url,
+    upstream: target.upstream,
+    browser: target.browser,
+  };
 }
 
 /** The address the player is given. */
@@ -329,9 +550,9 @@ const local = () => `http://127.0.0.1:${port}/live.m3u8`;
  */
 async function update() {
   if (state !== "serving" || !serving) return;
-  const text = await read(serving);
-  if (text === null) return;
-  publish(text);
+  const source = await read(serving);
+  if (source === null) return;
+  publish(source.text, source.url);
 }
 
 /**
@@ -347,8 +568,8 @@ async function update() {
  * whole of it. That happens when a refresh has failed for longer than the window, at which point
  * the player has already run out of segments and will resynchronise anyway.
  */
-function publish(text: string) {
-  const window = windowOf(text, serving);
+function publish(text: string, from: string) {
+  const window = windowOf(text, from);
   const addresses = window.segments.map((segment) => segment.uri);
   if (published.length && addresses.length) {
     const slid = published.indexOf(addresses[0]);
@@ -400,6 +621,7 @@ export function idleRepair(): void {
   serving = "";
   published = [];
   sequence = 0;
+  servingBufferSeconds = initialBufferSeconds(0);
   // Any answer still in flight now belongs to nobody.
   generation += 1;
   state = "listening";
