@@ -517,7 +517,11 @@ export default function App() {
       if (cat >= 0) {
         setCursor(cat + 1);
         cursorRef.current = cat + 1;
-        showCategory(cat, lists[cat].channels.indexOf(playing), true);
+        showCategory(
+          cat,
+          lists[cat].channels.findIndex((channel) => channel.id === playing.id),
+          true,
+        );
       }
     }
     setPane("list");

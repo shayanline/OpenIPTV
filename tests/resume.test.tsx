@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, test, vi } from "vitest";
 import assert from "node:assert/strict";
-import { cleanup, screen } from "@testing-library/react";
+import { act, cleanup, screen } from "@testing-library/react";
 import { KEY } from "../src/hooks/useRemote";
+import { groupByCategory } from "../src/services/m3u";
 import { mountApp, panelOpen, played, press, settle } from "./support/app";
 
 /**
@@ -24,6 +25,10 @@ http://example.invalid/a.m3u8
 http://example.invalid/b.m3u8
 #EXTINF:-1 tvg-id="c" group-title="Sport",Gamma
 http://example.invalid/c.m3u8`;
+
+const LONG_PLAYLIST = `#EXTM3U\n${Array.from({ length: 32 }, (_, i) =>
+  `#EXTINF:-1 tvg-id="long-${i}" group-title="News",Channel ${i}\nhttp://example.invalid/${i}.m3u8`,
+).join("\n")}`;
 
 /** The rail row the cursor is on, so where the panel would open can be checked without opening it. */
 const cursorOn = () =>
@@ -76,7 +81,29 @@ test("the cursor is left on the resumed channel, so opening the list lands on it
   press(KEY.LEFT);
   assert.ok(panelOpen());
   assert.equal(cursorOn(), "Sport");
-  assert.ok(screen.getByText("Gamma"));
+  assert.equal(screen.getByText("Gamma").closest(".row")?.classList.contains("selected"), true);
+});
+
+test("a resumed channel beyond the first screen is selected when the panel opens", async () => {
+  await mountApp(LONG_PLAYLIST, { resume: "long-31" });
+
+  press(KEY.LEFT);
+
+  assert.equal(screen.getByText("Channel 31").closest(".row")?.classList.contains("selected"), true);
+});
+
+test("a playlist refresh keeps the resumed channel selected", async () => {
+  await mountApp(LONG_PLAYLIST, { resume: "long-31" });
+  const { useChannels } = await import("../src/stores/channels");
+  const refreshed = useChannels.getState().channels.map((channel) => ({ ...channel }));
+  await act(async () => {
+    useChannels.setState({ channels: refreshed, categories: groupByCategory(refreshed) });
+    await Promise.resolve();
+  });
+
+  press(KEY.LEFT);
+
+  assert.equal(screen.getByText("Channel 31").closest(".row")?.classList.contains("selected"), true);
 });
 
 test("a remembered channel that has gone from the playlist opens the list instead", async () => {
