@@ -74,6 +74,21 @@ test("down from the bottom of the channel list also reaches the bar, so the colu
   assert.equal(inTitleBar(), true, "down off the bottom of the column did not reach the bar");
 });
 
+test("down from Search reached at the bottom returns to the top of the channel list", async () => {
+  await mountApp(PLAYLIST);
+  press(KEY.UP);                        // Search from the first channel
+  await settle();
+  press(KEY.UP);                        // wrap to the last channel
+  await settle();
+  press(KEY.DOWN);                      // Search from the bottom
+  await settle();
+  assert.equal(inTitleBar(), true);
+
+  press(KEY.DOWN);
+  await settle();
+  assert.equal(channelUnderCursor(), "First Channel", "down from Search did not return to the top");
+});
+
 test("the categories keep their own way in and out of the bar", async () => {
   await mountApp(PLAYLIST);
   press(KEY.LEFT);                      // out of the channel column, into the rail
@@ -90,6 +105,70 @@ test("the categories keep their own way in and out of the bar", async () => {
   // The point of remembering: arriving from the rail must go back to the rail, not to a channel.
   assert.equal(inTitleBar(), false);
   assert.equal(categoryUnderCursor(), wasOn, "down from the bar left the categories");
+});
+
+test("left and right switch between lists without losing either cursor", async () => {
+  await mountApp(PLAYLIST);
+  const wasOn = channelUnderCursor();
+
+  press(KEY.LEFT);
+  await settle();
+  const category = categoryUnderCursor();
+  assert.notEqual(category, "", "left did not enter the category list");
+
+  press(KEY.RIGHT);
+  await settle();
+  assert.equal(channelUnderCursor(), wasOn, "right did not restore the channel cursor");
+});
+
+test("switching back to categories restores the latest category row", async () => {
+  await mountApp(PLAYLIST);
+  press(KEY.LEFT);
+  await settle();
+  press(KEY.DOWN);
+  await settle();
+  assert.equal(categoryUnderCursor(), "Sport");
+
+  press(KEY.RIGHT);
+  await settle();
+  assert.equal(channelUnderCursor(), "Third Channel");
+  press(KEY.LEFT);
+  await settle();
+  assert.equal(categoryUnderCursor(), "Sport", "left reset the category cursor");
+});
+
+test("the header cycles Search and Settings in both horizontal directions", async () => {
+  await mountApp(PLAYLIST);
+  press(KEY.UP);
+  await settle();
+  assert.equal(barKey(), "Search");
+
+  press(KEY.LEFT);
+  await settle();
+  assert.equal(barKey(), "Settings", "left from Search did not cycle to Settings");
+
+  press(KEY.RIGHT);
+  await settle();
+  assert.equal(barKey(), "Search", "right from Settings did not cycle to Search");
+});
+
+test("vertical movement from Settings returns to the matching channel-list edge", async () => {
+  await mountApp(PLAYLIST);
+  press(KEY.UP);
+  await settle();
+  press(KEY.LEFT);
+  await settle();
+  assert.equal(barKey(), "Settings");
+
+  press(KEY.DOWN);
+  await settle();
+  assert.equal(channelUnderCursor(), "First Channel");
+
+  press(KEY.UP);
+  await settle();
+  press(KEY.UP);
+  await settle();
+  assert.equal(channelUnderCursor(), "Second Channel");
 });
 
 test("arriving from the channel list does not return the cursor to the categories", async () => {
