@@ -22,6 +22,7 @@
  * needs none of it.
  */
 #include <emscripten.h>
+#include <errno.h>
 #include <netinet/in.h>
 #include <poll.h>
 #include <stdio.h>
@@ -42,6 +43,29 @@
 static char manifest[MANIFEST_MAX];
 static size_t manifest_length = 0;
 static int listening = -1;
+
+/**
+ * Write the whole response.
+ *
+ * A socket may accept only part of a buffer in one send. That is uncommon for the shorter
+ * repaired playlists, but a provider with slightly longer segment URLs can cross the platform's
+ * send buffer boundary and leave AVPlay with a truncated playlist.
+ */
+static int send_all(int socket, const void *buffer, size_t length) {
+  const char *bytes = buffer;
+  size_t sent = 0;
+
+  while (sent < length) {
+    ssize_t written = send(socket, bytes + sent, length - sent, 0);
+    if (written > 0) {
+      sent += (size_t)written;
+      continue;
+    }
+    if (written < 0 && errno == EINTR) continue;
+    return -1;
+  }
+  return 0;
+}
 
 /* Declared here because the failure paths in start_server() below tidy up through it. */
 EMSCRIPTEN_KEEPALIVE void stop_server(void);
@@ -152,12 +176,11 @@ int serve_once(void) {
     manifest_length);
 
   /*
-   * Nothing is retried and nothing is reported if a write fails. A player that hangs up
-   * mid-response asks again a second later, and the only thing an error path could do here is
-   * describe a connection that has already gone.
+   * A player that hangs up mid response asks again a second later, and the only thing an error
+   * path could do here is describe a connection that has already gone.
    */
-  send(client, head, head_length, 0);
-  if (manifest_length) send(client, manifest, manifest_length, 0);
+  send_all(client, head, (size_t)head_length);
+  if (manifest_length) send_all(client, manifest, manifest_length);
   close(client);
   return 1;
 }
