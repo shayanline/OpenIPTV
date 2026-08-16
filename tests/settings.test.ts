@@ -50,6 +50,16 @@ test("a setting that no longer exists is dropped rather than carried for ever", 
   assert.equal("fontId" in written, false, "it was written back out again");
 });
 
+test("the channel list hide preference remains persisted", async () => {
+  localStorage.setItem(KEY, JSON.stringify({ panelTimeout: 30 }));
+  const { useSettings } = await load();
+
+  assert.equal(useSettings.getState().panelTimeout, 30);
+  useSettings.getState().set("panelTimeout", 8);
+  const written = JSON.parse(localStorage.getItem(KEY) ?? "{}");
+  assert.equal(written.panelTimeout, 8);
+});
+
 test("nonsense in the store falls back to defaults rather than throwing", async () => {
   localStorage.setItem(KEY, "{not json");
   const { useSettings } = await load();

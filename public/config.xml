@@ -6,12 +6,12 @@
      <widget> tag this file is not well formed and libxml2, which the Tizen CLI and the WRT
      both use, refuses to parse it. -->
 <widget xmlns="http://www.w3.org/ns/widgets" xmlns:tizen="http://tizen.org/ns/widgets"
-        id="http://openiptv.local/OpenIPTV" version="0.0.0" viewmodes="maximized">
-  <name>OpenIPTV</name>
-  <icon src="icon.png"/>
-  <content src="index.html"/>
+     id="http://openiptv.local/OpenIPTV" version="0.0.0" viewmodes="maximized">
+     <name>OpenIPTV</name>
+     <icon src="icon.png" />
+     <content src="index.html" />
 
-  <!-- A fresh id, minted when the project was renamed from its first name, which was already
+     <!-- A fresh id, minted when the project was renamed from its first name, which was already
        taken on Samsung's store. It replaced the one Tizen Studio scaffolded, so a set carrying
        the old app treats this as a different application and installs it alongside rather than
        over it: remove the old one by hand.
@@ -19,30 +19,32 @@
        Do not change it again. Once the app is submitted this id is permanent, no other app may
        reuse it, and every update has to carry it, so the moment to have chosen was before the
        first submission and that moment is now. -->
-  <tizen:application id="5mzc7dQsGK.OpenIPTV" package="5mzc7dQsGK" required_version="2.4"/>
+     <tizen:application id="5mzc7dQsGK.OpenIPTV" package="5mzc7dQsGK" required_version="2.4" />
 
-  <!-- The screen this is drawn for, which the store's automated check requires: Samsung's own
+     <!-- The screen this is drawn for, which the store's automated check requires: Samsung's own
        publishing guide walks through this exact rejection, because a hand written manifest has
        nothing to inject it. The interface is laid out for 1920 by 1080 and the sets scale it,
        which is why one declaration is enough. -->
-  <feature name="http://tizen.org/feature/screen.size.normal.1080.1920"/>
+     <feature name="http://tizen.org/feature/screen.size.normal.1080.1920" />
 
-  <!-- internet: fetch the playlist and the streams.
+     <!-- internet: fetch the playlist and the streams.
        tv.inputdevice: receive the coloured and channel keys.
+       tv.audio: temporarily mute playback while Settings is open, then restore the prior TV mute state.
        avplay: the guide says it is unused since 2015 sets, but Samsung's own AVPlay
        samples still declare it and it costs nothing to carry.
 
        application.launch is deliberately absent. It was declared for a relaunch the app
        never performs: the only Tizen application call anywhere is getCurrentApplication()
        .exit() in ExitDialog, which needs no privilege at all. -->
-  <tizen:privilege name="http://tizen.org/privilege/internet"/>
-  <tizen:privilege name="http://developer.samsung.com/privilege/avplay"/>
-  <tizen:privilege name="http://tizen.org/privilege/tv.inputdevice"/>
+     <tizen:privilege name="http://tizen.org/privilege/internet" />
+     <tizen:privilege name="http://developer.samsung.com/privilege/avplay" />
+     <tizen:privilege name="http://tizen.org/privilege/tv.inputdevice" />
+     <tizen:privilege name="http://tizen.org/privilege/tv.audio" />
 
-  <!-- Streams and logos come from many hosts, so no origin allowlist is workable. -->
-  <access origin="*" subdomains="true"/>
+     <!-- Streams and logos come from many hosts, so no origin allowlist is workable. -->
+     <access origin="*" subdomains="true" />
 
-  <!--
+     <!--
     Declaring a policy moves the widget from WARP based security to CSP based security, and
     the two do not combine: once this element exists <access> no longer governs the network,
     so every wildcard the app relies on has to be restated here.
@@ -56,27 +58,21 @@
     bound to an <object type="application/avplayer"> that services/player.ts creates, and
     'none' stops the set binding to it: sound, no picture.
   -->
-  <tizen:content-security-policy>
-    default-src 'self';
-    <!-- 'wasm-unsafe-eval' is what lets a WebAssembly module compile at all under a policy, and
+     <tizen:content-security-policy> default-src 'self';       <!-- 'wasm-unsafe-eval' is what lets a WebAssembly module compile at all under a policy,
+          and
          Chromium refuses one without it. It buys nothing an attacker wants that script-src 'self'
          did not already allow: the module is ours, it ships in the widget, and nothing loads a
          module from anywhere else. It is here for services/repair.ts, which serves a corrected
          playlist to the set's own player over a loopback socket, and only when the viewer has
-         turned compatibility on. -->
-    script-src 'self' 'wasm-unsafe-eval';
-    style-src 'self' 'unsafe-inline';
-    img-src * data: blob:;
-    media-src * blob:;
-    connect-src *;
-    object-src 'self';
-    frame-src 'none'
-  </tizen:content-security-policy>
+         turned compatibility on. --> script-src 'self' 'wasm-unsafe-eval';
+          style-src 'self' 'unsafe-inline'; img-src * data: blob:; media-src * blob:; connect-src *;
+          object-src 'self'; frame-src 'none' </tizen:content-security-policy>
 
-  <tizen:setting screen-orientation="landscape" context-menu="disable"
-                 background-support="disable" encryption="disable"
-                 install-location="auto" hwkey-event="enable"/>
-  <tizen:metadata key="http://samsung.com/tv/metadata/prelaunch.support" value="true"/>
-  <tizen:metadata key="http://tizen.org/metadata/app_ui_type/base_screen_resolution" value="extensive"/>
-  <tizen:profile name="tv-samsung"/>
+     <tizen:setting screen-orientation="landscape" context-menu="disable"
+          background-support="disable" encryption="disable"
+          install-location="auto" hwkey-event="enable" />
+     <tizen:metadata key="http://samsung.com/tv/metadata/prelaunch.support" value="true" />
+     <tizen:metadata key="http://tizen.org/metadata/app_ui_type/base_screen_resolution"
+          value="extensive" />
+     <tizen:profile name="tv-samsung" />
 </widget>

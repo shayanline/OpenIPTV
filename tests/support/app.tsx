@@ -16,6 +16,8 @@ import { vi } from "vitest";
 
 /** What the player was asked to play, in order, so a channel change can be observed. */
 export let played: string[] = [];
+export let muted = false;
+export let volumeChanges: number[] = [];
 
 /** Presses a key the way the remote does, by keyCode, which is what the app listens for. */
 export function press(code: number) {
@@ -70,6 +72,8 @@ export async function mountApp(
 ) {
   vi.resetModules();
   played = [];
+  muted = false;
+  volumeChanges = [];
 
   vi.doMock("../../src/services/player", () => ({
     onTizen: () => false,
@@ -81,6 +85,8 @@ export async function mountApp(
       hide() {}
       show() {}
       pause() {}
+      setMuted(value: boolean) { muted = value; }
+      adjustVolume(delta: number) { volumeChanges.push(delta); }
       setFit() {}
       play(url: string) {
         played.push(url);
@@ -97,7 +103,7 @@ export async function mountApp(
     playlists: [{ id: "pl-1", name: "Test", url: "http://list.invalid/a.m3u" }],
     activePlaylistId: "pl-1",
     resumeLast: !!resume,
-    panelTimeout: 0,
+    panelTimeout: 4,
   }));
   // Written before the app mounts, because App decides which view to open on during its very
   // first render by reading this. That is the whole point of it: deciding later meant the

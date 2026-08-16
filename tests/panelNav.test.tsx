@@ -121,6 +121,18 @@ test("left and right switch between lists without losing either cursor", async (
   assert.equal(channelUnderCursor(), wasOn, "right did not restore the channel cursor");
 });
 
+test("left on the category list keeps the category list selected", async () => {
+  await mountApp(PLAYLIST);
+  press(KEY.LEFT);
+  await settle();
+  const wasOn = categoryUnderCursor();
+
+  press(KEY.LEFT);
+  await settle();
+  assert.equal(categoryUnderCursor(), wasOn, "left moved away from the selected category");
+  assert.ok(document.querySelector(".rail.focused"), "left moved out of the category list");
+});
+
 test("switching back to categories restores the latest category row", async () => {
   await mountApp(PLAYLIST);
   press(KEY.LEFT);

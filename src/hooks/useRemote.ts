@@ -17,6 +17,8 @@ export const KEY = {
   BACK: 10009,
   CH_UP: 427,
   CH_DOWN: 428,
+  VOL_UP: 448,
+  VOL_DOWN: 449,
   ESC: 27,
 
   // The coloured keys. Only green and yellow are registered and acted on, but all four

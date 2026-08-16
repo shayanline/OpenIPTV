@@ -122,9 +122,9 @@ type View = "watch" | "panel";
  *      there is visibly a list with a highlight in it.
  *   2. OK does the obvious thing where it is pressed. At the picture that is always the
  *      channel list, and on a focused button it is that button.
- *   3. Left and right move within whatever is showing. In the panel they switch between the
- *      category and channel lists while preserving each list's cursor, and they cycle Search
- *      and Settings while the title bar is selected.
+ *   3. Left leaves the channel list for categories, and Right chooses the highlighted channel.
+ *      In categories, Right enters the channel list and Left stays put. The title bar cycles
+ *      Search and Settings in both directions.
  *   4. RETURN always goes back. It clears the screen if anything is on it, closes the panel if
  *      the panel is open, and closes the application only when there is nothing left to close.
  *
@@ -218,7 +218,6 @@ export default function App() {
 
   const chrome = useChrome();
   const pointerAwake = usePointerAwake();
-  const hideTimer = useRef<number | undefined>(undefined);
   const railTimer = useRef<number | undefined>(undefined);
 
   const lists = useMemo(
@@ -282,7 +281,15 @@ export default function App() {
     return () => window.clearTimeout(queryTimer.current);
   }, [query, searching]);
 
+  const appRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const toggleFullscreen = useCallback(() => {
+    if (document.fullscreenElement) {
+      void document.exitFullscreen();
+      return;
+    }
+    void appRef.current?.requestFullscreen?.();
+  }, []);
   const tuner = useTuner({
     list: visible,
     fit: settings.aspectId,
@@ -294,6 +301,11 @@ export default function App() {
     compatibility: settings.compatibility,
   });
   const { current, busy, paused, fault } = tuner;
+
+  useEffect(() => {
+    tuner.setMuted(showSettings && !!current);
+  }, [current, showSettings, tuner.setMuted]);
+
   /** The channel as it is now, for callbacks that run between renders. */
   const currentRef = useRef<Channel | null>(null);
   currentRef.current = current;
@@ -351,7 +363,6 @@ export default function App() {
    * unmount nobody performs.
    */
   useEffect(() => () => {
-    window.clearTimeout(hideTimer.current);
     window.clearTimeout(railTimer.current);
   }, []);
 
@@ -410,22 +421,11 @@ export default function App() {
   const barFrom = useRef<"rail" | "list">("rail");
 
 
-  // The channel panel withdraws on its own once there is a picture behind it to withdraw
-  // to. With nothing playing it stays, because hiding it would leave the viewer on an
-  // empty screen wondering what happened.
   const openPanel = useCallback(() => {
     setView("panel");
-    window.clearTimeout(hideTimer.current);
-    if (settings.panelTimeout > 0) {
-      hideTimer.current = window.setTimeout(
-        () => setView((v) => (v === "panel" && currentRef.current ? "watch" : v)),
-        settings.panelTimeout * 1000,
-      );
-    }
-  }, [settings.panelTimeout]);
+  }, []);
 
   const watch = useCallback(() => {
-    window.clearTimeout(hideTimer.current);
     setView("watch");
   }, []);
 
@@ -700,11 +700,14 @@ export default function App() {
     const transport = code === KEY.PLAY_PAUSE || code === KEY.PLAY || code === KEY.PAUSE
       || code === KEY.SPACE
       || code === KEY.STOP || code === KEY.REWIND || code === KEY.FORWARD
-      || code === KEY.PREV || code === KEY.NEXT;
+      || code === KEY.PREV || code === KEY.NEXT
+      || code === KEY.VOL_UP || code === KEY.VOL_DOWN;
     if (!transport) return false;
     if (!current) return true;
 
     switch (code) {
+      case KEY.VOL_UP: tuner.adjustVolume(0.1); break;
+      case KEY.VOL_DOWN: tuner.adjustVolume(-0.1); break;
       /* Pausing has no on-screen button, because it does not need one: it has a key on the
          Smart Remote, a key on every keyboard and a button on the on-screen pad. The banner
          still comes up as a notice, so the viewer can see which channel they have just held,
@@ -852,7 +855,7 @@ export default function App() {
     }
 
     // The channel panel.
-    openPanel();   // any key here restarts its countdown
+    openPanel();
 
     /*
      * While the keyboard has the field, most keys are the field's.
@@ -996,7 +999,6 @@ export default function App() {
         break;
       case KEY.LEFT:
         event.preventDefault();
-        // Both horizontal directions switch between the two lists and keep each list's cursor.
         if (pane === "list") {
           // A vertical trip through the bar leaves the rail cursor at zero. Restore the category
           // that owns the channel column before showing that list again.
@@ -1009,15 +1011,14 @@ export default function App() {
         else if (cursor === 0) {
           // Search and Settings form a two-control ring, so neither edge falls into a list.
           setHeaderKey((key) => key === "search" ? "settings" : "search");
-        } else setPane("list");
+        }
         break;
       case KEY.RIGHT:
         event.preventDefault();
-        // Right follows the same two rings as left: the list pair, or Search and Settings.
-        if (pane === "rail" && cursor === 0) {
+        if (pane === "list") chooseChannel();
+        else if (cursor === 0) {
           setHeaderKey((key) => key === "search" ? "settings" : "search");
         } else if (pane === "rail") setPane("list");
-        else setPane("rail");
         break;
       case KEY.ENTER:
         event.preventDefault();
@@ -1190,12 +1191,20 @@ export default function App() {
   }, [tuner.shown, visible, lists, category]);
 
   return (
-    <div className="app">
+    <div ref={appRef} className="app">
       {/* ---- layer 1, the player -------------------------------------------------- */}
       {/* Only off the TV. AVPlay drives the set's own video plane and never touches this
           element, so on Tizen it would be an opaque black box sitting on top of the
           picture for no reason, and one more layer for the compositor to think about. */}
-      {!onTizen() && <video ref={videoRef} className="video" playsInline muted={false} />}
+      {!onTizen() && (
+        <video
+          ref={videoRef}
+          className="video"
+          playsInline
+          muted={false}
+          onDoubleClick={toggleFullscreen}
+        />
+      )}
 
       {/*
         * A configured playlist that produced nothing.
@@ -1260,14 +1269,15 @@ export default function App() {
 
       {/* ---- layer 2, the playback banner and its key guide ----------------------- */}
       {/*
-        * Held open while a channel is tuning and while it is paused, so the name is on screen
-        * for as long as there is any question about what is happening.
+        * Held open while a channel is tuning, and for the banner's own notice period after a
+        * channel is playing or paused. The picture state separately reports that a channel is
+        * paused, so paused must not bypass the banner timer.
         *
         * It shows the channel the viewer has landed on rather than the one playing, which
         * during a burst of channel up are not the same thing: the name has to keep up with the
         * key while the tuner deliberately does not.
         */}
-      {(tuner.shown) && atPlayer && (chrome.banner || paused) && !fault && (
+      {(tuner.shown) && atPlayer && chrome.banner && !fault && (
         <PlaybackBanner channel={(tuner.shown)!} position={position} />
       )}
 

@@ -117,3 +117,16 @@ test("the banner still goes away after pausing and playing the same channel", as
   await past();
   assert.equal(bannerUp(), false, "the banner stayed up for ever after pause then play");
 });
+
+test("the banner goes away while a channel remains paused", async () => {
+  await mountApp(PLAYLIST, { slowPicture: 300 });
+  press(KEY.ENTER);
+  await settle(500);
+  await past();
+  assert.equal(bannerUp(), false, "the banner had not gone before pausing");
+
+  press(KEY.PAUSE);
+  assert.equal(bannerUp(), true, "pausing did not show the channel banner");
+  await past();
+  assert.equal(bannerUp(), false, "paused state kept the expired banner visible");
+});

@@ -2,7 +2,7 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import assert from "node:assert/strict";
 import { act, cleanup, screen } from "@testing-library/react";
 import { KEY } from "../src/hooks/useRemote";
-import { mountApp, panelOpen, played, press } from "./support/app";
+import { mountApp, muted, panelOpen, played, press, volumeChanges } from "./support/app";
 
 /**
  * The four laws of the key model, asserted rather than described.
@@ -38,6 +38,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  vi.useRealTimers();
   vi.unstubAllGlobals();
   vi.doUnmock("../src/services/player");
 });
@@ -53,6 +54,22 @@ test("law 2: OK on a channel starts it and puts the list away", async () => {
   press(KEY.ENTER);
   assert.equal(played.length, 1);
   assert.ok(!panelOpen(), "the panel should withdraw once a channel is chosen");
+});
+
+test("law 2: Right on a channel chooses it like OK", async () => {
+  await mount();
+  press(KEY.RIGHT);
+  assert.equal(played.length, 1);
+  assert.ok(!panelOpen(), "the panel should withdraw once a channel is chosen");
+});
+
+test("the channel list stays open until it is dismissed", async () => {
+  await mount();
+  press(KEY.ENTER);
+  vi.useFakeTimers();
+  press(KEY.LEFT);
+  await act(async () => { vi.advanceTimersByTime(5000); });
+  assert.ok(panelOpen(), "the channel list closed without being dismissed");
 });
 
 test("law 1: up and down change channel at the picture, always", async () => {
@@ -141,6 +158,58 @@ test("the yellow key opens settings from anywhere", async () => {
   await mount();
   press(KEY.YELLOW);
   assert.ok(document.querySelector(".sheet"), "the settings sheet did not open");
+});
+
+test("settings mutes audio without restarting playback", async () => {
+  await mount();
+  press(KEY.ENTER);
+  const started = played.length;
+
+  press(KEY.YELLOW);
+  assert.equal(muted, true, "settings did not mute the playing channel");
+  assert.equal(played.length, started, "opening settings restarted playback");
+
+  press(KEY.BACK);
+  assert.equal(muted, false, "closing settings did not restore audio");
+  assert.equal(played.length, started, "closing settings restarted playback");
+});
+
+test("the debug Smart Remote starts closed and wires volume controls", async () => {
+  await mount();
+  press(KEY.ENTER);
+  assert.ok(screen.getByRole("button", { name: "Show Smart Remote" }));
+  assert.equal(document.querySelector(".remote"), null, "the debug remote opened by default");
+
+  await act(async () => {
+    screen.getByRole("button", { name: "Show Smart Remote" }).click();
+  });
+  screen.getByRole("button", { name: "Volume up" }).click();
+  screen.getByRole("button", { name: "Volume down" }).click();
+
+  assert.deepEqual(volumeChanges, [0.1, -0.1]);
+});
+
+test("double clicking the browser video toggles application fullscreen", async () => {
+  await mount();
+  const video = document.querySelector("video");
+  const app = document.querySelector(".app");
+  assert.ok(video, "the browser video was not rendered");
+  assert.ok(app, "the application root was not rendered");
+
+  let fullscreen: Element | null = null;
+  Object.defineProperty(document, "fullscreenElement", {
+    configurable: true,
+    get: () => fullscreen,
+  });
+  app.requestFullscreen = vi.fn(async () => { fullscreen = app; });
+  document.exitFullscreen = vi.fn(async () => { fullscreen = null; });
+
+  video.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
+  assert.equal(app.requestFullscreen.mock.calls.length, 1);
+  assert.equal(document.exitFullscreen.mock.calls.length, 0);
+
+  video.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
+  assert.equal(document.exitFullscreen.mock.calls.length, 1);
 });
 
 test("the green key favourites the highlighted channel and says so", async () => {

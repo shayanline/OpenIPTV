@@ -25,6 +25,10 @@ Text in [licenses/react.txt](licenses/react.txt), which covers both packages.
 **zustand**, version 5.0.14, MIT, Copyright 2019 Paul Henschel. Text in
 [licenses/zustand.txt](licenses/zustand.txt).
 
+**Vazirmatn**, variable font, SIL Open Font License 1.1, Copyright 2015 The Vazirmatn Project
+Authors. The font is bundled for the application font in `src/styles/tokens.css`. The licence text is in
+[licenses/OFL.txt](licenses/OFL.txt).
+
 **Emscripten**, MIT and University of Illinois NCSA, Copyright the Emscripten authors. The file
 `wasm/manifest-socket.js` is generated glue, and rather than being compiled output in the way a
 binary is, most of it is copied from Emscripten's own JavaScript libraries, so its licence follows

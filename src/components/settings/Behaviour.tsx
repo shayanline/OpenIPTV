@@ -63,11 +63,6 @@ export function Behaviour({ onAsking }: { onAsking: (asking: boolean) => void })
           }}
         />
       </Row>
-      {/*
-        * "Never" rather than "keep it open", because the label reads into its options: "hide the
-        * channel list after keep it open" is not a sentence, and the viewer has to read the other
-        * three chips to work out what the row is even asking.
-        */}
       <Row label="Hide the channel list after" hint="When you stop pressing anything">
         <Choice
           options={[

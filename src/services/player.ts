@@ -78,6 +78,13 @@ interface AVPlay {
   setTimeoutForBuffering?(seconds: number): void;
 }
 
+interface TVAudioControl {
+  setMute(mute: boolean): void;
+  isMute(): boolean;
+  setVolumeUp?(): void;
+  setVolumeDown?(): void;
+}
+
 /**
  * How to fit a picture that is not the shape of the screen.
  *
@@ -100,7 +107,7 @@ const OBJECT_FIT: Record<Fit, string> = { fit: "contain", fill: "cover", stretch
 declare global {
   interface Window {
     webapis?: { avplay?: AVPlay };
-    tizen?: unknown;
+    tizen?: { tvaudiocontrol?: TVAudioControl };
   }
 }
 
@@ -206,6 +213,8 @@ export class Player {
   private progress: number | undefined;
   private lastPosition = -1;
   private stalledFor = 0;
+  private muted = false;
+  private muteBeforeSettings: boolean | null = null;
 
   constructor(emit: (e: PlayerEvent) => void) {
     this.sink = emit;
@@ -298,6 +307,7 @@ export class Player {
   attach(video: HTMLVideoElement) {
     this.detach();
     this.video = video;
+    video.muted = this.muted;
     video.addEventListener("playing", this.onPlaying);
     video.addEventListener("waiting", this.onWaiting);
   }
@@ -545,6 +555,48 @@ export class Player {
     if (this.video) this.video.style.objectFit = OBJECT_FIT[fit];
   }
 
+  /** Temporarily silence the audio without changing the live playback clock. */
+  setMuted(muted: boolean) {
+    this.muted = muted;
+    if (!onTizen()) {
+      if (this.video) this.video.muted = muted;
+      return;
+    }
+
+    const audio = window.tizen?.tvaudiocontrol;
+    if (!audio) return;
+    try {
+      if (muted) {
+        if (this.muteBeforeSettings === null) this.muteBeforeSettings = audio.isMute();
+        audio.setMute(true);
+      } else if (this.muteBeforeSettings !== null) {
+        audio.setMute(this.muteBeforeSettings);
+        this.muteBeforeSettings = null;
+      }
+    } catch {
+      // The TV audio privilege is optional on older firmware, so playback must continue.
+    }
+  }
+
+  /** Change audio level without touching the live playback pipeline. */
+  adjustVolume(delta: number) {
+    if (onTizen()) {
+      const audio = window.tizen?.tvaudiocontrol;
+      try {
+        if (delta > 0) audio?.setVolumeUp?.();
+        else if (delta < 0) audio?.setVolumeDown?.();
+      } catch {
+        // Volume belongs to the TV, so an unavailable audio API must not affect playback.
+      }
+      return;
+    }
+
+    if (this.video) {
+      this.video.volume = Math.max(0, Math.min(1, this.video.volume + delta));
+      if (delta > 0) this.video.muted = false;
+    }
+  }
+
   /**
    * Hand the decoder back while the app is off screen, and take it again on return.
    *
@@ -584,6 +636,7 @@ export class Player {
   private async playBrowser(url: string, browserRepair: boolean) {
     const video = this.video;
     if (!video) return;
+    video.muted = this.muted;
     this.emit({ type: "buffering" });
 
     const Hls = await loadHls();
@@ -701,6 +754,7 @@ export class Player {
 
   /** Give the decoder back and let go of the television's video plane entirely. */
   stop() {
+    this.setMuted(false);
     this.teardown(true);
   }
 

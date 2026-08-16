@@ -11,6 +11,16 @@
  * is an inverted focus: the focused row becomes a solid light surface with dark text,
  * which reads across a room far better than a border or a glow.
  */
+
+/* Vazirmatn is bundled for every platform so the application has one consistent font. */
+@font-face {
+   font-family: "Vazirmatn";
+   font-style: normal;
+   font-weight: 300 900;
+   font-display: swap;
+   src: url("../assets/fonts/Vazirmatn-VariableFont_wght.ttf") format("truetype");
+}
+
 :root {
   /*
    * Surfaces. Calm, near neutral, so the app sits quietly under any picture. One UI puts
@@ -175,15 +185,14 @@
   --lh: 1.35;
 
   /*
-   * The set's own interface font, and no longer a preference.
-   *
-   * system-ui resolves to One UI Sans on a Samsung television, which is what the rest of the set is
-   * drawn in, and to the platform font everywhere else. A choice of families used to sit in front of
-   * this and did nothing on a television, since the alternatives named faces no Tizen set carries
-   * and every one of them fell back here. It stays a token rather than being written inline, because
-   * two stylesheets and the pre-render frame in index.html all have to agree about it.
+    * The application font, and no longer a preference.
+    *
+      * Vazirmatn is bundled so the browser and TV builds use the same face without a network request.
+      * The final families cover platforms that do not load the bundled Latin subset for another
+      * script.
    */
-  --font: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+   --font: "Vazirmatn", system-ui,
+      -apple-system, "Segoe UI", Roboto, sans-serif;
 
   /*
    * Motion, from the One UI motion guidance.

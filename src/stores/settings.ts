@@ -91,21 +91,7 @@ const DEFAULTS = {
   aspectId: "fill" as AspectId,
   showClock: true,
   resumeLast: true,
-  /* Four seconds, which reverses the fifteen this used to ship with, so the earlier argument is
-     worth keeping rather than quietly deleting: the channel list is read rather than glanced at,
-     and a playlist of two hundred channels in twenty five categories takes longer than a few
-     seconds to find your way around, so a menu that closes while somebody is still deciding reads
-     as the television interrupting them.
-
-     What answers that is the cost of being wrong in each direction. Closing too early costs one
-     press of OK, which reopens the list exactly where it was. Closing too late covers a programme
-     somebody is trying to watch, and the only way out is to notice the list is still there and
-     dismiss it. The first mistake is cheap and the second is not, and the timer restarts on every
-     press, so four seconds is four seconds of nobody touching the remote rather than four seconds
-     of reading.
-
-     Anybody who does want to browse at their own pace has 8, 15 and 30, and Never for a list that
-     stays until it is dismissed. */
+  /* Four seconds remains the stored preference, although the channel panel no longer uses it. */
   panelTimeout: 4,
   sortAlphabetically: false,
   /* Off. Nothing that only some channels need should cost the others anything. */

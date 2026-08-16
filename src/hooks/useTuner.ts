@@ -90,6 +90,8 @@ export interface Tuner {
   step: (delta: number) => void;
   setPlaying: (play: boolean) => void;
   togglePause: () => void;
+  setMuted: (muted: boolean) => void;
+  adjustVolume: (delta: number) => void;
 }
 
 export function useTuner(options: TunerOptions): Tuner {
@@ -111,6 +113,7 @@ export function useTuner(options: TunerOptions): Tuner {
   currentRef.current = current;
   const busyRef = useRef(busy);
   busyRef.current = busy;
+  const mutedRef = useRef(false);
   /**
    * The pending channel, as a ref as well as state.
    *
@@ -192,6 +195,7 @@ export function useTuner(options: TunerOptions): Tuner {
     const made = new Player(onEvent);
     player.current = made;
     if (video.current) made.attach(video.current);
+    made.setMuted(mutedRef.current);
     return () => {
       made.stop();
       made.detach();
@@ -510,9 +514,19 @@ export function useTuner(options: TunerOptions): Tuner {
 
   const togglePause = useCallback(() => setPlaying(paused), [paused, setPlaying]);
 
+  const setMuted = useCallback((muted: boolean) => {
+    mutedRef.current = muted;
+    player.current?.setMuted(muted);
+  }, []);
+
+  const adjustVolume = useCallback((delta: number) => {
+    player.current?.adjustVolume(delta);
+  }, []);
+
   return {
     current, preview, shown: preview ?? current,
     busy, paused, filling, fault, waited, retryIn, attempt,
     start, retune, clear, step: step as (delta: number) => void, setPlaying, togglePause,
+    setMuted, adjustVolume,
   };
 }

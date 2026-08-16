@@ -2,6 +2,38 @@
 
 Notable changes, newest first, in the format of [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## 1.1.0
+
+### Added
+
+- **Full screen browser playback.** Double clicking the browser video now puts the whole
+  application into full screen, so the channel menu, Search and Settings remain available.
+- **Playback audio control while Settings is open.** Settings mutes the active channel without
+  pausing or retuning it, then restores the previous audio state when Settings closes.
+- **Vazirmatn application font.** The supplied variable font is bundled with Persian and broad
+  script coverage, so the browser and TV builds use one consistent typeface without a network
+  request.
+
+### Changed
+
+- **Faster access to Search and Settings.** Moving up from the top of either list reaches the
+  header controls, and the header cycles between Search and Settings in both directions.
+- **Channel list navigation.** Right on a channel now performs the same action as OK, while Left
+  on the category list stays in that list.
+- **Channel menu browsing.** The existing hide preference remains available, but it no longer
+  closes the channel selection menu while the viewer is browsing it.
+- **Debug Smart Remote.** The remote starts closed, its volume and channel controls send working
+  input, and its keypad uses centered vector icons for transport actions.
+
+### Fixed
+
+- **Playback banner dismissal.** A paused channel no longer keeps an expired banner visible after
+  its timer has elapsed.
+- **Button presentation.** Hover states retain light text and icon colors, and icon bearing
+  controls are centered consistently across the application.
+- **TV engine layout parity.** Pane headers now keep stable geometry between the oldest supported
+  Chromium 69 sets and modern browsers, even when font metrics differ.
+
 ## 1.0.2
 
 ### Fixed

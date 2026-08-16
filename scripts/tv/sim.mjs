@@ -726,17 +726,11 @@ if (!video) {
  */
 await cdp.send("Page.addScriptToEvaluateOnNewDocument", {
   /*
-   * Two settings a measurement must not be at the mercy of.
-   *
-   * `panelTimeout` defaults to four seconds, and once a channel is playing the app arms a
-   * timer to put the panel away. The channel list phases settle for three seconds and then
-   * press forty times, twice, so they cross that comfortably: the panel could close halfway
-   * through a phase named after scrolling it, and nothing rechecked. `showClock` defaults on
-   * and re-renders every second, which is work arriving during `resting`, whose whole job is
-   * to be the number everything else is read against.
-   *
-   * Both only when measuring. Someone working in `npm run tv` wants the application's real
-   * defaults, clock included.
+  * `showClock` defaults on and re-renders every second, which is work arriving during `resting`,
+  * whose whole job is to be the number everything else is read against. It is overridden only
+  * when measuring. Someone working in `npm run tv` wants the application's real defaults, clock
+  * included. `panelTimeout` remains in the seed for settings compatibility, but the channel panel
+  * does not use it to close itself.
    *
    * The last channel is forgotten once per run, and once is what `sessionStorage` buys: it
    * survives the navigations within a run and is empty in the next browser. Every phase below

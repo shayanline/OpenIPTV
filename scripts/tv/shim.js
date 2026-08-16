@@ -121,6 +121,7 @@
   };
 
   let state = "NONE";
+  let audioMuted = false;
   let listener = {};
   let source = "";
   let hls = null;
@@ -259,6 +260,15 @@
 
   const registered = new Set();
   window.tizen = {
+    tvaudiocontrol: {
+      setMute: (mute) => {
+        audioMuted = mute;
+        const v = video();
+        if (v) v.muted = mute;
+        log("setMute", mute);
+      },
+      isMute: () => audioMuted,
+    },
     tvinputdevice: {
       registerKey: (name) => { registered.add(name); },
       getKey: (name) => ({ name }),

@@ -59,6 +59,7 @@ function fakeAVPlay() {
 let av: ReturnType<typeof fakeAVPlay>;
 let events: PlayerEvent[];
 let player: Player;
+let tvMuted = false;
 
 const codes = () => events.filter((e) => e.type === "error").map((e) => e.code);
 
@@ -66,6 +67,13 @@ beforeEach(() => {
   vi.useFakeTimers();
   av = fakeAVPlay();
   (window as unknown as { webapis: unknown }).webapis = { avplay: av };
+  tvMuted = false;
+  (window as unknown as { tizen: unknown }).tizen = {
+    tvaudiocontrol: {
+      isMute: () => tvMuted,
+      setMute: (mute: boolean) => { tvMuted = mute; },
+    },
+  };
   events = [];
   player = new Player((e) => events.push(e));
 });
@@ -74,6 +82,7 @@ afterEach(() => {
   player.stop();
   vi.useRealTimers();
   delete (window as unknown as { webapis?: unknown }).webapis;
+  delete (window as unknown as { tizen?: unknown }).tizen;
   document.getElementById("avplay-surface")?.remove();
 });
 
@@ -261,6 +270,21 @@ test("the aspect setting reaches the engine and survives a channel change", () =
   player.play("http://example.invalid/a.m3u8");
   // A fresh AVPlay instance starts on its own default, so the choice has to be reapplied.
   assert.ok(av.calls.some((c) => c === "setDisplayMethod:PLAYER_DISPLAY_MODE_FULL_SCREEN"));
+});
+
+test("muting audio leaves AVPlay running and restores the prior TV mute state", () => {
+  player.play("http://example.invalid/a.m3u8");
+  av.prepared?.ok();
+  av.calls.length = 0;
+
+  player.setMuted(true);
+  assert.equal(tvMuted, true);
+  assert.equal(av.getState(), "PLAYING");
+  assert.ok(!av.calls.includes("stop"), "muting restarted or stopped playback");
+
+  player.setMuted(false);
+  assert.equal(tvMuted, false);
+  assert.equal(av.getState(), "PLAYING");
 });
 
 test("going off screen suspends the decoder rather than pausing it", () => {
