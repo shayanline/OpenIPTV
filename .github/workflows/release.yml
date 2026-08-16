@@ -184,19 +184,16 @@ jobs:
           dbus-run-session -- bash -euo pipefail -c '
             echo openiptv-ci | gnome-keyring-daemon --unlock
 
+            # Tell the CLI where the writable profile file lives before creating the profile.
+            #
+            # A fresh hosted runner has no profile file at the default location, so running
+            # `security-profiles add` first fails with "Not found a file of security profiles".
+            # The CLI creates the configured file when the profile is added.
+            tizen cli-config "profiles.path=$HOME/tizen-studio-data/profile/profiles.xml"
             tizen security-profiles add -n OpenIPTV \
               -a "$RUNNER_TEMP/author.p12" -p "$AUTHOR_PASSWORD" \
               -d "$RUNNER_TEMP/distributor.p12" --dist-password "$DISTRIBUTOR_PASSWORD"
-
-            # And tell the CLI to read the file it just wrote.
-            #
-            # `security-profiles add` writes to tizen-studio-data/profile/profiles.xml while
-            # `package` reads whichever file the CLI configuration names, which on a fresh install
-            # is the sample that ships inside the toolchain. The two never meet, so packaging signed
-            # with a placeholder and failed with the same "Invaild password" as an unreachable
-            # keyring does. The CLI prints this advice itself, at the end of a step that reports
-            # success.
-            tizen cli-config "profiles.path=$HOME/tizen-studio-data/profile/profiles.xml"
+            test -s "$HOME/tizen-studio-data/profile/profiles.xml"
 
             # scripts/package.sh needs no changes to run here: it takes the profile name from the
             # environment, finds the CLI on PATH, stamps the version into the manifest and writes
