@@ -122,12 +122,9 @@ type View = "watch" | "panel";
  *      there is visibly a list with a highlight in it.
  *   2. OK does the obvious thing where it is pressed. At the picture that is always the
  *      channel list, and on a focused button it is that button.
- *   3. Left and right move within whatever is showing, and then one step further in or out of
- *      it. Left goes towards the picture and right goes away from it: at the picture, left
- *      opens the channel list, because that is what is off the left of the screen, and right
- *      has nothing to travel to so it puts away whatever is on screen. In the panel, right
- *      moves one step further in at every stop and plays the highlighted channel at the last
- *      one, since the only thing further in than the channel list is the programme.
+ *   3. Left and right move within whatever is showing. In the panel they switch between the
+ *      category and channel lists while preserving each list's cursor, and they cycle Search
+ *      and Settings while the title bar is selected.
  *   4. RETURN always goes back. It clears the screen if anything is on it, closes the panel if
  *      the panel is open, and closes the application only when there is nothing left to close.
  *
@@ -406,9 +403,9 @@ export default function App() {
   /**
    * Which column the cursor was in before it went up into the title bar.
    *
-   * Search and Settings sit above both columns, so leaving them downward has to land where the
-   * viewer came from rather than always in the categories. A ref rather than state because it is
-   * read by the key handler between renders, and nothing on screen depends on it.
+   * Search and Settings sit above both columns, so leaving them vertically has to land in the
+   * list the viewer came from rather than always in the categories. A ref rather than state
+   * because it is read by the key handler between renders, and nothing on screen depends on it.
    */
   const barFrom = useRef<"rail" | "list">("rail");
 
@@ -918,10 +915,9 @@ export default function App() {
     /**
      * Play whatever the channel column has under the cursor.
      *
-     * One function because two keys now do it. OK has always meant "the obvious thing here", and
-     * right means it too at the last column, where the only thing further in is the programme.
-     * Written once so the two cannot drift into disagreeing about what a search result is: a
-     * result takes the rail to that channel's category, and a row of a category does not need to.
+     * One function because OK is the obvious action in either channel-column mode. Written once
+     * so choosing a search result and choosing a category row cannot drift apart: a result takes
+     * the rail to that channel's category, and a row of a category does not need to.
      */
     const chooseChannel = () => {
       if (searching) {
@@ -947,7 +943,9 @@ export default function App() {
      *
      * So the bar is now the row above both columns rather than above one of them, and which column
      * the cursor left is remembered, because coming back to the categories from a channel list
-     * would be the interface deciding the viewer meant something they did not press.
+     * would be the interface deciding the viewer meant something they did not press. Horizontal
+     * movement stays within the two lists, while the two controls in the bar stay a pair of their
+     * own.
      *
      * The search field is left out of it. While searching, the thing above the results is the field
      * being typed into, and putting the title bar above that as well would make one press mean two
@@ -969,8 +967,8 @@ export default function App() {
           if (!searching && atTop) enterBar("list");
           else setIndex((i) => stepColumn(i, -1, column.length, searching));
         } else if (inBar && barFrom.current === "list") {
-          // Back to the column it came from, at the bottom, which is what the rail does when it
-          // wraps off the bar onto the last category.
+          // The arrow chooses the edge to return to: up wraps to the bottom, down to the top.
+          // This is also what lets a channel list reached from its first row come back to row zero.
           setPane("list");
           setIndex(Math.max(0, column.length - 1));
         } else {
@@ -984,7 +982,9 @@ export default function App() {
           if (!searching && atBottom) enterBar("list");
           else setIndex((i) => stepColumn(i, 1, column.length, searching));
         } else if (inBar && barFrom.current === "list") {
-          setPane("list");                     // exactly where it was, which is the whole point
+          // Down from Search/Settings returns to the top rather than the row that reached the bar.
+          setPane("list");
+          setIndex(0);
         } else {
           if (cursor === lists.length) barFrom.current = "rail";
           nudgeCursor(1);
@@ -992,72 +992,28 @@ export default function App() {
         break;
       case KEY.LEFT:
         event.preventDefault();
-        // Out of the channel column into the rail, which is the gesture that opened it reversed.
+        // Both horizontal directions switch between the two lists and keep each list's cursor.
         if (pane === "list") {
-          /*
-           * And onto the category the column is showing, never onto the title bar.
-           *
-           * The rail cursor is left at zero by walking up into the bar and back down into the
-           * channels, so a later press of left landed on Search and Settings: a row the viewer
-           * had left, two rows above where they were looking. Search and Settings are reached
-           * by going up, which is the only way they should be reached.
-           */
+          // A vertical trip through the bar leaves the rail cursor at zero. Restore the category
+          // that owns the channel column before showing that list again.
           if (cursor === 0) {
             cursorRef.current = category + 1;
             setCursor(category + 1);
           }
           setPane("rail");
         }
-        // Within the title bar first, since left and right move inside whatever is showing
-        // before they leave it.
-        else if (cursor === 0 && headerKey === "settings") setHeaderKey("search");
-        /*
-         * And off the first key of the bar into the categories, rather than out of the panel.
-         *
-         * Leaving the application's own two keys by the left edge used to close the whole panel,
-         * which is a lot to happen to somebody who was aiming for the category list a few pixels
-         * below. The bar has no third key to its left, so the only thing left of it is the column
-         * underneath, and that is where left goes.
-         *
-         * It costs the shortcut of closing the panel from up here, and RETURN is the key for that
-         * everywhere else in the application anyway. What it buys is that neither horizontal key
-         * can throw the viewer out of the panel by accident from a row they did not aim for.
-         */
-        else if (cursor === 0) nudgeCursor(1);
-        else if (current) watch();
+        else if (cursor === 0) {
+          // Search and Settings form a two-control ring, so neither edge falls into a list.
+          setHeaderKey((key) => key === "search" ? "settings" : "search");
+        } else setPane("list");
         break;
       case KEY.RIGHT:
         event.preventDefault();
-        if (pane === "rail" && cursor === 0 && headerKey === "search") setHeaderKey("settings");
-        /*
-         * Off the last key of the title bar and into the categories, which is where right
-         * belongs from there and is not where it went.
-         *
-         * It used to fall through to the line below and land in the channel column, so a walk
-         * rightwards from Search went Search, Settings, channels: the categories, which sit
-         * between them on screen, were reachable by pressing down and by nothing else. Now the
-         * rightward path crosses everything in order, Search, Settings, categories, channels,
-         * and each press moves to the next thing along rather than skipping one.
-         *
-         * The same landing as pressing down from the bar, deliberately, so two ways of leaving it
-         * do not disagree about where the cursor ends up.
-         */
-        else if (pane === "rail" && cursor === 0) nudgeCursor(1);
-        else if (pane === "rail") setPane("list");
-        /*
-         * And in the channel column, right plays the row it is on, exactly as OK does.
-         *
-         * It used to close the panel back to the picture, on the reasoning that right off the end
-         * of the panel is the door being used in the same direction. Playing the channel goes
-         * through that same door and takes the viewer somewhere they asked to be rather than back
-         * to what was already on, so the old behaviour is a special case of the new one: choosing
-         * a channel closes the panel too.
-         *
-         * It also means the last column obeys the same rule as everything to its left. Right has
-         * moved one step further into the interface at every stop along the way, and at the end of
-         * it the next step is the programme.
-         */
-        else chooseChannel();
+        // Right follows the same two rings as left: the list pair, or Search and Settings.
+        if (pane === "rail" && cursor === 0) {
+          setHeaderKey((key) => key === "search" ? "settings" : "search");
+        } else if (pane === "rail") setPane("list");
+        else setPane("rail");
         break;
       case KEY.ENTER:
         event.preventDefault();

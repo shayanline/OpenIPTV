@@ -35,9 +35,9 @@ and this app used to print both meanings in one line of on screen help.
 2. **OK does the obvious thing where it is pressed.** At the picture that is always the
    channel list. On a focused button it is that button.
 3. **Left and right move within whatever is showing.** At the picture, left goes to the
-   channel list, because that is what is off the left of the screen. Nothing is off the right,
-   so right is not claimed: like any unrecognised key it just shows the banner, which is a
-   press that answers rather than a press that does nothing.
+   channel list, because that is what is off the left of the screen. In the panel, either
+   direction switches between the category and channel lists, preserving each list's cursor,
+   while the title bar cycles Search and Settings.
 4. **RETURN always goes back.** It clears the screen if anything is on it, closes the panel if
    the panel is open, and closes the application only when there is nothing left to close.
 
@@ -45,7 +45,7 @@ and this app used to print both meanings in one line of on screen help.
 |:--|:--|:--|:--|:--|:--|
 | Picture | Channel | Channel list | Shows the banner | Channel list | Clear, then close the app |
 | A failed channel | Channel | Channel list | Shows the banner | Channel list | Close the app |
-| Channel list | The highlight | Categories, then out | Channels, then out | Watch | Back to the picture |
+| Channel list | The highlight | Categories | Categories | Watch | Back to the picture |
 
 Law 1 is the one worth defending, and it is the reason nothing here can trap anybody: there is
 no state at the picture, including a channel that has failed, where channel up leaves the
@@ -148,7 +148,12 @@ among them:
   column as wide as the playlist's largest number, so the names line up whether there are nine
   channels or twelve thousand.
 
-The cursor answers the key and the column follows it, rather than the two moving together.
+The cursor answers the key and the column follows it, rather than the two moving together. Up and
+down walk each list and use the title bar as its boundary: reaching Search from the top returns to
+the top with down, and reaching it from the bottom returns to the bottom with up. Left and right
+switch columns without changing their remembered rows. Search and Settings themselves are a
+two-control horizontal ring; vertical movement leaves the ring for the list edge that matches the
+pressed direction.
 Arriving at a category is the most expensive thing this app does, because every row is thrown
 away and rebuilt from channel objects no memo has seen, and doing that on each press of a held
 key measured at six frames a second on a 2020 set. So the highlight moves at once and the column

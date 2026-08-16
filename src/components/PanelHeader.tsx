@@ -16,10 +16,8 @@ import { Icon } from "./Icon";
  * for and Settings is the one they reach for twice a month.
  *
  * The keys are one cursor position between them, not two. Up from the first category arrives
- * here, on Search, and left and right choose between the pair exactly as they move within
- * anything else that is showing: left off Search leaves the panel and right off Settings goes to
- * the channel column, which is what those two keys already did at the rail's edges. Nothing new
- * to learn, and no fifth law.
+ * here, on Search, and left and right cycle between the pair. Vertical movement returns to the
+ * list that led here, so the title bar never chooses a different column by accident.
  */
 export const PanelHeader = memo(function PanelHeader({
   active, on, searching, onSearch, onSettings,
