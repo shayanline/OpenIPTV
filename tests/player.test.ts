@@ -2,9 +2,30 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import assert from "node:assert/strict";
 import { Player, onTizen, type PlayerEvent } from "../src/services/player";
 
-// The browser path loads hls.js on demand. Half a megabyte off the disk is not worth waiting
-// for here, and the one test that goes that way wants the native route anyway.
-vi.mock("hls.js", () => ({ default: { isSupported: () => false } }));
+const hlsSupported = vi.hoisted(() => vi.fn(() => false));
+const hlsInstances = vi.hoisted(() => [] as unknown[]);
+
+vi.mock("hls.js", () => {
+  class FakeHls {
+    static isSupported = hlsSupported;
+    static Events = { ERROR: "error", MANIFEST_PARSED: "manifestParsed" };
+    static ErrorTypes = { NETWORK_ERROR: "network", MEDIA_ERROR: "media" };
+    static DefaultConfig = { loader: class {} };
+
+    constructor() {
+      hlsInstances.push(this);
+    }
+
+    on() {}
+    loadSource() {}
+    attachMedia() {}
+    destroy() {}
+    startLoad() {}
+    recoverMediaError() {}
+  }
+
+  return { default: FakeHls };
+});
 
 /**
  * The player, which is the riskiest thing in the application and had no tests at all.
@@ -65,6 +86,9 @@ const codes = () => events.filter((e) => e.type === "error").map((e) => e.code);
 
 beforeEach(() => {
   vi.useFakeTimers();
+  hlsSupported.mockReset();
+  hlsSupported.mockReturnValue(false);
+  hlsInstances.length = 0;
   av = fakeAVPlay();
   (window as unknown as { webapis: unknown }).webapis = { avplay: av };
   tvMuted = false;
@@ -314,6 +338,73 @@ test("a stream that ends is reported, and only once", () => {
   av.prepared?.ok();
   av.listener?.onstreamcompleted?.();
   expect(events.filter((e) => e.type === "ended")).toHaveLength(1);
+});
+
+test("the browser prefers native HLS when the video element supports it", async () => {
+  delete (window as unknown as { webapis?: unknown }).webapis;
+  hlsSupported.mockReturnValue(true);
+  const browser = new Player(() => {});
+  const video = document.createElement("video");
+  video.canPlayType = () => "maybe";
+  video.play = () => Promise.resolve();
+  browser.attach(video);
+
+  const url = "https://example.invalid/stream.m3u8";
+  browser.play(url);
+  await vi.advanceTimersByTimeAsync(0);
+
+  assert.equal(video.src, url);
+  assert.equal(hlsInstances.length, 0);
+  browser.stop();
+});
+
+test("browser repair keeps hls.js when native HLS is available", async () => {
+  delete (window as unknown as { webapis?: unknown }).webapis;
+  hlsSupported.mockReturnValue(true);
+  const browser = new Player(() => {});
+  const video = document.createElement("video");
+  video.canPlayType = () => "maybe";
+  browser.attach(video);
+
+  browser.play("https://example.invalid/stream.m3u8", true);
+  await vi.advanceTimersByTimeAsync(0);
+
+  assert.equal(hlsInstances.length, 1);
+  browser.stop();
+});
+
+test("the browser falls back to hls.js when native HLS is unavailable", async () => {
+  delete (window as unknown as { webapis?: unknown }).webapis;
+  hlsSupported.mockReturnValue(true);
+  const browser = new Player(() => {});
+  const video = document.createElement("video");
+  video.canPlayType = () => "";
+  browser.attach(video);
+
+  browser.play("https://example.invalid/stream.m3u8");
+  await vi.advanceTimersByTimeAsync(0);
+
+  assert.equal(hlsInstances.length, 1);
+  browser.stop();
+});
+
+test("a native HLS error falls back to hls.js", async () => {
+  delete (window as unknown as { webapis?: unknown }).webapis;
+  hlsSupported.mockReturnValue(true);
+  const browser = new Player(() => {});
+  const video = document.createElement("video");
+  video.canPlayType = () => "maybe";
+  video.play = () => Promise.resolve();
+  browser.attach(video);
+
+  browser.play("https://example.invalid/stream.m3u8");
+  await vi.advanceTimersByTimeAsync(0);
+  assert.equal(hlsInstances.length, 0);
+
+  video.dispatchEvent(new Event("error"));
+  await vi.advanceTimersByTimeAsync(0);
+  assert.equal(hlsInstances.length, 1);
+  browser.stop();
 });
 
 test("an abort the app caused itself is not reported as a fault", async () => {

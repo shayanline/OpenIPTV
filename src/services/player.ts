@@ -28,8 +28,8 @@ const loadHls = () => {
  * in the same firmware, and live playlists in the wild are full of long sliding windows,
  * unusual sequence numbering and discontinuities that a software player gives up on.
  *
- * In a desktop browser there is no AVPlay, so hls.js drives a plain <video>. Safari plays
- * HLS natively and needs neither.
+ * In a desktop browser there is no AVPlay, so native HLS drives a plain <video> where it is
+ * available, with hls.js as the fallback.
  */
 
 interface AVPlayListener {
@@ -200,6 +200,7 @@ function ensureSurface(): void {
 export class Player {
   private hls: InstanceType<typeof HlsType> | null = null;
   private video: HTMLVideoElement | null = null;
+  private nativeFailure: (() => void) | null = null;
   private gesture: (() => void) | null = null;
   /** Whether this attempt has already reported why it failed. */
   private failed = false;
@@ -319,8 +320,32 @@ export class Player {
     this.video = null;
   }
 
-  private onPlaying = () => this.emit({ type: "playing" });
+  private onPlaying = () => {
+    this.clearNativeFailure();
+    this.emit({ type: "playing" });
+  };
   private onWaiting = () => this.emit({ type: "buffering" });
+
+  private clearNativeFailure() {
+    if (!this.nativeFailure) return;
+    this.video?.removeEventListener("error", this.nativeFailure);
+    this.nativeFailure = null;
+  }
+
+  private playNative(url: string, browserRepair: boolean) {
+    const video = this.video;
+    if (!video) return;
+
+    this.clearNativeFailure();
+    const fallback = () => {
+      this.nativeFailure = null;
+      void this.playBrowser(url, browserRepair, false);
+    };
+    this.nativeFailure = fallback;
+    video.addEventListener("error", fallback, { once: true });
+    video.src = url;
+    this.tryPlay(video);
+  }
 
   play(
     url: string,
@@ -633,26 +658,25 @@ export class Player {
     } catch { /* nothing to restore */ }
   }
 
-  private async playBrowser(url: string, browserRepair: boolean) {
+  private async playBrowser(url: string, browserRepair: boolean, tryNative = true) {
     const video = this.video;
     if (!video) return;
     video.muted = this.muted;
     this.emit({ type: "buffering" });
+
+    if (!browserRepair && tryNative && video.canPlayType("application/vnd.apple.mpegurl")) {
+      this.playNative(url, browserRepair);
+      return;
+    }
 
     const Hls = await loadHls();
     // The viewer may have moved on while the engine was being fetched, and this attempt is
     // then for a channel nobody is watching.
     if (this.video !== video || this.failed) return;
 
-    // hls.js first, native second, and not the other way round. Chrome answers "maybe" to
-    // canPlayType for HLS and then cannot play it, so asking the browser what it supports
-    // sends every desktop down a path that fails. Where hls.js works it is the right
-    // engine; native is for Safari, which genuinely does play HLS and where hls.js does
-    // not run.
     if (!Hls.isSupported()) {
-      if (video.canPlayType("application/vnd.apple.mpegurl")) {
-        video.src = url;
-        this.tryPlay(video);
+      if (!browserRepair && tryNative && video.canPlayType("application/vnd.apple.mpegurl")) {
+        this.playNative(url, browserRepair);
       } else {
         this.fail("NOT_SUPPORTED");
       }
@@ -777,6 +801,7 @@ export class Player {
       this.hls.destroy();
       this.hls = null;
     }
+    this.clearNativeFailure();
     if (this.video) {
       this.video.removeAttribute("src");
       this.video.load();

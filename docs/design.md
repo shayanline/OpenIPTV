@@ -376,8 +376,8 @@ which is considerably more forgiving of awkward manifests than the browser engin
 firmware: long sliding windows, unusual sequence numbering and mid stream discontinuities are all
 common in live playlists and all defeat a software player sooner or later.
 
-On a desktop there is no AVPlay, so hls.js drives a plain `<video>`. Same UI, same playlist,
-instant reload, real dev tools.
+On a desktop there is no AVPlay, so native HLS drives a plain `<video>` where the browser
+supports it, with hls.js as the fallback. Same UI, same playlist, instant reload, real dev tools.
 
 ## One artifact, built for the floor
 

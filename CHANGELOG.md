@@ -2,6 +2,21 @@
 
 Notable changes, newest first, in the format of [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## 1.1.1
+
+### Changed
+
+- **Browser playback.** Native HLS is now used when the browser supports it, with hls.js retained
+  as the fallback and for compatibility repairs.
+- **Telewebion streams.** Native browser media requests use the original manifest, while hls.js
+  and Samsung TV requests continue using the rewritten manifest.
+
+### Fixed
+
+- **Browser playback for restricted segment origins.** Native playback no longer sends Telewebion
+  segments through XMLHttpRequest, so the browser does not reject them because of the upstream CORS
+  policy.
+
 ## 1.1.0
 
 ### Added
