@@ -330,6 +330,14 @@ jobs:
       # /OpenIPTV/ rather than from the root, and relative paths satisfy both without a second build.
       - run: npm run build
 
+      # The demo playlist stays outside public/, so Vite never copies it into the widget. It is added
+      # only to the Pages artifact, where Samsung reviewers can use it without OpenIPTV shipping a
+      # channel list or a default stream.
+      - name: Add the review demo playlist to Pages
+        run: |
+          mkdir -p dist/demo
+          cp demo/nasa.m3u dist/demo/nasa.m3u
+
       # There is no actions/configure-pages step here, and its absence is deliberate twice over.
       # Its only job is to report a base path for frameworks that need one baked in at build time,
       # and this build needs none because `base: "./"` makes every reference relative. Asking it to

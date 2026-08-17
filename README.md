@@ -10,6 +10,10 @@ the streams you point it at, and what you add stays on the television.
 **[Try it in a browser](https://shayanline.github.io/OpenIPTV)**, the same build as the one on the
 television. Arrow keys and Enter stand in for the D-pad and OK.
 
+The [Samsung review demo playlist](https://shayanline.github.io/OpenIPTV/demo/nasa.m3u) contains
+one NASA TV Public channel. It is published for certification testing and is not bundled with the
+widget or loaded by the app by default.
+
 ## A look at it
 
 |  |  |  |

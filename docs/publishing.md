@@ -150,8 +150,14 @@ version string.
    **working playlist address for the reviewers**. This is the requirement most likely to trip up an
    app that deliberately ships with nothing: Samsung's testers must be able to exercise every feature
    against live content, an application that cannot be tested fails with critical defects, and a
-   playlist that expires halfway through review counts as untestable. Give them something public,
-   lawful and stable, and keep it up for every subsequent update review too.
+   playlist that expires halfway through review counts as untestable.
+
+   This repository publishes a one channel NASA TV Public demo playlist at
+   [the Pages review address](https://shayanline.github.io/OpenIPTV/demo/nasa.m3u). It is added to
+   the Pages artifact rather than `public/`, so it is available for certification without becoming
+   part of the widget or a default playlist. Confirm that the current NASA programming is suitable
+   for the review before submitting, because NASA notes that some programming may include material
+   from third parties.
 
 7. **Request New Release**, then wait, then answer whatever comes back under Defect Resolve.
 
