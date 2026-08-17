@@ -91,6 +91,19 @@ TV_IP=192.168.0.10 npm run deploy    # builds, signs, installs, launches
 
 `npm run package` stops after writing `build/OpenIPTV.wgt`, for installing by hand.
 
+### Install through TizenBrew Installer Desktop
+
+[TizenBrew Installer Desktop](https://github.com/reisxd/TizenBrewInstaller/releases/latest) can fetch the latest widget from this repository and install it on a television in developer mode.
+
+1. Connect the television to the installer and enable developer mode.
+2. Enter `shayanline/OpenIPTV` as the GitHub repository.
+3. Let the installer create or select Samsung certificates when it asks. On Tizen 7 or later, it resigns the widget for the connected television before installing it.
+4. Launch OpenIPTV from the television's app list.
+
+The installer selects the first `.wgt` or `.tpk` file in the latest GitHub release. Every tagged release from this repository publishes `OpenIPTV.wgt`.
+
+On TVs before Tizen 7, the installer uses the released signature without creating a new one. The released widget is signed for the television used to produce that release, so another television needs a local build and a Samsung distributor certificate. Follow the manual build instructions above when that applies.
+
 ## Watch in a browser
 
 [shayanline.github.io/OpenIPTV](https://shayanline.github.io/OpenIPTV) is the latest release.
