@@ -1,5 +1,5 @@
 #EXTM3U
-# NASA TV Public, used as the single channel in this demo playlist.
-# The stream is served by NASA's public HLS endpoint.
-#EXTINF:-1 group-title="Science",NASA TV Public
-https://ntv1.akamaized.net/hls/live/2014075/NASA-NTV1-HLS/master.m3u8
+# Tears of Steel, used as the single channel in this demo playlist.
+# Blender Foundation releases the film under the CC BY 3.0 licence.
+#EXTINF:-1 group-title="Demo",Tears of Steel (CC BY 3.0)
+https://demo.unified-streaming.com/k8s/features/stable/video/tears-of-steel/tears-of-steel.ism/.m3u8
