@@ -41,13 +41,22 @@ const load = async () => {
   vi.doMock("../src/services/disk", () => ({
     BUDGET_BYTES: 5 * 1024 * 1024,
     read: async (key: string) => disk.get(key) ?? null,
-    write: async (key: string, value: Blob | string) => { disk.set(key, value); return true; },
+    write: async (key: string, value: Blob | string) => {
+      disk.set(key, value);
+      return true;
+    },
     forget: async (doomed: (key: string) => boolean) => {
       let gone = 0;
-      for (const key of [...disk.keys()]) if (doomed(key)) { disk.delete(key); gone += 1; }
+      for (const key of [...disk.keys()])
+        if (doomed(key)) {
+          disk.delete(key);
+          gone += 1;
+        }
       return gone;
     },
-    forgetAll: async () => { disk.clear(); },
+    forgetAll: async () => {
+      disk.clear();
+    },
     usage: async () => ({ bytes: 0, count: disk.size }),
     entries: async () => [...disk.keys()].map((key) => ({ key, bytes: 0, at: 0 })),
     evictionPlan: () => ({ evict: [], refused: false }),
@@ -109,7 +118,10 @@ test("the saved copy is shown before the network answers", async () => {
   disk.set(`playlist:${url}`, PLAYLIST);
 
   // A fetch that never settles, so the only thing on screen can be the cached copy.
-  vi.stubGlobal("fetch", vi.fn(() => new Promise(() => {})));
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(() => new Promise(() => {})),
+  );
   void s.useChannels.getState().load();
   await new Promise((r) => setTimeout(r, 0));
 
@@ -130,6 +142,7 @@ test("a failed refresh keeps the saved copy rather than emptying the screen", as
 
   await afterIdle();
   assert.match(s.useChannels.getState().error, /Showing the last saved copy/);
+  assert.equal(s.useChannels.getState().errorKey, "playlist.refreshFailed");
   assert.equal(s.useChannels.getState().channels.length, 2, "the cached channels went away");
 });
 
@@ -190,10 +203,10 @@ test("switching playlist calls off a refresh queued for the old one", async () =
   const fetchMock = vi.fn().mockResolvedValue({ ok: true, text: async () => OTHER });
   vi.stubGlobal("fetch", fetchMock);
 
-  await s.useChannels.getState().load();          // queues a refresh for the old playlist
+  await s.useChannels.getState().load(); // queues a refresh for the old playlist
   s.useSettings.getState().addPlaylist("Second", "http://list.invalid/b.m3u");
   s.useSettings.getState().set("activePlaylistId", s.useSettings.getState().playlists[1].id);
-  await s.useChannels.getState().load(true);      // which this must cancel
+  await s.useChannels.getState().load(true); // which this must cancel
 
   await afterIdle();
   assert.equal(fetchMock.mock.calls.length, 1, "the abandoned playlist came back anyway");
@@ -213,14 +226,20 @@ test("a failure with nothing cached says so plainly", async () => {
 test("an HTTP error is a failure, not an empty playlist", async () => {
   const s = await load();
   configure(s);
-  vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 404, text: async () => "" }));
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockResolvedValue({ ok: false, status: 404, text: async () => "" }),
+  );
   assert.match((await s.useChannels.getState().load()).error, /HTTP 404/);
 });
 
 test("a playlist that parses to nothing is reported rather than shown as empty", async () => {
   const s = await load();
   configure(s);
-  vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, text: async () => "not a playlist" }));
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockResolvedValue({ ok: true, text: async () => "not a playlist" }),
+  );
   assert.match((await s.useChannels.getState().load()).error, /no channels/);
 });
 
@@ -231,13 +250,17 @@ test("the slower of two overlapping loads does not overwrite the newer one", asy
   // The first request is slow and the second is quick, which is the order that used to lose:
   // whichever answered last won, so switching playlist twice landed on the first one asked for.
   let releaseSlow: (v: unknown) => void = () => {};
-  const fetchMock = vi.fn()
-    .mockImplementationOnce((_url: string, init: { signal: AbortSignal }) =>
-      new Promise((resolve, reject) => {
-        init.signal.addEventListener("abort", () =>
-          reject(Object.assign(new Error("aborted"), { name: "AbortError" })));
-        releaseSlow = () => resolve({ ok: true, text: async () => PLAYLIST });
-      }))
+  const fetchMock = vi
+    .fn()
+    .mockImplementationOnce(
+      (_url: string, init: { signal: AbortSignal }) =>
+        new Promise((resolve, reject) => {
+          init.signal.addEventListener("abort", () =>
+            reject(Object.assign(new Error("aborted"), { name: "AbortError" })),
+          );
+          releaseSlow = () => resolve({ ok: true, text: async () => PLAYLIST });
+        }),
+    )
     .mockImplementationOnce(async () => ({ ok: true, text: async () => OTHER }));
   vi.stubGlobal("fetch", fetchMock);
 
@@ -279,14 +302,17 @@ test("sorting A to Z is applied to what was fetched", async () => {
   const s = await load();
   configure(s);
   s.useSettings.getState().set("sortAlphabetically", true);
-  vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
-    ok: true,
-    text: async () => `#EXTM3U
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockResolvedValue({
+      ok: true,
+      text: async () => `#EXTM3U
 #EXTINF:-1,Zeta
 http://example.invalid/z.m3u8
 #EXTINF:-1,Alpha
 http://example.invalid/a.m3u8`,
-  }));
+    }),
+  );
 
   await s.useChannels.getState().load();
   expect(s.useChannels.getState().channels.map((c) => c.name)).toEqual(["Alpha", "Zeta"]);
@@ -332,7 +358,7 @@ test("the sweep clears the playlists older versions kept in localStorage", async
 test("editing a playlist's address does not serve the old one from cache", async () => {
   const s = await load();
   configure(s, "http://list.invalid/before.m3u");
-  seedCache(s, PLAYLIST, 1 * HOUR);          // fresh, so it would be trusted outright
+  seedCache(s, PLAYLIST, 1 * HOUR); // fresh, so it would be trusted outright
   const id = s.useSettings.getState().playlists[0].id;
 
   // The id is unchanged, which is exactly the case that used to go wrong: the cache was
@@ -349,20 +375,26 @@ test("sorting A to Z counts numbers rather than spelling them", async () => {
   const s = await load();
   configure(s);
   s.useSettings.getState().set("sortAlphabetically", true);
-  vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
-    ok: true,
-    text: async () => `#EXTM3U
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockResolvedValue({
+      ok: true,
+      text: async () => `#EXTM3U
 #EXTINF:-1,Sport 10
 http://example.invalid/10.m3u8
 #EXTINF:-1,Sport 2
 http://example.invalid/2.m3u8
 #EXTINF:-1,Sport 1
 http://example.invalid/1.m3u8`,
-  }));
+    }),
+  );
 
   // Plain string ordering puts "Sport 10" before "Sport 2", which is alphabetical at the
   // viewer rather than for them. These are channel names and they are full of numbers.
   await s.useChannels.getState().load();
-  expect(s.useChannels.getState().channels.map((c) => c.name))
-    .toEqual(["Sport 1", "Sport 2", "Sport 10"]);
+  expect(s.useChannels.getState().channels.map((c) => c.name)).toEqual([
+    "Sport 1",
+    "Sport 2",
+    "Sport 10",
+  ]);
 });

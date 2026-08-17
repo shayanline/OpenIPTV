@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from "react";
+import { useLocale } from "../../hooks/useLocale";
 import { KEY, keyGrants, supportedKeys } from "../../hooks/useRemote";
 import { supportsFlexGap } from "../../services/capabilities";
 import * as disk from "../../services/disk";
 import { repairState } from "../../services/repair";
+import type { MessageKey } from "../../services/locale";
 import { APP_VERSION } from "../../meta";
 
 /**
@@ -43,17 +45,20 @@ const KEPT = 8;
  * Deliberately says how many hosts have been diagnosed even when nothing is serving, because that
  * is what distinguishes a television that has repaired something before from one that never has.
  */
-function compatibilityFact(): string {
+function compatibilityFact(t: ReturnType<typeof useLocale>["t"]): string {
   const { state, port, why, hosts } = repairState();
-  const known = hosts.length ? `, ${hosts.length} host${hosts.length === 1 ? "" : "s"} known` : "";
-  if (state === "serving") return `serving on port ${port}${known}`;
+  const known = hosts.length ? t("diagnostics.knownHosts", { count: hosts.length }) : "";
+  if (state === "serving")
+    return t("diagnostics.compatibilityServing", { port: port ?? "", known });
   // Bound and quiet, which is where a channel needing no repair leaves it. Named separately from
   // idle because the two look identical to a viewer and mean different things to anybody reading a
   // fault report: this one has already proved the television can do it.
-  if (state === "listening") return `listening on port ${port}, nothing to repair${known}`;
-  if (state === "starting") return `starting${known}`;
-  if (state === "unavailable") return `not available on this TV: ${why}`;
-  return `idle${known}`;
+  if (state === "listening")
+    return t("diagnostics.compatibilityListening", { port: port ?? "", known });
+  if (state === "starting") return t("diagnostics.compatibilityStarting", { known });
+  if (state === "unavailable")
+    return t("diagnostics.compatibilityUnavailable", { reason: why });
+  return t("diagnostics.compatibilityIdle", { known });
 }
 
 function Fact({ label, value }: { label: string; value: string }) {
@@ -66,6 +71,7 @@ function Fact({ label, value }: { label: string; value: string }) {
 }
 
 export function Diagnostics() {
+  const { t } = useLocale();
   const [presses, setPresses] = useState<Press[]>([]);
   /**
    * What the cache is holding, which is the one fact here that is not fixed.
@@ -75,20 +81,28 @@ export function Diagnostics() {
    * and a figure that ticks upwards on its own invites the reader to wonder what is going on
    * rather than telling them anything.
    */
-  const [cache, setCache] = useState("reading\u2026");
+  const [cache, setCache] = useState(() => t("diagnostics.reading"));
   useEffect(() => {
     let live = true;
     void disk.usage().then(({ bytes, count }) => {
       if (!live) return;
       const share = Math.round((bytes / disk.BUDGET_BYTES) * 100);
-      const entries = `${count} ${count === 1 ? "entry" : "entries"}`;
-      setCache(`${(bytes / 1048576).toFixed(2)}MB of `
-        + `${Math.round(disk.BUDGET_BYTES / 1048576)}MB, ${share}%, in ${entries}`);
+      const entries = t("diagnostics.entryCount", { count });
+      setCache(
+        t("diagnostics.cacheUsage", {
+          used: (bytes / 1048576).toFixed(2),
+          budget: Math.round(disk.BUDGET_BYTES / 1048576),
+          share,
+          entries,
+        }),
+      );
     });
-    return () => { live = false; };
-  }, []);
+    return () => {
+      live = false;
+    };
+  }, [t]);
   /** Read once. None of it changes while the app is running, and the probe costs a layout. */
-  const facts = useRef<{ label: string; value: string }[] | null>(null);
+  const facts = useRef<{ label: MessageKey; value: string }[] | null>(null);
 
   if (!facts.current) {
     const ua = navigator.userAgent;
@@ -100,32 +114,58 @@ export function Diagnostics() {
     const supported = supportedKeys();
 
     facts.current = [
-      { label: "App", value: APP_VERSION },
-      { label: "Platform", value: tizen ? `Tizen ${tizen}` : "Not a Samsung TV" },
-      { label: "Engine", value: chromium ? `Chromium ${chromium}` : "unknown" },
-      { label: "Screen", value: `${window.innerWidth}x${window.innerHeight}` },
-      { label: "Memory", value: memory ? `${memory}GB` : "not reported" },
+      { label: "diagnostics.app", value: APP_VERSION },
       {
-        label: "Script heap",
-        value: heap ? `${Math.round(heap.jsHeapSizeLimit / 1048576)}MB` : "not reported",
+        label: "diagnostics.platform",
+        value: tizen ? t("diagnostics.tizen", { version: tizen }) : t("diagnostics.notSamsung"),
+      },
+      {
+        label: "diagnostics.engine",
+        value: chromium
+          ? t("diagnostics.chromium", { version: chromium })
+          : t("diagnostics.unknown"),
+      },
+      { label: "diagnostics.screen", value: `${window.innerWidth}x${window.innerHeight}` },
+      {
+        label: "diagnostics.memory",
+        value: memory ? `${memory}GB` : t("diagnostics.notReported"),
+      },
+      {
+        label: "diagnostics.scriptHeap",
+        value: heap
+          ? `${Math.round(heap.jsHeapSizeLimit / 1048576)}MB`
+          : t("diagnostics.notReported"),
       },
       // The one capability the app measures rather than assumes, and the one that decides
       // how the whole interface is spaced. Worth being able to see on the set itself.
-      { label: "Flex gap", value: supportsFlexGap() ? "yes" : "no, using the margin fallback" },
       {
-        label: "Keys granted",
+        label: "diagnostics.flexGap",
+        value: supportsFlexGap() ? t("diagnostics.yes") : t("diagnostics.noMarginFallback"),
+      },
+      {
+        label: "diagnostics.keysGranted",
         value: granted.length
           ? `${granted.filter((g) => g.granted).length} of ${granted.length}`
-          : "none, this is not a television",
+          : t("diagnostics.noneNotTv"),
       },
       ...(granted.some((g) => !g.granted)
-        ? [{
-            label: "Refused",
-            value: granted.filter((g) => !g.granted).map((g) => g.name).join(", "),
-          }]
+        ? [
+            {
+              label: "diagnostics.refused" as MessageKey,
+              value: granted
+                .filter((g) => !g.granted)
+                .map((g) => g.name)
+                .join(", "),
+            },
+          ]
         : []),
       ...(supported.length
-        ? [{ label: "Remote has", value: `${supported.length} key${supported.length === 1 ? "" : "s"}` }]
+        ? [
+            {
+              label: "diagnostics.remoteHas" as MessageKey,
+              value: t("diagnostics.keysCount", { count: supported.length }),
+            },
+          ]
         : []),
     ];
   }
@@ -140,7 +180,9 @@ export function Diagnostics() {
    */
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      setPresses((had) => [{ code: e.keyCode, key: e.key, at: Date.now() }, ...had].slice(0, KEPT));
+      setPresses((had) =>
+        [{ code: e.keyCode, key: e.key, at: Date.now() }, ...had].slice(0, KEPT),
+      );
     };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
@@ -148,40 +190,40 @@ export function Diagnostics() {
 
   return (
     <>
-      <h3>Diagnostics</h3>
-      <p className="sheet-lead">
-        This device's platform and remote input. Use these details when something works on one
-        device but not another.
-      </p>
+      <h3>{t("diagnostics.title")}</h3>
+      <p className="sheet-lead">{t("diagnostics.lead")}</p>
 
       <div className="diag-facts">
-        {facts.current.map((f) => <Fact key={f.label} label={f.label} value={f.value} />)}
+        {facts.current.map((f) => (
+          <Fact key={f.label} label={t(f.label)} value={f.value} />
+        ))}
         {/* Not in `facts`, because that is read once during render and this arrives later. */}
-        <Fact label="Cached" value={cache} />
+        <Fact label={t("diagnostics.cached")} value={cache} />
         {/*
-          * Compatibility, read on every render rather than once, because it is the one fact here
-          * that changes while somebody is looking at it: a channel repaired in the last minute
-          * moves this from idle to serving. It is also the only way to tell "this television
-          * cannot do it" from "nothing has needed it yet", which is the first question anybody
-          * asks when the toggle appears to have done nothing.
-          */}
-        <Fact label="Compatibility" value={compatibilityFact()} />
+         * Compatibility, read on every render rather than once, because it is the one fact here
+         * that changes while somebody is looking at it: a channel repaired in the last minute
+         * moves this from idle to serving. It is also the only way to tell "this television
+         * cannot do it" from "nothing has needed it yet", which is the first question anybody
+         * asks when the toggle appears to have done nothing.
+         */}
+        <Fact label={t("diagnostics.compatibility")} value={compatibilityFact(t)} />
       </div>
 
-      <h4 className="diag-heading">Remote keys</h4>
-      <p className="sheet-lead">
-        Press a remote button. The last eight keys received by the app appear here, including keys
-        the app does not use. If a button is missing, it did not reach the app.
-      </p>
+      <h4 className="diag-heading">{t("diagnostics.remoteKeys")}</h4>
+      <p className="sheet-lead">{t("diagnostics.remoteLead")}</p>
       <div className="diag-keys">
-        {presses.length === 0
-          ? <p className="empty">No keys received yet.</p>
-          : presses.map((p) => (
-              <div className="diag-press" key={`${p.at}-${p.code}`}>
-                <span className="diag-code">{p.code}</span>
-                <span className="diag-name">{NAMED[p.code] ?? p.key ?? "not a key this app knows"}</span>
-              </div>
-            ))}
+        {presses.length === 0 ? (
+          <p className="empty">{t("diagnostics.noKeys")}</p>
+        ) : (
+          presses.map((p) => (
+            <div className="diag-press" key={`${p.at}-${p.code}`}>
+              <span className="diag-code">{p.code}</span>
+              <span className="diag-name">
+                {NAMED[p.code] ?? p.key ?? "not a key this app knows"}
+              </span>
+            </div>
+          ))
+        )}
       </div>
     </>
   );

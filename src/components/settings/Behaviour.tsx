@@ -1,25 +1,46 @@
 import { ASPECTS, useSettings } from "../../stores/settings";
+import { useLocale } from "../../hooks/useLocale";
 import { Choice, Row, Toggle } from "./Field";
 import { stopRepair } from "../../services/repair";
 
 export function Playback() {
   const s = useSettings();
+  const { t } = useLocale();
+  const aspects = ASPECTS.map((aspect) => ({
+    ...aspect,
+    label: t(
+      aspect.id === "fill"
+        ? "settings.fill"
+        : aspect.id === "fit"
+          ? "settings.fit"
+          : "settings.stretch",
+    ),
+    note: t(
+      aspect.id === "fill"
+        ? "settings.fillHint"
+        : aspect.id === "fit"
+          ? "settings.fitHint"
+          : "settings.stretchHint",
+    ),
+  }));
 
   return (
     <>
-      <h3>Playback</h3>
+      <h3>{t("settings.playback")}</h3>
       <Row
-        label="Screen fit"
-        hint={ASPECTS.find((a) => a.id === s.aspectId)?.note}
+        label={t("settings.screenFit")}
+        hint={aspects.find((a) => a.id === s.aspectId)?.note}
       >
-        <Choice label="Screen fit" options={ASPECTS} value={s.aspectId} onChange={(id) => s.set("aspectId", id)} />
+        <Choice
+          label={t("settings.screenFit")}
+          options={aspects}
+          value={s.aspectId}
+          onChange={(id) => s.set("aspectId", id)}
+        />
       </Row>
-      <Row
-        label="Compatibility mode"
-        hint="Use this if a channel shows one frame, then stops. It may use additional data while repairing the stream."
-      >
+      <Row label={t("settings.compatibility")} hint={t("settings.compatibilityHint")}>
         <Toggle
-          label="Compatibility mode"
+          label={t("settings.compatibility")}
           value={s.compatibility}
           onChange={(v) => {
             s.set("compatibility", v);

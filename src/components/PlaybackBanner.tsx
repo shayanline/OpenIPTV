@@ -1,3 +1,4 @@
+import { useLocale } from "../hooks/useLocale";
 import type { Channel } from "../types";
 import { Text } from "./Text";
 import { Logo } from "./Logo";
@@ -32,29 +33,49 @@ import { KeyGuide } from "./KeyGuide";
 
 const BANNER_LOGO = { width: 132, height: 68 };
 
-export function PlaybackBanner({ channel, position }: {
+export function PlaybackBanner({
+  channel,
+  position,
+}: {
   channel: Channel;
   /** Where this channel sits in the list channel up and down walks. */
   position?: { at: number; of: number; list: string };
 }) {
+  const { t, number, direction } = useLocale();
+  const inlineEndArrow = direction === "rtl" ? "←" : "→";
+  const displayName = channel.name || t("channel.unnamed");
   return (
     <div className="pb-stack">
       <div className="pb">
         {/* The number first and largest, because it is the one piece of a channel's identity a
             viewer can type, and on a row with no artwork it is all there is. */}
-        <span className="pb-number">{channel.number}</span>
-        <Logo src={channel.logo} alt={channel.name} className="pb-logo"
-              width={BANNER_LOGO.width} height={BANNER_LOGO.height} intrinsic />
+        <span className="pb-number">{number(channel.number)}</span>
+        <Logo
+          src={channel.logo}
+          alt={displayName}
+          className="pb-logo"
+          width={BANNER_LOGO.width}
+          height={BANNER_LOGO.height}
+          intrinsic
+        />
         <div className="pb-id">
-          <Text value={channel.name} className="pb-title" />
+          <Text value={displayName} className="pb-title" />
           <span className="pb-meta">
             {channel.quality && <span className="pb-quality">{channel.quality}</span>}
             {/* The list channel up and down walks, and where in it this channel is, so the
                 scope of the next press is stated rather than discovered. */}
-            {position
-              ? <Text value={`${position.at} of ${position.of} in ${position.list}`}
-                      className="pb-group" />
-              : <Text value={channel.group} className="pb-group" />}
+            {position ? (
+              <Text
+                value={t("banner.position", {
+                  at: number(position.at),
+                  of: number(position.of),
+                  list: position.list,
+                })}
+                className="pb-group"
+              />
+            ) : (
+              <Text value={channel.group} className="pb-group" />
+            )}
           </span>
         </div>
       </div>
@@ -67,13 +88,13 @@ export function PlaybackBanner({ channel, position }: {
       <KeyGuide
         className="pb-hints"
         items={[
-          { keys: ["\u2191", "\u2193"], label: "Change channel" },
-          { keys: ["OK"], label: "All channels" },
-          { keys: ["Green"], label: "Favourite" },
+          { keys: ["\u2191", "\u2193"], label: t("guide.changeChannel") },
+          { keys: ["OK"], label: t("common.allChannels") },
+          { keys: ["Green"], label: t("guide.favourite") },
           /* Two keys, one label, because two keys do it. Right is the shorter reach of the pair
              and RETURN is the one every other screen uses, so both are taught rather than
              leaving whichever the viewer tries first to be the one that appears not to work. */
-          { keys: ["Return", "\u2192"], label: "Hide this" },
+          { keys: ["Return", inlineEndArrow], label: t("guide.hideThis") },
         ]}
       />
     </div>

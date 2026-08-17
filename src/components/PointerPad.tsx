@@ -1,4 +1,5 @@
 import { useRef, useState } from "react";
+import { useLocale } from "../hooks/useLocale";
 import { KEY, sendKey } from "../hooks/useRemote";
 
 /**
@@ -28,6 +29,7 @@ const WIDTH = 208;
 const HEIGHT = 284;
 
 export function PointerPad({ shown }: { shown: boolean }) {
+  const { t } = useLocale();
   const [at, setAt] = useState<{ x: number; y: number } | null>(null);
   const drag = useRef<{ dx: number; dy: number } | null>(null);
   const shell = useRef<HTMLDivElement>(null);
@@ -73,31 +75,83 @@ export function PointerPad({ shown }: { shown: boolean }) {
       {/* The wheel. The physical one carries no printed arrows, so these are the same faint
           chevrons the remote's own outline uses rather than four drawn arrows. */}
       <div className="pad-wheel">
-        <button type="button" tabIndex={-1} className="pad-dir pad-up"
-                onClick={() => sendKey(KEY.UP)} aria-label="Up"><i className="chev" /></button>
-        <button type="button" tabIndex={-1} className="pad-dir pad-right"
-                onClick={() => sendKey(KEY.RIGHT)} aria-label="Right"><i className="chev" /></button>
-        <button type="button" tabIndex={-1} className="pad-dir pad-down"
-                onClick={() => sendKey(KEY.DOWN)} aria-label="Down"><i className="chev" /></button>
-        <button type="button" tabIndex={-1} className="pad-dir pad-left"
-                onClick={() => sendKey(KEY.LEFT)} aria-label="Left"><i className="chev" /></button>
-        <button type="button" tabIndex={-1} className="pad-ok"
-                onClick={() => sendKey(KEY.ENTER)} aria-label="Select">OK</button>
+        <button
+          type="button"
+          tabIndex={-1}
+          className="pad-dir pad-up"
+          onClick={() => sendKey(KEY.UP)}
+          aria-label={t("common.up")}
+        >
+          <i className="chev" />
+        </button>
+        <button
+          type="button"
+          tabIndex={-1}
+          className="pad-dir pad-right"
+          onClick={() => sendKey(KEY.RIGHT)}
+          aria-label={t("common.right")}
+        >
+          <i className="chev" />
+        </button>
+        <button
+          type="button"
+          tabIndex={-1}
+          className="pad-dir pad-down"
+          onClick={() => sendKey(KEY.DOWN)}
+          aria-label={t("common.down")}
+        >
+          <i className="chev" />
+        </button>
+        <button
+          type="button"
+          tabIndex={-1}
+          className="pad-dir pad-left"
+          onClick={() => sendKey(KEY.LEFT)}
+          aria-label={t("common.left")}
+        >
+          <i className="chev" />
+        </button>
+        <button
+          type="button"
+          tabIndex={-1}
+          className="pad-ok"
+          onClick={() => sendKey(KEY.ENTER)}
+          aria-label={t("common.select")}
+        >
+          {t("common.ok")}
+        </button>
       </div>
 
       {/* Return and Play, in the places and the order the remote puts them. Home sits between
           them on the hardware and is left out here: the television answers it, and an
           application drawing a button that does nothing would only mislead. */}
       <div className="pad-trio">
-        <button type="button" tabIndex={-1} className="pad-round" onClick={() => sendKey(KEY.BACK)}
-                aria-label="Return">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9"
-               strokeLinecap="round" strokeLinejoin="round">
-            <path d="M9 6.5L4.5 11 9 15.5" /><path d="M4.5 11h9a6 6 0 0 1 0 12h-2" />
+        <button
+          type="button"
+          tabIndex={-1}
+          className="pad-round"
+          onClick={() => sendKey(KEY.BACK)}
+          aria-label={t("common.returnKey")}
+        >
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.9"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="M9 6.5L4.5 11 9 15.5" />
+            <path d="M4.5 11h9a6 6 0 0 1 0 12h-2" />
           </svg>
         </button>
-        <button type="button" tabIndex={-1} className="pad-round"
-                onClick={() => sendKey(KEY.PLAY_PAUSE)} aria-label="Play or pause">
+        <button
+          type="button"
+          tabIndex={-1}
+          className="pad-round"
+          onClick={() => sendKey(KEY.PLAY_PAUSE)}
+          aria-label={t("common.playPause")}
+        >
           <svg viewBox="0 0 24 24" fill="currentColor">
             <path d="M4 4.5l9 7.5-9 7.5z" />
             <rect x="15" y="4.5" width="2.4" height="15" rx="1" />

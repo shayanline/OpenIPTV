@@ -1,4 +1,5 @@
 import { memo, useEffect, useRef, useState } from "react";
+import { useLocale } from "../hooks/useLocale";
 import type { Channel } from "../types";
 import { Text } from "./Text";
 import { Icon } from "./Icon";
@@ -69,8 +70,18 @@ interface Props {
  * completely: the whole window rebuilt on each press while appearing to be optimised.
  */
 const Row = memo(function Row({
-  channel, index, selected, playing, live, favourite, showNumbers, showLogos, settled, top,
-  height, onPick,
+  channel,
+  index,
+  selected,
+  playing,
+  live,
+  favourite,
+  showNumbers,
+  showLogos,
+  settled,
+  top,
+  height,
+  onPick,
 }: {
   channel: Channel;
   index: number;
@@ -92,6 +103,8 @@ const Row = memo(function Row({
   height: number;
   onPick: (index: number) => void;
 }) {
+  const { t, number } = useLocale();
+  const displayName = channel.name || t("channel.unnamed");
   return (
     <button
       type="button"
@@ -99,24 +112,35 @@ const Row = memo(function Row({
       style={{ top, height }}
       onClick={() => onPick(index)}
     >
-      {showNumbers && <span className="ch-number">{channel.number}</span>}
+      {showNumbers && <span className="ch-number">{number(channel.number)}</span>}
       {showLogos && (
         // Where there is no number column, a channel with no artwork shows its number. Where
         // there is one, it shows a quiet television instead: with both, the row read "1 1
         // Channel Alpha".
-        <Logo src={channel.logo} alt={channel.name} fetchable={settled}
-              label={showNumbers ? undefined : String(channel.number)}
-              width={LOGO_BOX.width} height={LOGO_BOX.height} />
+        <Logo
+          src={channel.logo}
+          alt={displayName}
+          fetchable={settled}
+          label={showNumbers ? undefined : number(channel.number)}
+          width={LOGO_BOX.width}
+          height={LOGO_BOX.height}
+        />
       )}
-      <Text value={channel.name} className="row-label" />
-      {favourite && <span className="ch-star"><Icon name="star" /></span>}
+      <Text value={displayName} className="row-label" />
+      {favourite && (
+        <span className="ch-star">
+          <Icon name="star" />
+        </span>
+      )}
       {channel.quality && <span className="ch-badge">{channel.quality}</span>}
       {/* The dot marks the channel you are on. It only pulses when that channel is actually
           running, because a pulse means live, and saying "live" over a frozen or paused
           picture is the marker lying about the one thing it is for. */}
       {playing && (
-        <span className={`playing-dot ${live ? "live" : ""}`}
-              title={live ? "Playing now" : "The channel you are on"} />
+        <span
+          className={`playing-dot ${live ? "live" : ""}`}
+          title={live ? t("channel.playingNow") : t("channel.youAreOn")}
+        />
       )}
     </button>
   );
@@ -128,9 +152,22 @@ const Row = memo(function Row({
  * notice card coming and going.
  */
 export const ChannelList = memo(function ChannelList({
-  channels, category, index, focused, playingId, live, favourites, loading,
-  showNumbers, showLogos, scale, search, numberDigits, onSelect,
+  channels,
+  category,
+  index,
+  focused,
+  playingId,
+  live,
+  favourites,
+  loading,
+  showNumbers,
+  showLogos,
+  scale,
+  search,
+  numberDigits,
+  onSelect,
 }: Props) {
+  const { t, number } = useLocale();
   const viewport = useRef<HTMLDivElement>(null);
   const height = useViewport(viewport);
   /*
@@ -243,65 +280,67 @@ export const ChannelList = memo(function ChannelList({
       style={{ "--ch-digits": numberDigits } as React.CSSProperties}
     >
       {/*
-        * Same header height as the rail, so the two lists start on the same line, and the same
-        * shape: what the column is, and how many are in it.
-        *
-        * The name rather than "Channels", which said nothing a column full of channels was not
-        * already saying: "users should always know exactly where they are within an
-        * application". The count is back, and it is no longer a repetition of the rail's: while
-        * a search is showing, the rail's counts describe categories nobody is looking at, and
-        * this one describes the list actually on screen.
-        */}
+       * Same header height as the rail, so the two lists start on the same line, and the same
+       * shape: what the column is, and how many are in it.
+       *
+       * The name rather than "Channels", which said nothing a column full of channels was not
+       * already saying: "users should always know exactly where they are within an
+       * application". The count is back, and it is no longer a repetition of the rail's: while
+       * a search is showing, the rail's counts describe categories nobody is looking at, and
+       * this one describes the list actually on screen.
+       */}
       <div className="pane-head">
-        {search
-          ? (
-            <SearchField
-              value={search.query}
-              focused={search.onField}
-              shown={channels.length}
-              total={search.total}
-              onChange={search.onQuery}
-            />
-          )
-          : (
-            <>
-              <Text value={category || "Channels"} className="panel-title" />
-              {!!channels.length && <span className="count">{channels.length}</span>}
-            </>
-          )}
+        {search ? (
+          <SearchField
+            value={search.query}
+            focused={search.onField}
+            shown={channels.length}
+            total={search.total}
+            onChange={search.onQuery}
+          />
+        ) : (
+          <>
+            <Text value={category || t("channel.channels")} className="panel-title" />
+            {!!channels.length && <span className="count">{number(channels.length)}</span>}
+          </>
+        )}
       </div>
       <div className="viewport" ref={viewport}>
-        {loading && !channels.length
-          ? Array.from({ length: 8 }, (_, i) => (
-              /* Eight identical placeholders with no identity of their own and no order to
+        {loading && !channels.length ? (
+          Array.from({ length: 8 }, (_, i) => (
+            /* Eight identical placeholders with no identity of their own and no order to
                  preserve, so the index is the only key they have and reordering them would
                  mean nothing. */
-              // biome-ignore lint/suspicious/noArrayIndexKey: placeholders have no identity
-              <div className="row" key={i}>
-                <span className="sk sk-logo" />
-                <span className="sk sk-title" />
-              </div>
-            ))
-          : <div className="window" style={{ transform: `translateY(${-win.offset}px)` }}>{rows}</div>}
+            // biome-ignore lint/suspicious/noArrayIndexKey: placeholders have no identity
+            <div className="row" key={i}>
+              <span className="sk sk-logo" />
+              <span className="sk sk-title" />
+            </div>
+          ))
+        ) : (
+          <div className="window" style={{ transform: `translateY(${-win.offset}px)` }}>
+            {rows}
+          </div>
+        )}
         {/*
-          * Nothing to show, said three different ways, because they are three different
-          * situations and one sentence for all of them would be wrong twice.
-          *
-          * A search with nothing typed has not failed, it has not started, so it says what to
-          * do. A search that matched nothing names what was looked for, since a viewer typing
-          * on a television is often typing a letter they did not mean. An empty category is the
-          * remaining case and keeps what it always said.
-          *
-          * There is no case for an empty Favourites: that row is only in the rail while it has
-          * something in it, so there is no way to be standing in an empty one.
-          */}
+         * Nothing to show, said three different ways, because they are three different
+         * situations and one sentence for all of them would be wrong twice.
+         *
+         * A search with nothing typed has not failed, it has not started, so it says what to
+         * do. A search that matched nothing names what was looked for, since a viewer typing
+         * on a television is often typing a letter they did not mean. An empty category is the
+         * remaining case and keeps what it always said.
+         *
+         * There is no case for an empty Favourites: that row is only in the rail while it has
+         * something in it, so there is no way to be standing in an empty one.
+         */}
         {!loading && !channels.length && (
           <p className="empty">
             {!search
-              ? "Nothing in this category."
+              ? t("channel.nothingInCategory")
               : search.query.trim()
-                ? `No channel matches \u201c${search.query.trim()}\u201d.`
-                : "Type a channel name."}
+                ? t("channel.noMatches", { query: search.query.trim() })
+                : t("channel.typeName")}
           </p>
         )}
       </div>

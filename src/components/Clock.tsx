@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
+import { useLocale } from "../hooks/useLocale";
 
 export function Clock() {
+  const { time } = useLocale();
   const [now, setNow] = useState(() => new Date());
   useEffect(() => {
     // Tick on the minute rather than every second: nothing on screen shows seconds, and
@@ -8,9 +10,5 @@ export function Clock() {
     const id = window.setInterval(() => setNow(new Date()), 20_000);
     return () => window.clearInterval(id);
   }, []);
-  return (
-    <div className="clock">
-      {now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-    </div>
-  );
+  return <div className="clock">{time(now)}</div>;
 }

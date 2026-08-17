@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useLocale } from "../hooks/useLocale";
 import { Icon } from "./Icon";
 import { Text } from "./Text";
 import { KeyGuide } from "./KeyGuide";
@@ -39,7 +40,15 @@ const SLOW_AFTER_S = 8;
 const FAULT_SETTLE_MS = 500;
 
 export function PictureState({
-  channel, busy, paused, filling, waited, fault, retryIn, attempt, attempts,
+  channel,
+  busy,
+  paused,
+  filling,
+  waited,
+  fault,
+  retryIn,
+  attempt,
+  attempts,
 }: {
   /** The channel this is about, named only when something has gone wrong with it. */
   channel: string;
@@ -56,6 +65,7 @@ export function PictureState({
   attempt: number;
   attempts: number;
 }) {
+  const { t, number } = useLocale();
   /*
    * A fault is shown once it has lasted, and dropped the moment it clears.
    *
@@ -65,29 +75,41 @@ export function PictureState({
    */
   const [settled, setSettled] = useState("");
   useEffect(() => {
-    if (!fault) { setSettled(""); return; }
+    if (!fault) {
+      setSettled("");
+      return;
+    }
     const t = window.setTimeout(() => setSettled(fault), FAULT_SETTLE_MS);
     return () => window.clearTimeout(t);
   }, [fault]);
 
   if (settled) {
-    const { why, fix } = explain(settled);
+    const reason = explain(settled);
     const trying = attempt < attempts;
     return (
       <div className="plate picture-state failed" role="alert">
-        <span className="picture-state-mark warn"><Icon name="warn" /></span>
-        <Text value={channel} className="picture-state-channel" />
-        <p className="picture-state-word">{why}</p>
-        <p className="picture-state-note">{fix}</p>
+        <span className="picture-state-mark warn">
+          <Icon name="warn" />
+        </span>
+        <Text value={channel || t("channel.unnamed")} className="picture-state-channel" />
+        <p className="picture-state-word">{t(reason.whyKey)}</p>
+        <p className="picture-state-note">{t(reason.fixKey)}</p>
 
         {/* What the app is doing about it, in the present tense. Without this the card is a
             verdict, and a verdict invites turning the television off. */}
         <p className="picture-state-doing">
-          {trying
-            ? <><span className="spinner small" aria-hidden="true" />
-                Trying again{retryIn > 0 ? ` in ${retryIn} second${retryIn === 1 ? "" : "s"}` : "\u2026"}
-                {attempt > 0 && ` (${attempt + 1} of ${attempts})`}</>
-            : "Tried three times without success. Try another channel and come back later."}
+          {trying ? (
+            <>
+              <span className="spinner small" aria-hidden="true" />
+              {t("picture.tryingAgain", {
+                seconds: retryIn,
+                attempt,
+                attempts,
+              })}
+            </>
+          ) : (
+            t("picture.failedAfterRetries")
+          )}
         </p>
 
         {/* The banner is hidden while this is up, so this is the only guide on screen and it
@@ -95,9 +117,9 @@ export function PictureState({
         <KeyGuide
           className="picture-state-keys ruled"
           items={[
-            { keys: ["\u2191", "\u2193"], label: "Another channel" },
-            { keys: ["OK"], label: "All channels" },
-            { keys: ["Return"], label: "Close the app" },
+            { keys: ["\u2191", "\u2193"], label: t("common.anotherChannel") },
+            { keys: ["OK"], label: t("common.allChannels") },
+            { keys: ["Return"], label: t("common.closeApp") },
           ]}
         />
         {/* The engine's own name for the fault, last and quiet. Useful when reporting a
@@ -110,9 +132,11 @@ export function PictureState({
   if (paused) {
     return (
       <div className="plate picture-state" role="status">
-        <span className="picture-state-mark"><Icon name="pause" /></span>
-        <p className="picture-state-word">Paused</p>
-        <p className="picture-state-note">Press Play to carry on</p>
+        <span className="picture-state-mark">
+          <Icon name="pause" />
+        </span>
+        <p className="picture-state-word">{t("picture.paused")}</p>
+        <p className="picture-state-note">{t("picture.pressPlay")}</p>
       </div>
     );
   }
@@ -122,19 +146,19 @@ export function PictureState({
       <div className="plate picture-state" role="status">
         <span className="spinner" aria-hidden="true" />
         {/*
-          * The television reports how full its buffer is, so say so rather than turning a
-          * ring at somebody. It is the difference between a channel that is arriving slowly
-          * and one that is not arriving, which is the question a viewer is actually asking,
-          * and it is the one thing on this screen that a spinner cannot answer.
-          *
-          * Only the set sends it. In a browser this is null and the word is what it was.
-          */}
+         * The television reports how full its buffer is, so say so rather than turning a
+         * ring at somebody. It is the difference between a channel that is arriving slowly
+         * and one that is not arriving, which is the question a viewer is actually asking,
+         * and it is the one thing on this screen that a spinner cannot answer.
+         *
+         * Only the set sends it. In a browser this is null and the word is what it was.
+         */}
         <p className="picture-state-word">
-          {filling === null ? "Connecting" : `Connecting ${filling}%`}
+          {filling === null
+            ? t("picture.connecting")
+            : t("picture.connectingPercent", { percent: number(filling) })}
         </p>
-        {waited >= SLOW_AFTER_S && (
-          <p className="picture-state-note">This channel is being slow. Still trying&hellip;</p>
-        )}
+        {waited >= SLOW_AFTER_S && <p className="picture-state-note">{t("picture.slow")}</p>}
       </div>
     );
   }

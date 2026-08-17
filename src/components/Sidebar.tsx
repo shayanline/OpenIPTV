@@ -1,4 +1,5 @@
 import { memo, useRef } from "react";
+import { useLocale } from "../hooks/useLocale";
 import { Icon } from "./Icon";
 import { Text } from "./Text";
 import { ScrollIndicator } from "./ScrollIndicator";
@@ -35,7 +36,16 @@ interface Props {
   onSelect: (index: number) => void;
 }
 
-const Row = memo(function Row({ name, count, index, selected, showing, top, height, onPick }: {
+const Row = memo(function Row({
+  name,
+  count,
+  index,
+  selected,
+  showing,
+  top,
+  height,
+  onPick,
+}: {
   name: string;
   count: number;
   index: number;
@@ -45,6 +55,7 @@ const Row = memo(function Row({ name, count, index, selected, showing, top, heig
   height: number;
   onPick: (index: number) => void;
 }) {
+  const { number } = useLocale();
   return (
     <button
       type="button"
@@ -57,7 +68,7 @@ const Row = memo(function Row({ name, count, index, selected, showing, top, heig
           removes the logical end of the string, which in a right to left run is its visual
           beginning, so what is left on screen is the middle of a word. */}
       <Text value={name} className="row-label two-line" />
-      <span className="count">{count}</span>
+      <span className="count">{number(count)}</span>
     </button>
   );
 });
@@ -71,14 +82,26 @@ const Row = memo(function Row({ name, count, index, selected, showing, top, heig
  * of them, and on entry hardware that walk is not free.
  */
 export const Sidebar = memo(function Sidebar({
-  categories, selected, cursor, loading, focused, scale, onSelect,
+  categories,
+  selected,
+  cursor,
+  loading,
+  focused,
+  scale,
+  onSelect,
 }: Props) {
+  const { t, number } = useLocale();
   const viewport = useRef<HTMLDivElement>(null);
   const height = useViewport(viewport);
   // Cursor zero is the Settings key in the header, so the list's own cursor is one behind.
   // Taller rows here than in the channel list, because a group title wraps to two lines.
-  const win = useWindowed(categories.length, Math.max(0, cursor - 1), height, scale,
-                         RAIL_ROW_BASE);
+  const win = useWindowed(
+    categories.length,
+    Math.max(0, cursor - 1),
+    height,
+    scale,
+    RAIL_ROW_BASE,
+  );
 
   const rows = [];
   for (let i = win.start; i < win.end; i++) {
@@ -100,30 +123,32 @@ export const Sidebar = memo(function Sidebar({
   return (
     <nav className={`rail pane ${focused ? "focused" : ""}`}>
       {/*
-        * What this column is, and how many are in it.
-        *
-        * "Categories" is a fixed English word and the count beside it is not, which is the same
-        * pairing every row below uses. It is a subheader rather than a title: One UI chunks a
-        * list with one, and it is deliberately quieter than the category name in the column
-        * beside it, because that one names something the viewer chose and this one names the
-        * furniture.
-        */}
+       * What this column is, and how many are in it.
+       *
+       * "Categories" is a fixed English word and the count beside it is not, which is the same
+       * pairing every row below uses. It is a subheader rather than a title: One UI chunks a
+       * list with one, and it is deliberately quieter than the category name in the column
+       * beside it, because that one names something the viewer chose and this one names the
+       * furniture.
+       */}
       <div className="pane-head">
         {/*
-          * The glyph and the word travel together in a wrapper of their own, because the header
-          * spreads its children to the edges so the count sits at the far side: a third child left
-          * loose would push the word into the middle of the column.
-          */}
+         * The glyph and the word travel together in a wrapper of their own, because the header
+         * spreads its children to the edges so the count sits at the far side: a third child left
+         * loose would push the word into the middle of the column.
+         */}
         <span className="pane-head-label">
           <Icon name="categories" />
-          <p className="panel-title">Categories</p>
+          <p className="panel-title">{t("channel.categories")}</p>
         </span>
-        {!!categories.length && <span className="count">{categories.length}</span>}
+        {!!categories.length && <span className="count">{number(categories.length)}</span>}
       </div>
 
       <div className="viewport" ref={viewport}>
-        <div className="window" style={{ transform: `translateY(${-win.offset}px)` }}>{rows}</div>
-        {!loading && !categories.length && <p className="empty">No categories yet.</p>}
+        <div className="window" style={{ transform: `translateY(${-win.offset}px)` }}>
+          {rows}
+        </div>
+        {!loading && !categories.length && <p className="empty">{t("channel.noCategories")}</p>}
       </div>
       <ScrollIndicator count={categories.length} first={win.first} visible={win.visible} />
     </nav>

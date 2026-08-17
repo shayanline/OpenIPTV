@@ -43,7 +43,11 @@ test("a setting that no longer exists is dropped rather than carried for ever", 
   const { useSettings } = await load();
 
   assert.equal("fontId" in useSettings.getState(), false, "a dead setting came back to life");
-  assert.equal(useSettings.getState().showClock, false, "the rest of the file was thrown away with it");
+  assert.equal(
+    useSettings.getState().showClock,
+    false,
+    "the rest of the file was thrown away with it",
+  );
 
   useSettings.getState().set("showClock", true);
   const written = JSON.parse(localStorage.getItem(KEY) ?? "{}");
@@ -82,8 +86,16 @@ test("what is written back is data, never the actions", async () => {
 
   const saved = JSON.parse(localStorage.getItem(KEY) as string);
   assert.equal(saved.showClock, false);
-  for (const action of ["set", "addPlaylist", "removePlaylist", "updatePlaylist",
-                        "reset", "font", "scale", "activePlaylist"]) {
+  for (const action of [
+    "set",
+    "addPlaylist",
+    "removePlaylist",
+    "updatePlaylist",
+    "reset",
+    "font",
+    "scale",
+    "activePlaylist",
+  ]) {
     assert.ok(!(action in saved), `${action} was persisted`);
   }
 });
@@ -125,6 +137,17 @@ test("removing the last playlist leaves the app in its first run state", async (
   assert.equal(s().activePlaylist(), undefined);
 });
 
+test("a new install follows the system language by default", async () => {
+  const { useSettings } = await load();
+  assert.equal(useSettings.getState().locale, "system");
+});
+
+test("an unsupported saved language falls back to the system option", async () => {
+  localStorage.setItem(KEY, JSON.stringify({ locale: "sv" }));
+  const { useSettings } = await load();
+  assert.equal(useSettings.getState().locale, "system");
+});
+
 test("a playlist whose name is blank is still saved with its url trimmed", async () => {
   const { useSettings } = await load();
   useSettings.getState().addPlaylist("  Spaced  ", "  http://a.invalid/x.m3u  ");
@@ -154,10 +177,13 @@ test("a store that refuses to save does not take the app down with it", async ()
 });
 
 test("the active playlist falls back to the first when the saved id is stale", async () => {
-  localStorage.setItem(KEY, JSON.stringify({
-    playlists: [{ id: "pl-1", name: "One", url: "http://a.invalid/x.m3u" }],
-    activePlaylistId: "pl-gone",
-  }));
+  localStorage.setItem(
+    KEY,
+    JSON.stringify({
+      playlists: [{ id: "pl-1", name: "One", url: "http://a.invalid/x.m3u" }],
+      activePlaylistId: "pl-gone",
+    }),
+  );
   const { useSettings } = await load();
   assert.equal(useSettings.getState().activePlaylist()?.id, "pl-1");
 });

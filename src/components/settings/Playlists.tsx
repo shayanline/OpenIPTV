@@ -1,21 +1,32 @@
 import { useState } from "react";
+import { useLocale } from "../../hooks/useLocale";
 import { useSettings, type Playlist } from "../../stores/settings";
 import { useChannels } from "../../stores/channels";
 import { checkPlaylistUrl, nameFromUrl } from "../../services/playlistUrl";
+import type { MessageKey } from "../../services/locale";
 import { Confirm } from "../Confirm";
 
 export function Playlists({ onAsking }: { onAsking: (asking: boolean) => void }) {
+  const { t } = useLocale();
   const s = useSettings();
-  const { load, loading, error, channels } = useChannels();
+  const { load, loading, error, errorKey, errorDetail, channels } = useChannels();
+  const errorText = (
+    key: MessageKey | "" | undefined,
+    detail: string | undefined,
+    fallback: string,
+  ) => (key ? t(key, { detail: detail ?? "" }) : fallback);
   const [editing, setEditing] = useState<Playlist | null>(null);
   const [note, setNote] = useState("");
   const [name, setName] = useState("");
   const [url, setUrl] = useState("");
-  const [problem, setProblem] = useState("");
+  const [problem, setProblem] = useState<MessageKey | "">("");
   /** Which playlist has been asked about but not yet confirmed for removal. */
   const [confirming, setConfirming] = useState("");
 
-  const ask = (id: string) => { setConfirming(id); onAsking(!!id); };
+  const ask = (id: string) => {
+    setConfirming(id);
+    onAsking(!!id);
+  };
 
   const startAdd = () => {
     setEditing({ id: "", name: "", url: "" });
@@ -40,7 +51,7 @@ export function Playlists({ onAsking }: { onAsking: (asking: boolean) => void })
   const save = async () => {
     const verdict = checkPlaylistUrl(url);
     if (!verdict.ok) {
-      setProblem(verdict.problem);
+      setProblem(verdict.problemKey ?? "validation.completeAddress");
       return;
     }
     setProblem("");
@@ -54,55 +65,73 @@ export function Playlists({ onAsking }: { onAsking: (asking: boolean) => void })
     setEditing(null);
 
     if (!loadsActivePlaylist) {
-      setNote(`${label} saved.`);
+      setNote(t("playlist.saved", { name: label }));
       return;
     }
 
-    setNote(`Loading ${label}\u2026`);
-    const { count, error } = await load(true);
-    setNote(error || (count > 0
-      ? `${label} loaded, ${count} channel${count === 1 ? "" : "s"}.`
-      : `${label} was saved, but no channels could be read from it.`));
+    setNote(t("playlist.loading", { name: label }));
+    const result = await load(true);
+    setNote(
+      errorText(result.errorKey, result.errorDetail, result.error) ||
+        (result.count > 0
+          ? t("playlist.loaded", { name: label, count: result.count })
+          : t("playlist.savedNoChannels", { name: label })),
+    );
   };
 
   const refresh = async () => {
-    setNote("Refreshing\u2026");
-    const { count, error } = await load(true);
-    setNote(error || (count > 0
-      ? `Refreshed, ${count} channel${count === 1 ? "" : "s"}.`
-      : "Nothing could be read from the active playlist."));
+    setNote(t("playlist.refreshing"));
+    const result = await load(true);
+    setNote(
+      errorText(result.errorKey, result.errorDetail, result.error) ||
+        (result.count > 0
+          ? t("playlist.refreshed", { count: result.count })
+          : t("playlist.nothingRead")),
+    );
   };
 
   return (
     <>
-      <h3>Playlists</h3>
-      {note && <p className="sheet-lead" role="status">{note}</p>}
+      <h3>{t("settings.playlists")}</h3>
+      {note && (
+        <p className="sheet-lead" role="status">
+          {note}
+        </p>
+      )}
       <p className="sheet-lead">
         {loading
-          ? "Loading the active playlist\u2026"
+          ? t("playlist.loadingActive")
           : error
-            ? error
+            ? errorText(errorKey, errorDetail, error)
             : s.playlists.length
-              ? `${channels.length} channel${channels.length === 1 ? "" : "s"} loaded from the active playlist.`
-              : "Add an M3U playlist address to start watching."}
+              ? t("playlist.loadedActive", { count: channels.length })
+              : t("playlist.addToStart")}
       </p>
-      <p className="sheet-lead">Playlists are stored on this device only.</p>
+      <p className="sheet-lead">{t("playlist.storedLocally")}</p>
 
       <div>
         {s.playlists.map((p) => (
           <div key={p.id} className={`pl ${p.id === s.activePlaylistId ? "active" : ""}`}>
-            <button type="button" className="pl-main" onClick={async () => {
-              setNote("");
-              s.set("activePlaylistId", p.id);
-              await load();
-            }}>
-              <span className="pl-title">
+            <button
+              type="button"
+              className="pl-main"
+              onClick={async () => {
+                setNote("");
+                s.set("activePlaylistId", p.id);
+                await load();
+              }}
+            >
+              <span className="pl-title" dir="auto">
                 {p.name}
                 {/* Named, not just tinted. The accessibility guidance asks for a mark
                     alongside colour, since a tint alone says nothing in greyscale. */}
-                {p.id === s.activePlaylistId && <span className="tag">Active</span>}
+                {p.id === s.activePlaylistId && (
+                  <span className="tag">{t("common.active")}</span>
+                )}
               </span>
-              <span className="pl-url">{p.url}</span>
+              <span className="pl-url" dir="ltr">
+                {p.url}
+              </span>
             </button>
             {/* Tonal rather than flat. Flat text at three metres reads as a label, not as
                 something you can press, and One UI gives a medium emphasis control a grey
@@ -110,20 +139,20 @@ export function Playlists({ onAsking }: { onAsking: (asking: boolean) => void })
             <button
               type="button"
               className="btn tonal"
-              aria-label={`Edit ${p.name}`}
+              aria-label={t("playlist.editAria", { name: p.name })}
               onClick={() => startEdit(p)}
             >
-              Edit
+              {t("common.edit")}
             </button>
             {/* Asked before done. Removing a playlist cannot be undone and the button sits a
                 single press away from the one that plays it. */}
             <button
               type="button"
               className="btn tonal"
-              aria-label={`Remove ${p.name}`}
+              aria-label={t("playlist.removeAria", { name: p.name })}
               onClick={() => ask(p.id)}
             >
-              Remove
+              {t("common.remove")}
             </button>
           </div>
         ))}
@@ -133,17 +162,19 @@ export function Playlists({ onAsking }: { onAsking: (asking: boolean) => void })
           two more buttons inside the row being asked about. */}
       {confirming && (
         <Confirm
-          title={`Remove ${s.playlists.find((p) => p.id === confirming)?.name ?? "this playlist"}?`}
-          body="Its channels and the copy saved on this device go with it. The playlist itself is not touched, so it can be added again from the same address."
-          confirmLabel="Remove"
-          cancelLabel="Keep it"
+          title={t("playlist.removeQuestion", {
+            name: s.playlists.find((p) => p.id === confirming)?.name ?? t("settings.playlists"),
+          })}
+          body={t("playlist.removeBody")}
+          confirmLabel={t("common.remove")}
+          cancelLabel={t("common.keepIt")}
           destructive
           onCancel={() => ask("")}
           onConfirm={() => {
             const gone = s.playlists.find((p) => p.id === confirming);
             s.removePlaylist(confirming);
             ask("");
-            setNote(gone ? `Removed ${gone.name}.` : "Removed.");
+            setNote(t("playlist.removed", { name: gone?.name ?? "" }));
             void load();
           }}
         />
@@ -151,30 +182,53 @@ export function Playlists({ onAsking }: { onAsking: (asking: boolean) => void })
 
       {editing ? (
         <div className="form">
-          <label htmlFor="pl-name">Playlist name</label>
-          <input id="pl-name" value={name} onChange={(e) => setName(e.target.value)}
-                 placeholder="Optional, uses the address if blank" />
-          <label htmlFor="pl-url">Playlist address</label>
-          <input id="pl-url" value={url} spellCheck={false}
-                 className={problem ? "wrong" : ""}
-                 aria-invalid={problem ? true : undefined}
-                 aria-describedby={problem ? "pl-url-problem" : undefined}
-                 onChange={(e) => { setUrl(e.target.value); setProblem(""); }}
-                 placeholder="https://example.com/playlist.m3u" />
+          <label htmlFor="pl-name">{t("onboarding.playlistName")}</label>
+          <input
+            id="pl-name"
+            value={name}
+            dir="auto"
+            onChange={(e) => setName(e.target.value)}
+            placeholder={t("onboarding.optionalAddress")}
+          />
+          <label htmlFor="pl-url">{t("onboarding.playlistAddress")}</label>
+          <input
+            id="pl-url"
+            value={url}
+            spellCheck={false}
+            dir="ltr"
+            className={problem ? "wrong" : ""}
+            aria-invalid={problem ? true : undefined}
+            aria-describedby={problem ? "pl-url-problem" : undefined}
+            onChange={(e) => {
+              setUrl(e.target.value);
+              setProblem("");
+            }}
+            placeholder={t("onboarding.urlPlaceholder")}
+          />
           {/* Under the field it belongs to, which is where One UI puts an error, rather than
               in a popup that has to be dismissed before the mistake can be corrected. */}
-          {problem && <p className="field-problem" id="pl-url-problem" role="alert">{problem}</p>}
+          {problem && (
+            <p className="field-problem" id="pl-url-problem" role="alert">
+              {t(problem)}
+            </p>
+          )}
           <div className="actions">
             {/* One filled button per screen, on the action the viewer came here to take. */}
-            <button type="button" className="btn filled" onClick={save}>Save</button>
-            <button type="button" className="btn tonal" onClick={() => setEditing(null)}>Cancel</button>
+            <button type="button" className="btn filled" onClick={save}>
+              {t("common.save")}
+            </button>
+            <button type="button" className="btn tonal" onClick={() => setEditing(null)}>
+              {t("common.cancel")}
+            </button>
           </div>
         </div>
       ) : (
         <div className="actions">
-          <button type="button" className="btn tonal" onClick={startAdd}>Add a playlist</button>
+          <button type="button" className="btn tonal" onClick={startAdd}>
+            {t("common.addPlaylist")}
+          </button>
           <button type="button" className="btn tonal" onClick={refresh} aria-busy={loading}>
-            {loading ? "Refreshing\u2026" : "Refresh playlist"}
+            {loading ? t("playlist.refreshing") : t("common.refreshPlaylist")}
           </button>
         </div>
       )}

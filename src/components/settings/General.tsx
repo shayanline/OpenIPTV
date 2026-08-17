@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useLocale } from "../../hooks/useLocale";
 import { useSettings } from "../../stores/settings";
 import { clearCache, useChannels } from "../../stores/channels";
 import { Confirm } from "../Confirm";
@@ -7,60 +8,65 @@ import { forgetRepairHosts } from "../../services/repair";
 import { Row, Toggle } from "./Field";
 
 export function General({ onAsking }: { onAsking: (asking: boolean) => void }) {
+  const { t } = useLocale();
   const s = useSettings();
   const { load, clearPersonal } = useChannels();
   const [confirming, setConfirming] = useState(false);
   const [clearing, setClearing] = useState(false);
 
-  const ask = (open: boolean) => { setConfirming(open); onAsking(open); };
-  const askClear = (open: boolean) => { setClearing(open); onAsking(open); };
+  const ask = (open: boolean) => {
+    setConfirming(open);
+    onAsking(open);
+  };
+  const askClear = (open: boolean) => {
+    setClearing(open);
+    onAsking(open);
+  };
 
   return (
     <>
-      <h3>General</h3>
-      <Row label="Resume last channel" hint="Open the last channel when the app starts">
-        <Toggle label="Resume last channel" value={s.resumeLast} onChange={(v) => s.set("resumeLast", v)} />
+      <h3>{t("settings.general")}</h3>
+      <Row label={t("settings.resumeLast")} hint={t("settings.resumeLastHint")}>
+        <Toggle
+          label={t("settings.resumeLast")}
+          value={s.resumeLast}
+          onChange={(v) => s.set("resumeLast", v)}
+        />
       </Row>
-      <Row
-        label="Clear cache"
-        hint="Remove downloaded playlists, logos, and compatibility data from this device"
-      >
+      <Row label={t("settings.clearCache")} hint={t("settings.clearCacheHint")}>
         <button
           type="button"
           className="btn flat"
-          aria-label="Clear cache"
+          aria-label={t("settings.clearCache")}
           onClick={() => askClear(true)}
         >
-          Clear
+          {t("common.clear")}
         </button>
       </Row>
       {/**
-        * Asked before done, like every other question the app puts.
-        *
-        * It is the most destructive action in the application, on a screen where removing
-        * a single playlist already stops to confirm, so going unguarded here would be the
-        * one press that undoes everything.
-        */}
-      <Row
-        label="Reset app data"
-        hint="Remove playlists, favourites, settings, and cached data from this device"
-      >
+       * Asked before done, like every other question the app puts.
+       *
+       * It is the most destructive action in the application, on a screen where removing
+       * a single playlist already stops to confirm, so going unguarded here would be the
+       * one press that undoes everything.
+       */}
+      <Row label={t("settings.resetData")} hint={t("settings.resetDataHint")}>
         <button
           type="button"
           className="btn flat danger"
-          aria-label="Reset app data"
+          aria-label={t("settings.resetData")}
           onClick={() => ask(true)}
         >
-          Reset
+          {t("settings.resetData")}
         </button>
       </Row>
 
       {clearing && (
         <Confirm
-          title="Clear cache?"
-          body="Cached playlist data, channel logos, and compatibility data are removed from this device. Your playlists, settings, favourites, and last watched channel stay."
-          confirmLabel="Clear cache"
-          cancelLabel="Cancel"
+          title={t("settings.clearCacheQuestion")}
+          body={t("settings.clearCacheBody")}
+          confirmLabel={t("settings.clearCache")}
+          cancelLabel={t("common.cancel")}
           onCancel={() => askClear(false)}
           onConfirm={() => {
             void clearCache();
@@ -72,10 +78,10 @@ export function General({ onAsking }: { onAsking: (asking: boolean) => void }) {
 
       {confirming && (
         <Confirm
-          title="Reset app data?"
-          body="This removes your playlists, favourites, preferences, cached data, and compatibility data from this device. It does not delete the source playlists, so you can add them again."
-          confirmLabel="Reset app data"
-          cancelLabel="Cancel"
+          title={t("settings.resetDataQuestion")}
+          body={t("settings.resetDataBody")}
+          confirmLabel={t("settings.resetData")}
+          cancelLabel={t("common.cancel")}
           destructive
           onCancel={() => ask(false)}
           onConfirm={() => {

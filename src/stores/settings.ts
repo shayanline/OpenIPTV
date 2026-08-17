@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { isLocalePreference, type LocalePreference } from "../services/locale";
 import { readJSON, write } from "../services/store";
 
 /**
@@ -21,7 +22,11 @@ import { readJSON, write } from "../services/store";
  */
 export const ASPECTS = [
   { id: "fill", label: "Fill", note: "Fills the screen, cropping the edges of the picture" },
-  { id: "fit", label: "Fit", note: "The whole picture, with bars if it does not fill the screen" },
+  {
+    id: "fit",
+    label: "Fit",
+    note: "The whole picture, with bars if it does not fill the screen",
+  },
   { id: "stretch", label: "Stretch", note: "Fills the screen by distorting the picture" },
 ] as const;
 
@@ -41,6 +46,7 @@ export interface Playlist {
 }
 
 interface Settings {
+  locale: LocalePreference;
   fontSizeId: string;
   playlists: Playlist[];
   activePlaylistId: string;
@@ -78,6 +84,7 @@ const KEY = "openiptv.settings";
 // bundled here would be a decision about what somebody in some country should watch, made
 // by the app rather than by them. The first run asks for a URL instead.
 const DEFAULTS = {
+  locale: "system" as LocalePreference,
   fontSizeId: "m",
   playlists: [] as Playlist[],
   activePlaylistId: "",
@@ -116,9 +123,10 @@ function load(): typeof DEFAULTS {
   // Merged rather than replaced, so a settings file written by an older version keeps working
   // when new keys appear.
   const raw = readJSON<unknown>(KEY, {});
-  const saved = raw && typeof raw === "object" && !Array.isArray(raw)
-    ? raw as Record<string, unknown>
-    : {};
+  const saved =
+    raw && typeof raw === "object" && !Array.isArray(raw)
+      ? (raw as Record<string, unknown>)
+      : {};
   const merged = { ...DEFAULTS } as Record<string, unknown>;
   /*
    * And only keys this version knows, so a setting that has been removed does not live on in the
@@ -129,14 +137,23 @@ function load(): typeof DEFAULTS {
   for (const key of Object.keys(DEFAULTS)) {
     if (key in saved) merged[key] = saved[key];
   }
+  if (!isLocalePreference(merged.locale)) merged.locale = DEFAULTS.locale;
   const canonical = JSON.stringify(merged);
   if (JSON.stringify(saved) !== canonical) write(KEY, canonical);
   return merged as typeof DEFAULTS;
 }
 
 function persist(state: Settings) {
-  const { set: _s, addPlaylist: _a, removePlaylist: _r, updatePlaylist: _u,
-          reset: _re, scale: _sc, activePlaylist: _ap, ...data } = state;
+  const {
+    set: _s,
+    addPlaylist: _a,
+    removePlaylist: _r,
+    updatePlaylist: _u,
+    reset: _re,
+    scale: _sc,
+    activePlaylist: _ap,
+    ...data
+  } = state;
   write(KEY, JSON.stringify(data));
 }
 
@@ -164,9 +181,8 @@ export const useSettings = create<Settings>((set, get) => ({
     const remaining = get().playlists.filter((p) => p.id !== id);
     set({
       playlists: remaining,
-      activePlaylistId: get().activePlaylistId === id
-        ? (remaining[0]?.id ?? "")
-        : get().activePlaylistId,
+      activePlaylistId:
+        get().activePlaylistId === id ? (remaining[0]?.id ?? "") : get().activePlaylistId,
     });
     persist(get());
   },
@@ -174,7 +190,8 @@ export const useSettings = create<Settings>((set, get) => ({
   updatePlaylist(id, name, url) {
     set({
       playlists: get().playlists.map((p) =>
-        p.id === id ? { ...p, name: name.trim(), url: url.trim() } : p),
+        p.id === id ? { ...p, name: name.trim(), url: url.trim() } : p,
+      ),
     });
     persist(get());
   },

@@ -51,6 +51,10 @@ test("every refusal says what to do about it, not just that it is wrong", () => 
   }
 });
 
+test("a refusal includes a locale key for the interface", () => {
+  assert.equal(checkPlaylistUrl("").problemKey, "validation.enterAddress");
+});
+
 test("surrounding whitespace is forgiven rather than rejected", () => {
   assert.equal(checkPlaylistUrl("  https://example.com/a.m3u  ").ok, true);
 });

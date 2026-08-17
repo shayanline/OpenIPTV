@@ -9,9 +9,13 @@
  * Kept out of the component so it is plain data and a plain function, which is what makes
  * it testable without a renderer.
  */
+import type { MessageKey } from "./locale";
+
 export interface Reason {
   why: string;
   fix: string;
+  whyKey: MessageKey;
+  fixKey: MessageKey;
 }
 
 /*
@@ -31,6 +35,8 @@ const REASONS: { match: RegExp; reason: Reason }[] = [
     reason: {
       why: "The broadcaster is refusing this connection.",
       fix: "Streams are often restricted to the country they are broadcast in.",
+      whyKey: "error.broadcasterRefusing",
+      fixKey: "error.countryRestricted",
     },
   },
   {
@@ -38,6 +44,8 @@ const REASONS: { match: RegExp; reason: Reason }[] = [
     reason: {
       why: "The address in the playlist no longer points at a stream.",
       fix: "Refresh the playlist in Settings to pull the current addresses.",
+      whyKey: "error.addressStale",
+      fixKey: "error.refreshPlaylist",
     },
   },
   {
@@ -45,6 +53,8 @@ const REASONS: { match: RegExp; reason: Reason }[] = [
     reason: {
       why: "This channel's server is failing.",
       fix: "Nothing here will fix it, and it often comes back on its own.",
+      whyKey: "error.serverFailing",
+      fixKey: "error.serverMayRecover",
     },
   },
   {
@@ -52,6 +62,8 @@ const REASONS: { match: RegExp; reason: Reason }[] = [
     reason: {
       why: "The TV could not reach this channel's server.",
       fix: "It may be off the air. Check the network if other channels fail too.",
+      whyKey: "error.cannotReachServer",
+      fixKey: "error.checkNetwork",
     },
   },
   {
@@ -59,6 +71,8 @@ const REASONS: { match: RegExp; reason: Reason }[] = [
     reason: {
       why: "This channel sends a format the TV cannot decode.",
       fix: "Nothing here will fix it. Try another channel.",
+      whyKey: "error.unsupportedFormat",
+      fixKey: "error.tryAnother",
     },
   },
   {
@@ -66,6 +80,8 @@ const REASONS: { match: RegExp; reason: Reason }[] = [
     reason: {
       why: "The address in the playlist no longer points at a stream.",
       fix: "Refresh the playlist in Settings to pull the current addresses.",
+      whyKey: "error.addressStale",
+      fixKey: "error.refreshPlaylist",
     },
   },
   {
@@ -73,6 +89,8 @@ const REASONS: { match: RegExp; reason: Reason }[] = [
     reason: {
       why: "This channel stopped broadcasting.",
       fix: "It may come back on its own.",
+      whyKey: "error.stoppedBroadcasting",
+      fixKey: "error.mayReturn",
     },
   },
   {
@@ -82,6 +100,8 @@ const REASONS: { match: RegExp; reason: Reason }[] = [
     reason: {
       why: "The picture from this channel has frozen.",
       fix: "The server stopped sending. It often recovers.",
+      whyKey: "error.pictureFrozen",
+      fixKey: "error.serverStopped",
     },
   },
   {
@@ -92,6 +112,8 @@ const REASONS: { match: RegExp; reason: Reason }[] = [
     reason: {
       why: "Nothing playable arrived from this channel.",
       fix: "It may be off the air, or sending a format the TV cannot decode.",
+      whyKey: "error.nothingPlayable",
+      fixKey: "error.offAirOrFormat",
     },
   },
 ];
@@ -107,6 +129,8 @@ const REASONS: { match: RegExp; reason: Reason }[] = [
 const FALLBACK: Reason = {
   why: "The stream stopped unexpectedly.",
   fix: "This usually clears on its own.",
+  whyKey: "error.streamStopped",
+  fixKey: "error.usuallyClears",
 };
 
 export function explain(code: string): Reason {

@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { useLocale } from "../hooks/useLocale";
 import { Icon } from "./Icon";
 
 /**
@@ -14,7 +15,13 @@ import { Icon } from "./Icon";
  * same line as the categories beside them. A field that pushed the rows down would leave the two
  * columns out of step, which is the ragged layout the checklist's grid rule exists to prevent.
  */
-export function SearchField({ value, focused, shown, total, onChange }: {
+export function SearchField({
+  value,
+  focused,
+  shown,
+  total,
+  onChange,
+}: {
   value: string;
   /** Whether the cursor is on the field, as opposed to down among the results. */
   focused: boolean;
@@ -24,6 +31,7 @@ export function SearchField({ value, focused, shown, total, onChange }: {
   total: number;
   onChange: (value: string) => void;
 }) {
+  const { t, number } = useLocale();
   const field = useRef<HTMLInputElement>(null);
 
   /*
@@ -43,14 +51,17 @@ export function SearchField({ value, focused, shown, total, onChange }: {
 
   return (
     <div className={`search ${focused ? "focused" : ""}`}>
-      <span className="search-icon"><Icon name="search" /></span>
+      <span className="search-icon">
+        <Icon name="search" />
+      </span>
       <input
         ref={field}
         className="search-field"
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        placeholder="Channel name"
-        aria-label="Search channels by name"
+        placeholder={t("search.channelName")}
+        aria-label={t("search.ariaLabel")}
+        dir="auto"
         spellCheck={false}
         autoComplete="off"
         /* An unrestricted keyboard rather than a search one. `enterkeyhint` would relabel the
@@ -59,17 +70,17 @@ export function SearchField({ value, focused, shown, total, onChange }: {
         type="text"
       />
       {/*
-        * How many, in the same chip the rail uses for a category's count.
-        *
-        * Silent until something has been typed, because "0" against an empty field reads as a
-        * search that failed rather than one that has not happened yet.
-        *
-        * "300+" rather than the true total when the list has been capped. The exact number is
-        * known and printing it would be worse: a chip reading 4,211 above a list holding three
-        * hundred invites somebody to scroll to the end looking for the rest.
-        */}
+       * How many, in the same chip the rail uses for a category's count.
+       *
+       * Silent until something has been typed, because "0" against an empty field reads as a
+       * search that failed rather than one that has not happened yet.
+       *
+       * "300+" rather than the true total when the list has been capped. The exact number is
+       * known and printing it would be worse: a chip reading 4,211 above a list holding three
+       * hundred invites somebody to scroll to the end looking for the rest.
+       */}
       {!!value.trim() && (
-        <span className="count">{total > shown ? `${shown}+` : total}</span>
+        <span className="count">{total > shown ? `${number(shown)}+` : number(total)}</span>
       )}
     </div>
   );

@@ -5,6 +5,7 @@ import { useSettings } from "./settings";
 import { keys, read, readJSON, remove, write } from "../services/store";
 import * as disk from "../services/disk";
 import { whenIdle } from "../services/idle";
+import { resolveLocale, type MessageKey } from "../services/locale";
 
 const FAVOURITES_KEY = "openiptv.favourites";
 const LAST_KEY = "openiptv.last";
@@ -70,18 +71,23 @@ const CACHE_TTL_MS = 6 * 60 * 60 * 1000;
  * not pay for the collator at launch.
  */
 let collator: Intl.Collator | null = null;
+let collatorLocale = "";
 const byName = (a: Channel, b: Channel) => {
-  if (!collator) collator = new Intl.Collator("en", { numeric: true });
+  const locale = resolveLocale(useSettings.getState().locale);
+  if (!collator || collatorLocale !== locale) {
+    collator = new Intl.Collator(locale, { numeric: true });
+    collatorLocale = locale;
+  }
   return collator.compare(a.name, b.name);
 };
-
-
 
 /** What a load attempt produced, so the caller can say so without re-reading the store. */
 export interface LoadResult {
   count: number;
   /** Empty when it worked. */
   error: string;
+  errorKey?: MessageKey;
+  errorDetail?: string;
 }
 
 interface State {
@@ -90,6 +96,8 @@ interface State {
   favourites: string[];
   loading: boolean;
   error: string;
+  errorKey: MessageKey | "";
+  errorDetail: string;
   /**
    * Fetch the active playlist. Reports what happened, because a caller that has just asked
    * for a refresh has to be able to say whether it worked, and reading the store back
@@ -153,7 +161,7 @@ export const useChannels = create<State>((set, get) => {
         // Byte for byte what is already on screen. Stamped so the next launch trusts the
         // cache for another six hours rather than asking again immediately.
         write(stampKey(url), String(Date.now()));
-        set({ loading: false, error: "" });
+        set({ loading: false, error: "", errorKey: "", errorDetail: "" });
         return { count: get().channels.length, error: "" };
       }
 
@@ -169,7 +177,7 @@ export const useChannels = create<State>((set, get) => {
        */
       void disk.write(cacheKey(url), text);
       write(stampKey(url), String(Date.now()));
-      set({ ...parsed, loading: false, error: "" });
+      set({ ...parsed, loading: false, error: "", errorKey: "", errorDetail: "" });
       return { count: parsed.channels.length, error: "" };
     } catch (e) {
       // Called off because something newer was asked for. The newer one owns the state now,
@@ -177,11 +185,15 @@ export const useChannels = create<State>((set, get) => {
       if (attempt.signal.aborted) return { count: get().channels.length, error: "" };
       const message = e instanceof Error ? e.message : String(e);
       // Keep whatever the cache gave us rather than emptying the screen.
-      const error = get().channels.length
+      const hasChannels = get().channels.length > 0;
+      const errorKey: MessageKey = hasChannels
+        ? "playlist.refreshFailed"
+        : "playlist.loadFailed";
+      const error = hasChannels
         ? `Could not refresh: ${message}. Showing the last saved copy.`
         : `Could not load the playlist: ${message}`;
-      set({ loading: false, error });
-      return { count: get().channels.length, error };
+      set({ loading: false, error, errorKey, errorDetail: message });
+      return { count: get().channels.length, error, errorKey, errorDetail: message };
     }
   };
 
@@ -191,6 +203,8 @@ export const useChannels = create<State>((set, get) => {
     favourites: readJSON<string[]>(FAVOURITES_KEY, []),
     loading: false,
     error: "",
+    errorKey: "",
+    errorDetail: "",
 
     async load(force = false): Promise<LoadResult> {
       cancelPending?.();
@@ -199,7 +213,14 @@ export const useChannels = create<State>((set, get) => {
       const playlist = useSettings.getState().activePlaylist();
       // Nothing configured yet, which is the first run. The onboarding screen is showing.
       if (!playlist) {
-        set({ channels: [], categories: [], loading: false, error: "" });
+        set({
+          channels: [],
+          categories: [],
+          loading: false,
+          error: "",
+          errorKey: "",
+          errorDetail: "",
+        });
         return { count: 0, error: "" };
       }
 
@@ -231,7 +252,7 @@ export const useChannels = create<State>((set, get) => {
        * spinner, it is a false statement, and on a set with a slow main thread and slower
        * flash the window is not a few milliseconds.
        */
-      set({ loading: true, error: "" });
+      set({ loading: true, error: "", errorKey: "", errorDetail: "" });
 
       /*
        * A read from disk rather than from localStorage, so this is now awaited. The wait is
@@ -242,13 +263,14 @@ export const useChannels = create<State>((set, get) => {
       if (typeof cached === "string" && cached) {
         const parsed = parse(cached);
         if (parsed.channels.length) {
-          set({ ...parsed, loading: false, error: "" });
+          set({ ...parsed, loading: false, error: "", errorKey: "", errorDetail: "" });
           const at = Number(read(stampKey(playlist.url))) || 0;
-          if (Date.now() - at < CACHE_TTL_MS) return { count: parsed.channels.length, error: "" };
-          cancelPending = whenIdle(
-            () => { cancelPending = null; void refresh(playlist.url, cached); },
-            4000,
-          );
+          if (Date.now() - at < CACHE_TTL_MS)
+            return { count: parsed.channels.length, error: "" };
+          cancelPending = whenIdle(() => {
+            cancelPending = null;
+            void refresh(playlist.url, cached);
+          }, 4000);
           return { count: parsed.channels.length, error: "" };
         }
       }

@@ -1,6 +1,8 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import App from "./App";
+import { useSettings } from "./stores/settings";
+import { applyDocumentLocale, resolveLocale } from "./services/locale";
 import { markCapabilities } from "./services/capabilities";
 import { applyMetrics } from "./services/metrics";
 import "./styles/app.css";
@@ -15,6 +17,8 @@ import "./styles/app.css";
 if (typeof window !== "undefined" && "webapis" in window) {
   document.documentElement.classList.add("tizen");
 }
+
+applyDocumentLocale(resolveLocale(useSettings.getState().locale));
 
 // Whether flex gap works, which decides how the interface is spaced. Measured here, before
 // the first render, so nothing is ever drawn with the wrong spacing and corrected after.

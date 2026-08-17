@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useChannels } from "./stores/channels";
 import { useSettings } from "./stores/settings";
 import { onTizen } from "./services/player";
@@ -6,6 +6,7 @@ import { warmChain } from "./services/logos";
 import { cssMs } from "./services/metrics";
 import { whenIdle } from "./services/idle";
 import { FAVOURITES, listsOf, stepColumn, wrap } from "./services/lineup";
+import { UNCATEGORISED } from "./services/m3u";
 import { searchChannels } from "./services/search";
 import { KEY, registerRemoteKeys, useRemote } from "./hooks/useRemote";
 import { ChannelList } from "./components/ChannelList";
@@ -23,6 +24,8 @@ import { SmartRemote, remoteVisible } from "./components/SmartRemote";
 import { useChrome } from "./hooks/useChrome";
 import { usePointerAwake } from "./hooks/usePointerAwake";
 import { RETRY_DELAYS_MS, useTuner } from "./hooks/useTuner";
+import { useLocale } from "./hooks/useLocale";
+import { applyDocumentLocale } from "./services/locale";
 import type { Channel } from "./types";
 
 /*
@@ -142,12 +145,31 @@ type View = "watch" | "panel";
  * What it buys is that there is nothing to learn.
  */
 
-
 export default function App() {
-  const { channels, categories, favourites, load, sweep, loading, error, toggleFavourite,
-          rememberLast, lastPlayed } = useChannels();
+  const {
+    channels,
+    categories,
+    favourites,
+    load,
+    sweep,
+    loading,
+    error,
+    errorKey,
+    errorDetail,
+    toggleFavourite,
+    rememberLast,
+    lastPlayed,
+  } = useChannels();
   const settings = useSettings();
+  const { locale, direction, t, number } = useLocale();
   const configured = settings.playlists.length > 0;
+
+  useLayoutEffect(() => {
+    applyDocumentLocale(locale);
+  }, [locale]);
+
+  const inlineStart = direction === "rtl" ? KEY.RIGHT : KEY.LEFT;
+  const inlineEnd = direction === "rtl" ? KEY.LEFT : KEY.RIGHT;
 
   /**
    * Where a launch starts, which is at the picture when there is a picture to come back to.
@@ -164,16 +186,16 @@ export default function App() {
    * known yet, and the effect below opens the panel if it turns out not to be, which is the
    * one case where the list is the honest thing to show.
    */
-  const [view, setView] = useState<View>(
-    () => (useSettings.getState().resumeLast && useChannels.getState().lastPlayed()
+  const [view, setView] = useState<View>(() =>
+    useSettings.getState().resumeLast && useChannels.getState().lastPlayed()
       ? "watch"
-      : "panel"),
+      : "panel",
   );
   /* Zero, the top of the rail, which is the playlist's first category until there is a
      favourite and Favourites once there is. Both are worth opening on, and neither can be
      empty: the row only exists while it has something in it. */
   const [category, setCategory] = useState(0);
-  const [cursor, setCursor] = useState(1);   // rail row, zero is the title bar
+  const [cursor, setCursor] = useState(1); // rail row, zero is the title bar
   const [index, setIndex] = useState(0);
   const [pane, setPane] = useState<"rail" | "list">("list");
   const [showSettings, setShowSettings] = useState(false);
@@ -224,6 +246,12 @@ export default function App() {
     () => listsOf(channels, categories, favourites),
     [channels, categories, favourites],
   );
+  const displayListName = (name: string) =>
+    name === FAVOURITES
+      ? t("channel.favourites")
+      : name === UNCATEGORISED
+        ? t("channel.uncategorised")
+        : name;
 
   /**
    * The favourites, as a set, because the channel list asks about every row it draws.
@@ -362,14 +390,16 @@ export default function App() {
    * twice in development, which makes it reachable on any page load rather than only on an
    * unmount nobody performs.
    */
-  useEffect(() => () => {
-    window.clearTimeout(railTimer.current);
-  }, []);
+  useEffect(
+    () => () => {
+      window.clearTimeout(railTimer.current);
+    },
+    [],
+  );
 
   useEffect(() => {
     document.documentElement.style.setProperty("--scale", String(settings.scale()));
   }, [settings]);
-
 
   useEffect(() => {
     if (view === "watch" && current) chrome.raiseBanner();
@@ -420,7 +450,6 @@ export default function App() {
    */
   const barFrom = useRef<"rail" | "list">("rail");
 
-
   const openPanel = useCallback(() => {
     setView("panel");
   }, []);
@@ -435,11 +464,14 @@ export default function App() {
    * A favourite appears twice, and landing in the Favourites list would quietly move the
    * viewer somewhere they did not ask to be, so the playlist's own grouping wins.
    */
-  const locate = useCallback((channel: Channel) => {
-    const has = (l: { channels: Channel[] }) => l.channels.some((c) => c.id === channel.id);
-    const real = lists.findIndex((l, i) => !(i === 0 && l.name === FAVOURITES) && has(l));
-    return real >= 0 ? real : lists.findIndex(has);
-  }, [lists]);
+  const locate = useCallback(
+    (channel: Channel) => {
+      const has = (l: { channels: Channel[] }) => l.channels.some((c) => c.id === channel.id);
+      const real = lists.findIndex((l, i) => !(i === 0 && l.name === FAVOURITES) && has(l));
+      return real >= 0 ? real : lists.findIndex(has);
+    },
+    [lists],
+  );
 
   /**
    * Put a category in the channel column, now or once the viewer has stopped moving.
@@ -569,11 +601,14 @@ export default function App() {
    * key. The column it names follows once the walking stops, for the reason set out at
    * RAIL_SETTLE_MS. Row zero is the Settings key, which is not a category and shows nothing.
    */
-  const moveCursor = useCallback((to: number) => {
-    cursorRef.current = to;
-    setCursor(to);
-    if (to > 0) showCategory(to - 1, 0, false);
-  }, [showCategory]);
+  const moveCursor = useCallback(
+    (to: number) => {
+      cursorRef.current = to;
+      setCursor(to);
+      if (to > 0) showCategory(to - 1, 0, false);
+    },
+    [showCategory],
+  );
 
   /**
    * Move the rail cursor by one, from wherever it actually is.
@@ -583,25 +618,31 @@ export default function App() {
    * faster than React re-renders, and every press in a burst was computing its destination
    * from the same captured cursor. Holding Down walked one row and stopped dead.
    */
-  const nudgeCursor = useCallback((delta: number) => {
-    // The rail has Settings at zero above the categories, so its length is one more.
-    moveCursor(wrap(cursorRef.current + delta, lists.length + 1));
-  }, [moveCursor, lists.length]);
+  const nudgeCursor = useCallback(
+    (delta: number) => {
+      // The rail has Settings at zero above the categories, so its length is one more.
+      moveCursor(wrap(cursorRef.current + delta, lists.length + 1));
+    },
+    [moveCursor, lists.length],
+  );
 
-  const jump = useCallback((n: number) => {
-    const found = channels.find((c) => c.number === n);
-    if (!found) {
-      chrome.say(`No channel ${n} in this playlist.`);
-      return;
-    }
-    const cat = locate(found);
-    if (cat >= 0) {
-      setCursor(cat + 1);
-      cursorRef.current = cat + 1;
-      showCategory(cat, lists[cat].channels.indexOf(found), true);
-    }
-    tuner.start(found);
-  }, [channels, lists, locate, tuner.start, chrome.say, showCategory]);
+  const jump = useCallback(
+    (n: number) => {
+      const found = channels.find((c) => c.number === n);
+      if (!found) {
+        chrome.say(t("app.noChannel", { number: number(n) }));
+        return;
+      }
+      const cat = locate(found);
+      if (cat >= 0) {
+        setCursor(cat + 1);
+        cursorRef.current = cat + 1;
+        showCategory(cat, lists[cat].channels.indexOf(found), true);
+      }
+      tuner.start(found);
+    },
+    [channels, lists, locate, tuner.start, chrome.say, showCategory, t, number],
+  );
 
   /**
    * Favourite or unfavourite a channel, and stay where the viewer was.
@@ -618,25 +659,28 @@ export default function App() {
    * green halfway through a walk would otherwise correct a position the viewer had already
    * left, and send the highlight backwards.
    */
-  const favouriteCurrent = useCallback((channel: Channel | undefined) => {
-    if (!channel) return;
-    const had = favourites.includes(channel.id);
-    const appears = !had && !favourites.length;
-    const vanishes = had && favourites.length === 1;
+  const favouriteCurrent = useCallback(
+    (channel: Channel | undefined) => {
+      if (!channel) return;
+      const had = favourites.includes(channel.id);
+      const appears = !had && !favourites.length;
+      const vanishes = had && favourites.length === 1;
 
-    if (appears || vanishes) {
-      const from = Math.max(0, cursorRef.current - 1);
-      const to = Math.max(0, from + (appears ? 1 : -1));
-      setCursor(to + 1);
-      cursorRef.current = to + 1;
-      // Standing in Favourites as the last one goes: the row that takes its place is a
-      // different list, and the row the highlight was on is not in it.
-      showCategory(to, vanishes && from === 0 ? 0 : index, true);
-    }
+      if (appears || vanishes) {
+        const from = Math.max(0, cursorRef.current - 1);
+        const to = Math.max(0, from + (appears ? 1 : -1));
+        setCursor(to + 1);
+        cursorRef.current = to + 1;
+        // Standing in Favourites as the last one goes: the row that takes its place is a
+        // different list, and the row the highlight was on is not in it.
+        showCategory(to, vanishes && from === 0 ? 0 : index, true);
+      }
 
-    toggleFavourite(channel.id);
-    chrome.say(had ? "Removed from favourites" : "Added to favourites");
-  }, [favourites, toggleFavourite, chrome.say, index, showCategory]);
+      toggleFavourite(channel.id);
+      chrome.say(had ? t("app.removedFavourite") : t("app.addedFavourite"));
+    },
+    [favourites, toggleFavourite, chrome.say, index, showCategory, t],
+  );
 
   /**
    * Open search, which means the channel column stops being a category.
@@ -679,400 +723,509 @@ export default function App() {
    * playing channel is not in, and closing search would land the viewer somewhere unrelated to
    * what they are watching. So the rail follows, exactly as it does for a dialled number.
    */
-  const pickResult = useCallback((channel: Channel) => {
-    const cat = locate(channel);
-    if (cat >= 0) {
-      setCursor(cat + 1);
-      cursorRef.current = cat + 1;
-      showCategory(cat, lists[cat].channels.indexOf(channel), true);
-    }
-    closeSearch();
-    if (channel.id !== currentRef.current?.id) tuner.start(channel);
-    watch();
-  }, [locate, lists, showCategory, closeSearch, tuner.start, watch]);
+  const pickResult = useCallback(
+    (channel: Channel) => {
+      const cat = locate(channel);
+      if (cat >= 0) {
+        setCursor(cat + 1);
+        cursorRef.current = cat + 1;
+        showCategory(cat, lists[cat].channels.indexOf(channel), true);
+      }
+      closeSearch();
+      if (channel.id !== currentRef.current?.id) tuner.start(channel);
+      watch();
+    },
+    [locate, lists, showCategory, closeSearch, tuner.start, watch],
+  );
 
   /**
    * Transport keys. Checklist 2.3 wants every playback button on the remote to work.
    * Off a stream they do nothing and say nothing, which is what the input guide specifies
    * for playback keys outside playback.
    */
-  const onTransport = useCallback((code: number): boolean => {
-    const transport = code === KEY.PLAY_PAUSE || code === KEY.PLAY || code === KEY.PAUSE
-      || code === KEY.SPACE
-      || code === KEY.STOP || code === KEY.REWIND || code === KEY.FORWARD
-      || code === KEY.PREV || code === KEY.NEXT
-      || code === KEY.VOL_UP || code === KEY.VOL_DOWN;
-    if (!transport) return false;
-    if (!current) return true;
+  const onTransport = useCallback(
+    (code: number): boolean => {
+      const transport =
+        code === KEY.PLAY_PAUSE ||
+        code === KEY.PLAY ||
+        code === KEY.PAUSE ||
+        code === KEY.SPACE ||
+        code === KEY.STOP ||
+        code === KEY.REWIND ||
+        code === KEY.FORWARD ||
+        code === KEY.PREV ||
+        code === KEY.NEXT ||
+        code === KEY.VOL_UP ||
+        code === KEY.VOL_DOWN;
+      if (!transport) return false;
+      if (!current) return true;
 
-    switch (code) {
-      case KEY.VOL_UP: tuner.adjustVolume(0.1); break;
-      case KEY.VOL_DOWN: tuner.adjustVolume(-0.1); break;
-      /* Pausing has no on-screen button, because it does not need one: it has a key on the
+      switch (code) {
+        case KEY.VOL_UP:
+          tuner.adjustVolume(0.1);
+          break;
+        case KEY.VOL_DOWN:
+          tuner.adjustVolume(-0.1);
+          break;
+        /* Pausing has no on-screen button, because it does not need one: it has a key on the
          Smart Remote, a key on every keyboard and a button on the on-screen pad. The banner
          still comes up as a notice, so the viewer can see which channel they have just held,
          and the picture itself says Paused. */
-      case KEY.PLAY_PAUSE:
-      case KEY.SPACE: tuner.togglePause(); chrome.raiseBanner(); break;
-      case KEY.PLAY: tuner.setPlaying(true); chrome.raiseBanner(); break;
-      case KEY.PAUSE: tuner.setPlaying(false); chrome.raiseBanner(); break;
+        case KEY.PLAY_PAUSE:
+        case KEY.SPACE:
+          tuner.togglePause();
+          chrome.raiseBanner();
+          break;
+        case KEY.PLAY:
+          tuner.setPlaying(true);
+          chrome.raiseBanner();
+          break;
+        case KEY.PAUSE:
+          tuner.setPlaying(false);
+          chrome.raiseBanner();
+          break;
+        /*
+         * Stop returns to the channel list rather than leaving a black screen.
+         *
+         * Stopping live television is a strange thing to ask for and the key exists, so the
+         * kindest reading of it is "I have finished with this channel", which is the list.
+         */
+        case KEY.STOP:
+          tuner.clear();
+          currentRef.current = null;
+          chrome.lowerBanner();
+          revealPanel();
+          break;
+        /*
+         * The scan keys reload the channel.
+         *
+         * Nothing can be scanned through: there is no timeline any more, and on most of these
+         * streams there never was one worth trusting. Rather than answering with a refusal, or
+         * with nothing at all, they do the useful thing that is nearest to what was asked, which
+         * on a live stream that has stalled is to fetch it again.
+         */
+        case KEY.REWIND:
+        case KEY.FORWARD:
+          tuner.retune();
+          break;
+        // Previous and next channel, which is what "previous and next" means on live
+        // television. They announce rather than take focus, because they change the channel.
+        case KEY.PREV:
+          tuner.step(-1);
+          break;
+        case KEY.NEXT:
+          tuner.step(1);
+          break;
+      }
+      return true;
+    },
+    [current, tuner, chrome.raiseBanner, revealPanel],
+  );
+
+  const onKey = useCallback(
+    (code: number, event: KeyboardEvent) => {
+      // Only layer four owns the remote. A failed channel deliberately does not: pressing
+      // down to try the next one has to keep working.
+      if (!configured || showSettings || showExit) return;
+
+      if (onTransport(code)) {
+        event.preventDefault();
+        return;
+      }
+
+      // Consistency of Controls: a coloured key does the same thing wherever the viewer is.
+      if (code === KEY.YELLOW) {
+        event.preventDefault();
+        setShowSettings(true);
+        return;
+      }
+      if (code === KEY.GREEN) {
+        event.preventDefault();
+        favouriteCurrent(view === "panel" ? visible[index] : (current ?? undefined));
+        return;
+      }
+      // Up goes forwards, towards the higher channel number, which is what channel up has
+      // meant on every television anyone has owned. It was the other way round.
+      if (code === KEY.CH_UP) {
+        event.preventDefault();
+        tuner.step(1);
+        return;
+      }
+      if (code === KEY.CH_DOWN) {
+        event.preventDefault();
+        tuner.step(-1);
+        return;
+      }
+
       /*
-       * Stop returns to the channel list rather than leaving a black screen.
-       *
-       * Stopping live television is a strange thing to ask for and the key exists, so the
-       * kindest reading of it is "I have finished with this channel", which is the list.
+       * A playlist that produced nothing has its own screen, and exactly two keys mean
+       * anything on it. Answered here rather than in the panel branch, because the panel is
+       * behind it with no rows to move through, so every press would land on nothing.
        */
-      case KEY.STOP:
-        tuner.clear();
-        currentRef.current = null;
-        chrome.lowerBanner();
-        revealPanel();
-        break;
-      /*
-       * The scan keys reload the channel.
-       *
-       * Nothing can be scanned through: there is no timeline any more, and on most of these
-       * streams there never was one worth trusting. Rather than answering with a refusal, or
-       * with nothing at all, they do the useful thing that is nearest to what was asked, which
-       * on a live stream that has stalled is to fetch it again.
-       */
-      case KEY.REWIND:
-      case KEY.FORWARD: tuner.retune(); break;
-      // Previous and next channel, which is what "previous and next" means on live
-      // television. They announce rather than take focus, because they change the channel.
-      case KEY.PREV: tuner.step(-1); break;
-      case KEY.NEXT: tuner.step(1); break;
-    }
-    return true;
-  }, [current, tuner, chrome.raiseBanner, revealPanel]);
+      if (!channels.length && !loading) {
+        if (code === KEY.ENTER) {
+          event.preventDefault();
+          setShowSettings(true);
+          return;
+        }
+        if (code === KEY.BACK || code === KEY.ESC) {
+          event.preventDefault();
+          setShowExit(true);
+          return;
+        }
+      }
 
-  const onKey = useCallback((code: number, event: KeyboardEvent) => {
-    // Only layer four owns the remote. A failed channel deliberately does not: pressing
-    // down to try the next one has to keep working.
-    if (!configured || showSettings || showExit) return;
-
-    if (onTransport(code)) { event.preventDefault(); return; }
-
-    // Consistency of Controls: a coloured key does the same thing wherever the viewer is.
-    if (code === KEY.YELLOW) { event.preventDefault(); setShowSettings(true); return; }
-    if (code === KEY.GREEN) {
-      event.preventDefault();
-      favouriteCurrent(view === "panel" ? visible[index] : current ?? undefined);
-      return;
-    }
-    // Up goes forwards, towards the higher channel number, which is what channel up has
-    // meant on every television anyone has owned. It was the other way round.
-    if (code === KEY.CH_UP) { event.preventDefault(); tuner.step(1); return; }
-    if (code === KEY.CH_DOWN) { event.preventDefault(); tuner.step(-1); return; }
-
-    /*
-     * A playlist that produced nothing has its own screen, and exactly two keys mean
-     * anything on it. Answered here rather than in the panel branch, because the panel is
-     * behind it with no rows to move through, so every press would land on nothing.
-     */
-    if (!channels.length && !loading) {
-      if (code === KEY.ENTER) { event.preventDefault(); setShowSettings(true); return; }
-      if (code === KEY.BACK || code === KEY.ESC) { event.preventDefault(); setShowExit(true); return; }
-    }
-
-    // A channel number can be dialled from anywhere.
-    if (code >= 48 && code <= 57) {
-      event.preventDefault();
-      chrome.dial(code - 48, jump);
-      return;
-    }
-    /* OK goes to a dialled number now rather than waiting out the second and a bit, which is
+      // A channel number can be dialled from anywhere.
+      if (code >= 48 && code <= 57) {
+        event.preventDefault();
+        chrome.dial(code - 48, jump);
+        return;
+      }
+      /* OK goes to a dialled number now rather than waiting out the second and a bit, which is
        what a television does and what anyone who has just typed a number expects. */
-    if (chrome.digits && code === KEY.ENTER) {
-      event.preventDefault();
-      jump(Number(chrome.commitDigits()));
-      return;
-    }
+      if (chrome.digits && code === KEY.ENTER) {
+        event.preventDefault();
+        jump(Number(chrome.commitDigits()));
+        return;
+      }
 
-    if (view === "watch") {
-      // Only the keys this screen actually owns are claimed. A remote carries plenty the
-      // app has no business with, volume and mute and source among them, and a keyboard
-      // carries a hundred more.
-      const owned = code === KEY.UP || code === KEY.DOWN || code === KEY.LEFT
-        || code === KEY.RIGHT || code === KEY.ENTER || code === KEY.BACK || code === KEY.ESC;
-      if (owned) event.preventDefault();
+      if (view === "watch") {
+        // Only the keys this screen actually owns are claimed. A remote carries plenty the
+        // app has no business with, volume and mute and source among them, and a keyboard
+        // carries a hundred more.
+        const owned =
+          code === KEY.UP ||
+          code === KEY.DOWN ||
+          code === KEY.LEFT ||
+          code === KEY.RIGHT ||
+          code === KEY.ENTER ||
+          code === KEY.BACK ||
+          code === KEY.ESC;
+        if (owned) event.preventDefault();
+
+        /*
+         * Law 1, before anything else and with no exceptions: up and down change channel.
+         *
+         * Ahead of every other consideration on this screen, including a focused button and
+         * including a channel that has failed. There is no state in this application where
+         * pressing channel up leaves the viewer where they were, which is what makes it
+         * impossible to be stuck: whatever is on screen, one press gets you somewhere else.
+         */
+        if (code === KEY.UP) {
+          tuner.step(1);
+          return;
+        }
+        if (code === KEY.DOWN) {
+          tuner.step(-1);
+          return;
+        }
+
+        switch (code) {
+          /*
+           * Law 3 at the picture. The channel list is off the left of the screen, so left goes to
+           * it. Nothing is off the right, so right has nothing to travel to, and it puts away
+           * whatever is on the screen instead.
+           *
+           * Which makes it the pair of the press that raised it: any key the app does not otherwise
+           * own brings the banner up, and right takes it down again. RETURN still does too, and goes
+           * on to offer to close the application once the screen is clear, so the two are not the
+           * same key with the same job: right only ever means "I have read it, thank you".
+           *
+           * With nothing showing it falls through to the line below the switch and raises the
+           * banner, so the two presses are a toggle rather than one working and the other not.
+           */
+          case inlineEnd:
+            if (chrome.showing) {
+              chrome.clear();
+              return;
+            }
+            break;
+
+          case inlineStart:
+            revealPanel();
+            return;
+
+          // Law 2. At the picture, the only question worth a whole screen is what else is on,
+          // and OK answers it in every state including a channel that has failed to start.
+          case KEY.ENTER:
+            revealPanel();
+            return;
+
+          /*
+           * Law 4. RETURN clears the screen if anything is on it, and closes the application if
+           * nothing is.
+           *
+           * Two presses to leave rather than one, and that is the point. It means nothing on this
+           * screen has to be waited out, and it means the button that closes the application is
+           * never the first press of anything.
+           */
+          case KEY.BACK:
+          case KEY.ESC:
+            if (chrome.showing) chrome.clear();
+            else setShowExit(true);
+            return;
+          // No default on purpose. An unrecognised key is not an instruction to go
+          // somewhere, and the banner below is the whole of the right response: press
+          // something a television does not recognise and it shows you what is on, it does
+          // not open a menu.
+        }
+        chrome.raiseBanner();
+        return;
+      }
+
+      // The channel panel.
+      openPanel();
 
       /*
-       * Law 1, before anything else and with no exceptions: up and down change channel.
+       * While the keyboard has the field, most keys are the field's.
        *
-       * Ahead of every other consideration on this screen, including a focused button and
-       * including a channel that has failed. There is no state in this application where
-       * pressing channel up leaves the viewer where they were, which is what makes it
-       * impossible to be stuck: whatever is on screen, one press gets you somewhere else.
+       * Left and right are a caret, not navigation, which is the whole reason this guard exists:
+       * a viewer correcting the third letter of a channel name must not be thrown into the
+       * category rail. Digits are text here too, so channel dialling stands aside, and the letter
+       * keys were never ours. What is left to the application is up and down, which leave the
+       * field, OK, which commits, and RETURN, which is the way out of everything.
+       *
+       * The same shape as the first run screen, which has the same problem with the same keyboard.
        */
-      if (code === KEY.UP) { tuner.step(1); return; }
-      if (code === KEY.DOWN) { tuner.step(-1); return; }
+      const typing =
+        searching &&
+        pane === "list" &&
+        index === FIELD &&
+        document.activeElement instanceof HTMLInputElement;
+      if (typing) {
+        /*
+         * Left is the caret until there is nothing to its left, and then it is a direction again.
+         *
+         * Without this the categories were unreachable from the keyboard: left belongs to the caret,
+         * so the only way back to the rail was down into the results and left from there, and on an
+         * empty field left did nothing whatsoever, which is indistinguishable from the application
+         * having stopped listening.
+         *
+         * At offset zero there is no text to move through, so the press can only mean what it means
+         * everywhere else in the panel. This is how a caret leaves a field on every platform that
+         * has both a caret and a four directional pad.
+         */
+        if (code === inlineStart) {
+          const el = document.activeElement as HTMLInputElement;
+          if (el.selectionStart === 0 && el.selectionEnd === 0) {
+            event.preventDefault();
+            setPane("rail");
+          }
+          return;
+        }
+        if (code === KEY.BACK || code === KEY.ESC) {
+          event.preventDefault();
+          /*
+           * What was typed, and then the search itself. Two presses, one thought each.
+           *
+           * It was three for a while, and the third was an accident worth recording: putting the
+           * keyboard away was its own press, then clearing was another, then leaving was a third.
+           * Clearing already returns the cursor to the field, which raises the keyboard again, so
+           * "put the keyboard away" was a press that undid something the next press asked for.
+           *
+           * An empty field means there is no search left to go back through, so RETURN leaves.
+           * Nothing needs to dismiss the keyboard on its own: pressing down does that on the way
+           * to the results, which is where somebody who has finished typing is going anyway.
+           */
+          if (query) setQuery("");
+          else closeSearch();
+          return;
+        }
+        if (code === KEY.ENTER) {
+          event.preventDefault();
+          // Into the results, on the first one. Playing it outright would be a viewer pressing OK
+          // on a keyboard and getting a channel they had not looked at yet.
+          if (column.length) setIndex(0);
+          return;
+        }
+        if (code !== KEY.UP && code !== KEY.DOWN) return;
+      }
+
+      /**
+       * Play whatever the channel column has under the cursor.
+       *
+       * One function because OK is the obvious action in either channel-column mode. Written once
+       * so choosing a search result and choosing a category row cannot drift apart: a result takes
+       * the rail to that channel's category, and a row of a category does not need to.
+       */
+      const chooseChannel = () => {
+        if (searching) {
+          if (column[index]) pickResult(column[index]);
+          return;
+        }
+        const channel = visible[index];
+        if (!channel) return;
+        // Choosing the channel already playing only puts the panel away rather than tearing the
+        // stream down and rebuilding it: see pickChannel.
+        if (channel.id !== current?.id) tuner.start(channel);
+        watch();
+      };
+
+      /*
+       * Up and down cycle through the title bar and whichever column the cursor is in.
+       *
+       * The categories have always worked this way, because Search and Settings sit at row zero of
+       * the rail with the categories below them, so walking up off the first category reaches them
+       * and walking down comes back. The channel column had no such route: the only way to those two
+       * keys from a channel was left into the rail, up to the top, and then back again, which is
+       * three presses to reach something a viewer can see directly above where they are looking.
+       *
+       * So the bar is now the row above both columns rather than above one of them, and which column
+       * the cursor left is remembered, because coming back to the categories from a channel list
+       * would be the interface deciding the viewer meant something they did not press. Horizontal
+       * movement stays within the two lists, while the two controls in the bar stay a pair of their
+       * own.
+       *
+       * The search field is left out of it. While searching, the thing above the results is the field
+       * being typed into, and putting the title bar above that as well would make one press mean two
+       * different things depending on how the column got there.
+       */
+      const inBar = pane === "rail" && cursor === 0;
+      const atTop = index <= 0;
+      const atBottom = index >= column.length - 1;
+      const enterBar = (from: "rail" | "list") => {
+        barFrom.current = from;
+        setPane("rail");
+        moveCursor(0);
+      };
 
       switch (code) {
-        /*
-         * Law 3 at the picture. The channel list is off the left of the screen, so left goes to
-         * it. Nothing is off the right, so right has nothing to travel to, and it puts away
-         * whatever is on the screen instead.
-         *
-         * Which makes it the pair of the press that raised it: any key the app does not otherwise
-         * own brings the banner up, and right takes it down again. RETURN still does too, and goes
-         * on to offer to close the application once the screen is clear, so the two are not the
-         * same key with the same job: right only ever means "I have read it, thank you".
-         *
-         * With nothing showing it falls through to the line below the switch and raises the
-         * banner, so the two presses are a toggle rather than one working and the other not.
-         */
-        case KEY.RIGHT:
-          if (chrome.showing) { chrome.clear(); return; }
+        case KEY.UP:
+          event.preventDefault();
+          if (pane === "list") {
+            if (!searching && atTop) enterBar("list");
+            else setIndex((i) => stepColumn(i, -1, column.length, searching));
+          } else if (inBar && barFrom.current === "list") {
+            // The arrow chooses the edge to return to: up wraps to the bottom, down to the top.
+            // This is also what lets a channel list reached from its first row come back to row zero.
+            setPane("list");
+            setIndex(Math.max(0, column.length - 1));
+          } else {
+            if (cursor === 1) barFrom.current = "rail";
+            nudgeCursor(-1);
+          }
           break;
-
-        case KEY.LEFT: revealPanel(); return;
-
-        // Law 2. At the picture, the only question worth a whole screen is what else is on,
-        // and OK answers it in every state including a channel that has failed to start.
-        case KEY.ENTER: revealPanel(); return;
-
-        /*
-         * Law 4. RETURN clears the screen if anything is on it, and closes the application if
-         * nothing is.
-         *
-         * Two presses to leave rather than one, and that is the point. It means nothing on this
-         * screen has to be waited out, and it means the button that closes the application is
-         * never the first press of anything.
-         */
+        case KEY.DOWN:
+          event.preventDefault();
+          if (pane === "list") {
+            if (!searching && atBottom) enterBar("list");
+            else setIndex((i) => stepColumn(i, 1, column.length, searching));
+          } else if (inBar && barFrom.current === "list") {
+            // Down from Search/Settings returns to the top rather than the row that reached the bar.
+            setPane("list");
+            setIndex(0);
+          } else {
+            if (cursor === lists.length) barFrom.current = "rail";
+            nudgeCursor(1);
+          }
+          break;
+        case inlineStart:
+          event.preventDefault();
+          if (pane === "list") {
+            // A vertical trip through the bar leaves the rail cursor at zero. Restore the category
+            // that owns the channel column before showing that list again.
+            if (cursor === 0) {
+              cursorRef.current = category + 1;
+              setCursor(category + 1);
+            }
+            setPane("rail");
+          } else if (cursor === 0) {
+            // Search and Settings form a two-control ring, so neither edge falls into a list.
+            setHeaderKey((key) => (key === "search" ? "settings" : "search"));
+          }
+          break;
+        case inlineEnd:
+          event.preventDefault();
+          if (pane === "list") chooseChannel();
+          else if (cursor === 0) {
+            setHeaderKey((key) => (key === "search" ? "settings" : "search"));
+          } else if (pane === "rail") setPane("list");
+          break;
+        case KEY.ENTER:
+          event.preventDefault();
+          if (pane === "rail") {
+            if (cursor === 0) {
+              if (headerKey === "settings") setShowSettings(true);
+              else openSearch();
+            }
+            // The Tab UI guidance: moving from the category area into the content list puts
+            // the focus on the first item when the category has just changed, and back on the
+            // item it left when it has not. moveCursor is what resets the index, so arriving
+            // here without having moved keeps the row the viewer was on.
+            else setPane("list");
+          } else chooseChannel();
+          break;
         case KEY.BACK:
         case KEY.ESC:
-          if (chrome.showing) chrome.clear();
-          else setShowExit(true);
-          return;
-        // No default on purpose. An unrecognised key is not an instruction to go
-        // somewhere, and the banner below is the whole of the right response: press
-        // something a television does not recognise and it shows you what is on, it does
-        // not open a menu.
-      }
-      chrome.raiseBanner();
-      return;
-    }
-
-    // The channel panel.
-    openPanel();
-
-    /*
-     * While the keyboard has the field, most keys are the field's.
-     *
-     * Left and right are a caret, not navigation, which is the whole reason this guard exists:
-     * a viewer correcting the third letter of a channel name must not be thrown into the
-     * category rail. Digits are text here too, so channel dialling stands aside, and the letter
-     * keys were never ours. What is left to the application is up and down, which leave the
-     * field, OK, which commits, and RETURN, which is the way out of everything.
-     *
-     * The same shape as the first run screen, which has the same problem with the same keyboard.
-     */
-    const typing = searching && pane === "list" && index === FIELD
-      && document.activeElement instanceof HTMLInputElement;
-    if (typing) {
-      /*
-       * Left is the caret until there is nothing to its left, and then it is a direction again.
-       *
-       * Without this the categories were unreachable from the keyboard: left belongs to the caret,
-       * so the only way back to the rail was down into the results and left from there, and on an
-       * empty field left did nothing whatsoever, which is indistinguishable from the application
-       * having stopped listening.
-       *
-       * At offset zero there is no text to move through, so the press can only mean what it means
-       * everywhere else in the panel. This is how a caret leaves a field on every platform that
-       * has both a caret and a four directional pad.
-       */
-      if (code === KEY.LEFT) {
-        const el = document.activeElement as HTMLInputElement;
-        if (el.selectionStart === 0 && el.selectionEnd === 0) {
           event.preventDefault();
-          setPane("rail");
-        }
-        return;
+          /*
+           * RETURN goes back by exactly one thing, which in a search is two things deep.
+           *
+           * A query clears first, because the viewer's last action was typing it and the press
+           * that undoes their last action is the one they expect. With the field empty there is
+           * nothing left of the search, so the next press leaves it for the category the rail is
+           * on, and the one after that puts the panel away.
+           *
+           * Clearing from down in the results takes the cursor back to the field, because the
+           * results it was standing in have just gone and the field is the only place left.
+           */
+          if (searching && query) {
+            setQuery("");
+            setApplied("");
+            setIndex(FIELD);
+          } else if (searching) closeSearch();
+          // The panel is one thing, so RETURN puts the whole thing away rather than
+          // stepping through its two columns. With nothing playing there is no picture to
+          // go back to, so the only way out is out.
+          else if (current) watch();
+          else setShowExit(true);
+          break;
       }
-      if (code === KEY.BACK || code === KEY.ESC) {
-        event.preventDefault();
-        /*
-         * What was typed, and then the search itself. Two presses, one thought each.
-         *
-         * It was three for a while, and the third was an accident worth recording: putting the
-         * keyboard away was its own press, then clearing was another, then leaving was a third.
-         * Clearing already returns the cursor to the field, which raises the keyboard again, so
-         * "put the keyboard away" was a press that undid something the next press asked for.
-         *
-         * An empty field means there is no search left to go back through, so RETURN leaves.
-         * Nothing needs to dismiss the keyboard on its own: pressing down does that on the way
-         * to the results, which is where somebody who has finished typing is going anyway.
-         */
-        if (query) setQuery("");
-        else closeSearch();
-        return;
-      }
-      if (code === KEY.ENTER) {
-        event.preventDefault();
-        // Into the results, on the first one. Playing it outright would be a viewer pressing OK
-        // on a keyboard and getting a channel they had not looked at yet.
-        if (column.length) setIndex(0);
-        return;
-      }
-      if (code !== KEY.UP && code !== KEY.DOWN) return;
-    }
-
-    /**
-     * Play whatever the channel column has under the cursor.
-     *
-     * One function because OK is the obvious action in either channel-column mode. Written once
-     * so choosing a search result and choosing a category row cannot drift apart: a result takes
-     * the rail to that channel's category, and a row of a category does not need to.
-     */
-    const chooseChannel = () => {
-      if (searching) {
-        if (column[index]) pickResult(column[index]);
-        return;
-      }
-      const channel = visible[index];
-      if (!channel) return;
-      // Choosing the channel already playing only puts the panel away rather than tearing the
-      // stream down and rebuilding it: see pickChannel.
-      if (channel.id !== current?.id) tuner.start(channel);
-      watch();
-    };
-
-    /*
-     * Up and down cycle through the title bar and whichever column the cursor is in.
-     *
-     * The categories have always worked this way, because Search and Settings sit at row zero of
-     * the rail with the categories below them, so walking up off the first category reaches them
-     * and walking down comes back. The channel column had no such route: the only way to those two
-     * keys from a channel was left into the rail, up to the top, and then back again, which is
-     * three presses to reach something a viewer can see directly above where they are looking.
-     *
-     * So the bar is now the row above both columns rather than above one of them, and which column
-     * the cursor left is remembered, because coming back to the categories from a channel list
-     * would be the interface deciding the viewer meant something they did not press. Horizontal
-     * movement stays within the two lists, while the two controls in the bar stay a pair of their
-     * own.
-     *
-     * The search field is left out of it. While searching, the thing above the results is the field
-     * being typed into, and putting the title bar above that as well would make one press mean two
-     * different things depending on how the column got there.
-     */
-    const inBar = pane === "rail" && cursor === 0;
-    const atTop = index <= 0;
-    const atBottom = index >= column.length - 1;
-    const enterBar = (from: "rail" | "list") => {
-      barFrom.current = from;
-      setPane("rail");
-      moveCursor(0);
-    };
-
-    switch (code) {
-      case KEY.UP:
-        event.preventDefault();
-        if (pane === "list") {
-          if (!searching && atTop) enterBar("list");
-          else setIndex((i) => stepColumn(i, -1, column.length, searching));
-        } else if (inBar && barFrom.current === "list") {
-          // The arrow chooses the edge to return to: up wraps to the bottom, down to the top.
-          // This is also what lets a channel list reached from its first row come back to row zero.
-          setPane("list");
-          setIndex(Math.max(0, column.length - 1));
-        } else {
-          if (cursor === 1) barFrom.current = "rail";
-          nudgeCursor(-1);
-        }
-        break;
-      case KEY.DOWN:
-        event.preventDefault();
-        if (pane === "list") {
-          if (!searching && atBottom) enterBar("list");
-          else setIndex((i) => stepColumn(i, 1, column.length, searching));
-        } else if (inBar && barFrom.current === "list") {
-          // Down from Search/Settings returns to the top rather than the row that reached the bar.
-          setPane("list");
-          setIndex(0);
-        } else {
-          if (cursor === lists.length) barFrom.current = "rail";
-          nudgeCursor(1);
-        }
-        break;
-      case KEY.LEFT:
-        event.preventDefault();
-        if (pane === "list") {
-          // A vertical trip through the bar leaves the rail cursor at zero. Restore the category
-          // that owns the channel column before showing that list again.
-          if (cursor === 0) {
-            cursorRef.current = category + 1;
-            setCursor(category + 1);
-          }
-          setPane("rail");
-        }
-        else if (cursor === 0) {
-          // Search and Settings form a two-control ring, so neither edge falls into a list.
-          setHeaderKey((key) => key === "search" ? "settings" : "search");
-        }
-        break;
-      case KEY.RIGHT:
-        event.preventDefault();
-        if (pane === "list") chooseChannel();
-        else if (cursor === 0) {
-          setHeaderKey((key) => key === "search" ? "settings" : "search");
-        } else if (pane === "rail") setPane("list");
-        break;
-      case KEY.ENTER:
-        event.preventDefault();
-        if (pane === "rail") {
-          if (cursor === 0) {
-            if (headerKey === "settings") setShowSettings(true);
-            else openSearch();
-          }
-          // The Tab UI guidance: moving from the category area into the content list puts
-          // the focus on the first item when the category has just changed, and back on the
-          // item it left when it has not. moveCursor is what resets the index, so arriving
-          // here without having moved keeps the row the viewer was on.
-          else setPane("list");
-        } else chooseChannel();
-        break;
-      case KEY.BACK:
-      case KEY.ESC:
-        event.preventDefault();
-        /*
-         * RETURN goes back by exactly one thing, which in a search is two things deep.
-         *
-         * A query clears first, because the viewer's last action was typing it and the press
-         * that undoes their last action is the one they expect. With the field empty there is
-         * nothing left of the search, so the next press leaves it for the category the rail is
-         * on, and the one after that puts the panel away.
-         *
-         * Clearing from down in the results takes the cursor back to the field, because the
-         * results it was standing in have just gone and the field is the only place left.
-         */
-        if (searching && query) { setQuery(""); setApplied(""); setIndex(FIELD); }
-        else if (searching) closeSearch();
-        // The panel is one thing, so RETURN puts the whole thing away rather than
-        // stepping through its two columns. With nothing playing there is no picture to
-        // go back to, so the only way out is out.
-        else if (current) watch();
-        else setShowExit(true);
-        break;
-    }
-  // Only what the body actually reads. lists.length, moveCursor, banner and retune were all
-  // in here and none of them appear above: useRemote takes the window listener off and puts
-  // it back whenever this changes identity, so a dependency that is not a dependency is
-  // listener churn on every keypress, on hardware that can least afford it.
-  }, [configured, showSettings, showExit, channels.length, loading, onTransport, view,
-      jump, pane, visible, index, tuner, favouriteCurrent, current, cursor,
-      nudgeCursor, openPanel, revealPanel, watch, chrome,
-      searching, query, column, headerKey, openSearch, closeSearch, pickResult]);
+      // Only what the body actually reads. lists.length, moveCursor, banner and retune were all
+      // in here and none of them appear above: useRemote takes the window listener off and puts
+      // it back whenever this changes identity, so a dependency that is not a dependency is
+      // listener churn on every keypress, on hardware that can least afford it.
+    },
+    [
+      configured,
+      showSettings,
+      showExit,
+      channels.length,
+      loading,
+      onTransport,
+      view,
+      jump,
+      pane,
+      visible,
+      index,
+      tuner,
+      favouriteCurrent,
+      current,
+      cursor,
+      nudgeCursor,
+      openPanel,
+      revealPanel,
+      watch,
+      chrome,
+      searching,
+      query,
+      column,
+      headerKey,
+      openSearch,
+      closeSearch,
+      pickResult,
+      inlineStart,
+      inlineEnd,
+    ],
+  );
 
   useRemote(onKey);
 
   // Which layer is on top decides what everything below it is allowed to draw.
-  const modal = showSettings || showExit || !configured;   // layer 4
-  const panelOpen = view === "panel";                      // layer 3
-  const covered = modal || view !== "watch";               // anything above the player
-  const atPlayer = !covered;                               // layer 2 may show
+  const modal = showSettings || showExit || !configured; // layer 4
+  const panelOpen = view === "panel"; // layer 3
+  const covered = modal || view !== "watch"; // anything above the player
+  const atPlayer = !covered; // layer 2 may show
 
   /**
    * Stop telling the panel things it cannot show.
@@ -1103,7 +1256,8 @@ export default function App() {
 
   const offScreen = !panelOpen && restingClosed;
   const told = useRef({ playingId: "", live: false });
-  if (!offScreen) told.current = { playingId: current?.id ?? "", live: !fault && !paused && !busy };
+  if (!offScreen)
+    told.current = { playingId: current?.id ?? "", live: !fault && !paused && !busy };
 
   /**
    * Handlers the panel hands to its rows.
@@ -1121,25 +1275,39 @@ export default function App() {
    * were. Rebuilding a stream is now something you ask for, with Reload, rather than something
    * that happens because you pressed OK on the row you were already watching.
    */
-  const pickChannel = useCallback((i: number) => {
-    setPane("list");
-    setIndex(i);
-    const channel = lists[category]?.channels[i];
-    if (channel && channel.id !== currentRef.current?.id) tuner.start(channel);
-    watch();
-  }, [lists, category, tuner.start, watch]);
+  const pickChannel = useCallback(
+    (i: number) => {
+      setPane("list");
+      setIndex(i);
+      const channel = lists[category]?.channels[i];
+      if (channel && channel.id !== currentRef.current?.id) tuner.start(channel);
+      watch();
+    },
+    [lists, category, tuner.start, watch],
+  );
 
-  const pickCategory = useCallback((i: number) => {
-    moveCursor(i + 1);
-    setPane("list");
-  }, [moveCursor]);
+  const pickCategory = useCallback(
+    (i: number) => {
+      moveCursor(i + 1);
+      setPane("list");
+    },
+    [moveCursor],
+  );
 
   const openSettings = useCallback(() => setShowSettings(true), []);
 
-
   const railItems = useMemo(
-    () => lists.map((l) => ({ name: l.name, count: l.channels.length })),
-    [lists],
+    () =>
+      lists.map((l) => ({
+        name:
+          l.name === FAVOURITES
+            ? t("channel.favourites")
+            : l.name === UNCATEGORISED
+              ? t("channel.uncategorised")
+              : l.name,
+        count: l.channels.length,
+      })),
+    [lists, t],
   );
 
   /**
@@ -1169,11 +1337,17 @@ export default function App() {
    */
   const picking = useRef({ searching, matches: results.matches });
   picking.current = { searching, matches: results.matches };
-  const searchPick = useCallback((i: number) => {
-    const { searching: inSearch, matches } = picking.current;
-    if (!inSearch) { pickChannel(i); return; }
-    if (matches[i]) pickResult(matches[i]);
-  }, [pickChannel, pickResult]);
+  const searchPick = useCallback(
+    (i: number) => {
+      const { searching: inSearch, matches } = picking.current;
+      if (!inSearch) {
+        pickChannel(i);
+        return;
+      }
+      if (matches[i]) pickResult(matches[i]);
+    },
+    [pickChannel, pickResult],
+  );
 
   /**
    * Where the playing channel sits in the list channel up and down walks.
@@ -1187,11 +1361,15 @@ export default function App() {
     if (!shown) return undefined;
     const at = visible.findIndex((c) => c.id === shown.id);
     if (at === -1) return undefined;
-    return { at: at + 1, of: visible.length, list: lists[category]?.name ?? "" };
-  }, [tuner.shown, visible, lists, category]);
+    return {
+      at: at + 1,
+      of: visible.length,
+      list: displayListName(lists[category]?.name ?? ""),
+    };
+  }, [tuner.shown, visible, lists, category, t]);
 
   return (
-    <div ref={appRef} className="app">
+    <div ref={appRef} className="app" dir={direction}>
       {/* ---- layer 1, the player -------------------------------------------------- */}
       {/* Only off the TV. AVPlay drives the set's own video plane and never touches this
           element, so on Tizen it would be an opaque black box sitting on top of the
@@ -1207,26 +1385,26 @@ export default function App() {
       )}
 
       {/*
-        * A configured playlist that produced nothing.
-        *
-        * The way out is named rather than drawn. Checklist 2.2 and 3.2 both require every
-        * selectable object to be reachable with the four directional buttons, and a button
-        * on this screen would have to earn that: there is no list to move through here, so
-        * nothing would focus it and it would be a dead end with a control drawn on it.
-        * Naming the keys that already work is the honest answer, and it is what the rest of
-        * the app does. OK and the yellow key both open Settings from here.
-        */}
+       * A configured playlist that produced nothing.
+       *
+       * The way out is named rather than drawn. Checklist 2.2 and 3.2 both require every
+       * selectable object to be reachable with the four directional buttons, and a button
+       * on this screen would have to earn that: there is no list to move through here, so
+       * nothing would focus it and it would be a dead end with a control drawn on it.
+       * Naming the keys that already work is the honest answer, and it is what the rest of
+       * the app does. OK and the yellow key both open Settings from here.
+       */}
       {configured && !channels.length && (
         <div className="splash">
           {/*
-            * The mark above the name, because this is the first thing a viewer sees after choosing
-            * the app and a launcher tile that turns into a word on a black screen does not look like
-            * the same application starting. The same file the launcher itself draws, so the two
-            * cannot drift: scripts/icon.mjs renders the bitmap from this vector.
-            */}
+           * The mark above the name, because this is the first thing a viewer sees after choosing
+           * the app and a launcher tile that turns into a word on a black screen does not look like
+           * the same application starting. The same file the launcher itself draws, so the two
+           * cannot drift: scripts/icon.mjs renders the bitmap from this vector.
+           */}
           <img className="splash-mark" src="./icon.svg" alt="" aria-hidden="true" />
           <h1>OpenIPTV</h1>
-          <p>{loading ? "Loading the playlist\u2026" : "That playlist has no channels in it."}</p>
+          <p>{loading ? t("app.loadingPlaylist") : t("app.emptyPlaylist")}</p>
           {/* Under the line it belongs to rather than above the name, so the eye reads the mark, then
               what is happening, and the moving thing is last: a spinner at the top of a column drags
               attention off the words it is supposed to be explaining. */}
@@ -1235,8 +1413,8 @@ export default function App() {
             <KeyGuide
               className="splash-keys"
               items={[
-                { keys: ["OK"], label: "Choose another playlist" },
-                { keys: ["Return"], label: "Close the app" },
+                { keys: ["OK"], label: t("app.chooseAnotherPlaylist") },
+                { keys: ["Return"], label: t("common.closeApp") },
               ]}
             />
           )}
@@ -1244,15 +1422,15 @@ export default function App() {
       )}
 
       {/*
-        * What is happening to the picture, in the middle of the picture, and nowhere else.
-        *
-        * Connecting, waiting, paused and failed are all things happening to the picture, so they
-        * are reported over it, by one surface whose words change. The banner along the bottom
-        * reports on the channel and says nothing about any of this.
-        *
-        * Tied to the state itself and to no timer, so checklist 4.5 holds: the indicator
-        * outlasts the task rather than the other way round.
-        */}
+       * What is happening to the picture, in the middle of the picture, and nowhere else.
+       *
+       * Connecting, waiting, paused and failed are all things happening to the picture, so they
+       * are reported over it, by one surface whose words change. The banner along the bottom
+       * reports on the channel and says nothing about any of this.
+       *
+       * Tied to the state itself and to no timer, so checklist 4.5 holds: the indicator
+       * outlasts the task rather than the other way round.
+       */}
       {current && !covered && (
         <PictureState
           channel={current.name}
@@ -1269,16 +1447,16 @@ export default function App() {
 
       {/* ---- layer 2, the playback banner and its key guide ----------------------- */}
       {/*
-        * Held open while a channel is tuning, and for the banner's own notice period after a
-        * channel is playing or paused. The picture state separately reports that a channel is
-        * paused, so paused must not bypass the banner timer.
-        *
-        * It shows the channel the viewer has landed on rather than the one playing, which
-        * during a burst of channel up are not the same thing: the name has to keep up with the
-        * key while the tuner deliberately does not.
-        */}
-      {(tuner.shown) && atPlayer && chrome.banner && !fault && (
-        <PlaybackBanner channel={(tuner.shown)!} position={position} />
+       * Held open while a channel is tuning, and for the banner's own notice period after a
+       * channel is playing or paused. The picture state separately reports that a channel is
+       * paused, so paused must not bypass the banner timer.
+       *
+       * It shows the channel the viewer has landed on rather than the one playing, which
+       * during a burst of channel up are not the same thing: the name has to keep up with the
+       * key while the tuner deliberately does not.
+       */}
+      {tuner.shown && atPlayer && chrome.banner && !fault && (
+        <PlaybackBanner channel={tuner.shown!} position={position} />
       )}
 
       {/* ---- layer 3, the panel ---------------------------------------------------- */}
@@ -1293,56 +1471,58 @@ export default function App() {
           onSettings={openSettings}
         />
         <div className="panel-cols">
-        <Sidebar
-          categories={railItems}
-          /* Nothing is showing while a search is, and the rail has to say so. Left pointing at
+          <Sidebar
+            categories={railItems}
+            /* Nothing is showing while a search is, and the rail has to say so. Left pointing at
              the category the column used to hold, the marker claims the results beside it came
              from there, which is the one thing that mark means. The Search key carries the state
              instead, which is where it belongs. */
-          selected={searching ? -1 : category}
-          cursor={cursor}
-          loading={loading}
-          focused={pane === "rail"}
-          scale={settings.scale()}
-          onSelect={pickCategory}
-        />
-        <ChannelList
-          channels={column}
-          category={lists[category]?.name ?? ""}
-          index={index}
-          loading={loading}
-          focused={pane === "list"}
-          playingId={told.current.playingId}
-          live={told.current.live}
-          favourites={favouriteIds}
-          showNumbers={settings.showNumbers}
-          showLogos={settings.showLogos}
-          scale={settings.scale()}
-          numberDigits={numberDigits}
-          search={searching
-            ? {
-                query,
-                total: results.total,
-                /* The field holds the keyboard only while this column holds the remote. Stepping
+            selected={searching ? -1 : category}
+            cursor={cursor}
+            loading={loading}
+            focused={pane === "rail"}
+            scale={settings.scale()}
+            onSelect={pickCategory}
+          />
+          <ChannelList
+            channels={column}
+            category={displayListName(lists[category]?.name ?? "")}
+            index={index}
+            loading={loading}
+            focused={pane === "list"}
+            playingId={told.current.playingId}
+            live={told.current.live}
+            favourites={favouriteIds}
+            showNumbers={settings.showNumbers}
+            showLogos={settings.showLogos}
+            scale={settings.scale()}
+            numberDigits={numberDigits}
+            search={
+              searching
+                ? {
+                    query,
+                    total: results.total,
+                    /* The field holds the keyboard only while this column holds the remote. Stepping
                    into the rail has to put the keyboard away, or it stays up over a list the
                    viewer has left, covering the categories they went to read. */
-                onField: pane === "list" && index === FIELD,
-                onQuery: setQuery,
-              }
-            : undefined}
-          onSelect={searchPick}
-        />
+                    onField: pane === "list" && index === FIELD,
+                    onQuery: setQuery,
+                  }
+                : undefined
+            }
+            onSelect={searchPick}
+          />
         </div>
 
         {/*
-          * The key guide, along the foot of the panel it describes.
-          *
-          * Inside the panel rather than floating beside it. Here it has the panel's full
-          * width, it cannot collide with the pointer pad, and it sits beside the list it is
-          * talking about. It is a row of the panel rather than an overlay on it, so it takes
-          * its space from the list instead of covering the bottom of it, which is what
-          * checklist 1.3 asks for.
-          */}
+         * The key guide, along the foot of the panel it describes.
+         *
+         * Inside the panel rather than floating beside it. Here it has the panel's full
+         * width, it cannot collide with the pointer pad, and it sits beside the list it is
+         * talking about. It is a row of the panel rather than an overlay on it, so it takes
+         * its space from the list instead of covering the bottom of it, which is what
+         * checklist 1.3 asks for.
+         */}
         {/* Four items, because a fifth wraps the line, and wrapping the one piece of writing
             that explains the application is a poor trade. The green key is taught on the
             banner instead, which has the whole width of the screen for it. It used to be
@@ -1353,31 +1533,47 @@ export default function App() {
             before it goes back to the picture. A guide that says otherwise is worse than none. */}
         <KeyGuide
           className="panel-hints ruled"
-          items={searching
-            ? [
-                { keys: ["\u2191", "\u2193"], label: "Move" },
-                { keys: ["OK"], label: index === FIELD ? "Show matches" : "Watch" },
-                { keys: ["Return"], label: query ? "Clear" : "Back to the channels" },
-              ]
-            : [
-                { keys: ["\u2191", "\u2193"], label: "Move" },
-                { keys: ["OK"], label: "Watch" },
-                { keys: ["0-9"], label: "Channel number" },
-                { keys: ["Return"], label: current ? "Back to the picture" : "Close the app" },
-              ]}
+          items={
+            searching
+              ? [
+                  { keys: ["\u2191", "\u2193"], label: t("common.move") },
+                  {
+                    keys: ["OK"],
+                    label: index === FIELD ? t("guide.showMatches") : t("common.watch"),
+                  },
+                  {
+                    keys: ["Return"],
+                    label: query ? t("guide.clear") : t("common.backToChannels"),
+                  },
+                ]
+              : [
+                  { keys: ["\u2191", "\u2193"], label: t("common.move") },
+                  { keys: ["OK"], label: t("common.watch") },
+                  { keys: ["0-9"], label: t("common.channelNumber") },
+                  {
+                    keys: ["Return"],
+                    label: current ? t("common.backToPicture") : t("common.closeApp"),
+                  },
+                ]
+          }
         />
       </div>
       {settings.showClock && panelOpen && !modal && <Clock />}
 
       {/* ---- layer 4, the modals --------------------------------------------------- */}
       {showSettings && <Settings onClose={() => setShowSettings(false)} />}
-      {showExit && <ExitDialog watching={!!current && !fault} onCancel={() => setShowExit(false)} />}
+      {showExit && (
+        <ExitDialog watching={!!current && !fault} onCancel={() => setShowExit(false)} />
+      )}
       {/* No confirmation on the way out of first run, unlike everywhere else. There is
           nothing in progress to interrupt and nothing to lose, and the footer says what
           RETURN will do before it is pressed. */}
       {!configured && (
         <Onboarding
-          onAdd={(name, url) => { settings.addPlaylist(name, url); void load(true); }}
+          onAdd={(name, url) => {
+            settings.addPlaylist(name, url);
+            void load(true);
+          }}
           onExit={exitApp}
         />
       )}
@@ -1386,7 +1582,11 @@ export default function App() {
       {/* A dialled channel number and a transient message answer to nothing below them. */}
       {chrome.digits && <div className="digits">{chrome.digits}</div>}
       {chrome.toast && <div className="toast">{chrome.toast}</div>}
-      {error && !fault && <div className="toast warn">{error}</div>}
+      {error && !fault && (
+        <div className="toast warn">
+          {errorKey ? t(errorKey, { detail: errorDetail }) : error}
+        </div>
+      )}
 
       {/* The whole remote's directional pad in one place, so the app can be driven without
           one. It sends the same keys, so it needs to know nothing about what they do. */}

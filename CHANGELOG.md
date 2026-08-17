@@ -2,6 +2,30 @@
 
 Notable changes, newest first, in the format of [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## 1.3.0
+
+### Added
+
+- **Internationalisation.** The application now includes Arabic, Bengali, Chinese (Simplified), Dutch, English, French, German, Hindi, Indonesian, Italian, Japanese, Korean, Persian, Portuguese, Russian, Spanish, and Turkish catalogs.
+- **System language detection.** The default System preference follows the TV browser language through `navigator.language`, with English as the fallback for unsupported languages.
+- **Language picker.** Settings and the first run screen now use a scrollable picker with native language names, which keeps the selection usable as more locales are added.
+- **Right to left interface support.** Arabic and Persian mirror the channel panel, Settings sheet, overlays, controls, pointer pad, and debug Smart Remote.
+- **Translated runtime messages.** Playlist validation, loading states, playback errors, diagnostics, key guides, accessible names, and confirmation dialogs now use locale catalogs.
+- **Locale regression coverage.** Tests cover System detection, catalog completeness, translated runtime messages, language picker selection, RTL navigation, guide spacing, and RTL control placement.
+
+### Changed
+
+- **Language ordering.** System remains first, while the language options are sorted by their English names.
+- **Locale aware formatting.** Generated numbers, clocks, counts, channel positions, and alphabetical sorting now use the selected locale.
+- **Playlist content handling.** Playlist names and groups remain unchanged, while generated fallback labels and technical values receive the correct language and text direction.
+- **Playback and playlist errors.** Stores and services now carry stable message keys and error details, so the UI can translate them without storing English prose in application state.
+
+### Fixed
+
+- **Playback banner numbers.** Channel numbers in the banner now use the same locale formatting as channel list numbers.
+- **RTL guide spacing.** Paired direction badges keep their spacing in right to left layouts, including the margin before their labels.
+- **RTL control placement.** The pointer pad and debug Smart Remote start on the left in right to left layouts, while dragged controls keep their chosen positions.
+
 ## 1.2.0
 
 ### Added

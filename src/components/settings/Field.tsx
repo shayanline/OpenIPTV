@@ -1,3 +1,4 @@
+import { useLocale } from "../../hooks/useLocale";
 
 /**
  * The three controls every settings section is built from.
@@ -7,8 +8,14 @@
  * are generic and they are shared, so they live on their own.
  */
 
-export function Row({ label, hint, children }: {
-  label: string; hint?: string; children: React.ReactNode;
+export function Row({
+  label,
+  hint,
+  children,
+}: {
+  label: string;
+  hint?: string;
+  children: React.ReactNode;
 }) {
   return (
     <div className="field">
@@ -21,7 +28,12 @@ export function Row({ label, hint, children }: {
   );
 }
 
-export function Choice<T extends string>({ label, options, value, onChange }: {
+export function Choice<T extends string>({
+  label,
+  options,
+  value,
+  onChange,
+}: {
   label: string;
   options: readonly { readonly id: T; readonly label: string }[];
   value: T;
@@ -45,11 +57,16 @@ export function Choice<T extends string>({ label, options, value, onChange }: {
   );
 }
 
-export function Toggle({ label, value, onChange }: {
+export function Toggle({
+  label,
+  value,
+  onChange,
+}: {
   label: string;
   value: boolean;
   onChange: (v: boolean) => void;
 }) {
+  const { t } = useLocale();
   return (
     <button
       type="button"
@@ -58,8 +75,10 @@ export function Toggle({ label, value, onChange }: {
       aria-pressed={value}
       onClick={() => onChange(!value)}
     >
-      <span className="switch-track"><span className="switch-knob" /></span>
-      <span>{value ? "On" : "Off"}</span>
+      <span className="switch-track">
+        <span className="switch-knob" />
+      </span>
+      <span>{value ? t("common.on") : t("common.off")}</span>
     </button>
   );
 }

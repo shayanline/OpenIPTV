@@ -1,7 +1,11 @@
 import { useEffect, useRef, useState } from "react";
+import { useLocale } from "../hooks/useLocale";
+import { useSettings } from "../stores/settings";
 import { KEY, useRemote } from "../hooks/useRemote";
 import { useSpatialNav } from "../hooks/useSpatialNav";
 import { checkPlaylistUrl, nameFromUrl } from "../services/playlistUrl";
+import type { MessageKey } from "../services/locale";
+import { LanguagePicker } from "./LanguagePicker";
 import { KeyGuide } from "./KeyGuide";
 
 /**
@@ -12,26 +16,33 @@ import { KeyGuide } from "./KeyGuide";
  * one field, one button: the guidance asks for unnecessary levels to be removed and for
  * an app to need no manual.
  */
-export function Onboarding({ onAdd, onExit }: {
+export function Onboarding({
+  onAdd,
+  onExit,
+}: {
   onAdd: (name: string, url: string) => void;
   /** RETURN here closes the application, because this screen is the application's home. */
   onExit: () => void;
 }) {
+  const { t } = useLocale();
+  const settings = useSettings();
   const box = useRef<HTMLDivElement>(null);
   const first = useRef<HTMLInputElement>(null);
   const { move } = useSpatialNav(box, true);
   const [name, setName] = useState("");
   const [url, setUrl] = useState("");
-  const [problem, setProblem] = useState("");
+  const [problem, setProblem] = useState<MessageKey | "">("");
 
-  useEffect(() => { first.current?.focus(); }, []);
+  useEffect(() => {
+    first.current?.focus();
+  }, []);
 
   const submit = () => {
     // Checked here as well as in Settings, so a typo on the very first screen is answered
     // at once instead of after a twenty second timeout that blames the network.
     const verdict = checkPlaylistUrl(url);
     if (!verdict.ok) {
-      setProblem(verdict.problem);
+      setProblem(verdict.problemKey ?? "validation.completeAddress");
       return;
     }
     onAdd(name.trim() || nameFromUrl(url), url.trim());
@@ -71,34 +82,64 @@ export function Onboarding({ onAdd, onExit }: {
     <div className="onboard">
       <div className="onboard-box" ref={box}>
         <h1>OpenIPTV</h1>
-        <p className="lead">
-          Add the address of an M3U playlist to get started. Anything you add stays on this
-          device, and you can add more or change it later in Settings.
-        </p>
+        <p className="lead">{t("onboarding.description")}</p>
 
         <div className="form">
-          <label htmlFor="ob-url">Playlist address</label>
-          <input id="ob-url" ref={first} value={url} spellCheck={false}
-                 className={problem ? "wrong" : ""}
-                 aria-invalid={problem ? true : undefined}
-                 aria-describedby={problem ? "ob-url-problem" : undefined}
-                 placeholder="https://example.com/playlist.m3u"
-                 onChange={(e) => { setUrl(e.target.value); setProblem(""); }} />
-          {problem && <p className="field-problem" id="ob-url-problem" role="alert">{problem}</p>}
-          <label htmlFor="ob-name">Name it (optional)</label>
-          <input id="ob-name" value={name} placeholder="Taken from the address"
-                 onChange={(e) => setName(e.target.value)} />
+          <label htmlFor="ob-url">{t("onboarding.playlistAddress")}</label>
+          <input
+            id="ob-url"
+            ref={first}
+            value={url}
+            spellCheck={false}
+            dir="ltr"
+            className={problem ? "wrong" : ""}
+            aria-invalid={problem ? true : undefined}
+            aria-describedby={problem ? "ob-url-problem" : undefined}
+            placeholder={t("onboarding.urlPlaceholder")}
+            onChange={(e) => {
+              setUrl(e.target.value);
+              setProblem("");
+            }}
+          />
+          {problem && (
+            <p className="field-problem" id="ob-url-problem" role="alert">
+              {t(problem)}
+            </p>
+          )}
+          <label htmlFor="ob-name">{t("onboarding.nameOptional")}</label>
+          <input
+            id="ob-name"
+            value={name}
+            dir="auto"
+            placeholder={t("onboarding.takenFromAddress")}
+            onChange={(e) => setName(e.target.value)}
+          />
         </div>
 
-        <button type="button" className="btn filled wide" onClick={submit} disabled={!url.trim()}>
-          Add playlist
+        <div className="onboard-language">
+          <span className="onboard-language-label">{t("settings.language")}</span>
+          <div className="onboard-language-options">
+            <LanguagePicker
+              value={settings.locale}
+              onChange={(id) => settings.set("locale", id)}
+            />
+          </div>
+        </div>
+
+        <button
+          type="button"
+          className="btn filled wide"
+          onClick={submit}
+          disabled={!url.trim()}
+        >
+          {t("common.addPlaylist")}
         </button>
         <KeyGuide
           className="onboard-foot ruled"
           items={[
-            { keys: ["\u2191", "\u2193"], label: "Move" },
-            { keys: ["OK"], label: "Add it" },
-            { keys: ["Return"], label: "Close OpenIPTV" },
+            { keys: ["\u2191", "\u2193"], label: t("common.move") },
+            { keys: ["OK"], label: t("guide.addIt") },
+            { keys: ["Return"], label: t("common.closeApp") },
           ]}
         />
       </div>

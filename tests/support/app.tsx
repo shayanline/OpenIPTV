@@ -1,5 +1,6 @@
 import { act, render } from "@testing-library/react";
 import { vi } from "vitest";
+import type { LocalePreference } from "../../src/services/locale";
 
 /**
  * Mount the whole application against a playlist, with the player replaced.
@@ -24,7 +25,9 @@ export function press(code: number) {
   const event = new KeyboardEvent("keydown", { bubbles: true, cancelable: true });
   Object.defineProperty(event, "keyCode", { get: () => code });
   Object.defineProperty(event, "which", { get: () => code });
-  act(() => { window.dispatchEvent(event); });
+  act(() => {
+    window.dispatchEvent(event);
+  });
 }
 
 /** Whether the channel panel is open, which the app expresses by removing the away class. */
@@ -39,7 +42,9 @@ export const panelOpen = () => !document.querySelector(".panel")?.classList.cont
  * wait for the second stage, and one that asserts on the cursor must not.
  */
 export async function settle(ms = 260) {
-  await act(async () => { await new Promise((r) => setTimeout(r, ms)); });
+  await act(async () => {
+    await new Promise((r) => setTimeout(r, ms));
+  });
 }
 
 export interface MountOptions {
@@ -64,11 +69,12 @@ export interface MountOptions {
    * ever. Anything asserting on that has to let the channel take a moment, as a real one does.
    */
   slowPicture?: number;
+  locale?: LocalePreference;
 }
 
 export async function mountApp(
   playlist: string,
-  { resume, awaitPlaylist = true, slowPicture = 0 }: MountOptions = {},
+  { resume, awaitPlaylist = true, slowPicture = 0, locale }: MountOptions = {},
 ) {
   vi.resetModules();
   played = [];
@@ -85,8 +91,12 @@ export async function mountApp(
       hide() {}
       show() {}
       pause() {}
-      setMuted(value: boolean) { muted = value; }
-      adjustVolume(delta: number) { volumeChanges.push(delta); }
+      setMuted(value: boolean) {
+        muted = value;
+      }
+      adjustVolume(delta: number) {
+        volumeChanges.push(delta);
+      }
       setFit() {}
       play(url: string) {
         played.push(url);
@@ -95,15 +105,21 @@ export async function mountApp(
         if (slowPicture) setTimeout(() => this.emit({ type: "playing" }), slowPicture);
         else this.emit({ type: "playing" });
       }
-      resume(url: string) { this.play(url); }
+      resume(url: string) {
+        this.play(url);
+      }
     },
   }));
 
-  localStorage.setItem("openiptv.settings", JSON.stringify({
-    playlists: [{ id: "pl-1", name: "Test", url: "http://list.invalid/a.m3u" }],
-    activePlaylistId: "pl-1",
-    resumeLast: !!resume,
-  }));
+  localStorage.setItem(
+    "openiptv.settings",
+    JSON.stringify({
+      playlists: [{ id: "pl-1", name: "Test", url: "http://list.invalid/a.m3u" }],
+      activePlaylistId: "pl-1",
+      resumeLast: !!resume,
+      ...(locale ? { locale } : {}),
+    }),
+  );
   // Written before the app mounts, because App decides which view to open on during its very
   // first render by reading this. That is the whole point of it: deciding later meant the
   // panel opened and was then closed again, in front of the viewer.
@@ -114,7 +130,11 @@ export async function mountApp(
   const view = render(<App />);
   if (!awaitPlaylist) return view;
   // Let the playlist land.
-  await act(async () => { await Promise.resolve(); });
-  await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
+  await act(async () => {
+    await Promise.resolve();
+  });
+  await act(async () => {
+    await new Promise((r) => setTimeout(r, 0));
+  });
   return view;
 }
