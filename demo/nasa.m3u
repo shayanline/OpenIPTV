@@ -1,5 +1,5 @@
 #EXTM3U
-# NASA TV Public, used as the single channel in the Samsung review demo.
+# NASA TV Public, used as the single channel in this demo playlist.
 # The stream is served by NASA's public HLS endpoint.
 #EXTINF:-1 group-title="Science",NASA TV Public
 https://ntv1.akamaized.net/hls/live/2014075/NASA-NTV1-HLS/master.m3u8

@@ -331,9 +331,9 @@ jobs:
       - run: npm run build
 
       # The demo playlist stays outside public/, so Vite never copies it into the widget. It is added
-      # only to the Pages artifact, where Samsung reviewers can use it without OpenIPTV shipping a
-      # channel list or a default stream.
-      - name: Add the review demo playlist to Pages
+      # only to the Pages artifact, where it can be used without OpenIPTV shipping a channel list or
+      # a default stream.
+      - name: Add the demo playlist to Pages
         run: |
           mkdir -p dist/demo
           cp demo/nasa.m3u dist/demo/nasa.m3u

@@ -147,17 +147,15 @@ version string.
    screen, and **Exit** is never intercepted at all.
 
 6. **Distribute.** Choose the model groups, and provide a test account or, for this application, a
-   **working playlist address for the reviewers**. This is the requirement most likely to trip up an
-   app that deliberately ships with nothing: Samsung's testers must be able to exercise every feature
-   against live content, an application that cannot be tested fails with critical defects, and a
-   playlist that expires halfway through review counts as untestable.
+   **working playlist address for testing**. This is the requirement most likely to trip up an app
+   that deliberately ships with nothing: every feature needs live content to exercise, and a
+   playlist that expires halfway through testing is untestable.
 
    This repository publishes a one channel NASA TV Public demo playlist at
-   [the Pages review address](https://shayanline.github.io/OpenIPTV/demo/nasa.m3u). It is added to
-   the Pages artifact rather than `public/`, so it is available for certification without becoming
-   part of the widget or a default playlist. Confirm that the current NASA programming is suitable
-   for the review before submitting, because NASA notes that some programming may include material
-   from third parties.
+   [the Pages demo address](https://shayanline.github.io/OpenIPTV/demo/nasa.m3u). It is added to the
+   Pages artifact rather than `public/`, so it is available for testing without becoming part of the
+   widget or a default playlist. Confirm that the current NASA programming is suitable before using
+   it, because NASA notes that some programming may include material from third parties.
 
 7. **Request New Release**, then wait, then answer whatever comes back under Defect Resolve.
 
