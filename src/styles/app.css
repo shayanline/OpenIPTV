@@ -360,6 +360,7 @@ html.tizen, html.tizen body, html.tizen #root, html.tizen .app { background: tra
   min-width: 0;
   margin: 0;
   overflow: hidden;
+  text-align: left;
   color: var(--text-3);
   font-size: var(--t-caption);
   font-weight: 600;
@@ -1594,6 +1595,7 @@ input.wrong { border-color: var(--danger); }
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
+  text-align: left;
   font-size: var(--t-hero);
   font-weight: 600;
   line-height: 1.15;

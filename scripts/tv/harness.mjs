@@ -236,7 +236,8 @@ export async function walk(cdp, port, selectors, { before } = {}) {
   await click("Cancel");                 await sleep(200);
   await click("Remove");                 await capture("settings.confirm");
   await click("Keep it");                await sleep(200);
-  await click("Watching");               await capture("settings.behaviour");
+  await click("Playback");               await capture("settings.playback");
+  await click("General");                await capture("settings.general");
   // Diagnostics reports what the set is, so it is the one screen whose content genuinely
   // differs between engines. It is walked anyway: what is measured here is the frame it
   // draws into, and a screen left out of the walk is a screen no gate has ever loaded.

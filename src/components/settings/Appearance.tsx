@@ -30,17 +30,17 @@ export function Appearance() {
         * alone rather than the whole interface. A viewer at three metres should not have to try a
         * setting to find out what it does.
         */}
-      <Row label="Text size" hint="Applies to everything in the app">
-        <Choice options={FONT_SIZES} value={s.fontSizeId} onChange={(id) => s.set("fontSizeId", id)} />
+      <Row label="Text size" hint="Applies throughout the app">
+        <Choice label="Text size" options={FONT_SIZES} value={s.fontSizeId} onChange={(id) => s.set("fontSizeId", id)} />
       </Row>
-      <Row label="Channel numbers" hint="Shown beside each name in the list">
-        <Toggle value={s.showNumbers} onChange={(v) => s.set("showNumbers", v)} />
+      <Row label="Show channel numbers" hint="Display numbers beside channel names">
+        <Toggle label="Show channel numbers" value={s.showNumbers} onChange={(v) => s.set("showNumbers", v)} />
       </Row>
-      <Row label="Channel logos" hint="Fetched from your playlist, so turning them off saves data">
-        <Toggle value={s.showLogos} onChange={(v) => s.set("showLogos", v)} />
+      <Row label="Show channel logos" hint="Load logos from playlist addresses">
+        <Toggle label="Show channel logos" value={s.showLogos} onChange={(v) => s.set("showLogos", v)} />
       </Row>
-      <Row label="Clock" hint="In the corner while the channel list is open">
-        <Toggle value={s.showClock} onChange={(v) => s.set("showClock", v)} />
+      <Row label="Show clock" hint="Display a clock while the channel list is open">
+        <Toggle label="Show clock" value={s.showClock} onChange={(v) => s.set("showClock", v)} />
       </Row>
       {/*
         * Sorting lives here rather than under Watching, where it used to be.
@@ -50,8 +50,9 @@ export function Appearance() {
         * the picture: it was there only because it is not about the picture, which is a reason to
         * exclude it from somewhere rather than a reason to put it here.
         */}
-      <Row label="Sort channels A to Z" hint="Otherwise they stay in the order your playlist sent them">
+      <Row label="Sort channels alphabetically" hint="Sort by channel name instead of playlist order">
         <Toggle
+          label="Sort channels alphabetically"
           value={s.sortAlphabetically}
           onChange={(v) => { s.set("sortAlphabetically", v); load(); }}
         />

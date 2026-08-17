@@ -81,8 +81,9 @@ export function Diagnostics() {
     void disk.usage().then(({ bytes, count }) => {
       if (!live) return;
       const share = Math.round((bytes / disk.BUDGET_BYTES) * 100);
+      const entries = `${count} ${count === 1 ? "entry" : "entries"}`;
       setCache(`${(bytes / 1048576).toFixed(2)}MB of `
-        + `${Math.round(disk.BUDGET_BYTES / 1048576)}MB, ${share}%, in ${count} entries`);
+        + `${Math.round(disk.BUDGET_BYTES / 1048576)}MB, ${share}%, in ${entries}`);
     });
     return () => { live = false; };
   }, []);
@@ -123,7 +124,9 @@ export function Diagnostics() {
             value: granted.filter((g) => !g.granted).map((g) => g.name).join(", "),
           }]
         : []),
-      ...(supported.length ? [{ label: "Remote has", value: `${supported.length} keys` }] : []),
+      ...(supported.length
+        ? [{ label: "Remote has", value: `${supported.length} key${supported.length === 1 ? "" : "s"}` }]
+        : []),
     ];
   }
 
@@ -147,8 +150,8 @@ export function Diagnostics() {
     <>
       <h3>Diagnostics</h3>
       <p className="sheet-lead">
-        What this television is, and what its remote sends. Useful when something works here
-        and not on another set: read these out rather than describing them.
+        This device's platform and remote input. Use these details when something works on one
+        device but not another.
       </p>
 
       <div className="diag-facts">
@@ -165,14 +168,14 @@ export function Diagnostics() {
         <Fact label="Compatibility" value={compatibilityFact()} />
       </div>
 
-      <h4 className="diag-heading">Keys</h4>
+      <h4 className="diag-heading">Remote keys</h4>
       <p className="sheet-lead">
-        Press anything on the remote. Every key is listed, including the ones this app does
-        nothing with, so a button that is missing from the list never reached the app at all.
+        Press a remote button. The last eight keys received by the app appear here, including keys
+        the app does not use. If a button is missing, it did not reach the app.
       </p>
       <div className="diag-keys">
         {presses.length === 0
-          ? <p className="empty">Nothing pressed yet.</p>
+          ? <p className="empty">No keys received yet.</p>
           : presses.map((p) => (
               <div className="diag-press" key={`${p.at}-${p.code}`}>
                 <span className="diag-code">{p.code}</span>

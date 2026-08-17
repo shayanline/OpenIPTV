@@ -103,7 +103,6 @@ export async function mountApp(
     playlists: [{ id: "pl-1", name: "Test", url: "http://list.invalid/a.m3u" }],
     activePlaylistId: "pl-1",
     resumeLast: !!resume,
-    panelTimeout: 4,
   }));
   // Written before the app mounts, because App decides which view to open on during its very
   // first render by reading this. That is the whole point of it: deciding later meant the

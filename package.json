@@ -1,6 +1,6 @@
 {
   "name": "open-iptv",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "IPTV player for Samsung Tizen TVs",
   "scripts": {
     "test": "vitest run",

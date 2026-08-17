@@ -2,6 +2,24 @@
 
 Notable changes, newest first, in the format of [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## 1.2.0
+
+### Added
+
+- **Cache clearing.** General settings can remove cached playlist data, channel logos, playlist freshness markers, legacy cache entries, and compatibility diagnoses without removing playlists or personal settings.
+- **General settings.** Startup behaviour and app data management now have their own section.
+
+### Changed
+
+- **Settings organisation.** Appearance, Playback, General, Playlists, Diagnostics, and About now follow a clearer order with consistent labels, spacing, control sizes, and accessible names.
+- **Playlist status messages.** Loading, failure, saved, and channel count messages now describe the active playlist accurately and use correct singular and plural forms.
+- **TV parity walks.** The TV harness now measures Playback and General with the current settings labels.
+
+### Fixed
+
+- **Right to left titles.** Category and playback titles now keep the same alignment as the rest of the interface when playlist text uses a right to left script.
+- **Settings persistence migration.** Removed preferences and malformed saved values no longer remain in the settings store or prevent startup.
+
 ## 1.1.0
 
 ### Added

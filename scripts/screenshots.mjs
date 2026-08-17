@@ -161,8 +161,7 @@ await sleep(400);
 await shoot("05-favourites", "Favourites");
 
 // 6. Settings, on the section carrying compatibility mode. Asserted on the label the interface
-//    actually shows, which names the symptom rather than the jargon: Behaviour.tsx explains why,
-//    and "Compatibility" appears nowhere on the screen.
+//    actually shows, so the screenshot follows the same visible wording as the TV walk.
 //
 //    The wait is for the "Added to favourites" message from the shot above, which outlives the
 //    screen that raised it and otherwise sits in the middle of this one looking like a caption to
@@ -171,10 +170,10 @@ await sleep(4000);
 await app.press("ArrowRight", 39);
 await keyed("Settings");
 await sleep(500);
-if (!(await app.clickText("Watching"))) {
-  throw new Error("No Watching section in Settings, so the section it moved to is unknown.");
+if (!(await app.clickText("Playback"))) {
+  throw new Error("No Playback section in Settings, so the section it moved to is unknown.");
 }
-await shoot("06-settings", "Fix channels that stop playing");
+await shoot("06-settings", "Compatibility mode");
 
 console.log(`\nAll six are in ${OUT}/, and the README shows them.\n`);
 

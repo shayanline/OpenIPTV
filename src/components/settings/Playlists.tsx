@@ -6,7 +6,7 @@ import { Confirm } from "../Confirm";
 
 export function Playlists({ onAsking }: { onAsking: (asking: boolean) => void }) {
   const s = useSettings();
-  const { load, loading, channels } = useChannels();
+  const { load, loading, error, channels } = useChannels();
   const [editing, setEditing] = useState<Playlist | null>(null);
   const [note, setNote] = useState("");
   const [name, setName] = useState("");
@@ -46,14 +46,22 @@ export function Playlists({ onAsking }: { onAsking: (asking: boolean) => void })
     setProblem("");
 
     const label = name.trim() || nameFromUrl(url);
+    const loadsActivePlaylist = editing?.id
+      ? editing.id === s.activePlaylist()?.id
+      : s.playlists.length === 0;
     if (editing?.id) s.updatePlaylist(editing.id, label, url.trim());
     else s.addPlaylist(label, url.trim());
     setEditing(null);
 
+    if (!loadsActivePlaylist) {
+      setNote(`${label} saved.`);
+      return;
+    }
+
     setNote(`Loading ${label}\u2026`);
     const { count, error } = await load(true);
     setNote(error || (count > 0
-      ? `${label} loaded, ${count} channels.`
+      ? `${label} loaded, ${count} channel${count === 1 ? "" : "s"}.`
       : `${label} was saved, but no channels could be read from it.`));
   };
 
@@ -61,7 +69,7 @@ export function Playlists({ onAsking }: { onAsking: (asking: boolean) => void })
     setNote("Refreshing\u2026");
     const { count, error } = await load(true);
     setNote(error || (count > 0
-      ? `Refreshed, ${count} channels.`
+      ? `Refreshed, ${count} channel${count === 1 ? "" : "s"}.`
       : "Nothing could be read from the active playlist."));
   };
 
@@ -70,17 +78,21 @@ export function Playlists({ onAsking }: { onAsking: (asking: boolean) => void })
       <h3>Playlists</h3>
       {note && <p className="sheet-lead" role="status">{note}</p>}
       <p className="sheet-lead">
-        Any M3U playlist address works. {channels.length} channels loaded from the active one.
-        Playlists are stored on this device only.
+        {loading
+          ? "Loading the active playlist\u2026"
+          : error
+            ? error
+            : s.playlists.length
+              ? `${channels.length} channel${channels.length === 1 ? "" : "s"} loaded from the active playlist.`
+              : "Add an M3U playlist address to start watching."}
       </p>
-      {!s.playlists.length && (
-        <p className="sheet-lead">Add one below to start watching.</p>
-      )}
+      <p className="sheet-lead">Playlists are stored on this device only.</p>
 
       <div>
         {s.playlists.map((p) => (
           <div key={p.id} className={`pl ${p.id === s.activePlaylistId ? "active" : ""}`}>
             <button type="button" className="pl-main" onClick={async () => {
+              setNote("");
               s.set("activePlaylistId", p.id);
               await load();
             }}>
@@ -95,10 +107,22 @@ export function Playlists({ onAsking }: { onAsking: (asking: boolean) => void })
             {/* Tonal rather than flat. Flat text at three metres reads as a label, not as
                 something you can press, and One UI gives a medium emphasis control a grey
                 fill precisely so it still looks like a control. */}
-            <button type="button" className="btn tonal" onClick={() => startEdit(p)}>Edit</button>
+            <button
+              type="button"
+              className="btn tonal"
+              aria-label={`Edit ${p.name}`}
+              onClick={() => startEdit(p)}
+            >
+              Edit
+            </button>
             {/* Asked before done. Removing a playlist cannot be undone and the button sits a
                 single press away from the one that plays it. */}
-            <button type="button" className="btn tonal" onClick={() => ask(p.id)}>
+            <button
+              type="button"
+              className="btn tonal"
+              aria-label={`Remove ${p.name}`}
+              onClick={() => ask(p.id)}
+            >
               Remove
             </button>
           </div>
@@ -127,10 +151,10 @@ export function Playlists({ onAsking }: { onAsking: (asking: boolean) => void })
 
       {editing ? (
         <div className="form">
-          <label htmlFor="pl-name">Name</label>
+          <label htmlFor="pl-name">Playlist name</label>
           <input id="pl-name" value={name} onChange={(e) => setName(e.target.value)}
-                 placeholder="Taken from the address" />
-          <label htmlFor="pl-url">Address</label>
+                 placeholder="Optional, uses the address if blank" />
+          <label htmlFor="pl-url">Playlist address</label>
           <input id="pl-url" value={url} spellCheck={false}
                  className={problem ? "wrong" : ""}
                  aria-invalid={problem ? true : undefined}
@@ -150,7 +174,7 @@ export function Playlists({ onAsking }: { onAsking: (asking: boolean) => void })
         <div className="actions">
           <button type="button" className="btn tonal" onClick={startAdd}>Add a playlist</button>
           <button type="button" className="btn tonal" onClick={refresh} aria-busy={loading}>
-            {loading ? "Refreshing\u2026" : "Refresh now"}
+            {loading ? "Refreshing\u2026" : "Refresh playlist"}
           </button>
         </div>
       )}

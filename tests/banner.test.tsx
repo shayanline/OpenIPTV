@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, test, vi } from "vitest";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { act, cleanup, renderHook } from "@testing-library/react";
 import { KEY } from "../src/hooks/useRemote";
 import { useChrome } from "../src/hooks/useChrome";
@@ -23,6 +24,15 @@ http://example.invalid/1.m3u8
 #EXTINF:-1 group-title="News",Second Channel
 http://example.invalid/2.m3u8
 `;
+
+const FARSI_PLAYLIST = `#EXTM3U
+#EXTINF:-1 group-title="شبکه ها",شبکه سه
+http://example.invalid/farsi.m3u8
+`;
+const appCss = readFileSync("src/styles/app.css", "utf8");
+const style = document.createElement("style");
+style.textContent = appCss.replace('@import "./tokens.css";', "");
+document.head.append(style);
 
 /**
  * The banner is in the document while it is up, and gone when it is not.
@@ -86,6 +96,27 @@ test("settling does not raise a banner that is down", () => {
 });
 
 // ---- and in the application, on a channel that takes a moment to arrive -----------------
+
+test("a Farsi category heading stays aligned with the LTR list", async () => {
+  await mountApp(FARSI_PLAYLIST);
+
+  const heading = document.querySelector(".list .panel-title");
+  assert.ok(heading);
+  assert.equal(heading.textContent, "شبکه ها");
+  assert.equal(heading.getAttribute("dir"), "auto");
+  assert.equal(getComputedStyle(heading).textAlign, "left");
+});
+
+test("a Farsi only channel title stays aligned with the LTR banner", async () => {
+  await mountApp(FARSI_PLAYLIST);
+  press(KEY.ENTER);
+
+  const title = document.querySelector(".pb-title");
+  assert.ok(title);
+  assert.equal(title.textContent, "شبکه سه");
+  assert.equal(title.getAttribute("dir"), "auto");
+  assert.equal(getComputedStyle(title).textAlign, "left");
+});
 
 test("the banner goes away on its own after a channel starts", async () => {
   await mountApp(PLAYLIST, { slowPicture: 300 });

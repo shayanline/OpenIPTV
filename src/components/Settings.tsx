@@ -5,16 +5,17 @@ import { Icon, type IconName } from "./Icon";
 import { KeyGuide } from "./KeyGuide";
 import { About } from "./settings/About";
 import { Appearance } from "./settings/Appearance";
-import { Behaviour } from "./settings/Behaviour";
+import { General } from "./settings/General";
+import { Playback } from "./settings/Behaviour";
 import { Diagnostics } from "./settings/Diagnostics";
 import { Playlists } from "./settings/Playlists";
 
-type Section = "appearance" | "playlists" | "behaviour" | "diagnostics" | "about";
+type Section = "appearance" | "playback" | "general" | "playlists" | "diagnostics" | "about";
 
 /**
  * The sections, in the order the rail lists them, each with the glyph beside its name.
  *
- * A glyph per section because five words in a column are five words to read, and a viewer looking
+ * A glyph per section because six words in a column are six words to read, and a viewer looking
  * for the picture size is looking for a shape they remember rather than reading the list again. They
  * are outline glyphs rather than filled ones: the rail is a list to walk, and the filled family is
  * reserved for status and transport, which is why the gear that opens this sheet is filled and the
@@ -22,8 +23,9 @@ type Section = "appearance" | "playlists" | "behaviour" | "diagnostics" | "about
  */
 const SECTIONS: { id: Section; label: string; icon: IconName }[] = [
   { id: "appearance", label: "Appearance", icon: "appearance" },
+  { id: "playback", label: "Playback", icon: "tv" },
+  { id: "general", label: "General", icon: "settings" },
   { id: "playlists", label: "Playlists", icon: "playlists" },
-  { id: "behaviour", label: "Watching", icon: "tv" },
   { id: "diagnostics", label: "Diagnostics", icon: "diagnostics" },
   { id: "about", label: "About", icon: "about" },
 ];
@@ -175,6 +177,7 @@ export function Settings({ onClose }: { onClose: () => void }) {
               key={s.id}
               type="button"
               className={`row ${s.id === section ? "selected showing" : ""}`}
+              aria-current={s.id === section ? "page" : undefined}
               onClick={() => {
                 setSection(s.id);
                 enterBody();
@@ -213,8 +216,9 @@ export function Settings({ onClose }: { onClose: () => void }) {
 
       <div className="sheet-body" ref={bodyRef}>
         {section === "appearance" && <Appearance />}
+        {section === "playback" && <Playback />}
+        {section === "general" && <General onAsking={ask} />}
         {section === "playlists" && <Playlists onAsking={ask} />}
-        {section === "behaviour" && <Behaviour onAsking={ask} />}
         {section === "diagnostics" && <Diagnostics />}
         {section === "about" && <About />}
       </div>

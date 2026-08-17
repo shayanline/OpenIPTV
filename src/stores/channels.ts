@@ -304,3 +304,14 @@ export const useChannels = create<State>((set, get) => {
     },
   };
 });
+
+export async function clearCache(): Promise<void> {
+  cancelPending?.();
+  cancelPending = null;
+  inFlight?.abort();
+  inFlight = null;
+  await disk.forgetAll();
+  for (const key of keys()) {
+    if (key.startsWith(LEGACY_PREFIX) || key.startsWith("openiptv.at.")) remove(key);
+  }
+}

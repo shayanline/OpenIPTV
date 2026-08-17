@@ -161,8 +161,8 @@ await app.press("Escape", 27);
 await sleep(300);
 await keyed("Settings");
 await sleep(400);
-if (!(await app.clickText("Watching"))) {
-  throw new Error("No Watching section in Settings, so the section it moved to is unknown.");
+if (!(await app.clickText("Playback"))) {
+  throw new Error("No Playback section in Settings, so the section it moved to is unknown.");
 }
 await sleep(400);
 await shoot("screenshot-4");

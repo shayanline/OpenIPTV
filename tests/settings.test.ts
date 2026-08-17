@@ -30,7 +30,7 @@ test("a file written by an older version keeps working, and gains the new defaul
   assert.equal(s.showClock, false, "what was saved is kept");
   assert.equal(s.resumeLast, false);
   assert.equal(s.aspectId, "fill", "what is new arrives at its default");
-  assert.equal(s.panelTimeout, 4);
+  assert.equal("panelTimeout" in s, false, "the removed setting does not return");
 });
 
 test("a setting that no longer exists is dropped rather than carried for ever", async () => {
@@ -50,18 +50,28 @@ test("a setting that no longer exists is dropped rather than carried for ever", 
   assert.equal("fontId" in written, false, "it was written back out again");
 });
 
-test("the channel list hide preference remains persisted", async () => {
-  localStorage.setItem(KEY, JSON.stringify({ panelTimeout: 30 }));
+test("a removed setting is ignored rather than persisted", async () => {
+  localStorage.setItem(KEY, JSON.stringify({ panelTimeout: 30, showClock: false }));
   const { useSettings } = await load();
 
-  assert.equal(useSettings.getState().panelTimeout, 30);
-  useSettings.getState().set("panelTimeout", 8);
+  assert.equal("panelTimeout" in useSettings.getState(), false);
+  assert.equal(useSettings.getState().showClock, false);
+  const writtenOnLoad = JSON.parse(localStorage.getItem(KEY) ?? "{}");
+  assert.equal("panelTimeout" in writtenOnLoad, false);
+
+  useSettings.getState().set("showClock", true);
   const written = JSON.parse(localStorage.getItem(KEY) ?? "{}");
-  assert.equal(written.panelTimeout, 8);
+  assert.equal("panelTimeout" in written, false);
 });
 
 test("nonsense in the store falls back to defaults rather than throwing", async () => {
   localStorage.setItem(KEY, "{not json");
+  const { useSettings } = await load();
+  assert.equal(useSettings.getState().showClock, true);
+});
+
+test("a primitive saved value falls back to defaults rather than throwing", async () => {
+  localStorage.setItem(KEY, "null");
   const { useSettings } = await load();
   assert.equal(useSettings.getState().showClock, true);
 });

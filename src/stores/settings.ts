@@ -50,7 +50,6 @@ interface Settings {
   aspectId: AspectId;
   showClock: boolean;
   resumeLast: boolean;
-  panelTimeout: number;
   sortAlphabetically: boolean;
   /**
    * Whether to repair playlists this television cannot read, on the television.
@@ -91,8 +90,6 @@ const DEFAULTS = {
   aspectId: "fill" as AspectId,
   showClock: true,
   resumeLast: true,
-  /* Four seconds remains the stored preference, although the channel panel no longer uses it. */
-  panelTimeout: 4,
   sortAlphabetically: false,
   /* Off. Nothing that only some channels need should cost the others anything. */
   compatibility: false,
@@ -118,7 +115,10 @@ function freshId(existing: Playlist[]): string {
 function load(): typeof DEFAULTS {
   // Merged rather than replaced, so a settings file written by an older version keeps working
   // when new keys appear.
-  const saved = readJSON<Record<string, unknown>>(KEY, {});
+  const raw = readJSON<unknown>(KEY, {});
+  const saved = raw && typeof raw === "object" && !Array.isArray(raw)
+    ? raw as Record<string, unknown>
+    : {};
   const merged = { ...DEFAULTS } as Record<string, unknown>;
   /*
    * And only keys this version knows, so a setting that has been removed does not live on in the
@@ -129,6 +129,8 @@ function load(): typeof DEFAULTS {
   for (const key of Object.keys(DEFAULTS)) {
     if (key in saved) merged[key] = saved[key];
   }
+  const canonical = JSON.stringify(merged);
+  if (JSON.stringify(saved) !== canonical) write(KEY, canonical);
   return merged as typeof DEFAULTS;
 }
 

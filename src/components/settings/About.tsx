@@ -10,9 +10,9 @@ export function About() {
           <p>Version {APP_VERSION}</p>
           <p className="link">{REPO_URL}</p>
           <p className="sheet-lead">
-            A free and open source player for any M3U playlist. It carries no channels of its
-            own, and it reports nothing to anybody: it talks only to the playlist and the
-            channels you point it at, and what you add stays on this device.
+            OpenIPTV is a free, open source player for M3U playlists. It includes no channels and
+            sends no analytics. The app connects only to the playlists, streams, and logos you
+            choose. Your playlist addresses and settings stay on this device.
           </p>
           {/*
             * The disclaimer, for the person holding the remote rather than the one reading the
@@ -23,11 +23,11 @@ export function About() {
             * four pixel tolerance, which is the gate telling the truth rather than complaining.
             */}
           <p className="sheet-lead">
-            No broadcaster or service is connected to this app. Please watch only what you have
-            the right to.
+            OpenIPTV is not affiliated with broadcasters or streaming services. Watch only content
+            you are authorised to access.
           </p>
           <p className="sheet-lead">
-            Scan the code to read the source or report a problem.
+            Scan the QR code to view the source code or report a problem.
           </p>
         </div>
         <img className="qr" src="./repo-qr.svg" alt={`QR code linking to ${REPO_URL}`} />

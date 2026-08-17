@@ -21,7 +21,8 @@ export function Row({ label, hint, children }: {
   );
 }
 
-export function Choice<T extends string>({ options, value, onChange }: {
+export function Choice<T extends string>({ label, options, value, onChange }: {
+  label: string;
   options: readonly { readonly id: T; readonly label: string }[];
   value: T;
   onChange: (id: T) => void;
@@ -33,6 +34,8 @@ export function Choice<T extends string>({ options, value, onChange }: {
           key={o.id}
           type="button"
           className={`chip ${o.id === value ? "on" : ""}`}
+          aria-label={`${label}, ${o.label}`}
+          aria-pressed={o.id === value}
           onClick={() => onChange(o.id)}
         >
           {o.label}
@@ -42,9 +45,19 @@ export function Choice<T extends string>({ options, value, onChange }: {
   );
 }
 
-export function Toggle({ value, onChange }: { value: boolean; onChange: (v: boolean) => void }) {
+export function Toggle({ label, value, onChange }: {
+  label: string;
+  value: boolean;
+  onChange: (v: boolean) => void;
+}) {
   return (
-    <button type="button" className={`switch ${value ? "on" : ""}`} onClick={() => onChange(!value)}>
+    <button
+      type="button"
+      className={`switch ${value ? "on" : ""}`}
+      aria-label={label}
+      aria-pressed={value}
+      onClick={() => onChange(!value)}
+    >
       <span className="switch-track"><span className="switch-knob" /></span>
       <span>{value ? "On" : "Off"}</span>
     </button>
