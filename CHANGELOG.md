@@ -2,6 +2,13 @@
 
 Notable changes, newest first, in the format of [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## 1.1.2
+
+### Changed
+
+- **Aspect options.** Fit now appears before Fill and Stretch in Appearance settings.
+- **Default picture framing.** New installations now use Fit so the entire picture remains visible.
+
 ## 1.1.1
 
 ### Changed

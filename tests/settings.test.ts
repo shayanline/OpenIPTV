@@ -29,8 +29,15 @@ test("a file written by an older version keeps working, and gains the new defaul
 
   assert.equal(s.showClock, false, "what was saved is kept");
   assert.equal(s.resumeLast, false);
-  assert.equal(s.aspectId, "fill", "what is new arrives at its default");
+  assert.equal(s.aspectId, "fit", "what is new arrives at its default");
   assert.equal(s.panelTimeout, 4);
+});
+
+test("Fit leads the aspect choices and is the default", async () => {
+  const { ASPECTS, useSettings } = await load();
+
+  assert.deepEqual(ASPECTS.map((aspect) => aspect.id), ["fit", "fill", "stretch"]);
+  assert.equal(useSettings.getState().aspectId, "fit");
 });
 
 test("a setting that no longer exists is dropped rather than carried for ever", async () => {
