@@ -37,6 +37,9 @@ drops it from a production build, so it cannot be conjured onto a television.
 and `tizen` shimmed so the Tizen paths actually run, and `npm run tv:floor` does it on the weakest
 supported set. Judge speed there and nowhere else.
 
+Use `npm run tv:quick` for a shorter sample of every benchmark journey while working. It does not
+issue a budget verdict, so `npm run tv:budget` remains the final measurement.
+
 `npm run tv:on-set` measures the app on a real television over sdb: the launch marks, the CPU at
 rest, and, given `--stream=<url>`, what a picture costs and whether the playhead actually moves.
 It is the only thing here that reports the real AVPlay rather than a shim, so it is what to reach

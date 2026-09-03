@@ -33,7 +33,7 @@
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { tmpdir } from "node:os";
+import { release, tmpdir } from "node:os";
 import { mkdtempSync } from "node:fs";
 import { connect, findChrome } from "./cdp.mjs";
 import { ensureEngine } from "./engines.mjs";
@@ -220,8 +220,14 @@ async function attempt(tv, binary, cdpPort, pinned) {
  * green light for a test that did not run. So that one fails instead.
  */
 async function inEngine(tv, cdpPort) {
-  const pinned = await ensureEngine(tv);
+  const brokenMacSnapshot = tv.chromium === 120 && process.platform === "darwin"
+    && Number.parseInt(release(), 10) >= 25;
+  const pinned = brokenMacSnapshot ? null : await ensureEngine(tv);
   try {
+    if (!pinned) {
+      throw Object.assign(new Error("Chromium 120 snapshots crash on macOS 26 or newer"),
+        { launch: true });
+    }
     return { ...await attempt(tv, pinned, cdpPort, true), pinned: true };
   } catch (e) {
     if (tv.floor) {

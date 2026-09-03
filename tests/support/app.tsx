@@ -1,6 +1,8 @@
 import { act, render } from "@testing-library/react";
-import { vi } from "vitest";
+import { afterEach, vi } from "vitest";
 import type { LocalePreference } from "../../src/services/locale";
+
+afterEach(() => vi.useRealTimers());
 
 /**
  * Mount the whole application against a playlist, with the player replaced.
@@ -43,7 +45,7 @@ export const panelOpen = () => !document.querySelector(".panel")?.classList.cont
  */
 export async function settle(ms = 260) {
   await act(async () => {
-    await new Promise((r) => setTimeout(r, ms));
+    await vi.advanceTimersByTimeAsync(ms);
   });
 }
 
@@ -76,6 +78,7 @@ export async function mountApp(
   playlist: string,
   { resume, awaitPlaylist = true, slowPicture = 0, locale }: MountOptions = {},
 ) {
+  if (!vi.isFakeTimers()) vi.useFakeTimers();
   vi.resetModules();
   played = [];
   muted = false;
@@ -133,8 +136,6 @@ export async function mountApp(
   await act(async () => {
     await Promise.resolve();
   });
-  await act(async () => {
-    await new Promise((r) => setTimeout(r, 0));
-  });
+  await settle(0);
   return view;
 }

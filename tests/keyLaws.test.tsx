@@ -2,7 +2,7 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import assert from "node:assert/strict";
 import { act, cleanup, screen } from "@testing-library/react";
 import { KEY } from "../src/hooks/useRemote";
-import { mountApp, muted, panelOpen, played, press, volumeChanges } from "./support/app";
+import { mountApp, muted, panelOpen, played, press, settle, volumeChanges } from "./support/app";
 
 /**
  * The four laws of the key model, asserted rather than described.
@@ -66,9 +66,8 @@ test("law 2: Right on a channel chooses it like OK", async () => {
 test("the channel list stays open until it is dismissed", async () => {
   await mount();
   press(KEY.ENTER);
-  vi.useFakeTimers();
   press(KEY.LEFT);
-  await act(async () => { vi.advanceTimersByTime(5000); });
+  await settle(5000);
   assert.ok(panelOpen(), "the channel list closed without being dismissed");
 });
 
@@ -81,19 +80,19 @@ test("law 1: up and down change channel at the picture, always", async () => {
   // Naming is immediate and tuning waits for the pressing to stop, so the channel has been
   // named but not yet tuned.
   assert.equal(played.length, started, "tuned before the viewer had finished pressing");
-  await act(async () => { await new Promise((r) => setTimeout(r, 600)); });
+  await settle(600);
   assert.equal(played.length, started + 1, "channel up did not tune anything");
 });
 
 test("law 1 holds even when the channel on screen has failed", async () => {
   const { container } = await mount();
   press(KEY.ENTER);
-  await act(async () => { await new Promise((r) => setTimeout(r, 600)); });
+  await settle(600);
 
   // A channel that will not start must not trap anybody: one press has to move on.
   assert.ok(container);
   press(KEY.UP);
-  await act(async () => { await new Promise((r) => setTimeout(r, 600)); });
+  await settle(600);
   assert.ok(played.length >= 2, "channel up did nothing on a failed channel");
 });
 
@@ -139,7 +138,7 @@ test("a dialled number tunes the channel carrying it", async () => {
   press(KEY.ENTER);
   const started = played.length;
   press(51);                              // "3"
-  await act(async () => { await new Promise((r) => setTimeout(r, 2200)); });
+  await settle(2200);
   assert.equal(played.length, started + 1);
   assert.match(played[played.length - 1], /c\.m3u8$/);
 });
@@ -245,7 +244,7 @@ test("no key that leaves you at the picture can strand you there", async () => {
     assert.ok(!panelOpen(), `key ${code} was expected to leave the viewer watching`);
     const before = played.length;
     press(KEY.UP);
-    await act(async () => { await new Promise((r) => setTimeout(r, 600)); });
+    await settle(600);
     assert.ok(played.length > before, `channel up did nothing after key ${code}`);
   }
 });

@@ -18,6 +18,7 @@
     "tv:video": "node scripts/tv/sim.mjs --video",
     "tv:floor": "node scripts/tv/sim.mjs --floor",
     "tv:bench:floor": "node scripts/tv/sim.mjs --floor --bench",
+    "tv:quick": "node scripts/tv/sim.mjs --floor --bench --quick",
     "lint": "biome lint",
     "lint:fix": "biome lint --write",
     "format": "biome format --write",

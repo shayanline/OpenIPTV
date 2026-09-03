@@ -1,4 +1,4 @@
-import { beforeEach, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import assert from "node:assert/strict";
 
 /**
@@ -77,7 +77,7 @@ const configure = (s: Awaited<ReturnType<typeof load>>, url = "http://list.inval
  * so a test about what the refresh does has to wait for it. jsdom has no
  * requestIdleCallback, so the store falls back to a timeout and this outlasts it.
  */
-const afterIdle = () => new Promise((r) => setTimeout(r, 600));
+const afterIdle = () => vi.advanceTimersByTimeAsync(600);
 
 /**
  * Cache a playlist as though it were saved `ageMs` ago.
@@ -96,9 +96,12 @@ const seedCache = (s: Awaited<ReturnType<typeof load>>, text: string, ageMs: num
 const HOUR = 60 * 60 * 1000;
 
 beforeEach(() => {
+  vi.useFakeTimers();
   localStorage.clear();
   vi.unstubAllGlobals();
 });
+
+afterEach(() => vi.useRealTimers());
 
 test("a good playlist is parsed, grouped and reported", async () => {
   const s = await load();
@@ -123,7 +126,7 @@ test("the saved copy is shown before the network answers", async () => {
     vi.fn(() => new Promise(() => {})),
   );
   void s.useChannels.getState().load();
-  await new Promise((r) => setTimeout(r, 0));
+  await vi.advanceTimersByTimeAsync(0);
 
   assert.equal(s.useChannels.getState().channels.length, 2);
 });

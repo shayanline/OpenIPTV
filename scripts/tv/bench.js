@@ -48,6 +48,7 @@ window.__bench = {
    * key press for the life of the page.
    */
   lastKeyAt: 0,
+  delivered: 0,
   /** Milliseconds since the last key, or a large number when none has ever arrived. */
   quietFor() {
     return this.lastKeyAt ? performance.now() - this.lastKeyAt : 1e9;
@@ -107,12 +108,6 @@ window.__bench = {
       pending = performance.now();
     };
     window.addEventListener("keydown", onKey, true);
-    // The permanent one, which outlives the phase and is what quietFor reads.
-    if (!this.watchingKeys) {
-      this.watchingKeys = true;
-      window.addEventListener("keydown", () => { this.lastKeyAt = performance.now(); }, true);
-    }
-
     let at = cursor();
     let last = performance.now();
     const tick = () => {
@@ -214,4 +209,9 @@ window.__bench = {
     };
   },
 };
+// The permanent one, which outlives each phase and is what quietFor reads.
+window.addEventListener("keydown", () => {
+  window.__bench.lastKeyAt = performance.now();
+  window.__bench.delivered += 1;
+}, true);
 "installed"

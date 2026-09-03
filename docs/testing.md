@@ -110,6 +110,7 @@ npm run tv:floor            # the weakest Samsung sold since 2020, not your set
 npm run tv:video            # the browser path instead, so channels play through hls.js
 npm run tv:bench            # frame timings, then exit
 npm run tv:bench:floor      # the same, against that floor
+npm run tv:quick            # shorter floor sample of every journey, no budget verdict
 npm run tv:calibrate        # measure the real TV, write the throttle factor
 ```
 
@@ -317,6 +318,10 @@ they see.
 `npm run tv:budget` is the same walk with a pass or a fail on the end. One budget rather than
 seven, because the floor is the weakest set in the supported range and everything newer is faster,
 so a budget met there is met everywhere.
+
+`npm run tv:quick` uses the same floor profile and visits every journey, but it shortens the idle
+windows and repeats fewer channel rows, channel changes and panel visits. It is useful while working,
+while the full budget remains the final measurement.
 
 Two things are spent per phase, and neither is a maximum. **Stalls** counts frames past 100ms,
 because the median was always fine: the interface was never uniformly slow, it froze for a third of

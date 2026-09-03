@@ -107,8 +107,22 @@ export function driver(cdp, port) {
     if (exceptionDetails) throw new Error(exceptionDetails.text ?? "evaluate failed");
     return result.value;
   };
+  const waitFor = async (expression, timeout = 10000) => {
+    const deadline = Date.now() + timeout;
+    while (Date.now() < deadline) {
+      try {
+        if (await evaluate(expression)) return;
+      } catch {}
+      await sleep(25);
+    }
+    throw new Error(`The page did not reach ${expression} within ${timeout}ms`);
+  };
+  const frame = () => evaluate(`new Promise((resolve) => requestAnimationFrame(
+    () => requestAnimationFrame(() => resolve(true))))`);
   return {
     evaluate,
+    waitFor,
+    frame,
     press: async (key, code) => {
       for (const type of ["keyDown", "keyUp"]) {
         await cdp.send("Input.dispatchKeyEvent",
@@ -122,10 +136,18 @@ export function driver(cdp, port) {
         if (b) b.click(); return !!b; })()`),
     open: async () => {
       await cdp.send("Page.navigate", { url: `http://127.0.0.1:${port}/` });
-      await sleep(1400);
+      await waitFor(`location.origin === "http://127.0.0.1:${port}"
+        && document.readyState === "complete"`);
       await evaluate(SEED);
       await cdp.send("Page.reload");
-      await sleep(1800);
+      await waitFor("document.querySelectorAll('.list .row').length > 0");
+      await evaluate(`(() => {
+        const style = document.createElement("style");
+        style.textContent = "*{transition:none!important;animation:none!important}";
+        document.head.appendChild(style);
+        return true;
+      })()`);
+      await frame();
     },
   };
 }
@@ -153,7 +175,7 @@ export async function walk(cdp, port, selectors, { before } = {}) {
    * most broken is worse than no gate.
    */
   const capture = async (name) => {
-    await new Promise((r) => setTimeout(r, 320));
+    await d.frame();
     const boxes = JSON.parse(await d.evaluate(MEASURE(selectors)));
     if (!Object.keys(boxes).length) {
       throw new Error(`${name} drew none of the containers being measured, so there is `
@@ -197,11 +219,14 @@ export async function walk(cdp, port, selectors, { before } = {}) {
   };
 
   await capture("panel");
-  // Into the rail and down a category, which is the walk the rail debounce governs. Given
-  // 320ms to land, so what is measured is where the interface settles rather than a frame
-  // of it in transit.
+  // Into the rail and down a category, which is the walk the rail debounce governs. The
+  // selected and showing rows agree only once the channel column has settled.
   await d.press("ArrowLeft", 37);
   await d.press("ArrowDown", 40);
+  await d.waitFor(`(() => {
+    const selected = document.querySelector(".rail .row.selected");
+    return selected && selected === document.querySelector(".rail .row.showing");
+  })()`);
   await capture("panel.secondCategory");
 
   /*
@@ -221,21 +246,29 @@ export async function walk(cdp, port, selectors, { before } = {}) {
    * been in the protocol since long before any television this app supports.
    */
   await keyed("Search");
+  await d.waitFor("!!document.querySelector('.search-field')");
   await capture("panel.search");
-  for (const ch of "channel") await cdp.send("Input.dispatchKeyEvent", { type: "char", text: ch });
-  await sleep(400);                      // the search's own debounce, plus a frame to draw
+  for (const ch of "sport") await cdp.send("Input.dispatchKeyEvent", { type: "char", text: ch });
+  await d.waitFor(`(() => {
+    const row = document.querySelector(".list .row-label");
+    return row && row.textContent === "Gamma Sport";
+  })()`);
   await capture("panel.searchResults");
   await d.press("Escape", 27);           // clears the query
+  await d.waitFor(`(() => {
+    const field = document.querySelector(".search-field");
+    return field && field.value === "";
+  })()`);
   await d.press("Escape", 27);           // and leaves the search
-  await sleep(200);
+  await d.waitFor("!document.querySelector('.search-field')");
 
   await keyed("Settings");
   await capture("settings.appearance");
   await click("Playlists");              await capture("settings.playlists");
   await click("Add a playlist");         await capture("settings.playlistForm");
-  await click("Cancel");                 await sleep(200);
+  await click("Cancel");                 await d.frame();
   await click("Remove");                 await capture("settings.confirm");
-  await click("Keep it");                await sleep(200);
+  await click("Keep it");                await d.frame();
   await click("Playback");               await capture("settings.playback");
   await click("General");                await capture("settings.general");
   // Diagnostics reports what the set is, so it is the one screen whose content genuinely
@@ -244,8 +277,10 @@ export async function walk(cdp, port, selectors, { before } = {}) {
   await click("Diagnostics");            await capture("settings.diagnostics");
   await click("About");                  await capture("settings.about");
   await d.press("Escape", 27);
+  await d.waitFor("!document.querySelector('.sheet')");
   await cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: 900, y: 500 });
   await cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: 905, y: 505 });
+  await d.waitFor("!!document.querySelector('.pad')");
   await capture("pointerPad");
   return shots;
 }
@@ -266,9 +301,9 @@ export function compare(a, b, { tolerance, labels, skip = new Set() }) {
    *
    * Walking only `a` meant anything present in `b` and missing from `a` was never looked at,
    * and `a` is the leg most likely to be short: in the engine gate it is Chromium 69, the
-   * oldest and slowest engine, driven by fixed waits. A box it failed to draw was invisible to
-   * the comparison rather than a difference, so the gate was blindest exactly where the app is
-   * most likely to be wrong.
+   * oldest and slowest engine. A box it failed to draw was invisible to the comparison rather
+   * than a difference, so the gate was blindest exactly where the app is most likely to be
+   * wrong.
    */
   for (const screen of new Set([...Object.keys(a), ...Object.keys(b)])) {
     if (skip.has(screen)) continue;

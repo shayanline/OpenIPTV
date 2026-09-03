@@ -25,6 +25,7 @@
  *   node scripts/tv/sim.mjs --cpu=1             same layout and engine, full speed
  *   node scripts/tv/sim.mjs --net=3g            add a slow network
  *   node scripts/tv/sim.mjs --bench             measure frame times and exit
+ *   node scripts/tv/sim.mjs --floor --bench --quick  shorter local sample of every journey
  *   node scripts/tv/sim.mjs --url=http://...    somewhere other than the preview server
  *   node scripts/tv/sim.mjs --playlist=http://... measure against that instead of the default
  *   node scripts/tv/sim.mjs --harsh            half the TV's hardware, on every axis
@@ -89,6 +90,7 @@ const profile = floor
 const DEV = "http://localhost:5173/";
 const PREVIEW = "http://localhost:4173/";
 const measuring = has("bench") || has("profile");
+const quick = has("quick");
 
 const alive = async (candidate) => {
   try {
@@ -805,7 +807,8 @@ const trust = !profile.calibrated
     : `calibrated ${profile.calibratedOn}`;
 
 console.log(`TV simulator  ${profile.model}`
-  + `${harsh > 1 ? `, divided by a further ${harsh}` : ""}`);
+  + `${harsh > 1 ? `, divided by a further ${harsh}` : ""}`
+  + `${quick ? ", quick sample" : ""}`);
 console.log(`  engine     ${profile.platform}, Chromium ${profile.chromium}`
   + `${floor ? " (spoofed, the engine here is whatever Chrome is installed)" : ""}`);
 
@@ -935,6 +938,7 @@ if (has("bench") || has("profile")) {
     down: [40, "ArrowDown"], up: [38, "ArrowUp"], left: [37, "ArrowLeft"],
     right: [39, "ArrowRight"], enter: [13, "Enter"],
   };
+  let sent = 0;
   const press = async (name) => {
     const [code, key] = KEYS[name];
     for (const type of ["rawKeyDown", "keyUp"]) {
@@ -942,6 +946,7 @@ if (has("bench") || has("profile")) {
         type, windowsVirtualKeyCode: code, nativeVirtualKeyCode: code, key, code: key,
       });
     }
+    sent += 1;
   };
 
   /**
@@ -981,7 +986,7 @@ if (has("bench") || has("profile")) {
    * scroll that was perfectly smooth on its own came out with fifteen stalls: it was paying
    * for the category walk before it. A phase should measure itself.
    */
-  const settle = (ms = 3000) => new Promise((r) => setTimeout(r, ms));
+  const settle = (ms = quick ? 750 : 3000) => new Promise((r) => setTimeout(r, ms));
 
   /**
    * The results, kept, because a table printed and forgotten is not a gate.
@@ -999,26 +1004,30 @@ if (has("bench") || has("profile")) {
    *
    * It was forty press intervals, which is 1.3 seconds and about twenty frames on the floor: a
    * sample too short to distinguish an interface that is doing nothing from one doing a little
-   * every second. Five seconds is still nothing next to how long a television actually sits
-   * with nobody touching it, and it is enough for a repeating timer to show up twice.
+   * every second. The full gate keeps five seconds, which is enough for a repeating timer to show
+   * up twice. The quick local sample uses two seconds because it does not issue a budget verdict.
    */
-  const RESTING_MS = 5000;
+  const RESTING_MS = quick ? 2000 : 5000;
 
   /**
    * Wait for the input queue to drain, which is not the same as waiting.
    *
-   * `settle` gives the application time to finish its work. It cannot give the *browser* time to
-   * deliver keys it is still holding: a renderer throttled sixty times over queues input, and on
-   * a busy machine it queues it for seconds. The presses that walk the harness into the channel
-   * list were arriving inside the first timed phase, which then reported nine presses in a phase
-   * that presses nothing and eighteen moves against nineteen presses in the phase after it.
+   * A fixed delay cannot prove that the *browser* delivered keys it was holding. A renderer
+   * throttled sixty times over queues input, and on a busy machine it queues it for seconds. The
+   * presses that walk the harness into the channel list were arriving inside the first timed
+   * phase, which then reported nine presses in a phase that presses nothing and eighteen moves
+   * against nineteen presses in the phase after it.
    *
-   * Three seconds of settling was not enough because settling is measured here and the queue is
-   * over there. Asking the page when it last saw a key is the only reliable answer.
+   * The page therefore counts delivered keys and reports when it last saw one. The next phase
+   * starts only after every key the harness sent has arrived and the queue has stayed quiet.
    */
   const inputDrained = async () => {
     for (let i = 0; i < 40; i++) {
-      if ((await ev("window.__bench.quietFor()")) > 400) return true;
+      const state = JSON.parse(await ev(`JSON.stringify({
+        delivered: window.__bench.delivered,
+        quiet: window.__bench.quietFor()
+      })`));
+      if (state && state.delivered >= sent && state.quiet > 400) return true;
       await new Promise((r) => setTimeout(r, 250));
     }
     return false;
@@ -1180,7 +1189,9 @@ if (has("bench") || has("profile")) {
      * else in it, so about:blank first, and then the launch being measured is a launch.
      */
     await cdp.send("Page.navigate", { url: "about:blank" });
-    await new Promise((r) => setTimeout(r, 3000));
+    for (let i = 0; i < 120
+      && !(await quiet("location.href === 'about:blank' && document.readyState === 'complete'"));
+      i++) await new Promise((r) => setTimeout(r, 25));
 
     await cdp.send("Page.navigate", { url });
 
@@ -1292,7 +1303,7 @@ if (has("bench") || has("profile")) {
    * changed category at a third of the rate while looking like it was doing more.
    */
   await ensurePane("rail");
-  await settle(1500);
+  await settle(quick ? 400 : 1500);
   /*
    * Every press has to have moved the highlight, and now that can simply be counted.
    *
@@ -1332,10 +1343,10 @@ if (has("bench") || has("profile")) {
     child.kill();
     process.exit(2);
   }
-  await settle(1500);
+  await settle(quick ? 400 : 1500);
   /*
-   * Forty rows down and then the same forty back up, which is what the second label always
-   * claimed and stopped being true the moment the playlist got real.
+   * The full gate goes forty rows down and then the same forty back up. The quick local sample
+   * uses fifteen, which is enough to cross a screen without issuing a budget verdict.
    *
    * The pair exists to separate two costs. Going down crosses rows nobody has seen, so it pays
    * for artwork: a fetch from whichever host the broadcaster uses and a decode. Coming back up
@@ -1353,21 +1364,24 @@ if (has("bench") || has("profile")) {
    * Pressing up rather than down puts it back to the rows just walked, whatever the category's
    * length, and takes the internet out of the phase that is meant to be about the interface.
    */
-  mustWalk("holding down a category", await phase("holding down a category", ["down"], 40));
-  mustWalk("the same rows again", await phase("the same rows again", ["up"], 40));
+  mustWalk("holding down a category",
+    await phase("holding down a category", ["down"], quick ? 15 : 40));
+  mustWalk("the same rows again",
+    await phase("the same rows again", ["up"], quick ? 15 : 40));
 
   await press("enter");
-  await settle(4000);
+  await settle(quick ? 1500 : 4000);
 
   // Surfing, at about the rate someone flicks through channels looking for something.
-  await phase("surfing channels", ["up"], 10, 900);
+  await phase("surfing channels", ["up"], quick ? 4 : 10, 900);
 
   /*
-   * One whole visit to the list, five times over: open it, look at a few rows, choose one.
-   * The earlier version of this opened and shut the panel eight times in a row with nothing
-   * in between, which measured a thing nobody does.
+   * One whole visit to the list, repeated five times by the full gate and twice by the quick
+   * sample: open it, look at a few rows, choose one. The earlier version opened and shut the
+   * panel eight times in a row with nothing in between, which measured a thing nobody does.
    */
-  await phase("open, browse, choose", ["left", "down", "down", "down", "enter"], 5, 450);
+  await phase("open, browse, choose", ["left", "down", "down", "down", "enter"],
+    quick ? 2 : 5, 450);
 
   /*
    * Where the rail ended up, read from the highlight rather than from the column.
