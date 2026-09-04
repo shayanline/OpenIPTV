@@ -139,8 +139,10 @@ export function driver(cdp, port) {
       await waitFor(`location.origin === "http://127.0.0.1:${port}"
         && document.readyState === "complete"`);
       await evaluate(SEED);
+      await evaluate("window.__harnessReloadPending = true");
       await cdp.send("Page.reload");
-      await waitFor("document.querySelectorAll('.list .row').length > 0");
+      await waitFor(`!window.__harnessReloadPending
+        && document.querySelectorAll(".list .row").length > 0`);
       await evaluate(`(() => {
         const style = document.createElement("style");
         style.textContent = "*{transition:none!important;animation:none!important}";
