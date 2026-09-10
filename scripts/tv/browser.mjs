@@ -43,6 +43,27 @@ export async function stopBrowser(browser, timeout = 5000) {
   await forced;
 }
 
+export function removeProfile(profile, remove = rmSync, warn = console.warn) {
+  try {
+    remove(profile, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+    return true;
+  } catch (error) {
+    const code = error?.code ?? error;
+    warn(`Could not remove Chrome profile ${profile}: ${code}`);
+    return false;
+  }
+}
+
+export async function closeBrowser(cdp, browser) {
+  if (cdp) {
+    try {
+      await cdp.send("Browser.close", {}, 5000);
+    } catch {}
+    cdp.close();
+  }
+  await stopBrowser(browser);
+}
+
 export async function withBrowser(binary, args, prefix, run) {
   const profile = mkdtempSync(join(tmpdir(), prefix));
   let stderr = "";
@@ -68,8 +89,10 @@ export async function withBrowser(binary, args, prefix, run) {
     }
     return await run(cdp);
   } finally {
-    cdp?.close();
-    await stopBrowser(browser);
-    rmSync(profile, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+    try {
+      await closeBrowser(cdp, browser);
+    } finally {
+      removeProfile(profile);
+    }
   }
 }

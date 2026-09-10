@@ -19,6 +19,33 @@ afterEach(() => {
   for (const path of profiles.splice(0)) rmSync(path, { recursive: true, force: true });
 });
 
+test("profile cleanup cannot override completed browser work", () => {
+  assert.equal(typeof browserTools.removeProfile, "function");
+  const warnings: string[] = [];
+  const removed = browserTools.removeProfile(
+    "/tmp/busy-profile",
+    () => { throw Object.assign(new Error("directory busy"), { code: "ENOTEMPTY" }); },
+    (message: string) => warnings.push(message),
+  );
+  assert.equal(removed, false);
+  assert.match(warnings[0], /Could not remove Chrome profile.*ENOTEMPTY/);
+});
+
+test("closes Chrome through CDP before ending the process", async () => {
+  assert.equal(typeof browserTools.closeBrowser, "function");
+  const calls: string[] = [];
+  const process = { exitCode: null, pid: 1 };
+  const cdp = {
+    async send(method: string) {
+      calls.push(method);
+      process.exitCode = 0;
+    },
+    close() { calls.push("socket"); },
+  };
+  await browserTools.closeBrowser(cdp, process);
+  assert.deepEqual(calls, ["Browser.close", "socket"]);
+});
+
 test("reads the debugging port assigned by Chrome", async () => {
   const path = profile();
   writeFileSync(join(path, "DevToolsActivePort"), "42173\n/devtools/browser/id\n");
