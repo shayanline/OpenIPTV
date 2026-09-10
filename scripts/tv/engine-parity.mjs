@@ -30,19 +30,17 @@
  * The engines are real Chromium builds pinned to the versions Samsung ships, downloaded
  * once into ~/.cache. See engines.mjs.
  */
-import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
+import { release } from "node:os";
 import { join, resolve } from "node:path";
-import { release, tmpdir } from "node:os";
-import { mkdtempSync } from "node:fs";
-import { connect, findChrome } from "./cdp.mjs";
+import { findChrome } from "./cdp.mjs";
+import { withBrowser } from "./browser.mjs";
 import { ensureEngine } from "./engines.mjs";
 import { supported, floorPlatform, ceilingPlatform, source } from "./platforms.mjs";
 import { serve, walk, compare } from "./harness.mjs";
 
 const ROOT = resolve(import.meta.dirname, "../..");
 const DIST = join(ROOT, "dist");
-const PORT = 4321;
 
 /**
  * The containers whose geometry has to agree, which is not everything on the screen.
@@ -89,8 +87,6 @@ const TOLERANCE = 4;
  */
 const VARIES_BY_ENGINE = new Set(["settings.diagnostics"]);
 
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-
 /**
  * Run the whole walk in one engine, collecting geometry and anything it complained about.
  *
@@ -98,12 +94,10 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
  * a module that fails to parse on an old engine is caught rather than showing up as an
  * empty page with a confusing geometry diff.
  */
-async function attempt(tv, binary, cdpPort, pinned) {
-  const browser = spawn(binary, [
-    `--remote-debugging-port=${cdpPort}`,
-    `--user-data-dir=${mkdtempSync(join(tmpdir(), `openiptv-engine-${tv.tizen}-`))}`,
+async function attempt(tv, binary, pinned, port) {
+  return withBrowser(binary, [
     "--headless=new", "--window-size=1920,1080", "--force-device-scale-factor=1",
-    "--no-first-run", "--no-default-browser-check", "--disable-web-security",
+    "--lang=en-US", "--no-first-run", "--no-default-browser-check", "--disable-web-security",
     "--autoplay-policy=no-user-gesture-required", "--hide-scrollbars",
     /*
      * The sandbox off, and it is the old engines that need it rather than a convenience.
@@ -121,24 +115,8 @@ async function attempt(tv, binary, cdpPort, pinned) {
     // decade of difference in how they talk to this particular GPU.
     "--disable-gpu",
     "about:blank",
-  ], { stdio: "ignore" });
-
-  const complaints = [];
-  try {
-    /*
-     * A browser that will not start is a different failure from a browser that started and
-     * disagreed, and only the first may be stood in for.
-     *
-     * The fallback below used to catch anything at all, so a genuine layout or scripting
-     * failure on the ceiling engine, or the version assertion above, would be answered by
-     * quietly rerunning the leg against the locally installed Chrome and passing.
-     */
-    let cdp;
-    try {
-      cdp = await connect(cdpPort);
-    } catch (e) {
-      throw Object.assign(new Error(e.message), { launch: true });
-    }
+  ], `openiptv-engine-${tv.tizen}-`, async (cdp) => {
+    const complaints = [];
     await cdp.send("Runtime.enable");
     await cdp.send("Page.enable");
     await cdp.send("Log.enable").catch(() => {});
@@ -191,18 +169,14 @@ async function attempt(tv, binary, cdpPort, pinned) {
       }
     });
 
-    const shots = await walk(cdp, PORT, LAYOUT);
+    const shots = await walk(cdp, port, LAYOUT);
     // The app has to have actually got somewhere. Every box agreeing because both engines
     // rendered nothing is the failure mode this gate would otherwise be blind to.
     const rows = await cdp.send("Runtime.evaluate", {
       expression: "document.querySelectorAll('.list .row').length", returnByValue: true,
     }).then((r) => r.result.value);
-    cdp.close();
     return { shots, complaints, rows };
-  } finally {
-    browser.kill();
-    await sleep(300);
-  }
+  });
 }
 
 /**
@@ -219,7 +193,7 @@ async function attempt(tv, binary, cdpPort, pinned) {
  * compare a modern engine against a modern engine and report that they agree, which is a
  * green light for a test that did not run. So that one fails instead.
  */
-async function inEngine(tv, cdpPort) {
+async function inEngine(tv, port) {
   const brokenMacSnapshot = tv.chromium === 120 && process.platform === "darwin"
     && Number.parseInt(release(), 10) >= 25;
   const pinned = brokenMacSnapshot ? null : await ensureEngine(tv);
@@ -228,7 +202,7 @@ async function inEngine(tv, cdpPort) {
       throw Object.assign(new Error("Chromium 120 snapshots crash on macOS 26 or newer"),
         { launch: true });
     }
-    return { ...await attempt(tv, pinned, cdpPort, true), pinned: true };
+    return { ...await attempt(tv, pinned, true, port), pinned: true };
   } catch (e) {
     if (tv.floor) {
       throw new Error(
@@ -245,7 +219,7 @@ async function inEngine(tv, cdpPort) {
     console.log(`\n  ! Chromium ${tv.chromium} would not start here (${e.message}).`);
     console.log("    Falling back to the installed Chrome, which is a modern engine and so");
     console.log("    stands in for the ceiling. CI pins it properly.\n   ");
-    return { ...await attempt(tv, local, cdpPort + 1, false), pinned: false };
+    return { ...await attempt(tv, local, false, port), pinned: false };
   }
 }
 
@@ -266,15 +240,13 @@ async function main() {
   console.log(`  baseline Tizen ${reference.tizen}, Chromium ${reference.chromium}, `
     + "the oldest engine a supported set runs\n");
 
-  const server = await serve(DIST, PORT);
+  const hosted = await serve(DIST);
   let failures = 0;
   try {
     const runs = [];
-    let cdpPort = 9340;
     for (const tv of wanted) {
       process.stdout.write(`  Tizen ${tv.tizen} (M${tv.chromium})  `);
-      const result = await inEngine(tv, cdpPort);
-      cdpPort += 10;
+      const result = await inEngine(tv, hosted.port);
       console.log(`${result.rows} rows drawn, ${result.complaints.length} complaints`
         + `${result.pinned ? "" : ", NOT the pinned engine"}`);
       runs.push({ tv, ...result });
@@ -312,7 +284,7 @@ async function main() {
       console.log("\nSame behaviour, same layout, no complaints.");
     }
   } finally {
-    server.close();
+    await hosted.close();
   }
   process.exit(failures ? 1 : 0);
 }

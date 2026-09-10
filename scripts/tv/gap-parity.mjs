@@ -27,16 +27,14 @@
  * Chrome is driven over CDP through the same tiny client the simulator uses, so this adds no
  * dependency and no browser automation framework.
  */
-import { spawn } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { connect, devToolsPort, findChrome, stopBrowser } from "./cdp.mjs";
+import { findChrome } from "./cdp.mjs";
+import { withBrowser } from "./browser.mjs";
 import { serve, walk, compare } from "./harness.mjs";
 
 const ROOT = resolve(import.meta.dirname, "../..");
 const DIST = join(ROOT, "dist");
-const PORT = 4319;
 
 /**
  * The dev-only debug remote, which is excluded and is the only thing that is.
@@ -109,41 +107,25 @@ async function main() {
     process.exit(2);
   }
 
-  const server = await serve(DIST, PORT);
-  const profile = mkdtempSync(join(tmpdir(), "openiptv-gap-"));
-  const browser = spawn(chrome, [
-    "--remote-debugging-port=0",
-    /*
-     * A profile per run, and it matters more than it looks.
-     *
-     * With a fixed directory, a Chrome already holding it makes the one spawned here detect the
-     * singleton lock, hand over its command line and exit immediately. None of the flags below
-     * would apply, and the debugger would attach to the browser that was already there: a
-     * different engine, a different window, and in the simulator's case none of the throttling
-     * or the heap cap. It also means the two walks no longer share a warm cache between runs,
-     * so a cold profile and a warm one cannot disagree about the layout.
-     */
-    `--user-data-dir=${profile}`,
-    "--headless=new", "--window-size=1920,1080", "--no-first-run", "--no-default-browser-check",
+  const hosted = await serve(DIST);
+  const measure = (before) => withBrowser(chrome, [
+    "--headless=new", "--window-size=1920,1080", "--lang=en-US",
+    "--no-first-run", "--no-default-browser-check",
     // Linux runners have no unprivileged user namespaces, so the sandbox refuses to start and
     // this gate is a blocking step. See the longer note in engine-parity.
     "--no-sandbox", "--disable-gpu", "--hide-scrollbars",
-  ], { stdio: ["ignore", "ignore", "pipe"] });
-  let stderr = "";
-  browser.stderr.setEncoding("utf8");
-  browser.stderr.on("data", (chunk) => { stderr += chunk; });
+  ], "openiptv-gap-", async (cdp) => {
+    await cdp.send("Runtime.enable");
+    await cdp.send("Page.enable");
+    return walk(cdp, hosted.port, FLEX_GAP, { before });
+  });
 
   let failures = 0;
   try {
-    const cdp = await connect(await devToolsPort(profile, browser, () => stderr));
-    await cdp.send("Runtime.enable");
-    await cdp.send("Page.enable");
-
     // The same walk both times, and the same walk engine-parity uses, so a screen added to
     // one gate is never quietly missing from the other.
-    const withGap = await walk(cdp, PORT, FLEX_GAP);
-    const without = await walk(cdp, PORT, FLEX_GAP, { before: SIMULATE_OLD });
-    cdp.close();
+    const withGap = await measure();
+    const without = await measure(SIMULATE_OLD);
 
     const { boxes, differing, screens } = compare(withGap, without, {
       tolerance: 0.6,
@@ -156,9 +138,7 @@ async function main() {
                     "at the foot of src/styles/app.css.");
     }
   } finally {
-    server.close();
-    await stopBrowser(browser);
-    rmSync(profile, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+    await hosted.close();
   }
   process.exit(failures ? 1 : 0);
 }
