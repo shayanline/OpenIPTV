@@ -12,18 +12,21 @@ Node 22.18 or newer, pinned in `.nvmrc`.
 
 ## Verification
 
-```bash
-npm run check       # lint, typecheck, unit and component tests
-npm run build       # required before any of the gates below
-npm run tv:gap      # spacing parity for the sets without flex gap
-npm run tv:engines  # the app in a real Chromium 69 and 120
-npm run tv:budget   # frame times and the launch, on the floor profile, as a pass or fail
-npm run wasm:check  # the committed WebAssembly matches its source and its worker
-```
+Choose checks from the changed files and behavior. Start with the smallest check that can detect a regression, then widen only when the impact cannot be mapped safely or a relevant failure indicates a broader problem. Do not run a check only because it exists.
 
-`npm run check` and `npm run build` for anything. The three `tv:` gates need a build first and
-are the ones that speak for hardware nobody here has. Details of what each measures and how to
-read it: [testing and measurement](docs/testing.md).
+- For documentation, badges, links, prose, or comment only changes, inspect the diff, rendering, links, spelling, commands, and examples. Skip application lint, type checks, tests, builds, TV gates, and WebAssembly checks.
+- For changed TypeScript or TSX files, lint only the changed files with `npm run lint -- <files>`. Run `npm run typecheck` when production TypeScript or shared test types change. Run related tests with `npm test -- <test files>` only when behavior or test code changes.
+- Run `npm run build` when a change affects entry points, application wiring, imports that alter packaging, compiler or bundler configuration, dependencies, generated assets, public contracts, or several connected areas. The build includes the type check, so do not run a separate type check immediately before it.
+- Run `npm run tv:gap` after a build when spacing, layout, flex gap fallbacks, or rendered component structure changes.
+- Run `npm run tv:engines` after a build when runtime APIs, the build target, browser compatibility, application wiring, or behavior across Samsung engine versions could change.
+- Run `npm run tv:budget` after a build when launch work, interaction paths, rendering volume, windowing, caching, or other measured performance behavior changes. Read the machine load before treating a failure as a regression.
+- Run `npm run wasm:check` only when `wasm/`, `public/wasm/`, its worker, checksums, or the repair integration changes. This check does not need an application build.
+- Validate `public/config.xml` with `python3 -c "from xml.dom.minidom import parse; parse('public/config.xml')"` when it changes.
+- Run `npm run check` during implementation only when the user requests it, the change is broad, or the affected tests cannot be selected safely. Before opening a pull request, follow the complete local gate in [CONTRIBUTING.md](CONTRIBUTING.md).
+- Do not repeat a passing check unless later edits could invalidate it. Do not expand the task to fix an unrelated existing failure. Confirm the failure against the unchanged baseline when practical, then report it.
+- Always inspect the complete diff and run `git diff --check`. Before reporting completion, state which checks ran and which checks were skipped, with a short reason.
+
+The three `tv:` gates are the checks that speak for hardware nobody here has. Details of what each measures and how to read it are in [testing and measurement](docs/testing.md).
 
 ## Running it
 

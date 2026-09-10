@@ -38,7 +38,7 @@ http://example.invalid/c.m3u8
 http://example.invalid/d.m3u8
 `;
 
-export function serve(dist, port) {
+export function serve(dist, port = 0) {
   const server = createServer(async (req, res) => {
     const path = req.url.split("?")[0];
     if (path === "/playlist.m3u") {
@@ -61,7 +61,11 @@ export function serve(dist, port) {
     server.once("error", (e) => fail(new Error(
       `Could not serve the build on port ${port}: ${e.message}. A previous run may still be up.`,
     )));
-    server.listen(port, () => ok(server));
+    server.listen(port, "127.0.0.1", () => ok({
+      port: server.address().port,
+      close: () => new Promise((resolve, reject) => server.close((error) =>
+        error ? reject(error) : resolve())),
+    }));
   });
 }
 
@@ -107,7 +111,7 @@ export function driver(cdp, port) {
     if (exceptionDetails) throw new Error(exceptionDetails.text ?? "evaluate failed");
     return result.value;
   };
-  const waitFor = async (expression, timeout = 10000) => {
+  const waitFor = async (expression, timeout = 30000) => {
     const deadline = Date.now() + timeout;
     while (Date.now() < deadline) {
       try {
@@ -123,26 +127,32 @@ export function driver(cdp, port) {
     evaluate,
     waitFor,
     frame,
-    press: async (key, code) => {
+    press: async (key, code, ready) => {
       for (const type of ["keyDown", "keyUp"]) {
         await cdp.send("Input.dispatchKeyEvent",
           { type, key, windowsVirtualKeyCode: code, nativeVirtualKeyCode: code });
       }
-      await sleep(140);
+      if (ready) await waitFor(ready);
     },
     clickText: (text) => evaluate(
       `(() => { const b = [...document.querySelectorAll("button")]
           .find((e) => e.textContent.trim() === ${JSON.stringify(text)});
         if (b) b.click(); return !!b; })()`),
     open: async () => {
+      await cdp.send("Page.addScriptToEvaluateOnNewDocument", { source: SEED });
       await cdp.send("Page.navigate", { url: `http://127.0.0.1:${port}/` });
-      await waitFor(`location.origin === "http://127.0.0.1:${port}"
-        && document.readyState === "complete"`);
-      await evaluate(SEED);
-      await evaluate("window.__harnessReloadPending = true");
-      await cdp.send("Page.reload");
-      await waitFor(`!window.__harnessReloadPending
-        && document.querySelectorAll(".list .row").length > 0`);
+      await waitFor(`(() => {
+        const selected = document.querySelector(".rail .row.selected.showing");
+        const rows = document.querySelectorAll(".list .row-label");
+        return location.origin === "http://127.0.0.1:${port}"
+          && document.readyState === "complete"
+          && !document.querySelector(".splash")
+          && document.querySelector(".panel:not(.away)")
+          && selected && selected.textContent.includes("News")
+          && rows.length === 2
+          && rows[0].textContent === "Channel Alpha News"
+          && rows[1].textContent === "Channel Beta With A Much Longer Name Than Fits";
+      })()`);
       await evaluate(`(() => {
         const style = document.createElement("style");
         style.textContent = "*{transition:none!important;animation:none!important}";
@@ -166,6 +176,16 @@ export async function walk(cdp, port, selectors, { before } = {}) {
   await d.open();
   if (before) await d.evaluate(before);
 
+  const railShowing = (label) => `(() => {
+    const row = document.querySelector(".rail .row.selected.showing .row-label");
+    return row && row.textContent === ${JSON.stringify(label)};
+  })()`;
+  const sectionShowing = (label) => `(() => {
+    const row = document.querySelector('.sheet-rail [aria-current="page"]');
+    const heading = document.querySelector(".sheet-body h3");
+    return row && row.textContent.trim() === ${JSON.stringify(label)}
+      && heading && heading.textContent.trim() === ${JSON.stringify(label)};
+  })()`;
   const shots = {};
   /**
    * Measure a screen, and refuse to record an empty one.
@@ -177,13 +197,24 @@ export async function walk(cdp, port, selectors, { before } = {}) {
    * most broken is worse than no gate.
    */
   const capture = async (name) => {
-    await d.frame();
-    const boxes = JSON.parse(await d.evaluate(MEASURE(selectors)));
-    if (!Object.keys(boxes).length) {
-      throw new Error(`${name} drew none of the containers being measured, so there is `
-        + "nothing to compare. The app probably failed to render.");
+    const deadline = Date.now() + 30000;
+    let previous = "";
+    while (Date.now() < deadline) {
+      await d.frame();
+      const measured = await d.evaluate(MEASURE(selectors));
+      if (measured !== previous) {
+        previous = measured;
+        continue;
+      }
+      const boxes = JSON.parse(measured);
+      if (!Object.keys(boxes).length) {
+        throw new Error(`${name} drew none of the containers being measured, so there is `
+          + "nothing to compare. The app probably failed to render.");
+      }
+      shots[name] = boxes;
+      return;
     }
-    shots[name] = boxes;
+    throw new Error(`${name} did not settle within 30000ms`);
   };
 
   /**
@@ -195,11 +226,12 @@ export async function walk(cdp, port, selectors, { before } = {}) {
    * same wrong thing, so they agree perfectly and the gate reports success for several screens
    * it never visited.
    */
-  const click = async (label) => {
+  const click = async (label, ready) => {
     if (!(await d.clickText(label))) {
       throw new Error(`No button labelled "${label}". The walk cannot reach the screen behind `
         + "it, and a renamed label must not quietly shorten the journey.");
     }
+    if (ready) await d.waitFor(ready);
   };
 
   /**
@@ -210,7 +242,7 @@ export async function walk(cdp, port, selectors, { before } = {}) {
    * which is how a second key came to exist beside it. It threw rather than walking the wrong
    * screen, which is the only reason it was noticed at once.
    */
-  const keyed = async (label) => {
+  const keyed = async (label, ready) => {
     const hit = await d.evaluate(`(() => {
       const el = document.querySelector('[aria-label=${JSON.stringify(label)}]');
       if (!el) return false;
@@ -218,17 +250,14 @@ export async function walk(cdp, port, selectors, { before } = {}) {
       return true;
     })()`);
     if (!hit) throw new Error(`No key labelled "${label}" in the panel's title bar.`);
+    if (ready) await d.waitFor(ready);
   };
 
   await capture("panel");
   // Into the rail and down a category, which is the walk the rail debounce governs. The
   // selected and showing rows agree only once the channel column has settled.
-  await d.press("ArrowLeft", 37);
-  await d.press("ArrowDown", 40);
-  await d.waitFor(`(() => {
-    const selected = document.querySelector(".rail .row.selected");
-    return selected && selected === document.querySelector(".rail .row.showing");
-  })()`);
+  await d.press("ArrowLeft", 37, "!!document.querySelector('.rail.focused')");
+  await d.press("ArrowDown", 40, railShowing("Sport"));
   await capture("panel.secondCategory");
 
   /*
@@ -247,8 +276,7 @@ export async function walk(cdp, port, selectors, { before } = {}) {
    * the gate refused to let a newer engine stand in for it, quite rightly. Character events have
    * been in the protocol since long before any television this app supports.
    */
-  await keyed("Search");
-  await d.waitFor("!!document.querySelector('.search-field')");
+  await keyed("Search", "!!document.querySelector('.search-field')");
   await capture("panel.search");
   for (const ch of "sport") await cdp.send("Input.dispatchKeyEvent", { type: "char", text: ch });
   await d.waitFor(`(() => {
@@ -256,30 +284,34 @@ export async function walk(cdp, port, selectors, { before } = {}) {
     return row && row.textContent === "Gamma Sport";
   })()`);
   await capture("panel.searchResults");
-  await d.press("Escape", 27);           // clears the query
-  await d.waitFor(`(() => {
+  await d.press("Escape", 27, `(() => {
     const field = document.querySelector(".search-field");
     return field && field.value === "";
-  })()`);
-  await d.press("Escape", 27);           // and leaves the search
-  await d.waitFor("!document.querySelector('.search-field')");
+  })()`);                                // clears the query
+  await d.press("Escape", 27, "!document.querySelector('.search-field')"); // and leaves the search
 
-  await keyed("Settings");
+  await keyed("Settings", sectionShowing("Appearance"));
   await capture("settings.appearance");
-  await click("Playlists");              await capture("settings.playlists");
-  await click("Add a playlist");         await capture("settings.playlistForm");
-  await click("Cancel");                 await d.frame();
-  await click("Remove");                 await capture("settings.confirm");
-  await click("Keep it");                await d.frame();
-  await click("Playback");               await capture("settings.playback");
-  await click("General");                await capture("settings.general");
+  await click("Playlists", sectionShowing("Playlists"));
+  await capture("settings.playlists");
+  await click("Add a playlist", "!!document.querySelector('#pl-url')");
+  await capture("settings.playlistForm");
+  await click("Cancel", "!document.querySelector('#pl-url')");
+  await click("Remove", "!!document.querySelector('.dialog')");
+  await capture("settings.confirm");
+  await click("Keep it", "!document.querySelector('.dialog')");
+  await click("Playback", sectionShowing("Playback"));
+  await capture("settings.playback");
+  await click("General", sectionShowing("General"));
+  await capture("settings.general");
   // Diagnostics reports what the set is, so it is the one screen whose content genuinely
   // differs between engines. It is walked anyway: what is measured here is the frame it
   // draws into, and a screen left out of the walk is a screen no gate has ever loaded.
-  await click("Diagnostics");            await capture("settings.diagnostics");
-  await click("About");                  await capture("settings.about");
-  await d.press("Escape", 27);
-  await d.waitFor("!document.querySelector('.sheet')");
+  await click("Diagnostics", sectionShowing("Diagnostics"));
+  await capture("settings.diagnostics");
+  await click("About", sectionShowing("About"));
+  await capture("settings.about");
+  await d.press("Escape", 27, "!document.querySelector('.sheet')");
   await cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: 900, y: 500 });
   await cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: 905, y: 505 });
   await d.waitFor("!!document.querySelector('.pad')");
