@@ -28,17 +28,15 @@
  * dependency and no browser automation framework.
  */
 import { spawn } from "node:child_process";
-import { existsSync, readFileSync, readdirSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { mkdtempSync } from "node:fs";
-import { connect, findChrome } from "./cdp.mjs";
+import { join, resolve } from "node:path";
+import { connect, devToolsPort, findChrome } from "./cdp.mjs";
 import { serve, walk, compare } from "./harness.mjs";
 
 const ROOT = resolve(import.meta.dirname, "../..");
 const DIST = join(ROOT, "dist");
 const PORT = 4319;
-const CDP_PORT = 9335;
 
 /**
  * The dev-only debug remote, which is excluded and is the only thing that is.
@@ -112,8 +110,9 @@ async function main() {
   }
 
   const server = await serve(DIST, PORT);
+  const profile = mkdtempSync(join(tmpdir(), "openiptv-gap-"));
   const browser = spawn(chrome, [
-    `--remote-debugging-port=${CDP_PORT}`,
+    "--remote-debugging-port=0",
     /*
      * A profile per run, and it matters more than it looks.
      *
@@ -124,16 +123,19 @@ async function main() {
      * or the heap cap. It also means the two walks no longer share a warm cache between runs,
      * so a cold profile and a warm one cannot disagree about the layout.
      */
-    `--user-data-dir=${mkdtempSync(join(tmpdir(), "openiptv-gap-"))}`,
+    `--user-data-dir=${profile}`,
     "--headless=new", "--window-size=1920,1080", "--no-first-run", "--no-default-browser-check",
     // Linux runners have no unprivileged user namespaces, so the sandbox refuses to start and
     // this gate is a blocking step. See the longer note in engine-parity.
     "--no-sandbox", "--disable-gpu", "--hide-scrollbars",
-  ], { stdio: "ignore" });
+  ], { stdio: ["ignore", "ignore", "pipe"] });
+  let stderr = "";
+  browser.stderr.setEncoding("utf8");
+  browser.stderr.on("data", (chunk) => { stderr += chunk; });
 
   let failures = 0;
   try {
-    const cdp = await connect(CDP_PORT);
+    const cdp = await connect(await devToolsPort(profile, browser, () => stderr));
     await cdp.send("Runtime.enable");
     await cdp.send("Page.enable");
 
@@ -156,6 +158,7 @@ async function main() {
   } finally {
     browser.kill();
     server.close();
+    rmSync(profile, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   }
   process.exit(failures ? 1 : 0);
 }

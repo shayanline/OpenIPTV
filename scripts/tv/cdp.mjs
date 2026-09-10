@@ -3,7 +3,8 @@
  * reach the TV over sdb. One tiny client rather than a browser automation framework,
  * because everything here is "open a socket, send a command, read the replies".
  */
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 
 // Node has had a global WebSocket since 22, so this needs no dependency at all.
 
@@ -35,6 +36,22 @@ export const factor = (name, whenBare) => {
 };
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+export async function devToolsPort(profile, browser, stderr, tries = 120) {
+  for (let i = 0; i < tries; i++) {
+    if (browser.exitCode !== null) {
+      throw new Error(`Chrome exited with code ${browser.exitCode} before opening DevTools:\n${stderr().trim()}`);
+    }
+    try {
+      const port = Number(readFileSync(join(profile, "DevToolsActivePort"), "utf8").split("\n", 1)[0]);
+      if (Number.isInteger(port) && port > 0) return port;
+    } catch (error) {
+      if (error.code !== "ENOENT") throw error;
+    }
+    if (i + 1 < tries) await sleep(250);
+  }
+  throw new Error(`Chrome did not open DevTools:\n${stderr().trim()}`);
+}
 
 /**
  * Ask the browser to open a tab.
