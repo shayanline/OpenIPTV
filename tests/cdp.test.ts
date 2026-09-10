@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { EventEmitter } from "node:events";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -44,4 +45,24 @@ test("reports Chrome output when browser startup times out", async () => {
     cdp.devToolsPort(path, { exitCode: null }, () => "startup stalled", 1),
     /Chrome did not open DevTools:\nstartup stalled/,
   );
+});
+
+test("waits for Chrome to exit after asking it to stop", async () => {
+  const browser = new EventEmitter();
+  Object.assign(browser, {
+    exitCode: null,
+    kill() {
+      setTimeout(() => {
+        browser.exitCode = 0;
+        browser.emit("exit", 0, null);
+      }, 10);
+    },
+  });
+  assert.equal(typeof cdp.stopBrowser, "function");
+  let stopped = false;
+  const stopping = cdp.stopBrowser(browser).then(() => { stopped = true; });
+  await Promise.resolve();
+  assert.equal(stopped, false);
+  await stopping;
+  assert.equal(stopped, true);
 });

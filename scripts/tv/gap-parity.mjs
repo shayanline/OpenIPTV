@@ -31,7 +31,7 @@ import { spawn } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { connect, devToolsPort, findChrome } from "./cdp.mjs";
+import { connect, devToolsPort, findChrome, stopBrowser } from "./cdp.mjs";
 import { serve, walk, compare } from "./harness.mjs";
 
 const ROOT = resolve(import.meta.dirname, "../..");
@@ -156,8 +156,8 @@ async function main() {
                     "at the foot of src/styles/app.css.");
     }
   } finally {
-    browser.kill();
     server.close();
+    await stopBrowser(browser);
     rmSync(profile, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   }
   process.exit(failures ? 1 : 0);
