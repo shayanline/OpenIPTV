@@ -72,11 +72,20 @@ export interface MountOptions {
    */
   slowPicture?: number;
   locale?: LocalePreference;
+  hiddenCategories?: string[];
+  hiddenCategoryMode?: "exclude" | "search";
 }
 
 export async function mountApp(
   playlist: string,
-  { resume, awaitPlaylist = true, slowPicture = 0, locale }: MountOptions = {},
+  {
+    resume,
+    awaitPlaylist = true,
+    slowPicture = 0,
+    locale,
+    hiddenCategories = [],
+    hiddenCategoryMode = "exclude",
+  }: MountOptions = {},
 ) {
   if (!vi.isFakeTimers()) vi.useFakeTimers();
   vi.resetModules();
@@ -117,7 +126,15 @@ export async function mountApp(
   localStorage.setItem(
     "openiptv.settings",
     JSON.stringify({
-      playlists: [{ id: "pl-1", name: "Test", url: "http://list.invalid/a.m3u" }],
+      playlists: [
+        {
+          id: "pl-1",
+          name: "Test",
+          url: "http://list.invalid/a.m3u",
+          hiddenCategories,
+          hiddenCategoryMode,
+        },
+      ],
       activePlaylistId: "pl-1",
       resumeLast: !!resume,
       ...(locale ? { locale } : {}),

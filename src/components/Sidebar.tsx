@@ -30,6 +30,7 @@ interface Props {
   cursor: number;
   /** So an arriving playlist is not announced as a playlist with nothing in it. */
   loading: boolean;
+  allHidden: boolean;
   focused: boolean;
   scale: number;
   /** Must be stable, or every row rebuilds on every press. */
@@ -86,6 +87,7 @@ export const Sidebar = memo(function Sidebar({
   selected,
   cursor,
   loading,
+  allHidden,
   focused,
   scale,
   onSelect,
@@ -148,7 +150,11 @@ export const Sidebar = memo(function Sidebar({
         <div className="window" style={{ transform: `translateY(${-win.offset}px)` }}>
           {rows}
         </div>
-        {!loading && !categories.length && <p className="empty">{t("channel.noCategories")}</p>}
+        {!loading && !categories.length && (
+          <p className="empty">
+            {t(allHidden ? "channel.allCategoriesHidden" : "channel.noCategories")}
+          </p>
+        )}
       </div>
       <ScrollIndicator count={categories.length} first={win.first} visible={win.visible} />
     </nav>

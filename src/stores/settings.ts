@@ -39,10 +39,14 @@ export const FONT_SIZES = [
   { id: "xl", label: "Extra large", scale: 1.3 },
 ];
 
+export type HiddenCategoryMode = "exclude" | "search";
+
 export interface Playlist {
   id: string;
   name: string;
   url: string;
+  hiddenCategories: string[];
+  hiddenCategoryMode: HiddenCategoryMode;
 }
 
 interface Settings {
@@ -73,6 +77,8 @@ interface Settings {
   addPlaylist: (name: string, url: string) => void;
   removePlaylist: (id: string) => void;
   updatePlaylist: (id: string, name: string, url: string) => void;
+  setCategoryHidden: (playlistId: string, category: string, hidden: boolean) => void;
+  setHiddenCategoryMode: (playlistId: string, mode: HiddenCategoryMode) => void;
   reset: () => void;
   scale: () => number;
   activePlaylist: () => Playlist | undefined;
@@ -138,6 +144,20 @@ function load(): typeof DEFAULTS {
     if (key in saved) merged[key] = saved[key];
   }
   if (!isLocalePreference(merged.locale)) merged.locale = DEFAULTS.locale;
+  merged.playlists = Array.isArray(merged.playlists)
+    ? merged.playlists
+        .filter(
+          (value): value is Playlist =>
+            !!value && typeof value === "object" && !Array.isArray(value),
+        )
+        .map((playlist) => ({
+          ...playlist,
+          hiddenCategories: Array.isArray(playlist.hiddenCategories)
+            ? playlist.hiddenCategories.filter((category) => typeof category === "string")
+            : [],
+          hiddenCategoryMode: playlist.hiddenCategoryMode === "search" ? "search" : "exclude",
+        }))
+    : [];
   const canonical = JSON.stringify(merged);
   if (JSON.stringify(saved) !== canonical) write(KEY, canonical);
   return merged as typeof DEFAULTS;
@@ -149,6 +169,8 @@ function persist(state: Settings) {
     addPlaylist: _a,
     removePlaylist: _r,
     updatePlaylist: _u,
+    setCategoryHidden: _ch,
+    setHiddenCategoryMode: _cm,
     reset: _re,
     scale: _sc,
     activePlaylist: _ap,
@@ -166,7 +188,13 @@ export const useSettings = create<Settings>((set, get) => ({
   },
 
   addPlaylist(name, url) {
-    const playlist = { id: freshId(get().playlists), name: name.trim(), url: url.trim() };
+    const playlist = {
+      id: freshId(get().playlists),
+      name: name.trim(),
+      url: url.trim(),
+      hiddenCategories: [],
+      hiddenCategoryMode: "exclude" as HiddenCategoryMode,
+    };
     const first = !get().playlists.length;
     set({
       playlists: [...get().playlists, playlist],
@@ -191,6 +219,29 @@ export const useSettings = create<Settings>((set, get) => ({
     set({
       playlists: get().playlists.map((p) =>
         p.id === id ? { ...p, name: name.trim(), url: url.trim() } : p,
+      ),
+    });
+    persist(get());
+  },
+
+  setCategoryHidden(playlistId, category, hidden) {
+    set({
+      playlists: get().playlists.map((playlist) => {
+        if (playlist.id !== playlistId) return playlist;
+        const without = playlist.hiddenCategories.filter((name) => name !== category);
+        return {
+          ...playlist,
+          hiddenCategories: hidden ? [...without, category] : without,
+        };
+      }),
+    });
+    persist(get());
+  },
+
+  setHiddenCategoryMode(playlistId, mode) {
+    set({
+      playlists: get().playlists.map((playlist) =>
+        playlist.id === playlistId ? { ...playlist, hiddenCategoryMode: mode } : playlist,
       ),
     });
     persist(get());

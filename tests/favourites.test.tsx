@@ -50,10 +50,10 @@ const cursorOn = () =>
  * between every press would be testing a behaviour the app does not have.
  */
 async function openCategory(name: string) {
-  press(KEY.LEFT);                                  // into the rail
+  press(KEY.LEFT); // into the rail
   for (let i = 0; i < 8 && cursorOn() !== name; i++) press(KEY.DOWN);
-  await settle();                                   // and let the column catch up
-  press(KEY.RIGHT);                                 // back into the channels
+  await settle(); // and let the column catch up
+  press(KEY.RIGHT); // back into the channels
 }
 
 beforeEach(() => {
@@ -72,6 +72,35 @@ test("a playlist with no favourites opens on its own first category", async () =
   assert.equal(showing(), "News");
 });
 
+test("favourites from hidden categories disappear in the default mode", async () => {
+  localStorage.setItem("openiptv.favourites", '["a"]');
+  await mountApp(PLAYLIST, { hiddenCategories: ["News"] });
+
+  assert.deepEqual(rail(), ["Sport"]);
+  assert.equal(showing(), "Sport");
+});
+
+test("hiding every category says how to restore the list", async () => {
+  await mountApp(PLAYLIST, { hiddenCategories: ["News", "Sport"] });
+
+  assert.deepEqual(rail(), []);
+  assert.ok(
+    screen.getByText("All categories are hidden. Show them again in playlist settings."),
+  );
+});
+
+test("search mode keeps explicit favourites from hidden categories", async () => {
+  localStorage.setItem("openiptv.favourites", '["a"]');
+  await mountApp(PLAYLIST, {
+    hiddenCategories: ["News"],
+    hiddenCategoryMode: "search",
+  });
+
+  assert.deepEqual(rail(), ["Favourites", "Sport"]);
+  assert.equal(showing(), "Favourites");
+  assert.ok(screen.getByText("Alpha"));
+});
+
 /**
  * The rail answers the key and the channel column follows, which is two behaviours and not
  * one, so it is worth two assertions.
@@ -85,7 +114,7 @@ test("a playlist with no favourites opens on its own first category", async () =
  */
 test("walking the rail moves the cursor at once and the channel column only after", async () => {
   await mountApp(PLAYLIST);
-  press(KEY.LEFT);                                  // into the rail, on News
+  press(KEY.LEFT); // into the rail, on News
 
   press(KEY.DOWN);
   assert.equal(cursorOn(), "Sport", "the cursor did not answer the press");
@@ -104,7 +133,7 @@ test("a refresh that returns fewer categories brings the cursor back inside", as
    */
   await mountApp(PLAYLIST);
   press(KEY.LEFT);
-  press(KEY.DOWN);            // onto Sport, the second and last category
+  press(KEY.DOWN); // onto Sport, the second and last category
   await settle();
   assert.equal(cursorOn(), "Sport");
 
@@ -168,11 +197,11 @@ test("unfavouriting the last one takes the row away and still does not move anyb
 
 test("the last favourite removed from inside Favourites lands on a real category", async () => {
   await mountApp(PLAYLIST);
-  press(KEY.GREEN);                                 // Alpha, from News
+  press(KEY.GREEN); // Alpha, from News
   await openCategory("Favourites");
   assert.equal(showing(), "Favourites");
 
-  press(KEY.GREEN);                                 // and take it back again
+  press(KEY.GREEN); // and take it back again
 
   // The row the viewer was standing on has gone. What replaces it is the first category,
   // shown from its first channel rather than from whatever row number they were on.

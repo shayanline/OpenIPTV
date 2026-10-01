@@ -2,7 +2,15 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import assert from "node:assert/strict";
 import { act, cleanup, screen } from "@testing-library/react";
 import { KEY } from "../src/hooks/useRemote";
-import { mountApp, muted, panelOpen, played, press, settle, volumeChanges } from "./support/app";
+import {
+  mountApp,
+  muted,
+  panelOpen,
+  played,
+  press,
+  settle,
+  volumeChanges,
+} from "./support/app";
 
 /**
  * The four laws of the key model, asserted rather than described.
@@ -73,7 +81,7 @@ test("the channel list stays open until it is dismissed", async () => {
 
 test("law 1: up and down change channel at the picture, always", async () => {
   await mount();
-  press(KEY.ENTER);                       // watch the first channel
+  press(KEY.ENTER); // watch the first channel
   const started = played.length;
 
   press(KEY.UP);
@@ -113,13 +121,13 @@ test("law 2: OK at the picture opens the channel list", async () => {
 
 test("law 4: RETURN clears the screen before it offers to close the app", async () => {
   await mount();
-  press(KEY.ENTER);                       // watching, banner up
+  press(KEY.ENTER); // watching, banner up
   assert.ok(!panelOpen());
 
-  press(KEY.BACK);                        // clears the banner
+  press(KEY.BACK); // clears the banner
   assert.equal(document.querySelector(".dialog"), null, "offered to exit on the first press");
 
-  press(KEY.BACK);                        // nothing left, so now it asks
+  press(KEY.BACK); // nothing left, so now it asks
   assert.ok(document.querySelector(".dialog"), "never offered to close the app");
 });
 
@@ -137,17 +145,24 @@ test("a dialled number tunes the channel carrying it", async () => {
   await mount();
   press(KEY.ENTER);
   const started = played.length;
-  press(51);                              // "3"
+  press(51); // "3"
   await settle(2200);
   assert.equal(played.length, started + 1);
   assert.match(played[played.length - 1], /c\.m3u8$/);
+});
+
+test("a dialled number cannot tune a hidden category", async () => {
+  await mountApp(PLAYLIST, { hiddenCategories: ["News"] });
+  press(51);
+  await settle(2200);
+  assert.deepEqual(played, []);
 });
 
 test("OK finishes a dialled number rather than waiting it out", async () => {
   await mount();
   press(KEY.ENTER);
   const started = played.length;
-  press(50);                              // "2"
+  press(50); // "2"
   press(KEY.ENTER);
   assert.equal(played.length, started + 1, "OK did not commit the number");
   assert.match(played[played.length - 1], /b\.m3u8$/);
@@ -200,8 +215,12 @@ test("double clicking the browser video toggles application fullscreen", async (
     configurable: true,
     get: () => fullscreen,
   });
-  app.requestFullscreen = vi.fn(async () => { fullscreen = app; });
-  document.exitFullscreen = vi.fn(async () => { fullscreen = null; });
+  app.requestFullscreen = vi.fn(async () => {
+    fullscreen = app;
+  });
+  document.exitFullscreen = vi.fn(async () => {
+    fullscreen = null;
+  });
 
   video.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
   assert.equal(app.requestFullscreen.mock.calls.length, 1);
@@ -231,12 +250,12 @@ test("no key that leaves you at the picture can strand you there", async () => {
    * on screen or take a focus.
    */
   const staysAtThePicture = [
-    KEY.RIGHT,        // takes a focus on the buttons
-    KEY.GREEN,        // favourites, and raises a message
+    KEY.RIGHT, // takes a focus on the buttons
+    KEY.GREEN, // favourites, and raises a message
     KEY.PLAY,
     KEY.PAUSE,
-    KEY.FORWARD,      // reloads the channel
-    KEY.YELLOW - 1,   // a key the app does not handle at all
+    KEY.FORWARD, // reloads the channel
+    KEY.YELLOW - 1, // a key the app does not handle at all
   ];
 
   for (const code of staysAtThePicture) {

@@ -1,15 +1,106 @@
 import { useState } from "react";
 import { useLocale } from "../../hooks/useLocale";
-import { useSettings, type Playlist } from "../../stores/settings";
+import { useSettings, type HiddenCategoryMode, type Playlist } from "../../stores/settings";
 import { useChannels } from "../../stores/channels";
 import { checkPlaylistUrl, nameFromUrl } from "../../services/playlistUrl";
 import type { MessageKey } from "../../services/locale";
 import { Confirm } from "../Confirm";
+import { Choice, Row, Toggle } from "./Field";
+
+const CATEGORY_PAGE_SIZE = 20;
+
+function CategoryManager({
+  playlist,
+  categories,
+  onDone,
+}: {
+  playlist: Playlist;
+  categories: { name: string }[];
+  onDone: () => void;
+}) {
+  const { t } = useLocale();
+  const settings = useSettings();
+  const [query, setQuery] = useState("");
+  const [page, setPage] = useState(0);
+  const folded = query.trim().toLocaleLowerCase();
+  const matches = folded
+    ? categories.filter((category) => category.name.toLocaleLowerCase().includes(folded))
+    : categories;
+  const pages = Math.max(1, Math.ceil(matches.length / CATEGORY_PAGE_SIZE));
+  const shown = matches.slice(page * CATEGORY_PAGE_SIZE, (page + 1) * CATEGORY_PAGE_SIZE);
+  const modeOptions: readonly { id: HiddenCategoryMode; label: string }[] = [
+    { id: "exclude", label: t("playlist.hideEverywhere") },
+    { id: "search", label: t("playlist.keepSearchable") },
+  ];
+
+  return (
+    <>
+      <h3>{t("playlist.categoriesTitle", { name: playlist.name })}</h3>
+      <Row label={t("playlist.hiddenChannels")} hint={t("playlist.hiddenChannelsHint")}>
+        <Choice
+          label={t("playlist.hiddenChannels")}
+          options={modeOptions}
+          value={playlist.hiddenCategoryMode}
+          onChange={(mode) => settings.setHiddenCategoryMode(playlist.id, mode)}
+        />
+      </Row>
+      <div className="form">
+        <label htmlFor="category-search">{t("playlist.categorySearch")}</label>
+        <input
+          id="category-search"
+          value={query}
+          dir="auto"
+          onChange={(event) => {
+            setQuery(event.target.value);
+            setPage(0);
+          }}
+        />
+      </div>
+      {shown.map((category) => (
+        <Row key={category.name} label={category.name}>
+          <Toggle
+            label={category.name}
+            value={!playlist.hiddenCategories.includes(category.name)}
+            onChange={(visible) =>
+              settings.setCategoryHidden(playlist.id, category.name, !visible)
+            }
+          />
+        </Row>
+      ))}
+      {!shown.length && <p className="sheet-lead">{t("playlist.noCategoryMatches")}</p>}
+      <div className="actions">
+        {pages > 1 && (
+          <>
+            <button
+              type="button"
+              className="btn tonal"
+              disabled={page === 0}
+              onClick={() => setPage((current) => current - 1)}
+            >
+              {t("common.previous")}
+            </button>
+            <button
+              type="button"
+              className="btn tonal"
+              disabled={page === pages - 1}
+              onClick={() => setPage((current) => current + 1)}
+            >
+              {t("common.next")}
+            </button>
+          </>
+        )}
+        <button type="button" className="btn tonal" onClick={onDone}>
+          {t("common.done")}
+        </button>
+      </div>
+    </>
+  );
+}
 
 export function Playlists({ onAsking }: { onAsking: (asking: boolean) => void }) {
   const { t } = useLocale();
   const s = useSettings();
-  const { load, loading, error, errorKey, errorDetail, channels } = useChannels();
+  const { load, loading, error, errorKey, errorDetail, channels, categories } = useChannels();
   const errorText = (
     key: MessageKey | "" | undefined,
     detail: string | undefined,
@@ -22,6 +113,7 @@ export function Playlists({ onAsking }: { onAsking: (asking: boolean) => void })
   const [problem, setProblem] = useState<MessageKey | "">("");
   /** Which playlist has been asked about but not yet confirmed for removal. */
   const [confirming, setConfirming] = useState("");
+  const [managing, setManaging] = useState("");
 
   const ask = (id: string) => {
     setConfirming(id);
@@ -29,7 +121,13 @@ export function Playlists({ onAsking }: { onAsking: (asking: boolean) => void })
   };
 
   const startAdd = () => {
-    setEditing({ id: "", name: "", url: "" });
+    setEditing({
+      id: "",
+      name: "",
+      url: "",
+      hiddenCategories: [],
+      hiddenCategoryMode: "exclude",
+    });
     setName("");
     setUrl("");
     setProblem("");
@@ -90,6 +188,32 @@ export function Playlists({ onAsking }: { onAsking: (asking: boolean) => void })
     );
   };
 
+  const manage = async (playlist: Playlist) => {
+    if (playlist.id !== s.activePlaylistId) {
+      const previous = s.activePlaylistId;
+      s.set("activePlaylistId", playlist.id);
+      setNote(t("playlist.loading", { name: playlist.name }));
+      const result = await load();
+      if (result.error) {
+        s.set("activePlaylistId", previous);
+        setNote(errorText(result.errorKey, result.errorDetail, result.error));
+        return;
+      }
+    }
+    setManaging(playlist.id);
+  };
+
+  const managedPlaylist = s.playlists.find((playlist) => playlist.id === managing);
+  if (managedPlaylist) {
+    return (
+      <CategoryManager
+        playlist={managedPlaylist}
+        categories={categories}
+        onDone={() => setManaging("")}
+      />
+    );
+  }
+
   return (
     <>
       <h3>{t("settings.playlists")}</h3>
@@ -136,6 +260,14 @@ export function Playlists({ onAsking }: { onAsking: (asking: boolean) => void })
             {/* Tonal rather than flat. Flat text at three metres reads as a label, not as
                 something you can press, and One UI gives a medium emphasis control a grey
                 fill precisely so it still looks like a control. */}
+            <button
+              type="button"
+              className="btn tonal"
+              aria-label={t("playlist.manageCategoriesAria", { name: p.name })}
+              onClick={() => void manage(p)}
+            >
+              {t("playlist.manageCategories")}
+            </button>
             <button
               type="button"
               className="btn tonal"

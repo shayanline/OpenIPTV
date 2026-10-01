@@ -26,8 +26,10 @@ http://example.invalid/b.m3u8
 #EXTINF:-1 tvg-id="c" group-title="Sport",Gamma
 http://example.invalid/c.m3u8`;
 
-const LONG_PLAYLIST = `#EXTM3U\n${Array.from({ length: 32 }, (_, i) =>
-  `#EXTINF:-1 tvg-id="long-${i}" group-title="News",Channel ${i}\nhttp://example.invalid/${i}.m3u8`,
+const LONG_PLAYLIST = `#EXTM3U\n${Array.from(
+  { length: 32 },
+  (_, i) =>
+    `#EXTINF:-1 tvg-id="long-${i}" group-title="News",Channel ${i}\nhttp://example.invalid/${i}.m3u8`,
 ).join("\n")}`;
 
 /** The rail row the cursor is on, so where the panel would open can be checked without opening it. */
@@ -55,6 +57,18 @@ test("the remembered channel plays and the panel never opens", async () => {
 
   assert.deepEqual(played, ["http://example.invalid/c.m3u8"]);
   assert.ok(!panelOpen(), "the channel list was shown over a channel the viewer chose");
+});
+
+test("a hidden remembered channel does not resume", async () => {
+  await mountApp(PLAYLIST, { resume: "a", hiddenCategories: ["News"] });
+
+  assert.deepEqual(played, []);
+  assert.ok(
+    panelOpen(),
+    "the viewer was left at the picture with the remembered channel hidden",
+  );
+  assert.equal(document.body.textContent?.includes("Alpha"), false);
+  assert.equal(document.body.textContent?.includes("Gamma"), true);
 });
 
 test("the panel is closed from the very first render, not closed afterwards", async () => {
@@ -89,7 +103,10 @@ test("a resumed channel beyond the first screen is selected when the panel opens
 
   press(KEY.LEFT);
 
-  assert.equal(screen.getByText("Channel 31").closest(".row")?.classList.contains("selected"), true);
+  assert.equal(
+    screen.getByText("Channel 31").closest(".row")?.classList.contains("selected"),
+    true,
+  );
 });
 
 test("a playlist refresh keeps the resumed channel selected", async () => {
@@ -103,7 +120,10 @@ test("a playlist refresh keeps the resumed channel selected", async () => {
 
   press(KEY.LEFT);
 
-  assert.equal(screen.getByText("Channel 31").closest(".row")?.classList.contains("selected"), true);
+  assert.equal(
+    screen.getByText("Channel 31").closest(".row")?.classList.contains("selected"),
+    true,
+  );
 });
 
 test("a remembered channel that has gone from the playlist opens the list instead", async () => {

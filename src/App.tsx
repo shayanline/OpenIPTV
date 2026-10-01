@@ -5,7 +5,7 @@ import { onTizen } from "./services/player";
 import { warmChain } from "./services/logos";
 import { cssMs } from "./services/metrics";
 import { whenIdle } from "./services/idle";
-import { FAVOURITES, listsOf, stepColumn, wrap } from "./services/lineup";
+import { FAVOURITES, lineupOf, stepColumn, wrap } from "./services/lineup";
 import { UNCATEGORISED } from "./services/m3u";
 import { searchChannels } from "./services/search";
 import { KEY, registerRemoteKeys, useRemote } from "./hooks/useRemote";
@@ -242,10 +242,21 @@ export default function App() {
   const pointerAwake = usePointerAwake();
   const railTimer = useRef<number | undefined>(undefined);
 
-  const lists = useMemo(
-    () => listsOf(channels, categories, favourites),
-    [channels, categories, favourites],
+  const activePlaylist = settings.activePlaylist();
+  const lineup = useMemo(
+    () =>
+      lineupOf(
+        channels,
+        categories,
+        favourites,
+        activePlaylist ?? {
+          hiddenCategories: [],
+          hiddenCategoryMode: "exclude",
+        },
+      ),
+    [channels, categories, favourites, activePlaylist],
   );
+  const { lists, browsableChannels, searchableChannels } = lineup;
   const displayListName = (name: string) =>
     name === FAVOURITES
       ? t("channel.favourites")
@@ -283,7 +294,10 @@ export default function App() {
    * anything: keyed on what has been typed, every keystroke would rebuild the list and the
    * timer below would only be delaying the render, not the work.
    */
-  const results = useMemo(() => searchChannels(channels, applied), [channels, applied]);
+  const results = useMemo(
+    () => searchChannels(searchableChannels, applied),
+    [searchableChannels, applied],
+  );
 
   /**
    * What the channel column is showing: an answer, or a category.
@@ -578,7 +592,7 @@ export default function App() {
     resumed.current = true;
     if (!settings.resumeLast) return;
 
-    const found = channels.find((c) => c.id === lastPlayed());
+    const found = browsableChannels.find((c) => c.id === lastPlayed());
     if (!found) {
       if (lastPlayed()) openPanel();
       return;
@@ -591,7 +605,7 @@ export default function App() {
     }
     setPane("list");
     tuner.start(found);
-  }, [channels]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [channels, browsableChannels]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /**
    * Put the rail cursor somewhere, and let the category follow.
@@ -628,7 +642,7 @@ export default function App() {
 
   const jump = useCallback(
     (n: number) => {
-      const found = channels.find((c) => c.number === n);
+      const found = browsableChannels.find((c) => c.number === n);
       if (!found) {
         chrome.say(t("app.noChannel", { number: number(n) }));
         return;
@@ -641,7 +655,7 @@ export default function App() {
       }
       tuner.start(found);
     },
-    [channels, lists, locate, tuner.start, chrome.say, showCategory, t, number],
+    [browsableChannels, lists, locate, tuner.start, chrome.say, showCategory, t, number],
   );
 
   /**
@@ -663,8 +677,9 @@ export default function App() {
     (channel: Channel | undefined) => {
       if (!channel) return;
       const had = favourites.includes(channel.id);
-      const appears = !had && !favourites.length;
-      const vanishes = had && favourites.length === 1;
+      const favouriteList = lists[0]?.name === FAVOURITES ? lists[0] : undefined;
+      const appears = !had && !favouriteList;
+      const vanishes = had && favouriteList?.channels.length === 1;
 
       if (appears || vanishes) {
         const from = Math.max(0, cursorRef.current - 1);
@@ -679,7 +694,7 @@ export default function App() {
       toggleFavourite(channel.id);
       chrome.say(had ? t("app.removedFavourite") : t("app.addedFavourite"));
     },
-    [favourites, toggleFavourite, chrome.say, index, showCategory, t],
+    [favourites, lists, toggleFavourite, chrome.say, index, showCategory, t],
   );
 
   /**
@@ -1480,6 +1495,7 @@ export default function App() {
             selected={searching ? -1 : category}
             cursor={cursor}
             loading={loading}
+            allHidden={categories.length > 0 && !lists.length}
             focused={pane === "rail"}
             scale={settings.scale()}
             onSelect={pickCategory}

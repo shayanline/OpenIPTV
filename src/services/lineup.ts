@@ -1,3 +1,4 @@
+import type { HiddenCategoryMode } from "../stores/settings";
 import type { Channel } from "../types";
 
 /**
@@ -57,15 +58,34 @@ export interface ChannelList {
  * channel, not to be taken somewhere else. The green key is the only thing that can add or
  * remove this row, so it is the one place that corrects for it.
  */
-export function listsOf(
+export function lineupOf(
   channels: Channel[],
   categories: ChannelList[],
   favourites: string[],
-): ChannelList[] {
+  visibility: {
+    hiddenCategories: readonly string[];
+    hiddenCategoryMode: HiddenCategoryMode;
+  },
+): {
+  lists: ChannelList[];
+  browsableChannels: Channel[];
+  searchableChannels: Channel[];
+} {
+  const hidden = new Set(visibility.hiddenCategories);
+  const browsableChannels = hidden.size
+    ? channels.filter((channel) => !hidden.has(channel.group))
+    : channels;
+  const visibleCategories = hidden.size
+    ? categories.filter((category) => !hidden.has(category.name))
+    : categories;
+  const searchableChannels =
+    visibility.hiddenCategoryMode === "search" ? channels : browsableChannels;
   const wanted = new Set(favourites);
-  const mine = channels.filter((c) => wanted.has(c.id));
-  if (!mine.length) return categories;
-  return [{ name: FAVOURITES, channels: mine }, ...categories];
+  const mine = searchableChannels.filter((channel) => wanted.has(channel.id));
+  const lists = mine.length
+    ? [{ name: FAVOURITES, channels: mine }, ...visibleCategories]
+    : visibleCategories;
+  return { lists, browsableChannels, searchableChannels };
 }
 
 /**
