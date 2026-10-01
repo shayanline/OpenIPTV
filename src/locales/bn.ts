@@ -236,6 +236,7 @@ export default {
   "playlist.loadedActive": ({ count }) => `সক্রিয় প্লেলিস্ট থেকে ${count}টি চ্যানেল লোড হয়েছে।`,
   "playlist.addToStart": "দেখা শুরু করতে একটি M3U প্লেলিস্টের ঠিকানা যোগ করুন।",
   "playlist.storedLocally": "প্লেলিস্টগুলি শুধু এই ডিভাইসে সংরক্ষিত থাকে।",
+  "playlist.savedPlaylists": "সংরক্ষিত প্লেলিস্ট",
   "playlist.editAria": ({ name }) => `${name} সম্পাদনা করুন`,
   "playlist.manageCategories": "বিভাগ",
   "playlist.manageCategoriesAria": ({ name }) => `${name} এর বিভাগ পরিচালনা করুন`,

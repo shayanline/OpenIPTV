@@ -236,6 +236,7 @@ export default {
   "playlist.loadedActive": ({ count }) => `सक्रिय प्लेलिस्ट से ${count} चैनल लोड हुए।`,
   "playlist.addToStart": "देखना शुरू करने के लिए M3U प्लेलिस्ट का पता जोड़ें।",
   "playlist.storedLocally": "प्लेलिस्ट केवल इस डिवाइस पर संग्रहीत होती हैं।",
+  "playlist.savedPlaylists": "सहेजी गई प्लेलिस्ट",
   "playlist.editAria": ({ name }) => `${name} संपादित करें`,
   "playlist.manageCategories": "श्रेणियाँ",
   "playlist.manageCategoriesAria": ({ name }) => `${name} की श्रेणियाँ प्रबंधित करें`,

@@ -250,6 +250,7 @@ export default {
     `${count} chaîne${count === 1 ? "" : "s"} chargée${count === 1 ? "" : "s"} depuis la playlist active.`,
   "playlist.addToStart": "Ajoutez une adresse de playlist M3U pour commencer à regarder.",
   "playlist.storedLocally": "Les playlists sont stockées uniquement sur cet appareil.",
+  "playlist.savedPlaylists": "Listes enregistrées",
   "playlist.editAria": ({ name }) => `Modifier ${name}`,
   "playlist.manageCategories": "Catégories",
   "playlist.manageCategoriesAria": ({ name }) => `Gérer les catégories de ${name}`,

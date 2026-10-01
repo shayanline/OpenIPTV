@@ -243,6 +243,7 @@ export default {
   "playlist.loadedActive": ({ count }) => `Etkin oynatma listesinden ${count} kanal yüklendi.`,
   "playlist.addToStart": "İzlemeye başlamak için bir M3U oynatma listesi adresi ekleyin.",
   "playlist.storedLocally": "Oynatma listeleri yalnızca bu cihazda saklanır.",
+  "playlist.savedPlaylists": "Kayıtlı oynatma listeleri",
   "playlist.editAria": ({ name }) => `${name} düzenle`,
   "playlist.manageCategories": "Kategoriler",
   "playlist.manageCategoriesAria": ({ name }) => `${name} kategorilerini yönet`,

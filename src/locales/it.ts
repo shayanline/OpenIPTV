@@ -248,6 +248,7 @@ export default {
     `${count} canal${count === 1 ? "e" : "i"} caricati dalla playlist attiva.`,
   "playlist.addToStart": "Aggiungi un indirizzo di playlist M3U per iniziare a guardare.",
   "playlist.storedLocally": "Le playlist sono archiviate solo su questo dispositivo.",
+  "playlist.savedPlaylists": "Playlist salvate",
   "playlist.editAria": ({ name }) => `Modifica ${name}`,
   "playlist.manageCategories": "Categorie",
   "playlist.manageCategoriesAria": ({ name }) => `Gestisci le categorie di ${name}`,

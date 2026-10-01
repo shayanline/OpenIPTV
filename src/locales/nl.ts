@@ -248,6 +248,7 @@ export default {
     `${count} kana${count === 1 ? "al" : "len"} geladen uit de actieve afspeellijst.`,
   "playlist.addToStart": "Voeg een M3U-afspeellijstadres toe om te beginnen met kijken.",
   "playlist.storedLocally": "Afspeellijsten worden alleen op dit apparaat opgeslagen.",
+  "playlist.savedPlaylists": "Opgeslagen afspeellijsten",
   "playlist.editAria": ({ name }) => `${name} bewerken`,
   "playlist.manageCategories": "Categorieën",
   "playlist.manageCategoriesAria": ({ name }) => `Categorieën van ${name} beheren`,

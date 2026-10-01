@@ -236,6 +236,7 @@ export default {
   "playlist.loadedActive": ({ count }) => `تم تحميل ${count} قناة من قائمة التشغيل النشطة.`,
   "playlist.addToStart": "أضف عنوان قائمة تشغيل M3U لبدء المشاهدة.",
   "playlist.storedLocally": "تُخزّن قوائم التشغيل على هذا الجهاز فقط.",
+  "playlist.savedPlaylists": "قوائم التشغيل المحفوظة",
   "playlist.editAria": ({ name }) => `تعديل ${name}`,
   "playlist.manageCategories": "الفئات",
   "playlist.manageCategoriesAria": ({ name }) => `إدارة فئات ${name}`,

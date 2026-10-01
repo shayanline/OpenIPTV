@@ -247,6 +247,7 @@ export default {
   "playlist.loadedActive": ({ count }) => `${count} kanal dimuat dari daftar putar aktif.`,
   "playlist.addToStart": "Tambahkan alamat daftar putar M3U untuk mulai menonton.",
   "playlist.storedLocally": "Daftar putar hanya disimpan di perangkat ini.",
+  "playlist.savedPlaylists": "Daftar putar tersimpan",
   "playlist.editAria": ({ name }) => `Edit ${name}`,
   "playlist.manageCategories": "Kategori",
   "playlist.manageCategoriesAria": ({ name }) => `Kelola kategori ${name}`,

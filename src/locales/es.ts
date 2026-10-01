@@ -249,6 +249,7 @@ export default {
     `Se han cargado ${count} canal${count === 1 ? "" : "es"} de la lista activa.`,
   "playlist.addToStart": "Añade una dirección de lista de reproducción M3U para empezar a ver.",
   "playlist.storedLocally": "Las listas solo se almacenan en este dispositivo.",
+  "playlist.savedPlaylists": "Listas guardadas",
   "playlist.editAria": ({ name }) => `Editar ${name}`,
   "playlist.manageCategories": "Categorías",
   "playlist.manageCategoriesAria": ({ name }) => `Gestionar las categorías de ${name}`,

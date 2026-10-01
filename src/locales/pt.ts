@@ -251,6 +251,7 @@ export default {
     `${count} ${count === 1 ? "canal carregado" : "canais carregados"} da lista de reprodução ativa.`,
   "playlist.addToStart": "Adicione um endereço de lista de reprodução M3U para começar a ver.",
   "playlist.storedLocally": "As listas de reprodução são guardadas apenas neste dispositivo.",
+  "playlist.savedPlaylists": "Listas guardadas",
   "playlist.editAria": ({ name }) => `Editar ${name}`,
   "playlist.manageCategories": "Categorias",
   "playlist.manageCategoriesAria": ({ name }) => `Gerir categorias de ${name}`,

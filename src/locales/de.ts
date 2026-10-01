@@ -255,6 +255,7 @@ export default {
   "playlist.addToStart":
     "Fügen Sie eine M3U-Wiedergabelistenadresse hinzu, um mit dem Ansehen zu beginnen.",
   "playlist.storedLocally": "Wiedergabelisten werden nur auf diesem Gerät gespeichert.",
+  "playlist.savedPlaylists": "Gespeicherte Wiedergabelisten",
   "playlist.editAria": ({ name }) => `${name} bearbeiten`,
   "playlist.manageCategories": "Kategorien",
   "playlist.manageCategoriesAria": ({ name }) => `Kategorien von ${name} verwalten`,

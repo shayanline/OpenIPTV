@@ -227,7 +227,14 @@ export async function walk(cdp, port, selectors, { before } = {}) {
    * it never visited.
    */
   const click = async (label, ready) => {
-    if (!(await d.clickText(label))) {
+    const byText = await d.clickText(label);
+    const byName = byText || await d.evaluate(`(() => {
+      const el = document.querySelector('[aria-label=${JSON.stringify(label)}]');
+      if (!el) return false;
+      el.click();
+      return true;
+    })()`);
+    if (!byName) {
       throw new Error(`No button labelled "${label}". The walk cannot reach the screen behind `
         + "it, and a renamed label must not quietly shorten the journey.");
     }

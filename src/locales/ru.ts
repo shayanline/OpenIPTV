@@ -243,6 +243,7 @@ export default {
   "playlist.loadedActive": ({ count }) => `Из активного плейлиста загружено каналов: ${count}.`,
   "playlist.addToStart": "Добавьте адрес плейлиста M3U, чтобы начать просмотр.",
   "playlist.storedLocally": "Плейлисты хранятся только на этом устройстве.",
+  "playlist.savedPlaylists": "Сохранённые плейлисты",
   "playlist.editAria": ({ name }) => `Изменить ${name}`,
   "playlist.manageCategories": "Категории",
   "playlist.manageCategoriesAria": ({ name }) => `Управлять категориями ${name}`,

@@ -238,6 +238,7 @@ export default {
   "playlist.loadedActive": ({ count }) => `활성 재생목록에서 채널 ${count}개를 불러왔습니다.`,
   "playlist.addToStart": "시청을 시작하려면 M3U 재생목록 주소를 추가하세요.",
   "playlist.storedLocally": "재생목록은 이 기기에만 저장됩니다.",
+  "playlist.savedPlaylists": "저장된 재생목록",
   "playlist.editAria": ({ name }) => `${name} 편집`,
   "playlist.manageCategories": "카테고리",
   "playlist.manageCategoriesAria": ({ name }) => `${name} 카테고리 관리`,

@@ -8,7 +8,7 @@ import { Confirm } from "../Confirm";
 import { Icon } from "../Icon";
 import { Text } from "../Text";
 import type { SettingsDetailNavigation } from "../Settings";
-import { DetailHeader, Row } from "./Field";
+import { DetailHeader, Row, SettingsListHeader } from "./Field";
 
 const CATEGORY_PAGE_SIZE = 20;
 
@@ -23,7 +23,7 @@ function CategoryManager({
   onBack: () => void;
   onAsking: (asking: boolean) => void;
 }) {
-  const { t } = useLocale();
+  const { t, number } = useLocale();
   const settings = useSettings();
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(0);
@@ -75,30 +75,43 @@ function CategoryManager({
         parent={t("settings.playlists")}
         title={t("playlist.manageCategories")}
         context={playlist.name}
-        actions={
-          <>
-            <button
-              type="button"
-              className="settings-icon-action"
-              aria-label={t("playlist.categorySearch")}
-              aria-expanded={searching}
-              onClick={() => setSearching((open) => !open)}
-            >
-              <Icon name="search" />
-            </button>
-            <button
-              type="button"
-              className="settings-icon-action"
-              aria-label={t("playlist.categoryActions")}
-              aria-expanded={actionsOpen}
-              onClick={() => setActionsOpen((open) => !open)}
-            >
-              <Icon name="more" />
-            </button>
-          </>
-        }
         onBack={onBack}
       />
+      <Row label={t("playlist.hiddenChannels")} hint={t("playlist.hiddenChannelsHint")}>
+        <button
+          type="button"
+          className="btn tonal"
+          aria-label={`${t("playlist.hiddenChannels")}, ${modeLabel}`}
+          onClick={() =>
+            settings.setHiddenCategoryMode(
+              playlist.id,
+              playlist.hiddenCategoryMode === "exclude" ? "search" : "exclude",
+            )
+          }
+        >
+          {modeLabel}
+        </button>
+      </Row>
+      <SettingsListHeader title={t("playlist.manageCategories")} count={number(matches.length)}>
+        <button
+          type="button"
+          className="settings-icon-action"
+          aria-label={t("playlist.categorySearch")}
+          aria-expanded={searching}
+          onClick={() => setSearching((open) => !open)}
+        >
+          <Icon name="search" />
+        </button>
+        <button
+          type="button"
+          className="settings-icon-action"
+          aria-label={t("playlist.categoryActions")}
+          aria-expanded={actionsOpen}
+          onClick={() => setActionsOpen((open) => !open)}
+        >
+          <Icon name="more" />
+        </button>
+      </SettingsListHeader>
       {searching && (
         <div className="category-search">
           <input
@@ -130,21 +143,6 @@ function CategoryManager({
           </button>
         </div>
       )}
-      <Row label={t("playlist.hiddenChannels")} hint={t("playlist.hiddenChannelsHint")}>
-        <button
-          type="button"
-          className="btn tonal"
-          aria-label={`${t("playlist.hiddenChannels")}, ${modeLabel}`}
-          onClick={() =>
-            settings.setHiddenCategoryMode(
-              playlist.id,
-              playlist.hiddenCategoryMode === "exclude" ? "search" : "exclude",
-            )
-          }
-        >
-          {modeLabel}
-        </button>
-      </Row>
       <div className="category-settings-list">
         {shown.map((category, row) => {
           const hidden = playlist.hiddenCategories.includes(category.name);
@@ -225,7 +223,7 @@ export function Playlists({
   onAsking: (asking: boolean) => void;
   navigation: SettingsDetailNavigation;
 }) {
-  const { t } = useLocale();
+  const { t, number } = useLocale();
   const s = useSettings();
   const { load, loading, error, errorKey, errorDetail, channels, categories } = useChannels();
   const errorText = (
@@ -420,7 +418,30 @@ export function Playlists({
       </p>
       <p className="sheet-lead">{t("playlist.storedLocally")}</p>
 
-      <div>
+      <SettingsListHeader
+        title={t("playlist.savedPlaylists")}
+        count={number(s.playlists.length)}
+      >
+        <button
+          type="button"
+          className="settings-icon-action"
+          data-settings-focus="playlist-add"
+          aria-label={t("common.addPlaylist")}
+          onClick={startAdd}
+        >
+          <Icon name="plus" />
+        </button>
+        <button
+          type="button"
+          className="settings-icon-action"
+          aria-label={t("common.refreshPlaylist")}
+          aria-busy={loading}
+          onClick={refresh}
+        >
+          <Icon name="refresh" />
+        </button>
+      </SettingsListHeader>
+      <div className="settings-list-body">
         {s.playlists.map((p) => (
           <div key={p.id} className={`pl ${p.id === s.activePlaylistId ? "active" : ""}`}>
             <button
@@ -500,20 +521,6 @@ export function Playlists({
           }}
         />
       )}
-
-      <div className="actions">
-        <button
-          type="button"
-          className="btn tonal"
-          data-settings-focus="playlist-add"
-          onClick={startAdd}
-        >
-          {t("common.addPlaylist")}
-        </button>
-        <button type="button" className="btn tonal" onClick={refresh} aria-busy={loading}>
-          {loading ? t("playlist.refreshing") : t("common.refreshPlaylist")}
-        </button>
-      </div>
     </>
   );
 }

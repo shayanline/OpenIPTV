@@ -245,6 +245,7 @@ export default {
     `アクティブなプレイリストから${count}チャンネルを読み込みました。`,
   "playlist.addToStart": "視聴を始めるにはM3Uプレイリストのアドレスを追加してください。",
   "playlist.storedLocally": "プレイリストはこのデバイスにのみ保存されます。",
+  "playlist.savedPlaylists": "保存済みプレイリスト",
   "playlist.editAria": ({ name }) => `${name}を編集`,
   "playlist.manageCategories": "カテゴリー",
   "playlist.manageCategoriesAria": ({ name }) => `${name}のカテゴリーを管理`,

@@ -233,6 +233,7 @@ export default {
   "playlist.loadedActive": ({ count }) => `已从活动播放列表加载 ${count} 个频道。`,
   "playlist.addToStart": "添加 M3U 播放列表地址即可开始观看。",
   "playlist.storedLocally": "播放列表仅存储在此设备上。",
+  "playlist.savedPlaylists": "已保存的播放列表",
   "playlist.editAria": ({ name }) => `编辑 ${name}`,
   "playlist.manageCategories": "类别",
   "playlist.manageCategoriesAria": ({ name }) => `管理 ${name} 的类别`,

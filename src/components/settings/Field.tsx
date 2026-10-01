@@ -13,13 +13,11 @@ export function DetailHeader({
   parent,
   title,
   context,
-  actions,
   onBack,
 }: {
   parent: string;
   title: string;
   context?: string;
-  actions?: React.ReactNode;
   onBack: () => void;
 }) {
   const { t, direction } = useLocale();
@@ -34,18 +32,33 @@ export function DetailHeader({
         <span aria-hidden="true">{direction === "rtl" ? "→" : "←"}</span>
         <span>{parent}</span>
       </button>
-      <div className="settings-detail-title-row">
-        <div>
-          <h3>{title}</h3>
-          {context && (
-            <p className="sheet-lead settings-detail-context">
-              <Text value={context} />
-            </p>
-          )}
-        </div>
-        {actions && <div className="settings-detail-actions">{actions}</div>}
-      </div>
+      <h3>{title}</h3>
+      {context && (
+        <p className="sheet-lead settings-detail-context">
+          <Text value={context} />
+        </p>
+      )}
     </header>
+  );
+}
+
+export function SettingsListHeader({
+  title,
+  count,
+  children,
+}: {
+  title: string;
+  count?: string;
+  children?: React.ReactNode;
+}) {
+  return (
+    <div className="settings-list-header">
+      <div className="settings-list-title">
+        <h4>{title}</h4>
+        {count && <span className="count">{count}</span>}
+      </div>
+      {children && <div className="settings-list-actions">{children}</div>}
+    </div>
   );
 }
 

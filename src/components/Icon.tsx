@@ -48,6 +48,18 @@ const paths: Record<string, React.ReactNode> = {
       <circle cx="19" cy="12" r="1" fill="currentColor" stroke="none" />
     </>
   ),
+  plus: (
+    <>
+      <path d="M12 5v14" />
+      <path d="M5 12h14" />
+    </>
+  ),
+  refresh: (
+    <>
+      <path d="M19 8.2A8 8 0 1 0 20 14" />
+      <path d="M19 3.8v4.4h-4.4" />
+    </>
+  ),
   hidden: (
     <>
       <path d="M2.8 12s3.2-5.2 9.2-5.2 9.2 5.2 9.2 5.2-3.2 5.2-9.2 5.2S2.8 12 2.8 12Z" />
