@@ -242,9 +242,6 @@ export default function App() {
   const chrome = useChrome();
   const pointerAwake = usePointerAwake();
   const railTimer = useRef<number | undefined>(undefined);
-  const [pendingHidden, setPendingHidden] = useState<string[]>(
-    () => useSettings.getState().activePlaylist()?.hiddenCategories ?? [],
-  );
   const [revealHidden, setRevealHidden] = useState(false);
 
   const activePlaylist = settings.activePlaylist();
@@ -266,19 +263,12 @@ export default function App() {
     () => new Set(activePlaylist?.hiddenCategories ?? []),
     [activePlaylist],
   );
-  const stagedHidden = useMemo(() => new Set(pendingHidden), [pendingHidden]);
   const lists = useMemo(() => {
+    if (!revealHidden) return browsableLists;
     const favouriteList =
       browsableLists[0]?.name === FAVOURITES ? browsableLists[0] : undefined;
-    const categoryLists = categories.filter(
-      (item) => !savedHidden.has(item.name) || revealHidden || !stagedHidden.has(item.name),
-    );
-    return favouriteList ? [favouriteList, ...categoryLists] : categoryLists;
-  }, [browsableLists, categories, revealHidden, savedHidden, stagedHidden]);
-  useEffect(() => {
-    setPendingHidden(activePlaylist?.hiddenCategories ?? []);
-    setRevealHidden(false);
-  }, [activePlaylist]);
+    return favouriteList ? [favouriteList, ...categories] : categories;
+  }, [browsableLists, categories, revealHidden]);
 
   const displayListName = (name: string) =>
     name === FAVOURITES
@@ -491,23 +481,10 @@ export default function App() {
     setView("panel");
   }, []);
 
-  const commitCategoryVisibility = useCallback(() => {
-    const state = useSettings.getState();
-    const playlist = state.activePlaylist();
-    if (
-      playlist &&
-      (playlist.hiddenCategories.length !== pendingHidden.length ||
-        playlist.hiddenCategories.some((name, index) => name !== pendingHidden[index]))
-    ) {
-      state.setHiddenCategories(playlist.id, pendingHidden);
-    }
-    setRevealHidden(false);
-  }, [pendingHidden]);
-
   const watch = useCallback(() => {
-    commitCategoryVisibility();
+    setRevealHidden(false);
     setView("watch");
-  }, [commitCategoryVisibility]);
+  }, []);
 
   /**
    * Which list a channel lives in, preferring a real category over Favourites.
@@ -581,8 +558,10 @@ export default function App() {
   useEffect(() => {
     if (!lists.length || category < lists.length) return;
     const to = lists.length - 1;
-    setCursor(to + 1);
-    cursorRef.current = to + 1;
+    if (cursorRef.current !== 0) {
+      setCursor(to + 1);
+      cursorRef.current = to + 1;
+    }
     showCategory(to, 0, true);
   }, [lists.length, category, showCategory]);
 
@@ -749,30 +728,33 @@ export default function App() {
 
   const revealHiddenCategories = useCallback(() => {
     if (view !== "panel") return false;
-    const shown = lists[category];
-    if (shown && shown.name !== FAVOURITES) {
-      const at = categories.findIndex((item) => item.name === shown.name);
-      if (at >= 0) setCategory(at + (lists[0]?.name === FAVOURITES ? 1 : 0));
+    if (!revealHidden) {
+      const shown = lists[category];
+      if (shown && shown.name !== FAVOURITES) {
+        const at = categories.findIndex((item) => item.name === shown.name);
+        if (at >= 0) setCategory(at + (lists[0]?.name === FAVOURITES ? 1 : 0));
+      }
     }
-    setRevealHidden(true);
+    setRevealHidden((shown) => !shown);
     setPane("rail");
     setCursor(0);
     cursorRef.current = 0;
     return true;
-  }, [view, lists, category, categories]);
+  }, [view, revealHidden, lists, category, categories]);
 
   const toggleCategoryVisibility = useCallback(() => {
     if (view !== "panel" || pane !== "rail") return false;
     if (cursor === 0) return revealHiddenCategories();
     const item = lists[cursor - 1];
     if (!item || item.name === FAVOURITES) return true;
-    setPendingHidden((hidden) =>
-      hidden.includes(item.name)
-        ? hidden.filter((name) => name !== item.name)
-        : [...hidden, item.name],
-    );
+    const state = useSettings.getState();
+    const playlist = state.activePlaylist();
+    if (!playlist) return true;
+    const hidden = savedHidden.has(item.name);
+    state.setCategoryHidden(playlist.id, item.name, !hidden);
+    if (!hidden) setRevealHidden(true);
     return true;
-  }, [view, pane, cursor, lists, revealHiddenCategories]);
+  }, [view, pane, cursor, lists, savedHidden, revealHiddenCategories]);
 
   useEffect(() => {
     let timer: number | undefined;
@@ -818,14 +800,10 @@ export default function App() {
     };
   }, [configured, showSettings, showExit, revealHiddenCategories, toggleCategoryVisibility]);
 
-  const openSettings = useCallback(() => {
-    if (view === "panel") commitCategoryVisibility();
-    setShowSettings(true);
-  }, [view, commitCategoryVisibility]);
+  const openSettings = useCallback(() => setShowSettings(true), []);
 
   const closeSettings = useCallback(() => {
     setShowSettings(false);
-    setPendingHidden(useSettings.getState().activePlaylist()?.hiddenCategories ?? []);
     setRevealHidden(false);
   }, []);
 
@@ -1470,20 +1448,20 @@ export default function App() {
               ? t("channel.uncategorised")
               : l.name,
         count: l.channels.length,
-        hidden: l.name !== FAVOURITES && stagedHidden.has(l.name),
+        hidden: l.name !== FAVOURITES && savedHidden.has(l.name),
       })),
-    [lists, stagedHidden, t],
+    [lists, savedHidden, t],
   );
   const selectedRailList = cursor > 0 ? lists[cursor - 1] : undefined;
   const categoryVisibilityGuide =
     pane !== "rail"
       ? undefined
       : cursor === 0
-        ? t("guide.showHiddenCategories")
+        ? t(revealHidden ? "guide.hideHiddenCategories" : "guide.showHiddenCategories")
         : selectedRailList && selectedRailList.name !== FAVOURITES
           ? t(
-              stagedHidden.has(selectedRailList.name)
-                ? "guide.showCategory"
+              savedHidden.has(selectedRailList.name)
+                ? "guide.unhideCategory"
                 : "guide.hideCategory",
             )
           : undefined;

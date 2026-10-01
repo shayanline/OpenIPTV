@@ -105,18 +105,18 @@ test("search mode keeps explicit favourites from hidden categories", async () =>
   assert.ok(screen.getByText("Alpha"));
 });
 
-test("the red key stages category visibility without saving it", async () => {
+test("the red key hides and unhides the selected category immediately", async () => {
   await mountApp(PLAYLIST);
   const { useSettings } = await import("../src/stores/settings");
   press(KEY.LEFT);
   assert.ok(screen.getByText("Hide category"));
 
   press(KEY.RED);
-  assert.ok(screen.getByText("Show category"));
+  assert.ok(screen.getByText("Unhide category"));
   assert.equal(railRow("News")?.classList.contains("hidden"), true);
   assert.equal(Boolean(railRow("News")?.querySelector(".hidden-state")), true);
   assert.equal(Boolean(screen.queryByText("Hidden")), false);
-  assert.deepEqual(useSettings.getState().playlists[0].hiddenCategories, []);
+  assert.deepEqual(useSettings.getState().playlists[0].hiddenCategories, ["News"]);
 
   press(KEY.RED);
   assert.equal(railRow("News")?.classList.contains("hidden"), false);
@@ -132,6 +132,10 @@ test("holding red reveals saved hidden categories without toggling another row",
 
   assert.deepEqual(rail(), ["News", "Sport"]);
   assert.equal(Boolean(railRow("News")?.querySelector(".hidden-state")), true);
+  assert.deepEqual(useSettings.getState().playlists[0].hiddenCategories, ["News"]);
+
+  await hold(KEY.RED);
+  assert.deepEqual(rail(), ["Sport"]);
   assert.deepEqual(useSettings.getState().playlists[0].hiddenCategories, ["News"]);
 });
 
@@ -162,7 +166,7 @@ test("holding Red on the on-screen Smart Remote reveals hidden categories", asyn
   assert.equal(Boolean(railRow("News")?.querySelector(".hidden-state")), true);
 });
 
-test("closing the channel panel saves categories staged with the red key", async () => {
+test("a category hidden with Red stays hidden after the panel closes", async () => {
   await mountApp(PLAYLIST);
   const { useSettings } = await import("../src/stores/settings");
   press(KEY.LEFT);
@@ -181,13 +185,18 @@ test("the red key at the title bar reveals and restores a saved hidden category"
   const { useSettings } = await import("../src/stores/settings");
   press(KEY.LEFT);
   press(KEY.UP);
-  assert.ok(screen.getByText("Show hidden categories"));
+  assert.match(document.querySelector(".panel-hints")?.textContent ?? "", /Show hidden categories/);
 
   press(KEY.RED);
   assert.deepEqual(rail(), ["News", "Sport"]);
+  assert.match(document.querySelector(".panel-hints")?.textContent ?? "", /Hide hidden categories/);
   assert.equal(showing(), "Sport");
   assert.equal(railRow("News")?.classList.contains("hidden"), true);
 
+  press(KEY.RED);
+  assert.deepEqual(rail(), ["Sport"]);
+  assert.match(document.querySelector(".panel-hints")?.textContent ?? "", /Show hidden categories/);
+  press(KEY.RED);
   press(KEY.DOWN);
   press(KEY.RED);
   assert.equal(railRow("News")?.classList.contains("hidden"), false);

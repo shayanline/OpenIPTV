@@ -62,7 +62,7 @@ function CategoryManager({
           className="btn tonal"
           onClick={() => settings.setHiddenCategories(playlist.id, [])}
         >
-          {t("playlist.showAllCategories")}
+          {t("playlist.unhideAllCategories")}
         </button>
       </div>
       <div className="form">
@@ -77,17 +77,22 @@ function CategoryManager({
           }}
         />
       </div>
-      {shown.map((category) => (
-        <Row key={category.name} label={category.name}>
-          <Toggle
-            label={t("playlist.showCategory", { name: category.name })}
-            value={!playlist.hiddenCategories.includes(category.name)}
-            onChange={(visible) =>
-              settings.setCategoryHidden(playlist.id, category.name, !visible)
-            }
-          />
-        </Row>
-      ))}
+      {shown.map((category) => {
+        const hidden = playlist.hiddenCategories.includes(category.name);
+        return (
+          <Row key={category.name} label={category.name}>
+            <Toggle
+              label={t(hidden ? "playlist.unhideCategory" : "playlist.hideCategory", {
+                name: category.name,
+              })}
+              value={!hidden}
+              onChange={(visible) =>
+                settings.setCategoryHidden(playlist.id, category.name, !visible)
+              }
+            />
+          </Row>
+        );
+      })}
       {!shown.length && <p className="sheet-lead">{t("playlist.noCategoryMatches")}</p>}
       <div className="actions">
         {pages > 1 && (

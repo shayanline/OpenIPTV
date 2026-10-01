@@ -113,7 +113,7 @@ test("each playlist manages its own category visibility", async () => {
   });
 
   expect(screen.getByRole("heading", { level: 3, name: "Categories in Test" })).toBeTruthy();
-  const news = screen.getByRole("button", { name: "Show News" });
+  const news = screen.getByRole("button", { name: "Hide News" });
   expect(news.getAttribute("aria-pressed")).toBe("true");
   await act(async () => {
     fireEvent.click(news);
@@ -128,7 +128,7 @@ test("each playlist manages its own category visibility", async () => {
   const playlist = useSettings.getState().playlists[0];
   expect(playlist.hiddenCategories).toEqual(["News"]);
   expect(playlist.hiddenCategoryMode).toBe("search");
-  expect(screen.getByRole("button", { name: "Show News" }).getAttribute("aria-pressed")).toBe(
+  expect(screen.getByRole("button", { name: "Unhide News" }).getAttribute("aria-pressed")).toBe(
     "false",
   );
 });
@@ -148,15 +148,15 @@ test("playlist settings can hide and show every category", async () => {
     fireEvent.click(screen.getByRole("button", { name: "Hide all categories" }));
   });
   expect(useSettings.getState().playlists[0].hiddenCategories).toEqual(["News", "Sport"]);
-  expect(screen.getByRole("button", { name: "Show News" }).getAttribute("aria-pressed")).toBe(
+  expect(screen.getByRole("button", { name: "Unhide News" }).getAttribute("aria-pressed")).toBe(
     "false",
   );
 
   await act(async () => {
-    fireEvent.click(screen.getByRole("button", { name: "Show all categories" }));
+    fireEvent.click(screen.getByRole("button", { name: "Unhide all categories" }));
   });
   expect(useSettings.getState().playlists[0].hiddenCategories).toEqual([]);
-  expect(screen.getByRole("button", { name: "Show News" }).getAttribute("aria-pressed")).toBe(
+  expect(screen.getByRole("button", { name: "Hide News" }).getAttribute("aria-pressed")).toBe(
     "true",
   );
 });
@@ -183,7 +183,7 @@ http://example.invalid/s.m3u8`,
   });
 
   expect(screen.getByRole("heading", { level: 3, name: "Categories in Second" })).toBeTruthy();
-  const category = screen.getByRole("button", { name: "Show Second Sport" });
+  const category = screen.getByRole("button", { name: "Hide Second Sport" });
   await act(async () => {
     fireEvent.click(category);
   });
