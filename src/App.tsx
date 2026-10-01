@@ -27,6 +27,8 @@ import { usePointerAwake } from "./hooks/usePointerAwake";
 import { RETRY_DELAYS_MS, useTuner } from "./hooks/useTuner";
 import { useLocale } from "./hooks/useLocale";
 import { applyDocumentLocale } from "./services/locale";
+import { usePhoneManagement } from "./hooks/usePhoneManagement";
+import { phoneManagementNeeded } from "./services/phoneServer";
 import type { Channel } from "./types";
 
 /*
@@ -164,6 +166,10 @@ export default function App() {
   const settings = useSettings();
   const { locale, direction, t, number } = useLocale();
   const configured = settings.playlists.length > 0;
+  const phoneAccessSupported = onTizen();
+  const phoneManagement = usePhoneManagement(
+    phoneAccessSupported && phoneManagementNeeded(configured),
+  );
 
   useLayoutEffect(() => {
     applyDocumentLocale(locale);
@@ -1565,7 +1571,13 @@ export default function App() {
       {settings.showClock && panelOpen && !modal && <Clock />}
 
       {/* ---- layer 4, the modals --------------------------------------------------- */}
-      {showSettings && <Settings onClose={() => setShowSettings(false)} />}
+      {showSettings && (
+        <Settings
+          onClose={() => setShowSettings(false)}
+          phoneManagement={phoneManagement}
+          showPhoneAccess={phoneAccessSupported}
+        />
+      )}
       {showExit && (
         <ExitDialog watching={!!current && !fault} onCancel={() => setShowExit(false)} />
       )}
@@ -1579,6 +1591,9 @@ export default function App() {
             void load(true);
           }}
           onExit={exitApp}
+          phoneManagement={phoneManagement}
+          onOpenPairing={phoneManagement.openPairing}
+          showPhoneSetup={phoneAccessSupported}
         />
       )}
 

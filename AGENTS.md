@@ -62,6 +62,9 @@ src/
   services/player.ts       one interface over AVPlay and hls.js
   services/errors.ts       engine error codes to something a viewer can act on
   services/playlistUrl.ts  what cannot possibly be a playlist address, checked offline
+  services/phoneAccess.ts  pairing sessions and remembered phone credentials
+  services/phoneProtocol.ts the state and commands exposed to authorised phones
+  services/phoneServer.ts  the private network server lifecycle and API boundary
   services/manifest.ts     reading and repairing a playlist, as pure functions
   services/repair.ts       serving a repaired playlist to AVPlay over a loopback socket
   services/logos.ts        decode logos once, at the size they are drawn, and queue the work
@@ -79,9 +82,12 @@ src/
   hooks/useWindowed.ts     renders a slice of a long list instead of all of it
   hooks/useViewport.ts     the measured height a windowed list is laid out against
   hooks/usePointerAwake.ts whether a pointer is in use, for the on screen pad
+  hooks/usePhoneManagement.ts the local phone server state for React
   components/              panels, dialogs, and the debug Smart Remote
 wasm/manifest-socket.c     the loopback HTTP server, built with Samsung's Emscripten fork
-public/wasm/               the built module and the worker that owns its socket
+wasm/management-socket.c   the private network HTTP server for authorised phones
+public/wasm/               the built modules and the workers that own their sockets
+public/phone/              the static phone setup and management interface
   components/settings/     one file per section of the settings sheet
   styles/                  the whole stylesheet, tokens then app, since no component has one
 scripts/
@@ -150,10 +156,11 @@ Break one of these and the app fails on hardware no test here owns. The reasonin
   buffer without changing the source URL for healthy streams. Healthy verdicts are remembered per
   playlist address in a bounded cache, then revalidated with HTTP validators or a fresh manifest
   comparison.
-- **The socket is opened by `services/repair` and nothing else, on an ephemeral port, and closed
-  when it is not needed.** A fixed port plus a worker terminated without closing leaves the
-  socket held, and the next attempt cannot bind: the symptom is AVPlay reporting
-  `CONNECTION_FAILED` against a server that looks perfectly healthy.
+- **Each socket has one owner, and neither owner may control the other's socket.** `services/repair`
+  exclusively owns the ephemeral loopback manifest socket and closes it when repair is not needed.
+  `services/phoneServer` exclusively owns the fixed private network management socket and closes it
+  before terminating its worker. A worker terminated without closing leaves its platform socket held
+  for the life of the app.
 - **A new runtime dependency has to be written into `public/THIRD-PARTY-NOTICES.md` by hand.** That
   file and the licence texts beside it are in `public/` rather than the repository root on purpose,
   because Vite copies that directory verbatim and the obligation is toward whoever installs the

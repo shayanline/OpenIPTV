@@ -246,6 +246,19 @@ test("a playlist that parses to nothing is reported rather than shown as empty",
   assert.match((await s.useChannels.getState().load()).error, /no channels/);
 });
 
+test("validating first setup does not change the channel store", async () => {
+  const s = await load();
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, text: async () => PLAYLIST }));
+
+  const result = await s.useChannels
+    .getState()
+    .validatePlaylist("News", "http://list.invalid/setup.m3u");
+
+  assert.deepEqual(result, { count: 2, error: "" });
+  assert.equal(s.useChannels.getState().channels.length, 0);
+  assert.equal(s.useSettings.getState().playlists.length, 0);
+});
+
 test("the slower of two overlapping loads does not overwrite the newer one", async () => {
   const s = await load();
   configure(s);

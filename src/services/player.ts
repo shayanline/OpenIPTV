@@ -115,7 +115,7 @@ const OBJECT_FIT: Record<Fit, string> = { fit: "contain", fill: "cover", stretch
 
 declare global {
   interface Window {
-    webapis?: { avplay?: AVPlay };
+    webapis?: { avplay?: AVPlay; network?: { getIp?: () => string } };
     tizen?: { tvaudiocontrol?: TVAudioControl };
   }
 }

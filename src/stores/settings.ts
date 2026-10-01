@@ -74,6 +74,11 @@ interface Settings {
   addPlaylist: (name: string, url: string) => void;
   removePlaylist: (id: string) => void;
   updatePlaylist: (id: string, name: string, url: string) => void;
+  replacePlaylists: (
+    playlists: Playlist[],
+    activePlaylistId: string,
+    locale?: LocalePreference,
+  ) => void;
   reset: () => void;
   scale: () => number;
   activePlaylist: () => Playlist | undefined;
@@ -151,6 +156,7 @@ function persist(state: Settings) {
     addPlaylist: _a,
     removePlaylist: _r,
     updatePlaylist: _u,
+    replacePlaylists: _rp,
     reset: _re,
     scale: _sc,
     activePlaylist: _ap,
@@ -195,6 +201,11 @@ export const useSettings = create<Settings>((set, get) => ({
         p.id === id ? { ...p, name: name.trim(), url: url.trim() } : p,
       ),
     });
+    persist(get());
+  },
+
+  replacePlaylists(playlists, activePlaylistId, locale) {
+    set({ playlists, activePlaylistId, ...(locale ? { locale } : {}) });
     persist(get());
   },
 
