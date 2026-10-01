@@ -241,6 +241,21 @@ export function Settings({
         return;
       }
 
+      const active = document.activeElement;
+      const playlistRow = active instanceof HTMLElement ? active.closest(".pl") : null;
+      if (playlistRow && (code === inlineStart || code === inlineEnd)) {
+        const actions = Array.from(playlistRow.children).filter(
+          (child): child is HTMLButtonElement => child instanceof HTMLButtonElement,
+        );
+        const at = actions.indexOf(active as HTMLButtonElement);
+        const next = at + (code === inlineEnd ? 1 : -1);
+        if (next >= 0 && next < actions.length) {
+          event.preventDefault();
+          actions[next].focus();
+          return;
+        }
+      }
+
       // Inside the body, arrows move focus between controls geometrically. When a move
       // finds nothing to the left, the rail is the natural next stop.
       if ([KEY.UP, KEY.DOWN, KEY.LEFT, KEY.RIGHT].includes(code as never)) {

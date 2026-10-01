@@ -14,6 +14,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  vi.restoreAllMocks();
   vi.unstubAllGlobals();
   vi.doUnmock("../src/services/player");
 });
@@ -131,6 +132,43 @@ test("About explains every category shortcut in one place", async () => {
     "Hold RedWith a channel or category focused, show or hide hidden categories",
   );
   expect(shortcuts?.textContent).toContain("Changes are saved immediately.");
+});
+
+test("remote navigation reaches the Categories action in a playlist row", async () => {
+  const box = (left: number, width: number): DOMRect =>
+    ({
+      left,
+      right: left + width,
+      top: 100,
+      bottom: 180,
+      width,
+      height: 80,
+      x: left,
+      y: 100,
+    }) as DOMRect;
+  vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function () {
+    if (this.classList.contains("pl-main")) return box(500, 360);
+    if (this.closest(".pl") && this instanceof HTMLButtonElement) {
+      const buttons = Array.from(this.parentElement?.children ?? []);
+      return box(870 + buttons.indexOf(this) * 130, 120);
+    }
+    if (this.closest(".sheet-body")) return box(500, 200);
+    return box(0, 100);
+  });
+  await mountApp(CATEGORIES);
+  press(KEY.YELLOW);
+  await settle(0);
+  fireEvent.click(screen.getByRole("button", { name: "Playlists" }));
+  await settle(0);
+  const playlistRow = document.querySelector<HTMLButtonElement>(".pl-main");
+  act(() => playlistRow?.focus());
+  expect(document.activeElement).toBe(playlistRow);
+
+  press(KEY.RIGHT);
+
+  expect(document.activeElement).toBe(
+    screen.getByRole("button", { name: "Manage categories for Test" }),
+  );
 });
 
 test("Categories is a Settings detail screen with hierarchical RETURN", async () => {
