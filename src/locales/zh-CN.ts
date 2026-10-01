@@ -282,6 +282,9 @@ export default {
   "phone.revokeBody": "此手机需要扫描新的二维码才能再次连接。",
   "phone.revoke": "撤销访问权限",
   "phone.qrAlt": "用于本地手机设置的二维码",
+  "phone.conflict": "设置已在另一部手机上更改。请检查后重试。",
+  "phone.tvUnavailable": "电视不可用。请保持 OpenIPTV 打开并重试。",
+  "phone.revoked": "此手机已无访问权限。",
   "exit.question": "关闭 OpenIPTV？",
   "exit.body": "您可以从应用行再次打开它。",
 } satisfies Partial<Record<MessageKey, string | ((values: MessageValues) => string)>>;

@@ -6,7 +6,14 @@ import {
   type Playlist,
   useSettings,
 } from "../stores/settings";
-import { isLocalePreference, type LocalePreference } from "./locale";
+import {
+  directionFor,
+  isLocalePreference,
+  LOCALE_OPTIONS,
+  resolveLocale,
+  translate,
+  type LocalePreference,
+} from "./locale";
 import { checkPlaylistUrl } from "./playlistUrl";
 import {
   listPairedPhones,
@@ -44,6 +51,10 @@ export type PhoneCommand =
 
 export interface PhoneSnapshot {
   revision: number;
+  locale: string;
+  direction: "ltr" | "rtl";
+  labels: Record<string, string>;
+  localeOptions: { id: LocalePreference; label: string }[];
   settings: {
     locale: LocalePreference;
     fontSizeId: string;
@@ -172,8 +183,63 @@ export function parsePhoneCommand(value: unknown): PhoneCommand | null {
 export function phoneSnapshot(): PhoneSnapshot {
   const settings = useSettings.getState();
   const channels = useChannels.getState();
+  const locale = resolveLocale(settings.locale);
+  const t = (key: Parameters<typeof translate>[1]) => translate(locale, key);
   return {
     revision,
+    locale,
+    direction: directionFor(locale),
+    labels: {
+      title: "OpenIPTV",
+      pairTitle: t("phone.setupTitle"),
+      pairBody: t("phone.setupBody"),
+      phoneName: t("phone.phoneName"),
+      code: t("phone.codeHint"),
+      pair: t("phone.add"),
+      setupTitle: t("playlist.addToStart"),
+      playlistName: t("onboarding.playlistName"),
+      playlistAddress: t("onboarding.playlistAddress"),
+      language: t("settings.language"),
+      finish: t("common.addPlaylist"),
+      playlists: t("settings.playlists"),
+      appearance: t("settings.appearance"),
+      playback: t("settings.playback"),
+      general: t("settings.general"),
+      phones: t("settings.phoneAccess"),
+      addPlaylist: t("common.addPlaylist"),
+      remove: t("common.remove"),
+      active: t("common.active"),
+      cache: t("settings.clearCache"),
+      cacheConfirm: t("settings.clearCacheQuestion"),
+      removeConfirm: t("playlist.removeBody"),
+      conflict: t("phone.conflict"),
+      unavailable: t("phone.tvUnavailable"),
+      revoked: t("phone.revoked"),
+      textSize: t("settings.textSize"),
+      small: t("settings.small"),
+      medium: t("settings.medium"),
+      large: t("settings.large"),
+      extraLarge: t("settings.extraLarge"),
+      showNumbers: t("settings.showNumbers"),
+      showLogos: t("settings.showLogos"),
+      showClock: t("settings.showClock"),
+      sortAlphabetically: t("settings.sortAlphabetically"),
+      screenFit: t("settings.screenFit"),
+      fill: t("settings.fill"),
+      fit: t("settings.fit"),
+      stretch: t("settings.stretch"),
+      compatibility: t("settings.compatibility"),
+      resumeLast: t("settings.resumeLast"),
+      noPhones: t("phone.noPhones"),
+      rename: t("common.edit"),
+      revoke: t("phone.revoke"),
+      save: t("common.save"),
+      cancel: t("common.cancel"),
+    },
+    localeOptions: LOCALE_OPTIONS.map((option) => ({
+      id: option.id,
+      label: option.id === "system" ? t("language.system") : option.nativeLabel,
+    })),
     settings: {
       locale: settings.locale,
       fontSizeId: settings.fontSizeId,

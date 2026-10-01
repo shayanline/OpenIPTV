@@ -292,6 +292,9 @@ export default {
   "phone.revokeBody": "Bu telefon yeniden bağlanmadan önce yeni bir QR kodu taramalıdır.",
   "phone.revoke": "Erişimi iptal et",
   "phone.qrAlt": "Yerel telefon kurulumu için QR kodu",
+  "phone.conflict": "Ayarlar başka bir telefonda değiştirildi. İnceleyip yeniden deneyin.",
+  "phone.tvUnavailable": "Televizyona ulaşılamıyor. OpenIPTV'yi açık tutup yeniden deneyin.",
+  "phone.revoked": "Bu telefonun artık erişimi yok.",
   "exit.question": "OpenIPTV kapatılsın mı?",
   "exit.body": "Uygulamalar satırından yeniden açabilirsiniz.",
 } satisfies Partial<Record<MessageKey, string | ((values: MessageValues) => string)>>;

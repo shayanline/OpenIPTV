@@ -293,6 +293,9 @@ export default {
   "phone.revokeBody": "再接続するには、このスマートフォンで新しいQRコードを読み取る必要があります。",
   "phone.revoke": "アクセスを取り消す",
   "phone.qrAlt": "ローカルスマートフォン設定用QRコード",
+  "phone.conflict": "別のスマートフォンで設定が変更されました。確認してもう一度お試しください。",
+  "phone.tvUnavailable": "テレビを利用できません。OpenIPTVを開いたまま、もう一度お試しください。",
+  "phone.revoked": "このスマートフォンにはアクセス権がありません。",
   "exit.question": "OpenIPTVを閉じますか？",
   "exit.body": "アプリの列からもう一度開けます。",
 } satisfies Partial<Record<MessageKey, string | ((values: MessageValues) => string)>>;

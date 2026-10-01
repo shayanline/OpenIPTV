@@ -300,6 +300,9 @@ export default {
   "phone.revokeBody": "Este teléfono tendrá que escanear un nuevo código QR antes de volver a conectarse.",
   "phone.revoke": "Revocar",
   "phone.qrAlt": "Código QR para la configuración local del teléfono",
+  "phone.conflict": "Los ajustes han cambiado en otro teléfono. Revísalos e inténtalo de nuevo.",
+  "phone.tvUnavailable": "El televisor no está disponible. Mantén OpenIPTV abierto e inténtalo de nuevo.",
+  "phone.revoked": "Este teléfono ya no tiene acceso.",
   "exit.question": "¿Cerrar OpenIPTV?",
   "exit.body": "Puedes volver a abrirlo desde la fila de aplicaciones.",
 } satisfies Partial<Record<MessageKey, string | ((values: MessageValues) => string)>>;

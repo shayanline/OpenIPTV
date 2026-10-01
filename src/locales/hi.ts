@@ -287,6 +287,9 @@ export default {
   "phone.revokeBody": "दोबारा कनेक्ट करने के लिए इस फ़ोन को नया QR कोड स्कैन करना होगा।",
   "phone.revoke": "एक्सेस रद्द करें",
   "phone.qrAlt": "स्थानीय फ़ोन सेटअप के लिए QR कोड",
+  "phone.conflict": "सेटिंग किसी दूसरे फ़ोन पर बदल गई हैं। समीक्षा करके फिर कोशिश करें।",
+  "phone.tvUnavailable": "टीवी उपलब्ध नहीं है। OpenIPTV खुला रखें और फिर कोशिश करें।",
+  "phone.revoked": "इस फ़ोन के पास अब एक्सेस नहीं है।",
   "exit.question": "OpenIPTV बंद करें?",
   "exit.body": "आप इसे Apps row से फिर खोल सकते हैं।",
 } satisfies Partial<Record<MessageKey, string | ((values: MessageValues) => string)>>;

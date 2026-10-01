@@ -294,6 +294,9 @@ export default {
   "phone.revokeBody": "Telepon ini harus memindai kode QR baru sebelum dapat terhubung lagi.",
   "phone.revoke": "Cabut akses",
   "phone.qrAlt": "Kode QR untuk penyiapan telepon lokal",
+  "phone.conflict": "Pengaturan telah diubah di telepon lain. Tinjau lalu coba lagi.",
+  "phone.tvUnavailable": "TV tidak tersedia. Biarkan OpenIPTV terbuka lalu coba lagi.",
+  "phone.revoked": "Telepon ini tidak lagi memiliki akses.",
   "exit.question": "Tutup OpenIPTV?",
   "exit.body": "Anda dapat membukanya lagi dari baris Aplikasi.",
 } satisfies Partial<Record<MessageKey, string | ((values: MessageValues) => string)>>;
