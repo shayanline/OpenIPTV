@@ -166,7 +166,10 @@ export default function App() {
   const settings = useSettings();
   const { locale, direction, t, number } = useLocale();
   const configured = settings.playlists.length > 0;
-  const phoneManagement = usePhoneManagement(phoneManagementNeeded(configured));
+  const phoneAccessSupported = onTizen();
+  const phoneManagement = usePhoneManagement(
+    phoneAccessSupported && phoneManagementNeeded(configured),
+  );
 
   useLayoutEffect(() => {
     applyDocumentLocale(locale);
@@ -1572,6 +1575,7 @@ export default function App() {
         <Settings
           onClose={() => setShowSettings(false)}
           phoneManagement={phoneManagement}
+          showPhoneAccess={phoneAccessSupported}
         />
       )}
       {showExit && (
@@ -1589,6 +1593,7 @@ export default function App() {
           onExit={exitApp}
           phoneManagement={phoneManagement}
           onOpenPairing={phoneManagement.openPairing}
+          showPhoneSetup={phoneAccessSupported}
         />
       )}
 

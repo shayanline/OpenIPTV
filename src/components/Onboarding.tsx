@@ -33,12 +33,14 @@ export function Onboarding({
   onExit,
   phoneManagement = NO_PHONE_MANAGEMENT,
   onOpenPairing,
+  showPhoneSetup = false,
 }: {
   onAdd: (name: string, url: string) => void;
   /** RETURN here closes the application, because this screen is the application's home. */
   onExit: () => void;
   phoneManagement?: PhoneManagementState;
   onOpenPairing?: () => PairingSessionView;
+  showPhoneSetup?: boolean;
 }) {
   const { t } = useLocale();
   const settings = useSettings();
@@ -97,7 +99,7 @@ export function Onboarding({
   return (
     <div className="onboard">
       <div className="onboard-box" ref={box}>
-        <div className="onboard-split">
+        <div className={showPhoneSetup ? "onboard-split" : "onboard-single"}>
           <section className="onboard-manual">
             <h1>OpenIPTV</h1>
             <p className="lead">{t("onboarding.description")}</p>
@@ -153,8 +155,12 @@ export function Onboarding({
               {t("common.addPlaylist")}
             </button>
           </section>
-          <div className="onboard-divider" aria-hidden="true" />
-          <PhoneSetup management={phoneManagement} onOpenPairing={onOpenPairing} />
+          {showPhoneSetup && (
+            <>
+              <div className="onboard-divider" aria-hidden="true" />
+              <PhoneSetup management={phoneManagement} onOpenPairing={onOpenPairing} />
+            </>
+          )}
         </div>
         <KeyGuide
           className="onboard-foot ruled"

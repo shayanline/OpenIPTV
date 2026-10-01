@@ -16,6 +16,8 @@ afterEach(() => {
 test("the first run screen lets the viewer change language before adding a playlist", () => {
   render(<Onboarding onAdd={() => {}} onExit={() => {}} />);
 
+  expect(document.querySelector(".onboard-split")).toBeFalsy();
+  expect(screen.queryByText("Set up with your phone")).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Language, English" }));
   fireEvent.click(screen.getByRole("option", { name: "فارسی Persian" }));
 
@@ -38,6 +40,7 @@ test("the welcome screen keeps manual setup beside phone setup", () => {
       onAdd={(name, url) => added.push(`${name}:${url}`)}
       onExit={() => {}}
       phoneManagement={management}
+      showPhoneSetup
     />,
   );
 

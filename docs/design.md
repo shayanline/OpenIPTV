@@ -212,7 +212,7 @@ written. Settings has a Refresh that ignores all of it.
 
 ## Phone setup on the local network
 
-Typing a playlist address with a television remote is the hardest part of first use, so the welcome screen offers the same task on a phone without removing the original path. A vertical divider keeps the manual form on the left and gives the QR code and pairing instructions the right side. The manual form remains complete and usable when local networking is unavailable.
+Typing a playlist address with a television remote is the hardest part of first use, so the TV welcome screen offers the same task on a phone without removing the original path. A vertical divider keeps the manual form on the left and gives the QR code and pairing instructions the right side. The manual form remains complete and usable when local networking is unavailable. Desktop browsers show only the centred manual form because a browser cannot listen for connections from another device.
 
 The television serves the phone interface itself on its private address. `services/phoneServer` owns a dedicated WebAssembly socket, while `services/phoneAccess` creates expiring pairing sessions and stores one credential verifier per remembered phone. The phone sends typed commands through `services/phoneProtocol`, and the existing stores remain the only source of playlist and settings state.
 

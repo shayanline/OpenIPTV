@@ -985,6 +985,7 @@ html[dir="rtl"] .playback-info {
   z-index: var(--z-sheet);
 }
 .onboard-box { width: calc(100% - var(--safe-x) * 2); }
+.onboard-single { width: 980px; max-width: 100%; margin: 0 auto; }
 .onboard-split {
   display: grid;
   grid-template-columns: minmax(0, 1.08fr) 1px minmax(0, 0.92fr);

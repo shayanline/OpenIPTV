@@ -60,7 +60,7 @@ sdb devices                                # the third column is the name to ins
 tizen install -n OpenIPTV.wgt -t "<name>"
 ```
 
-The first launch keeps the playlist form on the left and shows phone setup on the right. Scan the QR code to continue on a phone, or enter the playlist with the remote as before.
+On a Samsung TV, the first launch keeps the playlist form on the left and shows phone setup on the right. Scan the QR code to continue on a phone, or enter the playlist with the remote as before. Desktop browsers keep the centred manual form because they cannot accept local network connections.
 
 ### Set up with a phone
 

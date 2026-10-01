@@ -41,15 +41,19 @@ const SECTIONS: { id: Section; label: MessageKey; icon: IconName }[] = [
   { id: "diagnostics", label: "settings.diagnostics", icon: "diagnostics" },
   { id: "about", label: "settings.about", icon: "about" },
 ];
+const DESKTOP_SECTIONS = SECTIONS.filter((section) => section.id !== "phones");
 
 export function Settings({
   onClose,
   phoneManagement,
+  showPhoneAccess = false,
 }: {
   onClose: () => void;
   phoneManagement: PhoneManagementControl;
+  showPhoneAccess?: boolean;
 }) {
   const { t, direction } = useLocale();
+  const sections = showPhoneAccess ? SECTIONS : DESKTOP_SECTIONS;
   const inlineStart = direction === "rtl" ? KEY.RIGHT : KEY.LEFT;
   const inlineEnd = direction === "rtl" ? KEY.LEFT : KEY.RIGHT;
   const inlineEndArrow = direction === "rtl" ? "←" : "→";
@@ -168,10 +172,10 @@ export function Settings({
            * one row and stopped.
            */
           setSection((was) => {
-            const at = SECTIONS.findIndex((s) => s.id === was);
+            const at = sections.findIndex((s) => s.id === was);
             const next =
-              code === KEY.UP ? Math.max(0, at - 1) : Math.min(SECTIONS.length - 1, at + 1);
-            return SECTIONS[next].id;
+              code === KEY.UP ? Math.max(0, at - 1) : Math.min(sections.length - 1, at + 1);
+            return sections[next].id;
           });
         }
         if (code === KEY.ENTER) {
@@ -189,7 +193,7 @@ export function Settings({
         if (!moved && code === inlineStart) leaveBody();
       }
     },
-    [asking, inSections, onClose, move, enterBody, leaveBody, inlineStart, inlineEnd],
+    [asking, inSections, onClose, move, enterBody, leaveBody, inlineStart, inlineEnd, sections],
   );
 
   useRemote(onKey);
@@ -199,7 +203,7 @@ export function Settings({
       <nav className={`sheet-rail pane ${inSections ? "focused" : ""}`}>
         <h2>{t("settings.title")}</h2>
         <div className="rail-scroll">
-          {SECTIONS.map((s) => (
+          {sections.map((s) => (
             <button
               key={s.id}
               type="button"
