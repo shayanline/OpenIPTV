@@ -116,6 +116,7 @@ test("what is written back is data, never the actions", async () => {
     "addPlaylist",
     "removePlaylist",
     "updatePlaylist",
+    "setHiddenCategories",
     "reset",
     "font",
     "scale",
@@ -179,6 +180,23 @@ test("category visibility stays with its playlist and survives a reload", async 
   assert.equal(reloaded.useSettings.getState().playlists[0].hiddenCategoryMode, "search");
   assert.deepEqual(reloaded.useSettings.getState().playlists[1].hiddenCategories, []);
   assert.equal(second.name, "Second");
+});
+
+test("a playlist can replace its hidden category set in one write", async () => {
+  const { useSettings } = await load();
+  useSettings.getState().addPlaylist("First", "http://a.invalid/x.m3u");
+  useSettings.getState().addPlaylist("Second", "http://b.invalid/y.m3u");
+  const [first] = useSettings.getState().playlists;
+
+  useSettings.getState().setHiddenCategories(first.id, ["News", "Sport"]);
+
+  assert.deepEqual(useSettings.getState().playlists[0].hiddenCategories, ["News", "Sport"]);
+  assert.deepEqual(useSettings.getState().playlists[1].hiddenCategories, []);
+  const reloaded = await load();
+  assert.deepEqual(reloaded.useSettings.getState().playlists[0].hiddenCategories, [
+    "News",
+    "Sport",
+  ]);
 });
 
 test("showing a category removes only that exact playlist category", async () => {

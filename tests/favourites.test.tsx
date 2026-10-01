@@ -36,6 +36,10 @@ const showing = () =>
 /** The rail's rows, top to bottom. */
 const rail = () =>
   Array.from(document.querySelectorAll(".rail .row .row-label")).map((r) => r.textContent);
+const railRow = (name: string) =>
+  Array.from(document.querySelectorAll<HTMLButtonElement>(".rail .row")).find(
+    (row) => row.querySelector(".row-label")?.textContent === name,
+  );
 
 /** The rail row the cursor is on, which moves on the press rather than after it. */
 const cursorOn = () =>
@@ -99,6 +103,57 @@ test("search mode keeps explicit favourites from hidden categories", async () =>
   assert.deepEqual(rail(), ["Favourites", "Sport"]);
   assert.equal(showing(), "Favourites");
   assert.ok(screen.getByText("Alpha"));
+});
+
+test("the red key stages category visibility without saving it", async () => {
+  await mountApp(PLAYLIST);
+  const { useSettings } = await import("../src/stores/settings");
+  press(KEY.LEFT);
+  assert.ok(screen.getByText("Hide category"));
+
+  press(KEY.RED);
+  assert.ok(screen.getByText("Show category"));
+  assert.equal(railRow("News")?.classList.contains("hidden"), true);
+  assert.deepEqual(useSettings.getState().playlists[0].hiddenCategories, []);
+
+  press(KEY.RED);
+  assert.equal(railRow("News")?.classList.contains("hidden"), false);
+  assert.deepEqual(useSettings.getState().playlists[0].hiddenCategories, []);
+});
+
+test("closing the channel panel saves categories staged with the red key", async () => {
+  await mountApp(PLAYLIST);
+  const { useSettings } = await import("../src/stores/settings");
+  press(KEY.LEFT);
+  press(KEY.RED);
+
+  press(KEY.RIGHT);
+  press(KEY.ENTER);
+
+  assert.deepEqual(useSettings.getState().playlists[0].hiddenCategories, ["News"]);
+  press(KEY.LEFT);
+  assert.deepEqual(rail(), ["Sport"]);
+});
+
+test("the red key at the title bar reveals and restores a saved hidden category", async () => {
+  await mountApp(PLAYLIST, { hiddenCategories: ["News"] });
+  const { useSettings } = await import("../src/stores/settings");
+  press(KEY.LEFT);
+  press(KEY.UP);
+  assert.ok(screen.getByText("Show hidden categories"));
+
+  press(KEY.RED);
+  assert.deepEqual(rail(), ["News", "Sport"]);
+  assert.equal(showing(), "Sport");
+  assert.equal(railRow("News")?.classList.contains("hidden"), true);
+
+  press(KEY.DOWN);
+  press(KEY.RED);
+  assert.equal(railRow("News")?.classList.contains("hidden"), false);
+  press(KEY.RIGHT);
+  press(KEY.ENTER);
+
+  assert.deepEqual(useSettings.getState().playlists[0].hiddenCategories, []);
 });
 
 test("unfavouriting a hidden playing channel keeps the visible category selected", async () => {

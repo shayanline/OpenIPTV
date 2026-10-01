@@ -78,6 +78,7 @@ interface Settings {
   addPlaylist: (name: string, url: string) => void;
   removePlaylist: (id: string) => void;
   updatePlaylist: (id: string, name: string, url: string) => void;
+  setHiddenCategories: (playlistId: string, categories: string[]) => void;
   setCategoryHidden: (playlistId: string, category: string, hidden: boolean) => void;
   setHiddenCategoryMode: (playlistId: string, mode: HiddenCategoryMode) => void;
   reset: () => void;
@@ -171,6 +172,7 @@ function persist(state: Settings) {
     addPlaylist: _a,
     removePlaylist: _r,
     updatePlaylist: _u,
+    setHiddenCategories: _hc,
     setCategoryHidden: _ch,
     setHiddenCategoryMode: _cm,
     reset: _re,
@@ -221,6 +223,15 @@ export const useSettings = create<Settings>((set, get) => ({
     set({
       playlists: get().playlists.map((p) =>
         p.id === id ? { ...p, name: name.trim(), url: url.trim() } : p,
+      ),
+    });
+    persist(get());
+  },
+
+  setHiddenCategories(playlistId, categories) {
+    set({
+      playlists: get().playlists.map((playlist) =>
+        playlist.id === playlistId ? { ...playlist, hiddenCategories: categories } : playlist,
       ),
     });
     persist(get());

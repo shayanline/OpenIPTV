@@ -23,7 +23,7 @@ import { useViewport } from "../hooks/useViewport";
  * by pressing up and nothing sits outside the four directional path.
  */
 interface Props {
-  categories: { name: string; count: number }[];
+  categories: { name: string; count: number; hidden: boolean }[];
   /** Which category the channel list is showing. */
   selected: number;
   /** Which row the remote is on. Zero is the title bar, so a category is index + 1. */
@@ -43,6 +43,7 @@ const Row = memo(function Row({
   index,
   selected,
   showing,
+  hidden,
   top,
   height,
   onPick,
@@ -52,6 +53,7 @@ const Row = memo(function Row({
   index: number;
   selected: boolean;
   showing: boolean;
+  hidden: boolean;
   top: number;
   height: number;
   onPick: (index: number) => void;
@@ -60,7 +62,7 @@ const Row = memo(function Row({
   return (
     <button
       type="button"
-      className={`row ${selected ? "selected" : ""} ${showing ? "showing" : ""}`}
+      className={`row ${selected ? "selected" : ""} ${showing ? "showing" : ""} ${hidden ? "hidden" : ""}`}
       style={{ top, height }}
       onClick={() => onPick(index)}
     >
@@ -115,6 +117,7 @@ export const Sidebar = memo(function Sidebar({
         index={i}
         selected={cursor === i + 1}
         showing={i === selected}
+        hidden={categories[i].hidden}
         top={i * win.row}
         height={win.row}
         onPick={onSelect}

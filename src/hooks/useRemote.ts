@@ -21,9 +21,8 @@ export const KEY = {
   VOL_DOWN: 449,
   ESC: 27,
 
-  // The coloured keys. Green, yellow and blue are registered and acted on, but all four
-  // are named because the debug remote offers the full set: a key the app deliberately
-  // ignores is worth being able to press.
+  // The coloured keys. All four are registered and acted on, and the debug remote offers
+  // the same set so their paths can be exercised off the television.
   RED: 403,
   GREEN: 404,
   YELLOW: 405,
@@ -61,7 +60,7 @@ const REGISTERED = [
   "ChannelUp", "ChannelDown",
   "MediaPlayPause", "MediaPlay", "MediaPause", "MediaStop",
   "MediaRewind", "MediaFastForward", "MediaTrackPrevious", "MediaTrackNext",
-  "ColorF1Green", "ColorF2Yellow", "ColorF3Blue",
+  "ColorF0Red", "ColorF1Green", "ColorF2Yellow", "ColorF3Blue",
 ];
 
 interface TizenInputDevice {

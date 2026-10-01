@@ -44,6 +44,27 @@ function CategoryManager({
           onChange={(mode) => settings.setHiddenCategoryMode(playlist.id, mode)}
         />
       </Row>
+      <div className="actions">
+        <button
+          type="button"
+          className="btn tonal"
+          onClick={() =>
+            settings.setHiddenCategories(
+              playlist.id,
+              categories.map((category) => category.name),
+            )
+          }
+        >
+          {t("playlist.hideAllCategories")}
+        </button>
+        <button
+          type="button"
+          className="btn tonal"
+          onClick={() => settings.setHiddenCategories(playlist.id, [])}
+        >
+          {t("playlist.showAllCategories")}
+        </button>
+      </div>
       <div className="form">
         <label htmlFor="category-search">{t("playlist.categorySearch")}</label>
         <input
@@ -59,7 +80,7 @@ function CategoryManager({
       {shown.map((category) => (
         <Row key={category.name} label={category.name}>
           <Toggle
-            label={category.name}
+            label={t("playlist.showCategory", { name: category.name })}
             value={!playlist.hiddenCategories.includes(category.name)}
             onChange={(visible) =>
               settings.setCategoryHidden(playlist.id, category.name, !visible)

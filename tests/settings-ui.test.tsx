@@ -112,20 +112,52 @@ test("each playlist manages its own category visibility", async () => {
     fireEvent.click(screen.getByRole("button", { name: "Manage categories for Test" }));
   });
 
-  expect(screen.getByRole("heading", { level: 3, name: "Test categories" })).toBeTruthy();
-  const news = screen.getByRole("button", { name: "News" });
+  expect(screen.getByRole("heading", { level: 3, name: "Categories in Test" })).toBeTruthy();
+  const news = screen.getByRole("button", { name: "Show News" });
   expect(news.getAttribute("aria-pressed")).toBe("true");
   await act(async () => {
     fireEvent.click(news);
-    fireEvent.click(screen.getByRole("button", { name: "Hidden channels, Keep searchable" }));
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Channels in hidden categories, Keep in Search and Favourites",
+      }),
+    );
   });
 
   const { useSettings } = await import("../src/stores/settings");
   const playlist = useSettings.getState().playlists[0];
   expect(playlist.hiddenCategories).toEqual(["News"]);
   expect(playlist.hiddenCategoryMode).toBe("search");
-  expect(screen.getByRole("button", { name: "News" }).getAttribute("aria-pressed")).toBe(
+  expect(screen.getByRole("button", { name: "Show News" }).getAttribute("aria-pressed")).toBe(
     "false",
+  );
+});
+
+test("playlist settings can hide and show every category", async () => {
+  await mountApp(CATEGORIES);
+  press(KEY.YELLOW);
+  await act(async () => {
+    fireEvent.click(screen.getByRole("button", { name: "Playlists" }));
+  });
+  await act(async () => {
+    fireEvent.click(screen.getByRole("button", { name: "Manage categories for Test" }));
+  });
+  const { useSettings } = await import("../src/stores/settings");
+
+  await act(async () => {
+    fireEvent.click(screen.getByRole("button", { name: "Hide all categories" }));
+  });
+  expect(useSettings.getState().playlists[0].hiddenCategories).toEqual(["News", "Sport"]);
+  expect(screen.getByRole("button", { name: "Show News" }).getAttribute("aria-pressed")).toBe(
+    "false",
+  );
+
+  await act(async () => {
+    fireEvent.click(screen.getByRole("button", { name: "Show all categories" }));
+  });
+  expect(useSettings.getState().playlists[0].hiddenCategories).toEqual([]);
+  expect(screen.getByRole("button", { name: "Show News" }).getAttribute("aria-pressed")).toBe(
+    "true",
   );
 });
 
@@ -150,8 +182,8 @@ http://example.invalid/s.m3u8`,
     fireEvent.click(screen.getByRole("button", { name: "Manage categories for Second" }));
   });
 
-  expect(screen.getByRole("heading", { level: 3, name: "Second categories" })).toBeTruthy();
-  const category = screen.getByRole("button", { name: "Second Sport" });
+  expect(screen.getByRole("heading", { level: 3, name: "Categories in Second" })).toBeTruthy();
+  const category = screen.getByRole("button", { name: "Show Second Sport" });
   await act(async () => {
     fireEvent.click(category);
   });
@@ -183,9 +215,9 @@ test("a failed inactive playlist load does not show categories from the active p
     fireEvent.click(screen.getByRole("button", { name: "Manage categories for Offline" }));
   });
 
-  expect(Boolean(screen.queryByRole("heading", { level: 3, name: "Offline categories" }))).toBe(
-    false,
-  );
+  expect(
+    Boolean(screen.queryByRole("heading", { level: 3, name: "Categories in Offline" })),
+  ).toBe(false);
   expect(screen.getByRole("status").textContent).toContain("offline");
   expect(useSettings.getState().activePlaylistId).toBe(first);
 });

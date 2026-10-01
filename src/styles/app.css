@@ -464,6 +464,8 @@ html.tizen, html.tizen body, html.tizen #root, html.tizen .app { background: tra
  * "which category are these from" stops being obvious. So it waits until then, and then it is
  * still, because by then the column has long since caught up.
  */
+.rail .row.hidden { opacity: 0.42; }
+.rail.focused .row.hidden.selected { opacity: 0.75; }
 .pane:not(.focused) .row.showing { color: var(--text); }
 .pane:not(.focused) .row.showing::before {
   content: "";

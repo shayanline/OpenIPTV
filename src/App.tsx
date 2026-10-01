@@ -242,6 +242,10 @@ export default function App() {
   const chrome = useChrome();
   const pointerAwake = usePointerAwake();
   const railTimer = useRef<number | undefined>(undefined);
+  const [pendingHidden, setPendingHidden] = useState<string[]>(
+    () => useSettings.getState().activePlaylist()?.hiddenCategories ?? [],
+  );
+  const [revealHidden, setRevealHidden] = useState(false);
 
   const activePlaylist = settings.activePlaylist();
   const lineup = useMemo(
@@ -257,7 +261,25 @@ export default function App() {
       ),
     [channels, categories, favourites, activePlaylist],
   );
-  const { lists, browsableChannels, searchableChannels } = lineup;
+  const { lists: browsableLists, browsableChannels, searchableChannels } = lineup;
+  const savedHidden = useMemo(
+    () => new Set(activePlaylist?.hiddenCategories ?? []),
+    [activePlaylist],
+  );
+  const stagedHidden = useMemo(() => new Set(pendingHidden), [pendingHidden]);
+  const lists = useMemo(() => {
+    const favouriteList =
+      browsableLists[0]?.name === FAVOURITES ? browsableLists[0] : undefined;
+    const categoryLists = categories.filter(
+      (item) => !savedHidden.has(item.name) || revealHidden || !stagedHidden.has(item.name),
+    );
+    return favouriteList ? [favouriteList, ...categoryLists] : categoryLists;
+  }, [browsableLists, categories, revealHidden, savedHidden, stagedHidden]);
+  useEffect(() => {
+    setPendingHidden(activePlaylist?.hiddenCategories ?? []);
+    setRevealHidden(false);
+  }, [activePlaylist]);
+
   const displayListName = (name: string) =>
     name === FAVOURITES
       ? t("channel.favourites")
@@ -469,9 +491,23 @@ export default function App() {
     setView("panel");
   }, []);
 
+  const commitCategoryVisibility = useCallback(() => {
+    const state = useSettings.getState();
+    const playlist = state.activePlaylist();
+    if (
+      playlist &&
+      (playlist.hiddenCategories.length !== pendingHidden.length ||
+        playlist.hiddenCategories.some((name, index) => name !== pendingHidden[index]))
+    ) {
+      state.setHiddenCategories(playlist.id, pendingHidden);
+    }
+    setRevealHidden(false);
+  }, [pendingHidden]);
+
   const watch = useCallback(() => {
+    commitCategoryVisibility();
     setView("watch");
-  }, []);
+  }, [commitCategoryVisibility]);
 
   /**
    * Which list a channel lives in, preferring a real category over Favourites.
@@ -711,6 +747,38 @@ export default function App() {
     ],
   );
 
+  const toggleCategoryVisibility = useCallback(() => {
+    if (view !== "panel" || pane !== "rail") return false;
+    if (cursor === 0) {
+      const shown = lists[category];
+      if (shown && shown.name !== FAVOURITES) {
+        const at = categories.findIndex((item) => item.name === shown.name);
+        if (at >= 0) setCategory(at + (lists[0]?.name === FAVOURITES ? 1 : 0));
+      }
+      setRevealHidden(true);
+      return true;
+    }
+    const item = lists[cursor - 1];
+    if (!item || item.name === FAVOURITES) return true;
+    setPendingHidden((hidden) =>
+      hidden.includes(item.name)
+        ? hidden.filter((name) => name !== item.name)
+        : [...hidden, item.name],
+    );
+    return true;
+  }, [view, pane, cursor, lists, category, categories]);
+
+  const openSettings = useCallback(() => {
+    if (view === "panel") commitCategoryVisibility();
+    setShowSettings(true);
+  }, [view, commitCategoryVisibility]);
+
+  const closeSettings = useCallback(() => {
+    setShowSettings(false);
+    setPendingHidden(useSettings.getState().activePlaylist()?.hiddenCategories ?? []);
+    setRevealHidden(false);
+  }, []);
+
   /**
    * Open search, which means the channel column stops being a category.
    *
@@ -863,6 +931,10 @@ export default function App() {
       }
 
       // Consistency of Controls: a coloured key does the same thing wherever the viewer is.
+      if (code === KEY.RED && toggleCategoryVisibility()) {
+        event.preventDefault();
+        return;
+      }
       if (code === KEY.BLUE) {
         event.preventDefault();
         const state = useSettings.getState();
@@ -873,7 +945,7 @@ export default function App() {
       }
       if (code === KEY.YELLOW) {
         event.preventDefault();
-        setShowSettings(true);
+        openSettings();
         return;
       }
       if (code === KEY.GREEN) {
@@ -902,7 +974,7 @@ export default function App() {
       if (!channels.length && !loading) {
         if (code === KEY.ENTER) {
           event.preventDefault();
-          setShowSettings(true);
+          openSettings();
           return;
         }
         if (code === KEY.BACK || code === KEY.ESC) {
@@ -1191,7 +1263,7 @@ export default function App() {
           event.preventDefault();
           if (pane === "rail") {
             if (cursor === 0) {
-              if (headerKey === "settings") setShowSettings(true);
+              if (headerKey === "settings") openSettings();
               else openSearch();
             }
             // The Tab UI guidance: moving from the category area into the content list puts
@@ -1224,7 +1296,10 @@ export default function App() {
           // stepping through its two columns. With nothing playing there is no picture to
           // go back to, so the only way out is out.
           else if (current) watch();
-          else setShowExit(true);
+          else {
+            commitCategoryVisibility();
+            setShowExit(true);
+          }
           break;
       }
       // Only what the body actually reads. lists.length, moveCursor, banner and retune were all
@@ -1246,6 +1321,7 @@ export default function App() {
       index,
       tuner,
       favouriteCurrent,
+      toggleCategoryVisibility,
       current,
       fault,
       cursor,
@@ -1259,7 +1335,9 @@ export default function App() {
       column,
       headerKey,
       openSearch,
+      openSettings,
       closeSearch,
+      commitCategoryVisibility,
       pickResult,
       inlineStart,
       inlineEnd,
@@ -1342,8 +1420,6 @@ export default function App() {
     [moveCursor],
   );
 
-  const openSettings = useCallback(() => setShowSettings(true), []);
-
   const railItems = useMemo(
     () =>
       lists.map((l) => ({
@@ -1354,9 +1430,23 @@ export default function App() {
               ? t("channel.uncategorised")
               : l.name,
         count: l.channels.length,
+        hidden: l.name !== FAVOURITES && stagedHidden.has(l.name),
       })),
-    [lists, t],
+    [lists, stagedHidden, t],
   );
+  const selectedRailList = cursor > 0 ? lists[cursor - 1] : undefined;
+  const categoryVisibilityGuide =
+    pane !== "rail"
+      ? undefined
+      : cursor === 0
+        ? t("guide.showHiddenCategories")
+        : selectedRailList && selectedRailList.name !== FAVOURITES
+          ? t(
+              stagedHidden.has(selectedRailList.name)
+                ? "guide.showCategory"
+                : "guide.hideCategory",
+            )
+          : undefined;
 
   /**
    * How wide the number column has to be, in figures.
@@ -1601,7 +1691,9 @@ export default function App() {
               : [
                   { keys: ["\u2191", "\u2193"], label: t("common.move") },
                   { keys: ["OK"], label: t("common.watch") },
-                  { keys: ["0-9"], label: t("common.channelNumber") },
+                  categoryVisibilityGuide
+                    ? { keys: ["Red"], label: categoryVisibilityGuide }
+                    : { keys: ["0-9"], label: t("common.channelNumber") },
                   {
                     keys: ["Return"],
                     label: current ? t("common.backToPicture") : t("common.closeApp"),
@@ -1613,7 +1705,7 @@ export default function App() {
       {settings.showClock && panelOpen && !modal && <Clock />}
 
       {/* ---- layer 4, the modals --------------------------------------------------- */}
-      {showSettings && <Settings onClose={() => setShowSettings(false)} />}
+      {showSettings && <Settings onClose={closeSettings} />}
       {showExit && (
         <ExitDialog watching={!!current && !fault} onCancel={() => setShowExit(false)} />
       )}
