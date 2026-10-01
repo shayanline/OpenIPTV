@@ -5,6 +5,7 @@ import { useChannels } from "../../stores/channels";
 import { checkPlaylistUrl, nameFromUrl } from "../../services/playlistUrl";
 import type { MessageKey } from "../../services/locale";
 import { Confirm } from "../Confirm";
+import { Text } from "../Text";
 import { Choice, Row, Toggle } from "./Field";
 
 const CATEGORY_PAGE_SIZE = 20;
@@ -35,7 +36,10 @@ function CategoryManager({
 
   return (
     <>
-      <h3>{t("playlist.categoriesTitle", { name: playlist.name })}</h3>
+      <h3>{t("playlist.categoriesTitle")}</h3>
+      <p className="sheet-lead category-playlist-name">
+        <Text value={playlist.name} />
+      </p>
       <Row label={t("playlist.hiddenChannels")} hint={t("playlist.hiddenChannelsHint")}>
         <Choice
           label={t("playlist.hiddenChannels")}
@@ -80,7 +84,7 @@ function CategoryManager({
       {shown.map((category) => {
         const hidden = playlist.hiddenCategories.includes(category.name);
         return (
-          <Row key={category.name} label={category.name}>
+          <Row key={category.name} label={<Text value={category.name} />}>
             <Toggle
               label={t(hidden ? "playlist.unhideCategory" : "playlist.hideCategory", {
                 name: category.name,

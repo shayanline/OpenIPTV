@@ -23,6 +23,12 @@ http://example.invalid/a.m3u8
 #EXTINF:-1 tvg-id="b" group-title="Sport",Beta
 http://example.invalid/b.m3u8`;
 
+const LONG_PLAYLIST_NAME = "📺 قائمة تشغيل طويلة جداً | Family channels and more";
+const MIXED_CATEGORY = "📡 أخبار المساء | Evening News and Headlines";
+const MIXED_CATEGORIES = `#EXTM3U
+#EXTINF:-1 tvg-id="mixed" group-title="${MIXED_CATEGORY}",Mixed Channel
+http://example.invalid/mixed.m3u8`;
+
 test("settings uses clear sections and concise labels", async () => {
   await mountApp(PLAYLIST);
   press(KEY.YELLOW);
@@ -102,24 +108,45 @@ test("settings uses clear sections and concise labels", async () => {
   expect(screen.getByText(/last eight keys received by the app/)).toBeTruthy();
 });
 
+test("About explains every category shortcut in one place", async () => {
+  await mountApp(PLAYLIST);
+  press(KEY.YELLOW);
+  await act(async () => {
+    fireEvent.click(screen.getByRole("button", { name: "About" }));
+  });
+
+  const heading = screen.getByRole("heading", { level: 4, name: "Category shortcuts" });
+  const shortcuts = heading.closest(".category-shortcuts");
+  expect(shortcuts?.textContent).toContain("RedHide or unhide the selected category");
+  expect(shortcuts?.textContent).toContain("Hold RedShow or hide hidden categories");
+  expect(shortcuts?.textContent).toContain("Changes are saved immediately.");
+});
+
 test("each playlist manages its own category visibility", async () => {
   await mountApp(CATEGORIES);
   press(KEY.YELLOW);
   await act(async () => {
     fireEvent.click(screen.getByRole("button", { name: "Playlists" }));
   });
+  const manage = screen.getByRole("button", { name: "Manage categories for Test" });
+  expect(manage.textContent).toBe("Categories");
   await act(async () => {
-    fireEvent.click(screen.getByRole("button", { name: "Manage categories for Test" }));
+    fireEvent.click(manage);
   });
 
-  expect(screen.getByRole("heading", { level: 3, name: "Categories in Test" })).toBeTruthy();
+  expect(screen.getByRole("heading", { level: 3, name: "Categories" })).toBeTruthy();
+  expect(document.querySelector(".category-playlist-name")?.textContent).toBe("Test");
+  expect(screen.getByText("Hidden category channels")).toBeTruthy();
+  expect(
+    screen.getByText("Choose whether hidden channels also appear in Search and Favourites"),
+  ).toBeTruthy();
   const news = screen.getByRole("button", { name: "Hide News" });
   expect(news.getAttribute("aria-pressed")).toBe("true");
   await act(async () => {
     fireEvent.click(news);
     fireEvent.click(
       screen.getByRole("button", {
-        name: "Channels in hidden categories, Keep in Search and Favourites",
+        name: "Hidden category channels, Keep in Search and Favourites",
       }),
     );
   });
@@ -145,7 +172,7 @@ test("playlist settings can hide and show every category", async () => {
   const { useSettings } = await import("../src/stores/settings");
 
   await act(async () => {
-    fireEvent.click(screen.getByRole("button", { name: "Hide all categories" }));
+    fireEvent.click(screen.getByRole("button", { name: "Hide all" }));
   });
   expect(useSettings.getState().playlists[0].hiddenCategories).toEqual(["News", "Sport"]);
   expect(screen.getByRole("button", { name: "Unhide News" }).getAttribute("aria-pressed")).toBe(
@@ -153,12 +180,38 @@ test("playlist settings can hide and show every category", async () => {
   );
 
   await act(async () => {
-    fireEvent.click(screen.getByRole("button", { name: "Unhide all categories" }));
+    fireEvent.click(screen.getByRole("button", { name: "Unhide all" }));
   });
   expect(useSettings.getState().playlists[0].hiddenCategories).toEqual([]);
   expect(screen.getByRole("button", { name: "Hide News" }).getAttribute("aria-pressed")).toBe(
     "true",
   );
+});
+
+test("category settings preserve arbitrary playlist content outside fixed labels", async () => {
+  await mountApp(MIXED_CATEGORIES);
+  const { useSettings } = await import("../src/stores/settings");
+  const playlist = useSettings.getState().playlists[0];
+  await act(async () => {
+    useSettings.getState().updatePlaylist(playlist.id, LONG_PLAYLIST_NAME, playlist.url);
+  });
+
+  press(KEY.YELLOW);
+  await act(async () => {
+    fireEvent.click(screen.getByRole("button", { name: "Playlists" }));
+  });
+  await act(async () => {
+    fireEvent.click(
+      screen.getByRole("button", { name: `Manage categories for ${LONG_PLAYLIST_NAME}` }),
+    );
+  });
+
+  const playlistName = document.querySelector(".category-playlist-name [dir='auto']");
+  expect(playlistName?.textContent).toBe(LONG_PLAYLIST_NAME);
+  const categoryName = document.querySelector(".sheet-body .field-label [dir='auto']");
+  expect(categoryName?.textContent).toBe(MIXED_CATEGORY);
+  expect(categoryName?.getAttribute("dir")).toBe("auto");
+  expect(screen.getByRole("button", { name: `Hide ${MIXED_CATEGORY}` })).toBeTruthy();
 });
 
 test("managing an inactive playlist loads that playlist before showing its categories", async () => {
@@ -182,7 +235,8 @@ http://example.invalid/s.m3u8`,
     fireEvent.click(screen.getByRole("button", { name: "Manage categories for Second" }));
   });
 
-  expect(screen.getByRole("heading", { level: 3, name: "Categories in Second" })).toBeTruthy();
+  expect(screen.getByRole("heading", { level: 3, name: "Categories" })).toBeTruthy();
+  expect(document.querySelector(".category-playlist-name")?.textContent).toBe("Second");
   const category = screen.getByRole("button", { name: "Hide Second Sport" });
   await act(async () => {
     fireEvent.click(category);
@@ -215,9 +269,7 @@ test("a failed inactive playlist load does not show categories from the active p
     fireEvent.click(screen.getByRole("button", { name: "Manage categories for Offline" }));
   });
 
-  expect(
-    Boolean(screen.queryByRole("heading", { level: 3, name: "Categories in Offline" })),
-  ).toBe(false);
+  expect(Boolean(document.querySelector(".category-playlist-name"))).toBe(false);
   expect(screen.getByRole("status").textContent).toContain("offline");
   expect(useSettings.getState().activePlaylistId).toBe(first);
 });

@@ -23,6 +23,20 @@ export function About() {
            * four pixel tolerance, which is the gate telling the truth rather than complaining.
            */}
           <p className="sheet-lead">{t("about.disclaimer")}</p>
+          <section className="category-shortcuts">
+            <h4>{t("about.categoryShortcuts")}</h4>
+            <dl>
+              <div className="category-shortcut">
+                <dt>{t("common.red")}</dt>
+                <dd>{t("about.redCategoryAction")}</dd>
+              </div>
+              <div className="category-shortcut">
+                <dt>{t("about.holdRed")}</dt>
+                <dd>{t("about.holdRedCategoryAction")}</dd>
+              </div>
+            </dl>
+            <p>{t("about.categoryChangesSaved")}</p>
+          </section>
           <p className="sheet-lead">{t("about.qr")}</p>
         </div>
         <img className="qr" src="./repo-qr.svg" alt={t("about.qrAlt", { url: REPO_URL })} />

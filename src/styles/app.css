@@ -1343,6 +1343,12 @@ input.wrong { border-color: var(--danger); }
 .about h4 { margin: 0 0 var(--s1); font-size: var(--t-title); font-weight: 600; }
 .about p { margin: 2px 0; color: var(--text-2); font-size: var(--t-label); }
 .about .link { color: var(--accent); word-break: break-all; }
+.category-playlist-name { margin-bottom: var(--s2); overflow-wrap: anywhere; }
+.category-shortcuts { margin-top: var(--s3); padding-top: var(--s2); border-top: 1px solid var(--line); }
+.category-shortcuts dl { margin: var(--s1) 0; }
+.category-shortcut { display: flex; gap: var(--s2); margin-top: var(--s1); }
+.category-shortcut dt { flex: 0 0 110px; color: var(--text); font-weight: 600; }
+.category-shortcut dd { margin: 0; color: var(--text-2); }
 .about .qr {
   width: 260px;
   height: 260px;
@@ -2207,6 +2213,7 @@ input.wrong { border-color: var(--danger); }
 .no-flex-gap .pl > * + * { margin-left: var(--s1); }
 .no-flex-gap .actions > * + * { margin-left: var(--s1); }
 .no-flex-gap .about > * + * { margin-left: var(--s5); }
+.no-flex-gap .category-shortcut > * + * { margin-left: var(--s2); }
 .no-flex-gap .pad-trio > * + * { margin-left: var(--s3); }
 .no-flex-gap .picture-state-doing > * + * { margin-left: var(--s2); }
 .no-flex-gap .pb > * + * { margin-left: var(--s3); }
@@ -2346,6 +2353,7 @@ html[dir="rtl"] .no-flex-gap .dialog-actions > * + * { margin-left: 0; margin-ri
 html[dir="rtl"] .no-flex-gap .pb > * + *,
 html[dir="rtl"] .no-flex-gap .about > * + *,
 html[dir="rtl"] .no-flex-gap .picture-state > * + * { margin-left: 0; margin-right: var(--s3); }
+html[dir="rtl"] .no-flex-gap .category-shortcut > * + * { margin-left: 0; margin-right: var(--s2); }
 html[dir="rtl"] .no-flex-gap .pad-trio > * + * { margin-left: 0; margin-right: var(--s3); }
 html[dir="rtl"] .no-flex-gap .switch > * + * { margin-left: var(--s2); margin-right: 0; }
 html[dir="rtl"] .no-flex-gap .hints > * + * { margin-left: 0; margin-right: var(--s4); }
