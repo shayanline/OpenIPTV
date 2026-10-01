@@ -15,12 +15,10 @@ const CATEGORY_PAGE_SIZE = 20;
 function CategoryManager({
   playlist,
   categories,
-  onBack,
   onAsking,
 }: {
   playlist: Playlist;
   categories: { name: string }[];
-  onBack: () => void;
   onAsking: (asking: boolean) => void;
 }) {
   const { t, number } = useLocale();
@@ -71,12 +69,7 @@ function CategoryManager({
 
   return (
     <>
-      <DetailHeader
-        parent={t("settings.playlists")}
-        title={t("playlist.manageCategories")}
-        context={playlist.name}
-        onBack={onBack}
-      />
+      <DetailHeader title={t("playlist.manageCategories")} context={playlist.name} />
       <Row label={t("playlist.hiddenChannels")} hint={t("playlist.hiddenChannelsHint")}>
         <button
           type="button"
@@ -257,14 +250,21 @@ export function Playlists({
     setName("");
     setUrl("");
     setProblem("");
-    navigation.open("playlist-add", "playlist-add", () => setEditing(null));
+    navigation.open("playlist-add", t("playlist.addTitle"), "playlist-add", () =>
+      setEditing(null),
+    );
   };
   const startEdit = (p: Playlist) => {
     setEditing(p);
     setName(p.name);
     setUrl(p.url);
     setProblem("");
-    navigation.open(`playlist-edit-${p.id}`, `playlist-edit-${p.id}`, () => setEditing(null));
+    navigation.open(
+      `playlist-edit-${p.id}`,
+      t("playlist.editTitle"),
+      `playlist-edit-${p.id}`,
+      () => setEditing(null),
+    );
   };
 
   /**
@@ -332,6 +332,7 @@ export function Playlists({
     setManaging(playlist.id);
     navigation.open(
       `playlist-categories-${playlist.id}`,
+      t("playlist.manageCategories"),
       `playlist-categories-${playlist.id}`,
       () => setManaging(""),
     );
@@ -340,12 +341,7 @@ export function Playlists({
   const managedPlaylist = s.playlists.find((playlist) => playlist.id === managing);
   if (managedPlaylist) {
     return (
-      <CategoryManager
-        playlist={managedPlaylist}
-        categories={categories}
-        onBack={navigation.back}
-        onAsking={onAsking}
-      />
+      <CategoryManager playlist={managedPlaylist} categories={categories} onAsking={onAsking} />
     );
   }
 
@@ -353,10 +349,8 @@ export function Playlists({
     return (
       <>
         <DetailHeader
-          parent={t("settings.playlists")}
           title={editing.id ? t("playlist.editTitle") : t("playlist.addTitle")}
           context={editing.id ? editing.name : undefined}
-          onBack={navigation.back}
         />
         <div className="form playlist-form">
           <label htmlFor="pl-name">{t("onboarding.playlistName")}</label>

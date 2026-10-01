@@ -15,13 +15,14 @@ import { Phones } from "./settings/Phones";
 import type { PhoneManagementControl } from "../hooks/usePhoneManagement";
 
 export interface SettingsDetailNavigation {
-  open: (id: string, returnFocus: string, close: () => void) => void;
+  open: (id: string, label: string, returnFocus: string, close: () => void) => void;
   back: () => void;
   active: boolean;
 }
 
 type DetailEntry = {
   id: string;
+  label: string;
   returnFocus: string;
   close: () => void;
 };
@@ -149,12 +150,18 @@ export function Settings({
   }, [focusFirst]);
 
   const openDetail = useCallback(
-    (id: string, returnFocus: string, close: () => void) => {
-      const next = [...detailsRef.current, { id, returnFocus, close }];
+    (id: string, label: string, returnFocus: string, close: () => void) => {
+      const next = [...detailsRef.current, { id, label, returnFocus, close }];
       detailsRef.current = next;
       setDetails(next);
       setInSections(false);
-      window.setTimeout(focusFirst, 0);
+      window.setTimeout(() => {
+        const first = bodyRef.current?.querySelector<HTMLElement>(
+          "[data-settings-detail-first]",
+        );
+        if (first) first.focus();
+        else focusFirst();
+      }, 0);
     },
     [focusFirst],
   );
@@ -263,7 +270,7 @@ export function Settings({
       if (
         detailsRef.current.length &&
         code === KEY.DOWN &&
-        active?.classList.contains("settings-detail-back")
+        active?.classList.contains("settings-breadcrumb-parent")
       ) {
         const first = bodyRef.current?.querySelector<HTMLElement>(
           "[data-settings-detail-first]",
@@ -279,7 +286,7 @@ export function Settings({
         code === KEY.UP &&
         active?.hasAttribute("data-settings-detail-first")
       ) {
-        const back = bodyRef.current?.querySelector<HTMLElement>(".settings-detail-back");
+        const back = bodyRef.current?.querySelector<HTMLElement>(".settings-breadcrumb-parent");
         if (back) {
           event.preventDefault();
           back.focus();
@@ -297,10 +304,7 @@ export function Settings({
       if ([KEY.UP, KEY.DOWN, KEY.LEFT, KEY.RIGHT].includes(code as never)) {
         event.preventDefault();
         const moved = move(code);
-        if (!moved && code === inlineStart) {
-          if (detailsRef.current.length) backDetail();
-          else leaveBody();
-        }
+        if (!moved && code === inlineStart && !detailsRef.current.length) leaveBody();
       }
     },
     [
@@ -318,6 +322,11 @@ export function Settings({
   );
 
   useRemote(onKey);
+
+  const sectionLabel = t(
+    sections.find((item) => item.id === section)?.label ?? "settings.title",
+  );
+  const detail = details[details.length - 1];
 
   return (
     <div className="sheet" dir={direction}>
@@ -376,6 +385,26 @@ export function Settings({
       </nav>
 
       <div className="sheet-body" ref={bodyRef}>
+        <nav className="settings-breadcrumb">
+          <span>{t("settings.title")}</span>
+          <span aria-hidden="true">{direction === "rtl" ? "‹" : "›"}</span>
+          {detail ? (
+            <>
+              <button
+                type="button"
+                className="settings-breadcrumb-parent"
+                aria-label={t("settings.backTo", { section: sectionLabel })}
+                onClick={backDetail}
+              >
+                {sectionLabel}
+              </button>
+              <span aria-hidden="true">{direction === "rtl" ? "‹" : "›"}</span>
+              <span className="current">{detail.label}</span>
+            </>
+          ) : (
+            <span className="current">{sectionLabel}</span>
+          )}
+        </nav>
         {section === "appearance" && <Appearance />}
         {section === "playback" && <Playback />}
         {section === "general" && <General onAsking={ask} />}

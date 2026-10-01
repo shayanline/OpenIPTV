@@ -9,29 +9,9 @@ import { Text } from "../Text";
  * are generic and they are shared, so they live on their own.
  */
 
-export function DetailHeader({
-  parent,
-  title,
-  context,
-  onBack,
-}: {
-  parent: string;
-  title: string;
-  context?: string;
-  onBack: () => void;
-}) {
-  const { t, direction } = useLocale();
+export function DetailHeader({ title, context }: { title: string; context?: string }) {
   return (
     <header className="settings-detail-header">
-      <button
-        type="button"
-        className="settings-detail-back"
-        aria-label={t("settings.backTo", { section: parent })}
-        onClick={onBack}
-      >
-        <span aria-hidden="true">{direction === "rtl" ? "→" : "←"}</span>
-        <span>{parent}</span>
-      </button>
       <h3>{title}</h3>
       {context && (
         <p className="sheet-lead settings-detail-context">
