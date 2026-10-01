@@ -14,6 +14,7 @@ import { Sidebar } from "./components/Sidebar";
 import { PanelHeader } from "./components/PanelHeader";
 import { Settings } from "./components/Settings";
 import { PlaybackBanner } from "./components/PlaybackBanner";
+import { PlaybackInfo } from "./components/PlaybackInfo";
 import { Onboarding } from "./components/Onboarding";
 import { Clock } from "./components/Clock";
 import { ExitDialog, exitApp } from "./components/ExitDialog";
@@ -1448,7 +1449,10 @@ export default function App() {
         />
       )}
 
-      {/* ---- layer 2, the playback banner and its key guide ----------------------- */}
+      {/* ---- layer 2, playback information, the banner and its key guide ---------- */}
+      {current && !modal && settings.showPlaybackStats && (
+        <PlaybackInfo read={tuner.getStats} />
+      )}
       {/*
        * Held open while a channel is tuning, and for the banner's own notice period after a
        * channel is playing or paused. The picture state separately reports that a channel is

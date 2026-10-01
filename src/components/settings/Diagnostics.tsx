@@ -6,6 +6,8 @@ import * as disk from "../../services/disk";
 import { repairState } from "../../services/repair";
 import type { MessageKey } from "../../services/locale";
 import { APP_VERSION } from "../../meta";
+import { useSettings } from "../../stores/settings";
+import { Row, Toggle } from "./Field";
 
 /**
  * What this particular television is, and what its remote actually sends.
@@ -72,6 +74,7 @@ function Fact({ label, value }: { label: string; value: string }) {
 
 export function Diagnostics() {
   const { t } = useLocale();
+  const settings = useSettings();
   const [presses, setPresses] = useState<Press[]>([]);
   /**
    * What the cache is holding, which is the one fact here that is not fixed.
@@ -192,6 +195,13 @@ export function Diagnostics() {
     <>
       <h3>{t("diagnostics.title")}</h3>
       <p className="sheet-lead">{t("diagnostics.lead")}</p>
+      <Row label={t("settings.playbackInfo")} hint={t("settings.playbackInfoHint")}>
+        <Toggle
+          label={t("settings.playbackInfo")}
+          value={settings.showPlaybackStats}
+          onChange={(value) => settings.set("showPlaybackStats", value)}
+        />
+      </Row>
 
       <div className="diag-facts">
         {facts.current.map((f) => (

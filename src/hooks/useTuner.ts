@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Player, type PlayerEvent } from "../services/player";
+import { Player, type PlaybackStats, type PlayerEvent } from "../services/player";
 import { releaseLogos } from "../services/logos";
 import { nextChannel } from "../services/lineup";
 import {
@@ -92,6 +92,7 @@ export interface Tuner {
   togglePause: () => void;
   setMuted: (muted: boolean) => void;
   adjustVolume: (delta: number) => void;
+  getStats: () => PlaybackStats | null;
 }
 
 export function useTuner(options: TunerOptions): Tuner {
@@ -523,10 +524,12 @@ export function useTuner(options: TunerOptions): Tuner {
     player.current?.adjustVolume(delta);
   }, []);
 
+  const getStats = useCallback(() => player.current?.getStats() ?? null, []);
+
   return {
     current, preview, shown: preview ?? current,
     busy, paused, filling, fault, waited, retryIn, attempt,
     start, retune, clear, step: step as (delta: number) => void, setPlaying, togglePause,
-    setMuted, adjustVolume,
+    setMuted, adjustVolume, getStats,
   };
 }

@@ -57,6 +57,12 @@ interface AVPlayListener {
 /** The states AVPlay moves through. Most calls are legal in only some of them. */
 type AVPlayState = "NONE" | "IDLE" | "READY" | "PLAYING" | "PAUSED";
 
+interface AVPlayStreamInfo {
+  index: number;
+  type: "VIDEO" | "AUDIO" | "TEXT";
+  extra_info: string;
+}
+
 interface AVPlay {
   open(url: string): void;
   close(): void;
@@ -70,6 +76,9 @@ interface AVPlay {
   getState(): AVPlayState;
   /** Only ever read, and only to tell a playing picture from a frozen one. */
   getCurrentTime?(): number;
+  getCurrentStreamInfo?(): AVPlayStreamInfo[];
+  getStreamingProperty?(key: string): string;
+  getVideoSeamlessInfo?(): { scan_type: number; rotation_degree: number };
   setStreamingProperty?(key: string, value: string): void;
   /** IDLE only, like setStreamingProperty. Optional because the older sets may not have it. */
   setBufferingParam?(option: string, unit: string, amount: number): void;
@@ -119,6 +128,24 @@ export type PlayerEvent =
   /** `code` is the engine's own name for the fault, which the UI turns into a cause and
       a remedy. Checklist 4.6 asks for both, not for the raw code. */
   | { type: "error"; code: string };
+
+export interface PlaybackStats {
+  engine: "AVPlay" | "hls.js" | "Native HLS";
+  width?: number;
+  height?: number;
+  scan?: "progressive" | "interlaced";
+  videoCodec?: string;
+  audioCodec?: string;
+  bitrate?: number;
+  bandwidth?: number;
+  bufferSeconds?: number;
+  frameRate?: number;
+  droppedFrames?: number;
+  totalFrames?: number;
+  level?: number;
+  levels?: number;
+  switches: number;
+}
 
 /**
  * How long a channel may take to produce a picture before it counts as broken.
@@ -197,6 +224,30 @@ function ensureSurface(): void {
   document.body.insertBefore(el, document.body.firstChild);
 }
 
+const finite = (value: unknown): number | undefined => {
+  const number = typeof value === "number" ? value : Number.parseFloat(String(value ?? ""));
+  return Number.isFinite(number) && number > 0 ? number : undefined;
+};
+
+const nonNegative = (value: unknown): number | undefined => {
+  const number = Number(value);
+  return Number.isFinite(number) && number >= 0 ? number : undefined;
+};
+
+const streamInfo = (value: string): Record<string, unknown> => {
+  try {
+    const parsed = JSON.parse(value);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+    const normalized: Record<string, unknown> = {};
+    for (const [key, item] of Object.entries(parsed)) {
+      normalized[key.toLowerCase().replace(/[^a-z0-9]/g, "")] = item;
+    }
+    return normalized;
+  } catch {
+    return {};
+  }
+};
+
 export class Player {
   private hls: InstanceType<typeof HlsType> | null = null;
   private video: HTMLVideoElement | null = null;
@@ -215,6 +266,10 @@ export class Player {
   private stalledFor = 0;
   private muted = false;
   private muteBeforeSettings: boolean | null = null;
+  private switches = 0;
+  private lastBitrate = "";
+  private lastLevel = -1;
+  private frameSample: { total: number; at: number } | null = null;
 
   constructor(emit: (e: PlayerEvent) => void) {
     this.sink = emit;
@@ -340,6 +395,10 @@ export class Player {
     this.teardown(false);
     this.failed = false;
     this.held = false;
+    this.switches = 0;
+    this.lastBitrate = "";
+    this.lastLevel = -1;
+    this.frameSample = null;
 
     // A hard bound on how long a channel may sit there doing nothing.
     //
@@ -513,7 +572,13 @@ export class Player {
         onbufferingcomplete: () => this.emit({ type: "playing" }),
         onstreamcompleted: () => this.emit({ type: "ended" }),
         onevent: (id, data) => {
-          if (String(id) === "PLAYER_MSG_HTTP_ERROR_CODE") status = String(data).trim();
+          const event = String(id);
+          const value = String(data).trim();
+          if (event === "PLAYER_MSG_HTTP_ERROR_CODE") status = value;
+          if (event === "PLAYER_MSG_BITRATE_CHANGE") {
+            if (this.lastBitrate && this.lastBitrate !== value) this.switches += 1;
+            this.lastBitrate = value;
+          }
         },
         /*
          * onerrormsg where the firmware sends one, onerror otherwise, and never both: they
@@ -718,9 +783,109 @@ export class Player {
         hls.recoverMediaError();
       }
     });
+    hls.on(Hls.Events.LEVEL_SWITCHED, (_event, data) => {
+      if (this.lastLevel >= 0 && this.lastLevel !== data.level) this.switches += 1;
+      this.lastLevel = data.level;
+    });
     hls.on(Hls.Events.MANIFEST_PARSED, () => this.tryPlay(video));
     hls.loadSource(url);
     hls.attachMedia(video);
+  }
+
+  getStats(): PlaybackStats {
+    if (onTizen()) {
+      const stats: PlaybackStats = { engine: "AVPlay", switches: this.switches };
+      const av = window.webapis!.avplay!;
+      let video: Record<string, unknown> = {};
+      let audio: Record<string, unknown> = {};
+      try {
+        for (const track of av.getCurrentStreamInfo?.() ?? []) {
+          if (track.type === "VIDEO") video = streamInfo(track.extra_info);
+          if (track.type === "AUDIO") audio = streamInfo(track.extra_info);
+        }
+      } catch {}
+
+      stats.width = finite(video.width);
+      stats.height = finite(video.height);
+      stats.videoCodec =
+        String(video.fourcc ?? video.codec ?? video.codectype ?? "") || undefined;
+      stats.audioCodec =
+        String(audio.fourcc ?? audio.codec ?? audio.codectype ?? "") || undefined;
+      stats.frameRate = finite(video.framerate);
+      stats.bitrate = finite(video.bitrate);
+
+      try {
+        stats.bitrate = finite(av.getStreamingProperty?.("CURRENT_BANDWIDTH")) ?? stats.bitrate;
+        const available = av.getStreamingProperty?.("AVAILABLE_BITRATE") ?? "";
+        const levels = available
+          .split(/[|,]/)
+          .filter((value) => finite(value) !== undefined).length;
+        if (levels) stats.levels = levels;
+      } catch {}
+      try {
+        const scan = av.getVideoSeamlessInfo?.().scan_type;
+        if (scan === 0) stats.scan = "interlaced";
+        if (scan === 1) stats.scan = "progressive";
+      } catch {}
+      return stats;
+    }
+
+    const stats: PlaybackStats = {
+      engine: this.hls ? "hls.js" : "Native HLS",
+      switches: this.switches,
+    };
+    const video = this.video;
+    const hls = this.hls;
+    const levelIndex = hls?.currentLevel ?? -1;
+    const level = levelIndex >= 0 ? hls?.levels[levelIndex] : undefined;
+    if (levelIndex >= 0) stats.level = levelIndex + 1;
+    if (hls?.levels.length) stats.levels = hls.levels.length;
+    stats.width = finite(video?.videoWidth) ?? finite(level?.width);
+    stats.height = finite(video?.videoHeight) ?? finite(level?.height);
+    stats.videoCodec = level?.videoCodec || undefined;
+    stats.audioCodec = level?.audioCodec || undefined;
+    stats.bitrate = finite(level?.bitrate);
+    stats.bandwidth = finite(hls?.bandwidthEstimate);
+    stats.frameRate = finite(level?.frameRate);
+
+    if (video) {
+      for (let index = 0; index < video.buffered.length; index += 1) {
+        if (
+          video.buffered.start(index) <= video.currentTime &&
+          video.buffered.end(index) >= video.currentTime
+        ) {
+          stats.bufferSeconds = Math.max(0, video.buffered.end(index) - video.currentTime);
+          break;
+        }
+      }
+
+      const legacy = video as HTMLVideoElement & {
+        webkitDecodedFrameCount?: number;
+        webkitDroppedFrameCount?: number;
+      };
+      const quality =
+        typeof video.getVideoPlaybackQuality === "function"
+          ? video.getVideoPlaybackQuality()
+          : {
+              totalVideoFrames: legacy.webkitDecodedFrameCount,
+              droppedVideoFrames: legacy.webkitDroppedFrameCount,
+            };
+      const total = nonNegative(quality.totalVideoFrames);
+      const dropped = nonNegative(quality.droppedVideoFrames);
+      if (total !== undefined) {
+        stats.totalFrames = total;
+        const now = Date.now();
+        if (this.frameSample && now > this.frameSample.at && total >= this.frameSample.total) {
+          stats.frameRate =
+            Math.round(
+              ((total - this.frameSample.total) * 10000) / (now - this.frameSample.at),
+            ) / 10;
+        }
+        this.frameSample = { total, at: now };
+      }
+      if (dropped !== undefined) stats.droppedFrames = dropped;
+    }
+    return stats;
   }
 
   pause() {

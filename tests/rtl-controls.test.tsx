@@ -14,3 +14,21 @@ test("the debug remote starts on the left in RTL", () => {
     /html\[dir="rtl"\] \.remote-stage \{[\s\S]*left: 28px;[\s\S]*right: auto;/,
   );
 });
+
+test("playback information follows the reading edge", () => {
+  expect(styles).toMatch(
+    /\.playback-info \{[\s\S]*right: var\(--safe-x\);[\s\S]*left: auto;/,
+  );
+  expect(styles).toMatch(
+    /html\[dir="rtl"\] \.playback-info \{[\s\S]*left: var\(--safe-x\);[\s\S]*right: auto;/,
+  );
+});
+
+test("a focused off switch keeps its track and knob visible", () => {
+  expect(styles).toMatch(
+    /\.switch:focus:not\(\.on\) \.switch-track \{[^}]*background: rgba\(16, 16, 19, 0\.14\);/,
+  );
+  expect(styles).toMatch(
+    /\.switch:focus:not\(\.on\) \.switch-knob \{[^}]*background: rgba\(16, 16, 19, 0\.62\);/,
+  );
+});

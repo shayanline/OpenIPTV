@@ -30,7 +30,7 @@ http://example.invalid/b.m3u8
 #EXTINF:-1 tvg-id="c" group-title="News",Gamma
 http://example.invalid/c.m3u8`;
 
-const mount = () => mountApp(PLAYLIST);
+const mount = (options: Parameters<typeof mountApp>[1] = {}) => mountApp(PLAYLIST, options);
 
 beforeEach(() => {
   localStorage.clear();
@@ -215,6 +215,71 @@ test("the green key favourites the highlighted channel and says so", async () =>
   await mount();
   press(KEY.GREEN);
   expect(screen.getByText("Added to favourites")).toBeTruthy();
+});
+
+test("playback information stays enabled through RETURN and Right", async () => {
+  await mount({ playbackStats: true });
+  press(KEY.ENTER);
+  press(KEY.BACK);
+  press(KEY.RIGHT);
+
+  const info = screen.getByRole("complementary", { name: "Playback information" });
+  expect(info.textContent).toContain("hls.js");
+  expect(info.textContent).toMatch(/1920.*1080/);
+  expect(info.textContent).toContain("avc1.640028");
+  expect(info.textContent).toContain("4.5 Mbps");
+  expect(info.textContent).toContain("12.4 s");
+  expect(info.textContent).toContain("2 / 1000");
+  expect(info.textContent).toContain("3 / 5");
+  assert.equal(Boolean(document.querySelector(".dialog")), false);
+  assert.equal(
+    JSON.parse(localStorage.getItem("openiptv.settings") ?? "{}").showPlaybackStats,
+    true,
+  );
+});
+
+test("the side panel keeps information visible while settings covers it", async () => {
+  await mount({ playbackStats: true });
+  press(KEY.ENTER);
+  press(KEY.LEFT);
+
+  expect(screen.getByRole("complementary", { name: "Playback information" })).toBeTruthy();
+  assert.equal(
+    JSON.parse(localStorage.getItem("openiptv.settings") ?? "{}").showPlaybackStats,
+    true,
+  );
+
+  press(KEY.YELLOW);
+  assert.equal(
+    Boolean(screen.queryByRole("complementary", { name: "Playback information" })),
+    false,
+  );
+  press(KEY.BACK);
+  expect(screen.getByRole("complementary", { name: "Playback information" })).toBeTruthy();
+  press(KEY.BACK);
+  expect(screen.getByRole("complementary", { name: "Playback information" })).toBeTruthy();
+});
+
+test("the blue key does not control playback information", async () => {
+  await mount();
+  press(KEY.BLUE);
+  press(KEY.ENTER);
+
+  assert.equal(
+    Boolean(screen.queryByRole("complementary", { name: "Playback information" })),
+    false,
+  );
+  assert.equal(
+    JSON.parse(localStorage.getItem("openiptv.settings") ?? "{}").showPlaybackStats,
+    false,
+  );
+});
+
+test("playback information remains visible when the channel fails", async () => {
+  await mount({ playbackStats: true, faultPicture: true });
+  press(KEY.ENTER);
+
+  expect(screen.getByRole("complementary", { name: "Playback information" })).toBeTruthy();
 });
 
 test("no key that leaves you at the picture can strand you there", async () => {

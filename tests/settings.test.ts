@@ -30,6 +30,7 @@ test("a file written by an older version keeps working, and gains the new defaul
   assert.equal(s.showClock, false, "what was saved is kept");
   assert.equal(s.resumeLast, false);
   assert.equal(s.aspectId, "fill", "what is new arrives at its default");
+  assert.equal(s.showPlaybackStats, false, "playback information stays opt in");
   assert.equal("panelTimeout" in s, false, "the removed setting does not return");
 });
 
