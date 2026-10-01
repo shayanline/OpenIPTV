@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { act, cleanup, fireEvent, screen } from "@testing-library/react";
 import { KEY } from "../src/hooks/useRemote";
+import { moveWithinPlaylistRow } from "../src/components/Settings";
 import { mountApp, press, settle } from "./support/app";
 import { createPairingSession, listPairedPhones, pairPhone } from "../src/services/phoneAccess";
 
@@ -164,7 +165,9 @@ test("remote navigation reaches the Categories action in a playlist row", async 
   act(() => playlistRow?.focus());
   expect(document.activeElement).toBe(playlistRow);
 
-  press(KEY.RIGHT);
+  expect(moveWithinPlaylistRow(document.activeElement, KEY.RIGHT, KEY.LEFT, KEY.RIGHT)).toBe(
+    true,
+  );
 
   expect(document.activeElement).toBe(
     screen.getByRole("button", { name: "Manage categories for Test" }),
@@ -178,9 +181,18 @@ test("Categories is a Settings detail screen with hierarchical RETURN", async ()
   const opener = screen.getByRole("button", { name: "Manage categories for Test" });
   fireEvent.click(opener);
 
-  expect(screen.getByRole("button", { name: "Back to Playlists" })).toBeTruthy();
+  const back = screen.getByRole("button", { name: "Back to Playlists" });
+  expect(back).toBeTruthy();
   expect(screen.getByRole("heading", { level: 3, name: "Categories" })).toBeTruthy();
   expect(document.querySelector(".sheet-hints")?.textContent).toContain("Back");
+  act(() => back.focus());
+
+  press(KEY.DOWN);
+  expect(document.activeElement).toBe(
+    screen.getByRole("button", { name: "Hidden category channels, Hide everywhere" }),
+  );
+  press(KEY.UP);
+  expect(document.activeElement).toBe(back);
 
   press(KEY.BACK);
   await settle(0);

@@ -81,6 +81,7 @@ function CategoryManager({
         <button
           type="button"
           className="btn tonal"
+          data-settings-detail-first
           aria-label={`${t("playlist.hiddenChannels")}, ${modeLabel}`}
           onClick={() =>
             settings.setHiddenCategoryMode(
@@ -361,6 +362,7 @@ export function Playlists({
           <label htmlFor="pl-name">{t("onboarding.playlistName")}</label>
           <input
             id="pl-name"
+            data-settings-detail-first
             value={name}
             dir="auto"
             onChange={(event) => setName(event.target.value)}

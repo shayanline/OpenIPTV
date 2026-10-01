@@ -55,6 +55,24 @@ const SECTIONS: { id: Section; label: MessageKey; icon: IconName }[] = [
 ];
 const DESKTOP_SECTIONS = SECTIONS.filter((section) => section.id !== "phones");
 
+export function moveWithinPlaylistRow(
+  active: Element | null,
+  code: number,
+  inlineStart: number,
+  inlineEnd: number,
+): boolean {
+  const playlistRow = active instanceof HTMLElement ? active.closest(".pl") : null;
+  if (!playlistRow || (code !== inlineStart && code !== inlineEnd)) return false;
+  const actions = Array.from(playlistRow.children).filter(
+    (child): child is HTMLButtonElement => child instanceof HTMLButtonElement,
+  );
+  const at = actions.indexOf(active as HTMLButtonElement);
+  const next = at + (code === inlineEnd ? 1 : -1);
+  if (next < 0 || next >= actions.length) return false;
+  actions[next].focus();
+  return true;
+}
+
 export function Settings({
   onClose,
   phoneManagement,
@@ -189,8 +207,8 @@ export function Settings({
    * Before paint, so the rail's highlight never visibly flickers off and back.
    */
   useLayoutEffect(() => {
-    if (!inSections && !asking && !hasTargets()) leaveBody();
-  }, [inSections, asking, section, hasTargets, leaveBody]);
+    if (!inSections && !asking && !details.length && !hasTargets()) leaveBody();
+  }, [inSections, asking, section, details.length, hasTargets, leaveBody]);
 
   // Settings takes the whole remote while it is open, so App stops handling keys and
   // this owns navigation. Left and right move between the rail and the body, which is
@@ -242,18 +260,36 @@ export function Settings({
       }
 
       const active = document.activeElement;
-      const playlistRow = active instanceof HTMLElement ? active.closest(".pl") : null;
-      if (playlistRow && (code === inlineStart || code === inlineEnd)) {
-        const actions = Array.from(playlistRow.children).filter(
-          (child): child is HTMLButtonElement => child instanceof HTMLButtonElement,
+      if (
+        detailsRef.current.length &&
+        code === KEY.DOWN &&
+        active?.classList.contains("settings-detail-back")
+      ) {
+        const first = bodyRef.current?.querySelector<HTMLElement>(
+          "[data-settings-detail-first]",
         );
-        const at = actions.indexOf(active as HTMLButtonElement);
-        const next = at + (code === inlineEnd ? 1 : -1);
-        if (next >= 0 && next < actions.length) {
+        if (first) {
           event.preventDefault();
-          actions[next].focus();
+          first.focus();
           return;
         }
+      }
+      if (
+        detailsRef.current.length &&
+        code === KEY.UP &&
+        active?.hasAttribute("data-settings-detail-first")
+      ) {
+        const back = bodyRef.current?.querySelector<HTMLElement>(".settings-detail-back");
+        if (back) {
+          event.preventDefault();
+          back.focus();
+          return;
+        }
+      }
+
+      if (moveWithinPlaylistRow(active, code, inlineStart, inlineEnd)) {
+        event.preventDefault();
+        return;
       }
 
       // Inside the body, arrows move focus between controls geometrically. When a move
