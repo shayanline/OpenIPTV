@@ -7,6 +7,7 @@ http://example.invalid/a.m3u8`;
 const disk = new Map<string, Blob | string>();
 let cleared = 0;
 let repairStops = 0;
+let forgottenRepairHosts = 0;
 
 async function load() {
   vi.resetModules();
@@ -30,6 +31,9 @@ async function load() {
     stopRepair: () => {
       repairStops += 1;
     },
+    forgetRepairHosts: () => {
+      forgottenRepairHosts += 1;
+    },
   }));
   const protocol = await import("../src/services/phoneProtocol");
   const settings = await import("../src/stores/settings");
@@ -42,6 +46,7 @@ beforeEach(() => {
   disk.clear();
   cleared = 0;
   repairStops = 0;
+  forgottenRepairHosts = 0;
   vi.unstubAllGlobals();
 });
 
@@ -187,5 +192,6 @@ describe("phone command application", () => {
       command: { type: "cache.clear" },
     });
     expect(cleared).toBe(1);
+    expect(forgottenRepairHosts).toBe(1);
   });
 });

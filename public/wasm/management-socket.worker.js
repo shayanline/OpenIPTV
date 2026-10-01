@@ -46,6 +46,13 @@ var failed = false;
 function fail(reason) {
   if (failed) return;
   failed = true;
+  if (timer !== null) {
+    clearTimeout(timer);
+    timer = null;
+  }
+  if (api) {
+    try { api.stopServer(); } catch (_error) {}
+  }
   self.postMessage({ type: "error", reason: String(reason) });
 }
 

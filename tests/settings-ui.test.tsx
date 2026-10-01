@@ -2,6 +2,11 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { act, cleanup, fireEvent, screen } from "@testing-library/react";
 import { KEY } from "../src/hooks/useRemote";
 import { mountApp, press } from "./support/app";
+import {
+  createPairingSession,
+  listPairedPhones,
+  pairPhone,
+} from "../src/services/phoneAccess";
 
 const PLAYLIST = `#EXTM3U
 #EXTINF:-1 tvg-id="a" group-title="News",Alpha
@@ -86,4 +91,19 @@ test("settings uses clear sections and concise labels", async () => {
   });
   expect(screen.getByText(/This device's platform and remote input/)).toBeTruthy();
   expect(screen.getByText(/last eight keys received by the app/)).toBeTruthy();
+});
+
+test("resetting application data revokes remembered phones", async () => {
+  const session = createPairingSession();
+  const paired = await pairPhone({ secret: session.secret, name: "Remembered phone" });
+  if (!paired.ok) throw new Error("pairing failed");
+  await mountApp(PLAYLIST);
+  press(KEY.YELLOW);
+
+  fireEvent.click(screen.getByRole("button", { name: "General" }));
+  fireEvent.click(screen.getByRole("button", { name: "Reset app data" }));
+  const resetButtons = screen.getAllByRole("button", { name: "Reset app data" });
+  fireEvent.click(resetButtons[resetButtons.length - 1]);
+
+  expect(listPairedPhones()).toEqual([]);
 });

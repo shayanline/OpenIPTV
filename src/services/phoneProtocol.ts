@@ -21,7 +21,7 @@ import {
   revokePairedPhone,
   type PairedPhone,
 } from "./phoneAccess";
-import { stopRepair } from "./repair";
+import { forgetRepairHosts, stopRepair } from "./repair";
 
 type BooleanSetting =
   | "showNumbers"
@@ -208,6 +208,8 @@ export function phoneSnapshot(): PhoneSnapshot {
       phones: t("settings.phoneAccess"),
       addPlaylist: t("common.addPlaylist"),
       remove: t("common.remove"),
+      edit: t("common.edit"),
+      refresh: t("common.refreshPlaylist"),
       active: t("common.active"),
       cache: t("settings.clearCache"),
       cacheConfirm: t("settings.clearCacheQuestion"),
@@ -349,6 +351,7 @@ async function perform(command: PhoneCommand): Promise<CommandResult["reason"] |
   }
   if (command.type === "cache.clear") {
     await clearCache();
+    forgetRepairHosts();
     return;
   }
   if (command.type === "phone.rename") {

@@ -22,6 +22,8 @@
     phones: "Paired phones",
     addPlaylist: "Add playlist",
     remove: "Remove",
+    edit: "Edit",
+    refresh: "Refresh",
     active: "Active",
     cache: "Clear downloaded cache",
     cacheConfirm: "Clear downloaded cache?",
@@ -295,6 +297,16 @@
               '">' +
               escape(l.active) +
               "</button>") +
+          '<button class="quiet" type="button" data-action="edit-playlist" data-id="' +
+          escape(playlist.id) +
+          '">' +
+          escape(l.edit) +
+          "</button>" +
+          (playlist.id === current.activePlaylistId
+            ? '<button class="quiet" type="button" data-action="refresh-playlist">' +
+              escape(l.refresh) +
+              "</button>"
+            : "") +
           '<button class="quiet danger" type="button" data-action="remove-playlist" data-id="' +
           escape(playlist.id) +
           '">' +
@@ -406,6 +418,25 @@
       var url = root.querySelector('[name="newUrl"]').value;
       void sendCommand({ type: "playlist.add", name: name, url: url });
     });
+    root.querySelectorAll("[data-action=edit-playlist]").forEach(function (button) {
+      button.addEventListener("click", function () {
+        var playlist = current.playlists.find(function (candidate) {
+          return candidate.id === button.dataset.id;
+        });
+        if (!playlist) return;
+        var name = window.prompt(labels().playlistName, playlist.name);
+        if (name === null) return;
+        var url = window.prompt(labels().playlistAddress, playlist.url);
+        if (!url) return;
+        void sendCommand({ type: "playlist.update", id: playlist.id, name: name, url: url });
+      });
+    });
+    var refresh = root.querySelector("[data-action=refresh-playlist]");
+    if (refresh) {
+      refresh.addEventListener("click", function () {
+        void sendCommand({ type: "playlist.refresh" });
+      });
+    }
     root.querySelectorAll("[data-action=remove-playlist]").forEach(function (button) {
       button.addEventListener("click", function () {
         if (confirm(labels().removeConfirm)) {

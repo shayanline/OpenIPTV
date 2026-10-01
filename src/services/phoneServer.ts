@@ -173,11 +173,29 @@ export async function routePhoneRequest(request: PhoneRequest): Promise<PhoneRes
     if (!validJsonPost(request)) return json(415, { error: "jsonRequired" });
     if (!(await authorised(request))) return json(401, { error: "unauthorised" });
     const input = parseJson(request.body) as CommandRequest | null;
-    if (!input || typeof input !== "object") return json(400, { error: "invalidRequest" });
+    if (
+      !input ||
+      typeof input !== "object" ||
+      Array.isArray(input) ||
+      Object.keys(input).sort().join(",") !== "command,id,revision"
+    ) {
+      return json(400, { error: "invalidRequest" });
+    }
     const result = await applyPhoneCommand(input);
     return json(result.reason === "conflict" ? 409 : result.ok ? 200 : 400, result);
   }
   return json(404, { error: "notFound" });
+}
+
+function failWorker(reason: string): void {
+  if (stopTimer !== undefined) window.clearTimeout(stopTimer);
+  stopTimer = undefined;
+  worker?.terminate();
+  worker = null;
+  stopResolve?.();
+  stopResolve = null;
+  stopPromise = null;
+  publish({ status: "unavailable", error: reason });
 }
 
 function finishStop(): void {
@@ -206,13 +224,13 @@ export function startPhoneManagement(): void {
     publish({ status: "unavailable", error: error instanceof Error ? error.message : String(error) });
     return;
   }
-  worker.onerror = ({ message }) => publish({ status: "unavailable", error: message });
+  worker.onerror = ({ message }) => failWorker(message);
   worker.onmessage = ({ data }) => {
     const message = data as Record<string, unknown>;
     if (message.type === "listening") {
       publish({ status: "listening", address: String(message.address), port: Number(message.port) });
     } else if (message.type === "error") {
-      publish({ status: "unavailable", error: String(message.reason) });
+      failWorker(String(message.reason));
     } else if (message.type === "stopped") {
       finishStop();
     } else if (message.type === "request") {

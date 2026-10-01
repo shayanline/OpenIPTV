@@ -184,6 +184,34 @@ test("adds playlists and confirms removal before sending commands", async () => 
   expect(JSON.parse(fetchMock.mock.calls[2][1].body).command.type).toBe("playlist.remove");
 });
 
+test("edits and refreshes an existing playlist", async () => {
+  localStorage.setItem("openiptv.phone", JSON.stringify({ phoneId: "p", credential: "c" }));
+  const fetchMock = vi
+    .fn()
+    .mockImplementationOnce(() => reply(200, snapshot()))
+    .mockImplementationOnce(() => reply(200, { ok: true, snapshot: snapshot({ revision: 1 }) }))
+    .mockImplementationOnce(() => reply(200, { ok: true, snapshot: snapshot({ revision: 2 }) }));
+  vi.stubGlobal("fetch", fetchMock);
+  vi.spyOn(window, "prompt")
+    .mockReturnValueOnce("Renamed news")
+    .mockReturnValueOnce("http://example.com/renamed.m3u");
+  await loadApp().start();
+
+  (document.querySelector("[data-action=edit-playlist]") as HTMLButtonElement).click();
+  await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+  (document.querySelector("[data-action=refresh-playlist]") as HTMLButtonElement).click();
+  await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
+
+  const update = JSON.parse(fetchMock.mock.calls[1][1].body).command;
+  expect(update).toEqual({
+    type: "playlist.update",
+    id: "pl-1",
+    name: "Renamed news",
+    url: "http://example.com/renamed.m3u",
+  });
+  expect(JSON.parse(fetchMock.mock.calls[2][1].body).command.type).toBe("playlist.refresh");
+});
+
 test("refreshes state after a revision conflict", async () => {
   localStorage.setItem("openiptv.phone", JSON.stringify({ phoneId: "p", credential: "c" }));
   const fetchMock = vi

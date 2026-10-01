@@ -31,15 +31,9 @@ Text in [licenses/react.txt](licenses/react.txt), which covers both packages.
 Project Authors. The fonts are bundled for the application font in `src/styles/tokens.css`. The licence
 text is in [licenses/OFL.txt](licenses/OFL.txt).
 
-**Emscripten**, MIT and University of Illinois NCSA, Copyright the Emscripten authors. The file
-`wasm/manifest-socket.js` is generated glue, and rather than being compiled output in the way a
-binary is, most of it is copied from Emscripten's own JavaScript libraries, so its licence follows
-it here. It was produced by Samsung's fork of Emscripten, whose Tizen extensions carry the same two
-licences. What that fork is, why it is needed and how to rebuild the module are in
-[docs/testing.md](../docs/testing.md).
+**Emscripten**, MIT and University of Illinois NCSA, Copyright the Emscripten authors. The file `wasm/manifest-socket.js` is generated glue, and rather than being compiled output in the way a binary is, most of it is copied from Emscripten's own JavaScript libraries, so its licence follows it here. It was produced by Samsung's fork of Emscripten, whose Tizen extensions carry the same two licences. The management module is compiled by current Emscripten and uses a small project owned loader. Both build recipes are in [the testing documentation](../docs/testing.md).
 
-**musl libc**, MIT, Copyright 2005 to 2020 Rich Felker and contributors. Linked into
-`wasm/manifest-socket.wasm` by Emscripten, which uses musl for its C library.
+**musl libc**, MIT, Copyright 2005 to 2020 Rich Felker and contributors. Linked into both WebAssembly modules by Emscripten, which uses musl for its C library.
 
 ## Development only, not shipped
 

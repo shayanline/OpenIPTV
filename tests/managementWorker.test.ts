@@ -8,6 +8,7 @@ interface Harness {
   responses: string[];
   stopped: { value: number };
   queueRequest(raw: string): Promise<void>;
+  breakSocket(): Promise<void>;
   send(message: unknown): Promise<void>;
   start(): Promise<void>;
 }
@@ -19,6 +20,7 @@ function harness(): Harness {
   const requests: string[] = [];
   const timers: (() => void)[] = [];
   const stopped = { value: 0 };
+  let broken = false;
   const workerScope = {
     postMessage: (message: unknown) => messages.push(message),
     onmessage: (_event: { data: unknown }) => {},
@@ -48,7 +50,7 @@ function harness(): Harness {
   );
   const functions: Record<string, (...args: unknown[]) => unknown> = {
     start_server: () => 8976,
-    receive_request: () => (requests.length ? 1 : 0),
+    receive_request: () => (broken ? -1 : requests.length ? 1 : 0),
     request_text: () => requests.shift() ?? "",
     send_response: (response) => {
       responses.push(String(response));
@@ -99,6 +101,13 @@ function harness(): Harness {
     },
     async queueRequest(raw) {
       requests.push(raw);
+      const timer = timers.shift();
+      if (!timer) throw new Error("worker did not schedule polling");
+      timer();
+      await flush();
+    },
+    async breakSocket() {
+      broken = true;
       const timer = timers.shift();
       if (!timer) throw new Error("worker did not schedule polling");
       timer();
@@ -197,6 +206,19 @@ describe("management socket worker", () => {
       "POST /api/v1/pair HTTP/1.1\r\nContent-Length: 65537\r\n\r\n",
     );
     expect(worker.responses[1]).toContain("413 Payload Too Large");
+  });
+
+  test("closes the socket before reporting a worker error", async () => {
+    const worker = harness();
+    await worker.start();
+
+    await worker.breakSocket();
+
+    expect(worker.stopped.value).toBe(1);
+    expect(worker.messages.at(-1)).toEqual({
+      type: "error",
+      reason: "the management socket went away, code -1",
+    });
   });
 
   test("closes the socket before reporting that it stopped", async () => {

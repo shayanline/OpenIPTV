@@ -92,8 +92,13 @@ describe("management lifecycle", () => {
       network: { getIp: () => "192.168.1.8" },
     };
     server.startPhoneManagement();
-    FakeWorker.instances[0].emit({ type: "error", reason: "no socket bindings" });
+    const failedWorker = FakeWorker.instances[0];
+    failedWorker.emit({ type: "error", reason: "no socket bindings" });
     expect(server.phoneManagementState().error).toContain("no socket bindings");
+    expect(failedWorker.terminated).toBe(true);
+
+    server.startPhoneManagement();
+    expect(FakeWorker.instances).toHaveLength(2);
   });
 
   test("starts only for onboarding or remembered phones", async () => {
@@ -168,6 +173,19 @@ describe("management API", () => {
       body: "",
     });
     expect(state.status).toBe(200);
+
+    const unknownEnvelope = await server.routePhoneRequest({
+      method: "POST",
+      path: "/api/v1/command",
+      headers: { authorization, "content-type": "application/json" },
+      body: JSON.stringify({
+        id: "unknown-envelope",
+        revision: 0,
+        command: { type: "setting", key: "showClock", value: false },
+        admin: true,
+      }),
+    });
+    expect(unknownEnvelope.status).toBe(400);
 
     const command = await server.routePhoneRequest({
       method: "POST",
