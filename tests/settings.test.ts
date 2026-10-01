@@ -207,3 +207,17 @@ test("removing one of two playlists added together leaves exactly the other", as
   assert.equal(s().playlists.length, 1);
   assert.equal(s().playlists[0].name, "Two");
 });
+
+test("replacing playlists persists one complete first setup state", async () => {
+  const { useSettings } = await load();
+  const playlist = { id: "pl-phone", name: "News", url: "http://a.invalid/news.m3u" };
+
+  useSettings.getState().replacePlaylists([playlist], playlist.id, "fr");
+
+  assert.deepEqual(useSettings.getState().playlists, [playlist]);
+  assert.equal(useSettings.getState().activePlaylistId, playlist.id);
+  assert.equal(useSettings.getState().locale, "fr");
+  const saved = JSON.parse(localStorage.getItem(KEY) as string);
+  assert.deepEqual(saved.playlists, [playlist]);
+  assert.equal(saved.locale, "fr");
+});
