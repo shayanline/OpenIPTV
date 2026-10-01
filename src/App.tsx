@@ -678,8 +678,12 @@ export default function App() {
       if (!channel) return;
       const had = favourites.includes(channel.id);
       const favouriteList = lists[0]?.name === FAVOURITES ? lists[0] : undefined;
-      const appears = !had && !favouriteList;
-      const vanishes = had && favouriteList?.channels.length === 1;
+      const listed = searchableChannels.some((item) => item.id === channel.id);
+      const appears = !had && listed && !favouriteList;
+      const vanishes =
+        had &&
+        favouriteList?.channels.length === 1 &&
+        favouriteList.channels[0].id === channel.id;
 
       if (appears || vanishes) {
         const from = Math.max(0, cursorRef.current - 1);
@@ -694,7 +698,16 @@ export default function App() {
       toggleFavourite(channel.id);
       chrome.say(had ? t("app.removedFavourite") : t("app.addedFavourite"));
     },
-    [favourites, lists, toggleFavourite, chrome.say, index, showCategory, t],
+    [
+      favourites,
+      lists,
+      searchableChannels,
+      toggleFavourite,
+      chrome.say,
+      index,
+      showCategory,
+      t,
+    ],
   );
 
   /**

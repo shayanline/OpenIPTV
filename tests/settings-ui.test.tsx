@@ -157,6 +157,11 @@ http://example.invalid/s.m3u8`,
   const [first, second] = useSettings.getState().playlists;
   expect(first.hiddenCategories).toEqual([]);
   expect(second.hiddenCategories).toEqual(["Second Sport"]);
+
+  await act(async () => {
+    fireEvent.click(screen.getByRole("button", { name: "Done" }));
+  });
+  expect(Boolean(screen.queryByRole("status"))).toBe(false);
 });
 
 test("a failed inactive playlist load does not show categories from the active playlist", async () => {

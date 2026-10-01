@@ -101,6 +101,24 @@ test("search mode keeps explicit favourites from hidden categories", async () =>
   assert.ok(screen.getByText("Alpha"));
 });
 
+test("unfavouriting a hidden playing channel keeps the visible category selected", async () => {
+  localStorage.setItem("openiptv.favourites", '["a","c"]');
+  await mountApp(PLAYLIST, { resume: "a" });
+  const { useSettings } = await import("../src/stores/settings");
+  const playlist = useSettings.getState().playlists[0];
+
+  await act(async () => {
+    useSettings.getState().setCategoryHidden(playlist.id, "News", true);
+  });
+  assert.equal(showing(), "Sport");
+
+  press(KEY.GREEN);
+  press(KEY.LEFT);
+
+  assert.deepEqual(rail(), ["Favourites", "Sport"]);
+  assert.equal(showing(), "Sport");
+});
+
 /**
  * The rail answers the key and the channel column follows, which is two behaviours and not
  * one, so it is worth two assertions.

@@ -200,6 +200,7 @@ export function Playlists({ onAsking }: { onAsking: (asking: boolean) => void })
         return;
       }
     }
+    setNote("");
     setManaging(playlist.id);
   };
 
