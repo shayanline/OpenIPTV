@@ -22,7 +22,7 @@ test("settings uses clear sections and concise labels", async () => {
   press(KEY.YELLOW);
 
   expect([...document.querySelectorAll(".sheet-rail .row-label")].map((el) => el.textContent)).toEqual([
-    "Appearance", "Playback", "General", "Playlists", "Diagnostics", "About",
+    "Appearance", "Playback", "General", "Playlists", "Phone access", "Diagnostics", "About",
   ]);
   const appearance = screen.getByRole("button", { name: "Appearance" });
   expect(appearance.getAttribute("aria-current")).toBe("page");

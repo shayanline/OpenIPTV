@@ -12,7 +12,7 @@ package.
 
 ## Shipped inside the application
 
-**hls.js**, version 1.7.0, Apache License 2.0, Copyright 2017 Dailymotion. Loaded only in a
+**hls.js**, version 1.7.1, Apache License 2.0, Copyright 2017 Dailymotion. Loaded only in a
 desktop browser, where the television's own decoder does not exist, and imported on demand from
 `src/services/player.ts` so it becomes a separate chunk. Parts of it derive from
 videojs-contrib-hls, Copyright 2013 to 2015 Brightcove, under the same licence, and both notices are
@@ -22,8 +22,10 @@ licence text is in [licenses/Apache-2.0.txt](licenses/Apache-2.0.txt).
 **React** and **React DOM**, version 19.2.8, MIT, Copyright Meta Platforms, Inc. and affiliates.
 Text in [licenses/react.txt](licenses/react.txt), which covers both packages.
 
-**zustand**, version 5.0.14, MIT, Copyright 2019 Paul Henschel. Text in
+**zustand**, version 5.0.15, MIT, Copyright 2019 Paul Henschel. Text in
 [licenses/zustand.txt](licenses/zustand.txt).
+
+**uqr**, version 0.1.3, MIT, Copyright Project Nayuki and Anthony Fu. It generates pairing QR codes locally so no setup information leaves the television. Text in [licenses/uqr.txt](licenses/uqr.txt).
 
 **Vazirmatn**, Regular and SemiBold fonts, SIL Open Font License 1.1, Copyright 2015 The Vazirmatn
 Project Authors. The fonts are bundled for the application font in `src/styles/tokens.css`. The licence
@@ -48,6 +50,6 @@ of them is part of the widget, so none of them is listed here. `package.json` an
 ## Keeping this honest
 
 Nothing generates this file, so a new runtime dependency has to be added by hand, and
-[AGENTS.md](../AGENTS.md) says so among the invariants. There are four runtime dependencies and
+[AGENTS.md](../AGENTS.md) says so among the invariants. There are five runtime dependencies and
 adding one is a deliberate decision rather than a detail, so the cost of doing it by hand is lower
 than the cost of a generator nobody reads the output of.

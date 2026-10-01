@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import type { PairingSessionView } from "../services/phoneAccess";
 import {
   openPairing,
   phoneManagementState,
@@ -8,9 +9,11 @@ import {
   type PhoneManagementState,
 } from "../services/phoneServer";
 
-export function usePhoneManagement(
-  enabled: boolean,
-): PhoneManagementState & { openPairing: typeof openPairing } {
+export type PhoneManagementControl = PhoneManagementState & {
+  openPairing: () => PairingSessionView;
+};
+
+export function usePhoneManagement(enabled: boolean): PhoneManagementControl {
   const [state, setState] = useState(phoneManagementState);
 
   useEffect(() => subscribePhoneManagement(setState), []);

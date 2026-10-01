@@ -83,6 +83,13 @@ const paths: Record<string, React.ReactNode> = {
   ),
   /* A trace, for the screen that reports what this television is. It reads as measurement rather
      than repair, which is what the section does: it says, it does not mend. */
+  phone: (
+    <>
+      <rect x="6.2" y="2.6" width="11.6" height="18.8" rx="2.2" />
+      <path d="M10 5.5h4" />
+      <path d="M11.9 18.4h.2" />
+    </>
+  ),
   diagnostics: (
     <path d="M2.8 12.4h4.6l2.5-6.2 3.1 11.6 2.4-5.4h5.8" />
   ),

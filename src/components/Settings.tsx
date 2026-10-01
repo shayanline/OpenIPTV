@@ -11,8 +11,17 @@ import { General } from "./settings/General";
 import { Playback } from "./settings/Behaviour";
 import { Diagnostics } from "./settings/Diagnostics";
 import { Playlists } from "./settings/Playlists";
+import { Phones } from "./settings/Phones";
+import type { PhoneManagementControl } from "../hooks/usePhoneManagement";
 
-type Section = "appearance" | "playback" | "general" | "playlists" | "diagnostics" | "about";
+type Section =
+  | "appearance"
+  | "playback"
+  | "general"
+  | "playlists"
+  | "phones"
+  | "diagnostics"
+  | "about";
 
 /**
  * The sections, in the order the rail lists them, each with the glyph beside its name.
@@ -28,11 +37,18 @@ const SECTIONS: { id: Section; label: MessageKey; icon: IconName }[] = [
   { id: "playback", label: "settings.playback", icon: "tv" },
   { id: "general", label: "settings.general", icon: "settings" },
   { id: "playlists", label: "settings.playlists", icon: "playlists" },
+  { id: "phones", label: "settings.phoneAccess", icon: "phone" },
   { id: "diagnostics", label: "settings.diagnostics", icon: "diagnostics" },
   { id: "about", label: "settings.about", icon: "about" },
 ];
 
-export function Settings({ onClose }: { onClose: () => void }) {
+export function Settings({
+  onClose,
+  phoneManagement,
+}: {
+  onClose: () => void;
+  phoneManagement: PhoneManagementControl;
+}) {
   const { t, direction } = useLocale();
   const inlineStart = direction === "rtl" ? KEY.RIGHT : KEY.LEFT;
   const inlineEnd = direction === "rtl" ? KEY.LEFT : KEY.RIGHT;
@@ -232,6 +248,7 @@ export function Settings({ onClose }: { onClose: () => void }) {
         {section === "playback" && <Playback />}
         {section === "general" && <General onAsking={ask} />}
         {section === "playlists" && <Playlists onAsking={ask} />}
+        {section === "phones" && <Phones management={phoneManagement} onAsking={ask} />}
         {section === "diagnostics" && <Diagnostics />}
         {section === "about" && <About />}
       </div>
