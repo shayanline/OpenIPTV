@@ -75,32 +75,30 @@ function CategoryManager({
         parent={t("settings.playlists")}
         title={t("playlist.manageCategories")}
         context={playlist.name}
+        actions={
+          <>
+            <button
+              type="button"
+              className="settings-icon-action"
+              aria-label={t("playlist.categorySearch")}
+              aria-expanded={searching}
+              onClick={() => setSearching((open) => !open)}
+            >
+              <Icon name="search" />
+            </button>
+            <button
+              type="button"
+              className="settings-icon-action"
+              aria-label={t("playlist.categoryActions")}
+              aria-expanded={actionsOpen}
+              onClick={() => setActionsOpen((open) => !open)}
+            >
+              <Icon name="more" />
+            </button>
+          </>
+        }
         onBack={onBack}
       />
-      <Row label={t("playlist.hiddenChannels")} hint={t("playlist.hiddenChannelsHint")}>
-        <button
-          type="button"
-          className="btn tonal"
-          aria-label={`${t("playlist.hiddenChannels")}, ${modeLabel}`}
-          onClick={() =>
-            settings.setHiddenCategoryMode(
-              playlist.id,
-              playlist.hiddenCategoryMode === "exclude" ? "search" : "exclude",
-            )
-          }
-        >
-          {modeLabel}
-        </button>
-      </Row>
-      <button
-        type="button"
-        className="settings-action-row"
-        aria-expanded={searching}
-        onClick={() => setSearching((open) => !open)}
-      >
-        <Icon name="search" />
-        <span>{t("playlist.categorySearch")}</span>
-      </button>
       {searching && (
         <div className="category-search">
           <input
@@ -115,17 +113,8 @@ function CategoryManager({
           />
         </div>
       )}
-      <button
-        type="button"
-        className="settings-action-row"
-        aria-expanded={actionsOpen}
-        onClick={() => setActionsOpen((open) => !open)}
-      >
-        <Icon name="categories" />
-        <span>{t("playlist.categoryActions")}</span>
-      </button>
       {actionsOpen && (
-        <div className="actions category-actions">
+        <div className="category-actions-menu">
           <button type="button" className="btn tonal" onClick={() => askHideAll(true)}>
             {t("playlist.hideAllCategories")}
           </button>
@@ -141,6 +130,21 @@ function CategoryManager({
           </button>
         </div>
       )}
+      <Row label={t("playlist.hiddenChannels")} hint={t("playlist.hiddenChannelsHint")}>
+        <button
+          type="button"
+          className="btn tonal"
+          aria-label={`${t("playlist.hiddenChannels")}, ${modeLabel}`}
+          onClick={() =>
+            settings.setHiddenCategoryMode(
+              playlist.id,
+              playlist.hiddenCategoryMode === "exclude" ? "search" : "exclude",
+            )
+          }
+        >
+          {modeLabel}
+        </button>
+      </Row>
       <div className="category-settings-list">
         {shown.map((category, row) => {
           const hidden = playlist.hiddenCategories.includes(category.name);

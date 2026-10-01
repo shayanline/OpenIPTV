@@ -1177,7 +1177,6 @@ html[dir="rtl"] .language-picker-list { right: auto; left: 0; }
 .sheet-lead { margin: 0 0 var(--s3); color: var(--text-2); font-size: var(--t-label); }
 .settings-detail-header { margin-bottom: var(--s3); }
 .settings-detail-back,
-.settings-action-row,
 .category-setting-row {
   width: 100%;
   border: 0;
@@ -1189,18 +1188,32 @@ html[dir="rtl"] .language-picker-list { right: auto; left: 0; }
   align-items: center;
   width: auto;
   min-height: 52px;
-  margin-bottom: var(--s1);
+  margin-bottom: var(--s3);
   padding: 0 var(--s2);
   border-radius: var(--r-pill);
   background: var(--surface-2);
   font-size: var(--t-label);
 }
 .settings-detail-back > * + * { margin-left: var(--s1); }
+.settings-detail-title-row { display: flex; align-items: flex-start; justify-content: space-between; }
+.settings-detail-title-row > div:first-child { flex: 1; min-width: 0; }
+.settings-detail-actions { display: flex; gap: var(--s1); margin-left: var(--s3); }
+.settings-icon-action {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 64px;
+  height: 64px;
+  border: 0;
+  border-radius: var(--r-pill);
+  background: var(--surface-2);
+  color: var(--text-2);
+}
+.settings-icon-action .icon { width: 28px; height: 28px; }
 .settings-detail-back:focus,
-.settings-action-row:focus,
+.settings-icon-action:focus,
 .category-setting-row:focus { outline: none; background: var(--focus); color: var(--on-focus); }
 .settings-detail-context { margin-bottom: 0; overflow-wrap: break-word; }
-.settings-action-row,
 .category-setting-row {
   display: flex;
   align-items: center;
@@ -1211,15 +1224,28 @@ html[dir="rtl"] .language-picker-list { right: auto; left: 0; }
   background: transparent;
   font-size: var(--t-body);
 }
-.settings-action-row .icon { flex: 0 0 auto; }
-.category-search { padding: var(--s2); background: var(--surface-1); }
+.category-search { margin-bottom: var(--s2); padding: var(--s2); background: var(--surface-1); }
 .category-search input { width: 100%; }
-.category-actions { margin: var(--s1) var(--s2) var(--s2); }
+.category-actions-menu {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s1);
+  width: 420px;
+  max-width: 100%;
+  margin: 0 0 var(--s2) auto;
+  padding: var(--s1);
+  border-radius: var(--r-lg);
+  background: var(--surface-1);
+}
+.category-actions-menu .btn { width: 100%; justify-content: flex-start; }
 .category-settings-list { margin-top: var(--s2); }
 .category-setting-row > span:first-child { flex: 1; min-width: 0; overflow-wrap: break-word; }
 .category-setting-row .switch { flex: 0 0 auto; pointer-events: none; }
 .category-setting-row.hidden { color: var(--text-2); }
+.category-setting-row:focus.hidden { color: rgba(0, 0, 0, 0.58); }
 .category-setting-row:focus .switch { color: var(--on-focus); }
+.category-setting-row:focus .switch:not(.on) .switch-track { background: rgba(16, 16, 19, 0.14); }
+.category-setting-row:focus .switch:not(.on) .switch-knob { background: rgba(16, 16, 19, 0.62); }
 .category-position { margin: var(--s2) 0 0; color: var(--text-3); font-size: var(--t-caption); text-align: end; }
 
 /*
@@ -2292,8 +2318,8 @@ input.wrong { border-color: var(--danger); }
 .no-flex-gap .pane-head > * + * { margin-left: var(--s2); }
 .no-flex-gap .pane-head-label > * + * { margin-left: var(--s2); }
 .no-flex-gap .row > * + *,
-.no-flex-gap .settings-action-row > * + *,
 .no-flex-gap .category-setting-row > * + * { margin-left: var(--s2); }
+.no-flex-gap .settings-detail-actions > * + * { margin-left: var(--s1); }
 .no-flex-gap .field > * + * { margin-left: var(--s3); }
 .no-flex-gap .pl > * + *,
 .no-flex-gap .phone-row > * + * { margin-left: var(--s1); }
@@ -2317,7 +2343,8 @@ input.wrong { border-color: var(--danger); }
 .no-flex-gap .phone-row-main > * + * { margin-top: 2px; }
 .no-flex-gap .phone-setup > * + *,
 .no-flex-gap .phone-manual > * + * { margin-top: var(--s1); }
-.no-flex-gap .form > * + * { margin-top: var(--s1); }
+.no-flex-gap .form > * + *,
+.no-flex-gap .category-actions-menu > * + * { margin-top: var(--s1); }
 .no-flex-gap .pad > * + * { margin-top: var(--s2); }
 .no-flex-gap .picture-state > * + * { margin-top: var(--s2); }
 /* Nothing for .pb-stack any more: its two halves are divided by a hairline and their own padding,
@@ -2435,11 +2462,13 @@ html[dir="rtl"] .no-flex-gap .search > * + * { margin-left: 0; margin-right: var
 html[dir="rtl"] .no-flex-gap .panel-bar > * + *,
 html[dir="rtl"] .no-flex-gap .field > * + * { margin-left: 0; margin-right: var(--s3); }
 html[dir="rtl"] .no-flex-gap .row > * + *,
-html[dir="rtl"] .no-flex-gap .settings-action-row > * + *,
 html[dir="rtl"] .no-flex-gap .category-setting-row > * + *,
 html[dir="rtl"] .no-flex-gap .pane-head > * + *,
 html[dir="rtl"] .no-flex-gap .pane-head-label > * + * { margin-left: 0; margin-right: var(--s2); }
 html[dir="rtl"] .settings-detail-back > * + * { margin-left: 0; margin-right: var(--s1); }
+html[dir="rtl"] .settings-detail-actions { margin-left: 0; margin-right: var(--s3); }
+html[dir="rtl"] .no-flex-gap .settings-detail-actions > * + * { margin-left: 0; margin-right: var(--s1); }
+html[dir="rtl"] .category-actions-menu { margin-left: 0; margin-right: auto; }
 html[dir="rtl"] .no-flex-gap .pl > * + *,
 html[dir="rtl"] .no-flex-gap .phone-row > * + *,
 html[dir="rtl"] .no-flex-gap .actions > * + *,

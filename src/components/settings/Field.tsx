@@ -13,11 +13,13 @@ export function DetailHeader({
   parent,
   title,
   context,
+  actions,
   onBack,
 }: {
   parent: string;
   title: string;
   context?: string;
+  actions?: React.ReactNode;
   onBack: () => void;
 }) {
   const { t, direction } = useLocale();
@@ -32,12 +34,17 @@ export function DetailHeader({
         <span aria-hidden="true">{direction === "rtl" ? "→" : "←"}</span>
         <span>{parent}</span>
       </button>
-      <h3>{title}</h3>
-      {context && (
-        <p className="sheet-lead settings-detail-context">
-          <Text value={context} />
-        </p>
-      )}
+      <div className="settings-detail-title-row">
+        <div>
+          <h3>{title}</h3>
+          {context && (
+            <p className="sheet-lead settings-detail-context">
+              <Text value={context} />
+            </p>
+          )}
+        </div>
+        {actions && <div className="settings-detail-actions">{actions}</div>}
+      </div>
     </header>
   );
 }
