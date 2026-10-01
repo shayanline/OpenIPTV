@@ -234,6 +234,19 @@ Three things about attaching cost an evening each and are written into the scrip
 It is not a gate. It needs hardware on the network, so it cannot run in CI and must never block
 anything. Read it before a release, and after any change to the player or the launch path.
 
+### Phone management on a set
+
+Run these checks after changing the management socket, pairing, welcome screen or phone interface:
+
+1. Connect the television by Ethernet, open a fresh installation and confirm that the QR address matches the wired address reported by the TV.
+2. Scan the QR code from a phone on the same network, name the phone, add a valid playlist and confirm that the television leaves first setup only after channels load.
+3. Reset the test installation, type the displayed local address on the phone, enter the six digit code and complete the same first setup path.
+4. Close OpenIPTV and confirm that the phone loses its connection, then reopen it and confirm that the remembered phone reconnects without pairing again.
+5. Revoke the phone under Settings, then Phone access and confirm that its next request returns to pairing while another remembered phone continues to work.
+6. Move the television to WiFi, repeat address discovery and QR pairing, then confirm that a previous browser origin is asked to pair again when the address changes.
+7. Close OpenIPTV after a phone request and reopen it immediately, then confirm that port 8976 binds again because the previous worker closed its socket before termination.
+8. Run `npm run tv:on-set` before and after pairing, then compare CPU at rest. The management worker must not create a sustained increase large enough to move the existing rest result outside ordinary run variation.
+
 ## Rebuilding the loopback socket module
 
 `wasm/manifest-socket.c` is compiled with **Samsung's own Emscripten fork**, not a current

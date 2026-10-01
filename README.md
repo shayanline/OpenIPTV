@@ -32,6 +32,7 @@ The project is not affiliated with, endorsed by or connected to any broadcaster,
 - Keeps favourites, searches the whole playlist, and tunes to a channel number you dial.
 - Comes back to the channel you were watching when you switch the television on.
 - Holds as many playlists as you like and switches between them.
+- Lets a phone on the same local network add playlists and manage settings without an account or cloud service.
 - Retries a broken channel three times on its own, then leaves it alone.
 
 No guide, no recordings, no accounts.
@@ -59,7 +60,13 @@ sdb devices                                # the third column is the name to ins
 tizen install -n OpenIPTV.wgt -t "<name>"
 ```
 
-The first launch asks for a playlist address and nothing else.
+The first launch keeps the playlist form on the left and shows phone setup on the right. Scan the QR code to continue on a phone, or enter the playlist with the remote as before.
+
+### Set up with a phone
+
+OpenIPTV serves the setup page directly from the television. Keep the app open and connect the phone to the same trusted local network, then scan the QR code or type the displayed address and pairing code. The phone can add, edit, remove and switch playlists, change ordinary settings, clear downloaded cache and manage remembered phones.
+
+Each phone is remembered separately until it is revoked under Settings, then Phone access. There is no OpenIPTV account, hosted service or cloud copy of the playlist addresses. If the television receives a different local address, scan the current QR code and pair the phone again.
 
 ### Build and sign it yourself
 
@@ -134,14 +141,18 @@ Play, Pause, Stop and the track keys work wherever you are. Resuming from a paus
 
 The yellow key, from anywhere.
 
-- **Appearance**: text size, channel numbers, logos, clock, sorting.
-- **Playlists**: add, edit, remove, switch, refresh.
-- **Watching**: picture size, resuming, sorting A to Z, compatibility mode, how long the channel list stays open.
+- **Appearance**: language, text size, channel numbers, logos, clock and sorting.
+- **Playback**: picture size and compatibility mode.
+- **General**: resuming, cache clearing and complete application reset.
+- **Playlists**: add, edit, remove, switch and refresh.
+- **Phone access**: pair, rename and revoke phones that manage this television.
 - **Diagnostics**: what this television is, and every key its remote sends.
 - **About**: version, and where to find the source.
 
 ## When something does not work
 
+- **The phone cannot open the setup page.** Keep OpenIPTV open and confirm that the phone and television use the same local network. Guest networks often prevent devices from reaching each other. Manual playlist entry on the left remains available.
+- **A remembered phone stopped connecting.** The television may have received a different local address. Open Settings, then Phone access and scan the current QR code again.
 - **A channel will not play.** It retries after 4, 8 and 15 seconds and then stops. Press down for the next one, which works even while the fault is on screen.
 - **The install fails with a certificate error, 118 or -12.** The distributor certificate is not issued for this television. See the signing note above.
 - **A coloured key does nothing.** Settings, then Diagnostics, lists every key press the app receives. A button missing from that list never reached the app, so the set is keeping it.
