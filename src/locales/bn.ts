@@ -177,6 +177,7 @@ export default {
   "channel.favourites": "পছন্দের",
   "channel.uncategorised": "বিভাগহীন",
   "channel.unnamed": "নামহীন",
+  "channel.hidden": "লুকানো",
   "channel.noCategories": "এখনও কোনও বিভাগ নেই।",
   "channel.allCategoriesHidden": "সব বিভাগ লুকানো আছে। প্লেলিস্ট সেটিংসে সেগুলি আবার দেখান।",
   "channel.nothingInCategory": "এই বিভাগে কিছু নেই।",

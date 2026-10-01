@@ -180,6 +180,7 @@ export default {
   "channel.favourites": "Favoris",
   "channel.uncategorised": "Sans catégorie",
   "channel.unnamed": "Sans nom",
+  "channel.hidden": "Masquée",
   "channel.noCategories": "Aucune catégorie pour le moment.",
   "channel.allCategoriesHidden":
     "Toutes les catégories sont masquées. Réaffichez-les dans les paramètres de la playlist.",

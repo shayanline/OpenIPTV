@@ -180,6 +180,7 @@ export default {
   "channel.favourites": "Favoritos",
   "channel.uncategorised": "Sem categoria",
   "channel.unnamed": "Sem nome",
+  "channel.hidden": "Oculta",
   "channel.noCategories": "Ainda não existem categorias.",
   "channel.allCategoriesHidden":
     "Todas as categorias estão ocultas. Volte a mostrá-las nas definições da lista.",

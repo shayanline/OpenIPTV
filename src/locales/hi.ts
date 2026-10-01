@@ -177,6 +177,7 @@ export default {
   "channel.favourites": "पसंदीदा",
   "channel.uncategorised": "श्रेणी रहित",
   "channel.unnamed": "बिना नाम",
+  "channel.hidden": "छिपी हुई",
   "channel.noCategories": "अभी कोई श्रेणी नहीं है।",
   "channel.allCategoriesHidden": "सभी श्रेणियाँ छिपी हुई हैं। उन्हें प्लेलिस्ट सेटिंग में फिर से दिखाएँ।",
   "channel.nothingInCategory": "इस श्रेणी में कुछ नहीं है।",

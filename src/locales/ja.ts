@@ -179,6 +179,7 @@ export default {
   "channel.favourites": "お気に入り",
   "channel.uncategorised": "カテゴリなし",
   "channel.unnamed": "名前なし",
+  "channel.hidden": "非表示",
   "channel.noCategories": "カテゴリはまだありません。",
   "channel.allCategoriesHidden":
     "すべてのカテゴリーが非表示です。プレイリスト設定で再表示できます。",

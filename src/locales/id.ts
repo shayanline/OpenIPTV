@@ -179,6 +179,7 @@ export default {
   "channel.favourites": "Favorit",
   "channel.uncategorised": "Tanpa kategori",
   "channel.unnamed": "Tanpa nama",
+  "channel.hidden": "Tersembunyi",
   "channel.noCategories": "Belum ada kategori.",
   "channel.allCategoriesHidden":
     "Semua kategori disembunyikan. Tampilkan lagi di pengaturan daftar putar.",

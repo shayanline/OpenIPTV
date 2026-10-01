@@ -182,6 +182,7 @@ export default {
   "channel.favourites": "Favoriten",
   "channel.uncategorised": "Ohne Kategorie",
   "channel.unnamed": "Unbenannt",
+  "channel.hidden": "Ausgeblendet",
   "channel.noCategories": "Noch keine Kategorien.",
   "channel.allCategoriesHidden":
     "Alle Kategorien sind ausgeblendet. Blenden Sie sie in den Playlist Einstellungen wieder ein.",

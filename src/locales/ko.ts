@@ -177,6 +177,7 @@ export default {
   "channel.favourites": "즐겨찾기",
   "channel.uncategorised": "카테고리 없음",
   "channel.unnamed": "이름 없음",
+  "channel.hidden": "숨김",
   "channel.noCategories": "아직 카테고리가 없습니다.",
   "channel.allCategoriesHidden":
     "모든 카테고리가 숨겨져 있습니다. 재생 목록 설정에서 다시 표시하세요.",

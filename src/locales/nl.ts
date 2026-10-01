@@ -180,6 +180,7 @@ export default {
   "channel.favourites": "Favorieten",
   "channel.uncategorised": "Zonder categorie",
   "channel.unnamed": "Naamloos",
+  "channel.hidden": "Verborgen",
   "channel.noCategories": "Nog geen categorieën.",
   "channel.allCategoriesHidden":
     "Alle categorieën zijn verborgen. Toon ze opnieuw in de afspeellijstinstellingen.",

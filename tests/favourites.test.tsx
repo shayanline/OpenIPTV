@@ -114,11 +114,24 @@ test("the red key stages category visibility without saving it", async () => {
   press(KEY.RED);
   assert.ok(screen.getByText("Show category"));
   assert.equal(railRow("News")?.classList.contains("hidden"), true);
+  assert.equal(railRow("News")?.textContent?.includes("Hidden"), true);
   assert.deepEqual(useSettings.getState().playlists[0].hiddenCategories, []);
 
   press(KEY.RED);
   assert.equal(railRow("News")?.classList.contains("hidden"), false);
+  assert.equal(railRow("News")?.textContent?.includes("Hidden"), false);
   assert.deepEqual(useSettings.getState().playlists[0].hiddenCategories, []);
+});
+
+test("the on-screen Smart Remote red key toggles category visibility", async () => {
+  await mountApp(PLAYLIST);
+  press(KEY.LEFT);
+  act(() => screen.getByRole("button", { name: "Show Smart Remote" }).click());
+  act(() => screen.getByRole("button", { name: "123" }).click());
+
+  act(() => screen.getByRole("button", { name: "Red" }).click());
+
+  assert.equal(railRow("News")?.textContent?.includes("Hidden"), true);
 });
 
 test("closing the channel panel saves categories staged with the red key", async () => {

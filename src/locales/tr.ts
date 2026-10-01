@@ -179,6 +179,7 @@ export default {
   "channel.favourites": "Favoriler",
   "channel.uncategorised": "Kategorisiz",
   "channel.unnamed": "Adsız",
+  "channel.hidden": "Gizli",
   "channel.noCategories": "Henüz kategori yok.",
   "channel.allCategoriesHidden":
     "Tüm kategoriler gizli. Oynatma listesi ayarlarından yeniden gösterin.",

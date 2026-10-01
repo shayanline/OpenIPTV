@@ -58,7 +58,7 @@ const Row = memo(function Row({
   height: number;
   onPick: (index: number) => void;
 }) {
-  const { number } = useLocale();
+  const { t, number } = useLocale();
   return (
     <button
       type="button"
@@ -71,6 +71,7 @@ const Row = memo(function Row({
           removes the logical end of the string, which in a right to left run is its visual
           beginning, so what is left on screen is the middle of a word. */}
       <Text value={name} className="row-label two-line" />
+      {hidden && <span className="hidden-badge">{t("channel.hidden")}</span>}
       <span className="count">{number(count)}</span>
     </button>
   );

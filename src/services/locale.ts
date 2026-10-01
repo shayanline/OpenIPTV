@@ -219,6 +219,7 @@ const ENGLISH = {
   "channel.favourites": "Favourites",
   "channel.uncategorised": "Uncategorised",
   "channel.unnamed": "Unnamed",
+  "channel.hidden": "Hidden",
   "channel.noCategories": "No categories yet.",
   "channel.allCategoriesHidden":
     "All categories are hidden. Show them again in playlist settings.",
@@ -538,6 +539,7 @@ const PERSIAN: Partial<Record<MessageKey, Message>> = {
   "channel.favourites": "علاقه‌مندی‌ها",
   "channel.uncategorised": "بدون دسته",
   "channel.unnamed": "بدون نام",
+  "channel.hidden": "پنهان",
   "channel.noCategories": "هنوز دسته‌ای وجود ندارد.",
   "channel.allCategoriesHidden":
     "همه دسته‌ها پنهان هستند. آن‌ها را در تنظیمات فهرست دوباره نمایش دهید.",

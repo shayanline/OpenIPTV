@@ -179,6 +179,7 @@ export default {
   "channel.favourites": "المفضلة",
   "channel.uncategorised": "بلا فئة",
   "channel.unnamed": "بلا اسم",
+  "channel.hidden": "مخفية",
   "channel.noCategories": "لا توجد فئات بعد.",
   "channel.allCategoriesHidden": "جميع الفئات مخفية. أظهرها مرة أخرى في إعدادات قائمة التشغيل.",
   "channel.nothingInCategory": "لا يوجد شيء في هذه الفئة.",

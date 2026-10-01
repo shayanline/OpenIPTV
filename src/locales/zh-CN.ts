@@ -176,6 +176,7 @@ export default {
   "channel.favourites": "收藏",
   "channel.uncategorised": "未分类",
   "channel.unnamed": "未命名",
+  "channel.hidden": "已隐藏",
   "channel.noCategories": "还没有类别。",
   "channel.allCategoriesHidden": "所有类别均已隐藏。请在播放列表设置中重新显示。",
   "channel.nothingInCategory": "此类别中没有内容。",

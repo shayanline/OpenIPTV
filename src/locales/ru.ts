@@ -180,6 +180,7 @@ export default {
   "channel.favourites": "Избранное",
   "channel.uncategorised": "Без категории",
   "channel.unnamed": "Без названия",
+  "channel.hidden": "Скрыта",
   "channel.noCategories": "Категорий пока нет.",
   "channel.allCategoriesHidden":
     "Все категории скрыты. Покажите их снова в настройках плейлиста.",
