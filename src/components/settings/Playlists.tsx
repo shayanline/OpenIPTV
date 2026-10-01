@@ -28,7 +28,11 @@ function CategoryManager({
     ? categories.filter((category) => category.name.toLocaleLowerCase().includes(folded))
     : categories;
   const pages = Math.max(1, Math.ceil(matches.length / CATEGORY_PAGE_SIZE));
-  const shown = matches.slice(page * CATEGORY_PAGE_SIZE, (page + 1) * CATEGORY_PAGE_SIZE);
+  const currentPage = Math.min(page, pages - 1);
+  const shown = matches.slice(
+    currentPage * CATEGORY_PAGE_SIZE,
+    (currentPage + 1) * CATEGORY_PAGE_SIZE,
+  );
   const modeOptions: readonly { id: HiddenCategoryMode; label: string }[] = [
     { id: "exclude", label: t("playlist.hideEverywhere") },
     { id: "search", label: t("playlist.keepSearchable") },
@@ -36,7 +40,7 @@ function CategoryManager({
 
   return (
     <>
-      <h3>{t("playlist.categoriesTitle")}</h3>
+      <h3>{t("playlist.manageCategories")}</h3>
       <p className="sheet-lead category-playlist-name">
         <Text value={playlist.name} />
       </p>
@@ -97,14 +101,18 @@ function CategoryManager({
           </Row>
         );
       })}
-      {!shown.length && <p className="sheet-lead">{t("playlist.noCategoryMatches")}</p>}
+      {!categories.length ? (
+        <p className="sheet-lead">{t("playlist.noCategories")}</p>
+      ) : (
+        !shown.length && <p className="sheet-lead">{t("playlist.noCategoryMatches")}</p>
+      )}
       <div className="actions">
         {pages > 1 && (
           <>
             <button
               type="button"
               className="btn tonal"
-              disabled={page === 0}
+              disabled={currentPage === 0}
               onClick={() => setPage((current) => current - 1)}
             >
               {t("common.previous")}
@@ -112,7 +120,7 @@ function CategoryManager({
             <button
               type="button"
               className="btn tonal"
-              disabled={page === pages - 1}
+              disabled={currentPage === pages - 1}
               onClick={() => setPage((current) => current + 1)}
             >
               {t("common.next")}

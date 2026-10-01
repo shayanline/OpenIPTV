@@ -161,6 +161,8 @@ export default {
     `Sender ${number} ist in dieser Wiedergabeliste nicht vorhanden.`,
   "app.removedFavourite": "Aus Favoriten entfernt",
   "app.addedFavourite": "Zu Favoriten hinzugefügt",
+  "app.hiddenFavouriteUnavailable":
+    "Blenden Sie diese Kategorie ein, bevor Sie Favoriten hinzufügen.",
   "banner.position": ({ at, of, list }) => `${at} von ${of} in ${list}`,
   "guide.addIt": "Hinzufügen",
   "guide.showMatches": "Treffer anzeigen",
@@ -268,6 +270,7 @@ export default {
   "playlist.unhideCategory": ({ name }) => `${name} wieder einblenden`,
   "playlist.categorySearch": "Kategorien suchen",
   "playlist.noCategoryMatches": "Keine Kategorie entspricht dieser Suche.",
+  "playlist.noCategories": "Diese Wiedergabeliste hat keine Kategorien.",
   "playlist.removeAria": ({ name }) => `${name} entfernen`,
   "playlist.removeQuestion": ({ name }) => `${name} entfernen?`,
   "playlist.removeBody":
@@ -336,14 +339,16 @@ export default {
   "about.qrAlt": ({ url }) => `QR-Code mit Verweis auf ${url}`,
   "settings.phoneAccess": "Telefonzugriff",
   "phone.setupTitle": "Mit dem Telefon einrichten",
-  "phone.setupBody": "Scannen Sie den QR-Code, um Wiedergabelisten hinzuzufügen und Einstellungen einfacher auszuwählen.",
+  "phone.setupBody":
+    "Scannen Sie den QR-Code, um Wiedergabelisten hinzuzufügen und Einstellungen einfacher auszuwählen.",
   "phone.addressHint": "Wenn Sie nicht scannen können, öffnen Sie diese Adresse",
   "phone.codeHint": "Geben Sie anschließend diesen Code ein",
   "phone.waiting": "Warten auf die Verbindung eines Telefons",
   "phone.connected": ({ name }) => `${name} verbunden`,
   "phone.unavailable": "Die Telefoneinrichtung ist in diesem Netzwerk nicht verfügbar.",
   "phone.manualFallback": "Sie können die Wiedergabeliste weiterhin links eingeben.",
-  "phone.pairedHint": "Telefone können Wiedergabelisten und Einstellungen verwalten, solange OpenIPTV läuft.",
+  "phone.pairedHint":
+    "Telefone können Wiedergabelisten und Einstellungen verwalten, solange OpenIPTV läuft.",
   "phone.noPhones": "Keine Telefone gekoppelt.",
   "phone.lastUsed": ({ when }) => `Zuletzt verwendet ${when}`,
   "phone.add": "Weiteres Telefon koppeln",
@@ -351,11 +356,14 @@ export default {
   "phone.renameAria": ({ name }) => `${name} umbenennen`,
   "phone.revokeAria": ({ name }) => `Zugriff von ${name} widerrufen`,
   "phone.revokeQuestion": ({ name }) => `Zugriff von ${name} widerrufen?`,
-  "phone.revokeBody": "Dieses Telefon muss einen neuen QR-Code scannen, bevor es sich erneut verbinden kann.",
+  "phone.revokeBody":
+    "Dieses Telefon muss einen neuen QR-Code scannen, bevor es sich erneut verbinden kann.",
   "phone.revoke": "Widerrufen",
   "phone.qrAlt": "QR-Code für die lokale Telefoneinrichtung",
-  "phone.conflict": "Die Einstellungen wurden auf einem anderen Telefon geändert. Prüfen Sie sie und versuchen Sie es erneut.",
-  "phone.tvUnavailable": "Der Fernseher ist nicht verfügbar. Lassen Sie OpenIPTV geöffnet und versuchen Sie es erneut.",
+  "phone.conflict":
+    "Die Einstellungen wurden auf einem anderen Telefon geändert. Prüfen Sie sie und versuchen Sie es erneut.",
+  "phone.tvUnavailable":
+    "Der Fernseher ist nicht verfügbar. Lassen Sie OpenIPTV geöffnet und versuchen Sie es erneut.",
   "phone.revoked": "Dieses Telefon hat keinen Zugriff mehr.",
   "exit.question": "OpenIPTV schließen?",
   "exit.body": "Sie können die App erneut aus der App-Leiste öffnen.",

@@ -2,7 +2,7 @@ import { afterEach, beforeEach, test, vi } from "vitest";
 import assert from "node:assert/strict";
 import { act, cleanup, fireEvent, screen } from "@testing-library/react";
 import { KEY } from "../src/hooks/useRemote";
-import { hold, mountApp, press, settle } from "./support/app";
+import { hold, mountApp, press, pressDown, release, settle } from "./support/app";
 
 /**
  * The Favourites row, which is in the rail only while there is something in it.
@@ -22,6 +22,15 @@ http://example.invalid/a.m3u8
 http://example.invalid/b.m3u8
 #EXTINF:-1 tvg-id="c" group-title="Sport",Gamma
 http://example.invalid/c.m3u8`;
+
+const THREE_CATEGORIES = `${PLAYLIST}
+#EXTINF:-1 tvg-id="d" group-title="Kids",Delta
+http://example.invalid/d.m3u8`;
+const REAL_FAVOURITES_CATEGORY = `#EXTM3U
+#EXTINF:-1 tvg-id="real" group-title="Favourites",Real Favourite
+http://example.invalid/real.m3u8
+#EXTINF:-1 tvg-id="sport" group-title="Sport",Sport
+http://example.invalid/sport.m3u8`;
 
 /**
  * The category the channel list is showing, which its heading names.
@@ -89,7 +98,7 @@ test("hiding every category says how to restore the list", async () => {
 
   assert.deepEqual(rail(), []);
   assert.ok(
-    screen.getByText("All categories are hidden. Show them again in playlist settings."),
+    screen.getByText("All categories are hidden. Hold Red to show them here, or unhide them in Settings, Playlists, Categories."),
   );
 });
 
@@ -124,6 +133,41 @@ test("the red key hides and unhides the selected category immediately", async ()
   assert.deepEqual(useSettings.getState().playlists[0].hiddenCategories, []);
 });
 
+test("a real category named Favourites can be hidden", async () => {
+  await mountApp(REAL_FAVOURITES_CATEGORY);
+  const { useSettings } = await import("../src/stores/settings");
+  press(KEY.LEFT);
+
+  press(KEY.RED);
+
+  assert.deepEqual(useSettings.getState().playlists[0].hiddenCategories, ["Favourites"]);
+  assert.equal(railRow("Favourites")?.classList.contains("hidden"), true);
+});
+
+test("hiding a category keeps the cursor and column on that category", async () => {
+  await mountApp(PLAYLIST, { hiddenCategories: ["News"] });
+  press(KEY.LEFT);
+
+  press(KEY.RED);
+
+  assert.equal(cursorOn(), "Sport");
+  assert.equal(showing(), "Sport");
+});
+
+test("concealing hidden rows keeps the shown visible category", async () => {
+  await mountApp(THREE_CATEGORIES, { hiddenCategories: ["News"] });
+  await hold(KEY.RED);
+  press(KEY.DOWN);
+  press(KEY.DOWN);
+  await settle();
+  assert.equal(showing(), "Sport");
+
+  await hold(KEY.RED);
+
+  assert.equal(showing(), "Sport");
+  assert.equal(cursorOn(), "");
+});
+
 test("holding red reveals saved hidden categories without toggling another row", async () => {
   await mountApp(PLAYLIST, { hiddenCategories: ["News"] });
   const { useSettings } = await import("../src/stores/settings");
@@ -137,6 +181,42 @@ test("holding red reveals saved hidden categories without toggling another row",
   await hold(KEY.RED);
   assert.deepEqual(rail(), ["Sport"]);
   assert.deepEqual(useSettings.getState().playlists[0].hiddenCategories, ["News"]);
+});
+
+test("a Red hold survives state updates during the press", async () => {
+  await mountApp(PLAYLIST, { hiddenCategories: ["News"] });
+  const { useSettings } = await import("../src/stores/settings");
+  const playlist = useSettings.getState().playlists[0];
+
+  pressDown(KEY.RED);
+  act(() => useSettings.getState().setHiddenCategoryMode(playlist.id, "search"));
+  await settle(600);
+  release(KEY.RED);
+
+  assert.deepEqual(rail(), ["News", "Sport"]);
+});
+
+test("repeated keydown events reveal hidden categories only once", async () => {
+  await mountApp(PLAYLIST, { hiddenCategories: ["News"] });
+
+  pressDown(KEY.RED);
+  pressDown(KEY.RED, true);
+  pressDown(KEY.RED, true);
+  release(KEY.RED);
+
+  assert.deepEqual(rail(), ["News", "Sport"]);
+});
+
+test("holding Red during search keeps focus in search", async () => {
+  await mountApp(PLAYLIST, { hiddenCategories: ["News"] });
+  press(KEY.LEFT);
+  press(KEY.UP);
+  press(KEY.ENTER);
+
+  await hold(KEY.RED);
+
+  assert.equal(document.querySelector(".rail")?.classList.contains("focused"), false);
+  assert.ok(screen.getByLabelText("Search channels by name"));
 });
 
 test("the on-screen Smart Remote red key toggles category visibility", async () => {
@@ -185,17 +265,26 @@ test("the red key at the title bar reveals and restores a saved hidden category"
   const { useSettings } = await import("../src/stores/settings");
   press(KEY.LEFT);
   press(KEY.UP);
-  assert.match(document.querySelector(".panel-hints")?.textContent ?? "", /Show hidden categories/);
+  assert.match(
+    document.querySelector(".panel-hints")?.textContent ?? "",
+    /Show hidden categories/,
+  );
 
   press(KEY.RED);
   assert.deepEqual(rail(), ["News", "Sport"]);
-  assert.match(document.querySelector(".panel-hints")?.textContent ?? "", /Hide hidden categories/);
+  assert.match(
+    document.querySelector(".panel-hints")?.textContent ?? "",
+    /Show visible categories only/,
+  );
   assert.equal(showing(), "Sport");
   assert.equal(railRow("News")?.classList.contains("hidden"), true);
 
   press(KEY.RED);
   assert.deepEqual(rail(), ["Sport"]);
-  assert.match(document.querySelector(".panel-hints")?.textContent ?? "", /Show hidden categories/);
+  assert.match(
+    document.querySelector(".panel-hints")?.textContent ?? "",
+    /Show hidden categories/,
+  );
   press(KEY.RED);
   press(KEY.DOWN);
   press(KEY.RED);
@@ -204,6 +293,21 @@ test("the red key at the title bar reveals and restores a saved hidden category"
   press(KEY.ENTER);
 
   assert.deepEqual(useSettings.getState().playlists[0].hiddenCategories, []);
+});
+
+test("a hidden channel cannot be added to an invisible Favourites row", async () => {
+  await mountApp(PLAYLIST);
+  press(KEY.ENTER);
+  press(KEY.LEFT);
+  press(KEY.LEFT);
+  press(KEY.RED);
+  press(KEY.BACK);
+
+  press(KEY.GREEN);
+
+  const { useChannels } = await import("../src/stores/channels");
+  assert.deepEqual(useChannels.getState().favourites, []);
+  assert.ok(screen.getByText("Unhide this category before adding favourites."));
 });
 
 test("unfavouriting a hidden playing channel keeps the visible category selected", async () => {

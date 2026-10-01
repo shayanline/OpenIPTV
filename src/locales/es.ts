@@ -160,6 +160,7 @@ export default {
   "app.noChannel": ({ number }) => `No hay canal ${number} en esta lista de reproducción.`,
   "app.removedFavourite": "Eliminado de favoritos",
   "app.addedFavourite": "Añadido a favoritos",
+  "app.hiddenFavouriteUnavailable": "Deja de ocultar esta categoría antes de añadir favoritos.",
   "banner.position": ({ at, of, list }) => `${at} de ${of} en ${list}`,
   "guide.addIt": "Añadirlo",
   "guide.showMatches": "Mostrar coincidencias",
@@ -263,6 +264,7 @@ export default {
   "playlist.unhideCategory": ({ name }) => `Dejar de ocultar ${name}`,
   "playlist.categorySearch": "Buscar categorías",
   "playlist.noCategoryMatches": "Ninguna categoría coincide con esta búsqueda.",
+  "playlist.noCategories": "Esta lista no tiene categorías.",
   "playlist.removeAria": ({ name }) => `Eliminar ${name}`,
   "playlist.removeQuestion": ({ name }) => `¿Eliminar ${name}?`,
   "playlist.removeBody":
@@ -338,7 +340,8 @@ export default {
   "phone.connected": ({ name }) => `${name} conectado`,
   "phone.unavailable": "La configuración desde el teléfono no está disponible en esta red.",
   "phone.manualFallback": "Aún puedes introducir la lista en el lado izquierdo.",
-  "phone.pairedHint": "Los teléfonos pueden gestionar listas y ajustes mientras OpenIPTV está abierto.",
+  "phone.pairedHint":
+    "Los teléfonos pueden gestionar listas y ajustes mientras OpenIPTV está abierto.",
   "phone.noPhones": "No hay teléfonos vinculados.",
   "phone.lastUsed": ({ when }) => `Último uso ${when}`,
   "phone.add": "Vincular otro teléfono",
@@ -346,11 +349,14 @@ export default {
   "phone.renameAria": ({ name }) => `Cambiar el nombre de ${name}`,
   "phone.revokeAria": ({ name }) => `Revocar el acceso de ${name}`,
   "phone.revokeQuestion": ({ name }) => `¿Revocar el acceso de ${name}?`,
-  "phone.revokeBody": "Este teléfono tendrá que escanear un nuevo código QR antes de volver a conectarse.",
+  "phone.revokeBody":
+    "Este teléfono tendrá que escanear un nuevo código QR antes de volver a conectarse.",
   "phone.revoke": "Revocar",
   "phone.qrAlt": "Código QR para la configuración local del teléfono",
-  "phone.conflict": "Los ajustes han cambiado en otro teléfono. Revísalos e inténtalo de nuevo.",
-  "phone.tvUnavailable": "El televisor no está disponible. Mantén OpenIPTV abierto e inténtalo de nuevo.",
+  "phone.conflict":
+    "Los ajustes han cambiado en otro teléfono. Revísalos e inténtalo de nuevo.",
+  "phone.tvUnavailable":
+    "El televisor no está disponible. Mantén OpenIPTV abierto e inténtalo de nuevo.",
   "phone.revoked": "Este teléfono ya no tiene acceso.",
   "exit.question": "¿Cerrar OpenIPTV?",
   "exit.body": "Puedes volver a abrirlo desde la fila de aplicaciones.",

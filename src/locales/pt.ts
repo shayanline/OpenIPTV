@@ -159,6 +159,8 @@ export default {
   "app.noChannel": ({ number }) => `Não existe o canal ${number} nesta lista de reprodução.`,
   "app.removedFavourite": "Removido dos favoritos",
   "app.addedFavourite": "Adicionado aos favoritos",
+  "app.hiddenFavouriteUnavailable":
+    "Deixe de ocultar esta categoria antes de adicionar favoritos.",
   "banner.position": ({ at, of, list }) => `${at} de ${of} em ${list}`,
   "guide.addIt": "Adicionar",
   "guide.showMatches": "Mostrar correspondências",
@@ -264,6 +266,7 @@ export default {
   "playlist.unhideCategory": ({ name }) => `Deixar de ocultar ${name}`,
   "playlist.categorySearch": "Procurar categorias",
   "playlist.noCategoryMatches": "Nenhuma categoria corresponde a esta pesquisa.",
+  "playlist.noCategories": "Esta lista não tem categorias.",
   "playlist.removeAria": ({ name }) => `Remover ${name}`,
   "playlist.removeQuestion": ({ name }) => `Remover ${name}?`,
   "playlist.removeBody":
@@ -331,14 +334,16 @@ export default {
   "about.qrAlt": ({ url }) => `Código QR com ligação para ${url}`,
   "settings.phoneAccess": "Acesso pelo telemóvel",
   "phone.setupTitle": "Configurar com o telemóvel",
-  "phone.setupBody": "Leia o código QR para adicionar listas e escolher definições mais facilmente.",
+  "phone.setupBody":
+    "Leia o código QR para adicionar listas e escolher definições mais facilmente.",
   "phone.addressHint": "Se não conseguir ler, abra este endereço",
   "phone.codeHint": "Depois introduza este código",
   "phone.waiting": "A aguardar a ligação de um telemóvel",
   "phone.connected": ({ name }) => `${name} ligado`,
   "phone.unavailable": "A configuração pelo telemóvel não está disponível nesta rede.",
   "phone.manualFallback": "Ainda pode introduzir a lista no lado esquerdo.",
-  "phone.pairedHint": "Os telemóveis podem gerir listas e definições enquanto o OpenIPTV estiver aberto.",
+  "phone.pairedHint":
+    "Os telemóveis podem gerir listas e definições enquanto o OpenIPTV estiver aberto.",
   "phone.noPhones": "Não existem telemóveis emparelhados.",
   "phone.lastUsed": ({ when }) => `Última utilização ${when}`,
   "phone.add": "Emparelhar outro telemóvel",
@@ -346,11 +351,13 @@ export default {
   "phone.renameAria": ({ name }) => `Mudar o nome de ${name}`,
   "phone.revokeAria": ({ name }) => `Revogar o acesso de ${name}`,
   "phone.revokeQuestion": ({ name }) => `Revogar o acesso de ${name}?`,
-  "phone.revokeBody": "Este telemóvel terá de ler um novo código QR antes de voltar a ligar-se.",
+  "phone.revokeBody":
+    "Este telemóvel terá de ler um novo código QR antes de voltar a ligar-se.",
   "phone.revoke": "Revogar",
   "phone.qrAlt": "Código QR para configuração local do telemóvel",
   "phone.conflict": "As definições foram alteradas noutro telemóvel. Reveja e tente novamente.",
-  "phone.tvUnavailable": "A televisão não está disponível. Mantenha o OpenIPTV aberto e tente novamente.",
+  "phone.tvUnavailable":
+    "A televisão não está disponível. Mantenha o OpenIPTV aberto e tente novamente.",
   "phone.revoked": "Este telemóvel já não tem acesso.",
   "exit.question": "Fechar o OpenIPTV?",
   "exit.body": "Pode abri-lo novamente na linha de aplicações.",

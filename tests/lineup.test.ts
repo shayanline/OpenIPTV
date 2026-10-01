@@ -62,6 +62,16 @@ test("the first favourite puts Favourites at the top", () => {
   );
 });
 
+test("a playlist category named Favourites remains distinct from the generated row", () => {
+  const real = { name: FAVOURITES, channels: [channel("real", "real", FAVOURITES)] };
+  const lists = listsOf([...real.channels, ...sport.channels], [real, sport], ["d"]);
+
+  assert.equal(lists.length, 3);
+  assert.equal(lists[0].synthetic, "favourites");
+  assert.equal(lists[1].synthetic, undefined);
+  assert.equal(lists[1].channels[0].id, "real");
+});
+
 test("favourites saved against another playlist leave no row behind", () => {
   // Favourites outlive the playlist they were made in, so a set of ids matching nothing here
   // is ordinary rather than exceptional, and it must not put an empty row at the top.

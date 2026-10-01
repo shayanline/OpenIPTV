@@ -244,17 +244,10 @@ export const useSettings = create<Settings>((set, get) => ({
   },
 
   setCategoryHidden(playlistId, category, hidden) {
-    set({
-      playlists: get().playlists.map((playlist) => {
-        if (playlist.id !== playlistId) return playlist;
-        const without = playlist.hiddenCategories.filter((name) => name !== category);
-        return {
-          ...playlist,
-          hiddenCategories: hidden ? [...without, category] : without,
-        };
-      }),
-    });
-    persist(get());
+    const playlist = get().playlists.find((item) => item.id === playlistId);
+    if (!playlist) return;
+    const without = playlist.hiddenCategories.filter((name) => name !== category);
+    get().setHiddenCategories(playlistId, hidden ? [...without, category] : without);
   },
 
   setHiddenCategoryMode(playlistId, mode) {

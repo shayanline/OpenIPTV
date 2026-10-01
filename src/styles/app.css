@@ -1378,7 +1378,7 @@ input.wrong { border-color: var(--danger); }
 .about h4 { margin: 0 0 var(--s1); font-size: var(--t-title); font-weight: 600; }
 .about p { margin: 2px 0; color: var(--text-2); font-size: var(--t-label); }
 .about .link { color: var(--accent); word-break: break-all; }
-.category-playlist-name { margin-bottom: var(--s2); overflow-wrap: anywhere; }
+.category-playlist-name { margin-bottom: var(--s2); overflow-wrap: break-word; }
 .category-shortcuts { margin-top: var(--s3); padding-top: var(--s2); border-top: 1px solid var(--line); }
 .category-shortcuts dl { margin: var(--s1) 0; }
 .category-shortcut { display: flex; gap: var(--s2); margin-top: var(--s1); }

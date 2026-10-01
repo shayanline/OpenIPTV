@@ -45,7 +45,18 @@ export function stepColumn(index: number, delta: number, count: number, withFiel
 export interface ChannelList {
   name: string;
   channels: Channel[];
+  synthetic?: "favourites";
 }
+
+export const isFavouritesList = (list: ChannelList | undefined) =>
+  list?.synthetic === "favourites";
+
+interface Visibility {
+  hiddenCategories: readonly string[];
+  hiddenCategoryMode: HiddenCategoryMode;
+}
+
+const VISIBLE: Visibility = { hiddenCategories: [], hiddenCategoryMode: "exclude" };
 
 /**
  * The playlist's own categories, with Favourites first while there is something in it.
@@ -62,10 +73,7 @@ export function lineupOf(
   channels: Channel[],
   categories: ChannelList[],
   favourites: string[],
-  visibility: {
-    hiddenCategories: readonly string[];
-    hiddenCategoryMode: HiddenCategoryMode;
-  },
+  visibility: Visibility = VISIBLE,
 ): {
   lists: ChannelList[];
   browsableChannels: Channel[];
@@ -82,8 +90,8 @@ export function lineupOf(
     visibility.hiddenCategoryMode === "search" ? channels : browsableChannels;
   const wanted = new Set(favourites);
   const mine = searchableChannels.filter((channel) => wanted.has(channel.id));
-  const lists = mine.length
-    ? [{ name: FAVOURITES, channels: mine }, ...visibleCategories]
+  const lists: ChannelList[] = mine.length
+    ? [{ name: FAVOURITES, channels: mine, synthetic: "favourites" }, ...visibleCategories]
     : visibleCategories;
   return { lists, browsableChannels, searchableChannels };
 }

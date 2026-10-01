@@ -63,7 +63,6 @@ const Row = memo(function Row({
     <button
       type="button"
       className={`row ${selected ? "selected" : ""} ${showing ? "showing" : ""} ${hidden ? "hidden" : ""}`}
-      aria-label={hidden ? `${name}, ${t("channel.hidden")}` : undefined}
       style={{ top, height }}
       onClick={() => onPick(index)}
     >
@@ -73,7 +72,7 @@ const Row = memo(function Row({
           beginning, so what is left on screen is the middle of a word. */}
       <Text value={name} className="row-label two-line" />
       {hidden && (
-        <span className="hidden-state">
+        <span className="hidden-state" role="img" aria-label={t("channel.hidden")}>
           <Icon name="hidden" />
         </span>
       )}

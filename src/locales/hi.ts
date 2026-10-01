@@ -155,6 +155,7 @@ export default {
   "app.noChannel": ({ number }) => `इस प्लेलिस्ट में चैनल ${number} नहीं है।`,
   "app.removedFavourite": "पसंदीदा से हटाया गया",
   "app.addedFavourite": "पसंदीदा में जोड़ा गया",
+  "app.hiddenFavouriteUnavailable": "पसंदीदा में जोड़ने से पहले इस श्रेणी को फिर दिखाएँ।",
   "banner.position": ({ at, of, list }) => `${list} में ${at} / ${of}`,
   "guide.addIt": "जोड़ें",
   "guide.showMatches": "मिलान दिखाएँ",
@@ -249,6 +250,7 @@ export default {
   "playlist.unhideCategory": ({ name }) => `${name} फिर दिखाएँ`,
   "playlist.categorySearch": "श्रेणियाँ खोजें",
   "playlist.noCategoryMatches": "इस खोज से कोई श्रेणी मेल नहीं खाती।",
+  "playlist.noCategories": "इस प्लेलिस्ट में कोई श्रेणी नहीं है।",
   "playlist.removeAria": ({ name }) => `${name} हटाएँ`,
   "playlist.removeQuestion": ({ name }) => `${name} हटाएँ?`,
   "playlist.removeBody":

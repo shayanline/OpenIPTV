@@ -155,6 +155,7 @@ export default {
   "app.noChannel": ({ number }) => `এই প্লেলিস্টে ${number} নম্বর চ্যানেল নেই।`,
   "app.removedFavourite": "পছন্দের তালিকা থেকে সরানো হয়েছে",
   "app.addedFavourite": "পছন্দের তালিকায় যোগ করা হয়েছে",
+  "app.hiddenFavouriteUnavailable": "পছন্দে যোগ করার আগে এই বিভাগ আনহাইড করুন।",
   "banner.position": ({ at, of, list }) => `${list}-এ ${at} / ${of}`,
   "guide.addIt": "যোগ করুন",
   "guide.showMatches": "মিলগুলি দেখান",
@@ -249,6 +250,7 @@ export default {
   "playlist.unhideCategory": ({ name }) => `${name} আনহাইড করুন`,
   "playlist.categorySearch": "বিভাগ অনুসন্ধান করুন",
   "playlist.noCategoryMatches": "এই অনুসন্ধানের সঙ্গে কোনো বিভাগ মেলে না।",
+  "playlist.noCategories": "এই প্লেলিস্টে কোনো বিভাগ নেই।",
   "playlist.removeAria": ({ name }) => `${name} সরিয়ে দিন`,
   "playlist.removeQuestion": ({ name }) => `${name} সরিয়ে দেবেন?`,
   "playlist.removeBody":

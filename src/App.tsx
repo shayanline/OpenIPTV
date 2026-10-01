@@ -5,7 +5,13 @@ import { onTizen } from "./services/player";
 import { warmChain } from "./services/logos";
 import { cssMs } from "./services/metrics";
 import { whenIdle } from "./services/idle";
-import { FAVOURITES, lineupOf, stepColumn, wrap } from "./services/lineup";
+import {
+  isFavouritesList,
+  lineupOf,
+  stepColumn,
+  wrap,
+  type ChannelList as LineupList,
+} from "./services/lineup";
 import { UNCATEGORISED } from "./services/m3u";
 import { searchChannels } from "./services/search";
 import { KEY, registerRemoteKeys, useRemote } from "./hooks/useRemote";
@@ -252,16 +258,7 @@ export default function App() {
 
   const activePlaylist = settings.activePlaylist();
   const lineup = useMemo(
-    () =>
-      lineupOf(
-        channels,
-        categories,
-        favourites,
-        activePlaylist ?? {
-          hiddenCategories: [],
-          hiddenCategoryMode: "exclude",
-        },
-      ),
+    () => lineupOf(channels, categories, favourites, activePlaylist),
     [channels, categories, favourites, activePlaylist],
   );
   const { lists: browsableLists, browsableChannels, searchableChannels } = lineup;
@@ -271,17 +268,16 @@ export default function App() {
   );
   const lists = useMemo(() => {
     if (!revealHidden) return browsableLists;
-    const favouriteList =
-      browsableLists[0]?.name === FAVOURITES ? browsableLists[0] : undefined;
+    const favouriteList = isFavouritesList(browsableLists[0]) ? browsableLists[0] : undefined;
     return favouriteList ? [favouriteList, ...categories] : categories;
   }, [browsableLists, categories, revealHidden]);
 
-  const displayListName = (name: string) =>
-    name === FAVOURITES
+  const displayListName = (list: LineupList | undefined) =>
+    isFavouritesList(list)
       ? t("channel.favourites")
-      : name === UNCATEGORISED
+      : list?.name === UNCATEGORISED
         ? t("channel.uncategorised")
-        : name;
+        : (list?.name ?? "");
 
   /**
    * The favourites, as a set, because the channel list asks about every row it draws.
@@ -501,7 +497,7 @@ export default function App() {
   const locate = useCallback(
     (channel: Channel) => {
       const has = (l: { channels: Channel[] }) => l.channels.some((c) => c.id === channel.id);
-      const real = lists.findIndex((l, i) => !(i === 0 && l.name === FAVOURITES) && has(l));
+      const real = lists.findIndex((list) => !isFavouritesList(list) && has(list));
       return real >= 0 ? real : lists.findIndex(has);
     },
     [lists],
@@ -699,9 +695,13 @@ export default function App() {
     (channel: Channel | undefined) => {
       if (!channel) return;
       const had = favourites.includes(channel.id);
-      const favouriteList = lists[0]?.name === FAVOURITES ? lists[0] : undefined;
+      const favouriteList = isFavouritesList(lists[0]) ? lists[0] : undefined;
       const listed = searchableChannels.some((item) => item.id === channel.id);
-      const appears = !had && listed && !favouriteList;
+      if (!had && !listed) {
+        chrome.say(t("app.hiddenFavouriteUnavailable"));
+        return;
+      }
+      const appears = !had && !favouriteList;
       const vanishes =
         had &&
         favouriteList?.channels.length === 1 &&
@@ -734,47 +734,95 @@ export default function App() {
 
   const revealHiddenCategories = useCallback(() => {
     if (view !== "panel") return false;
-    if (!revealHidden) {
-      const shown = lists[category];
-      if (shown && shown.name !== FAVOURITES) {
-        const at = categories.findIndex((item) => item.name === shown.name);
-        if (at >= 0) setCategory(at + (lists[0]?.name === FAVOURITES ? 1 : 0));
-      }
-    }
-    setRevealHidden((shown) => !shown);
+    const shown = lists[category];
+    const favouriteList = isFavouritesList(browsableLists[0]) ? browsableLists[0] : undefined;
+    const nextLists = revealHidden
+      ? browsableLists
+      : favouriteList
+        ? [favouriteList, ...categories]
+        : categories;
+    const exact = shown
+      ? nextLists.findIndex((list) =>
+          isFavouritesList(shown)
+            ? isFavouritesList(list)
+            : !isFavouritesList(list) && list.name === shown.name,
+        )
+      : -1;
+    const to = exact >= 0 ? exact : Math.max(0, Math.min(category, nextLists.length - 1));
+    setCategory(to);
+    setIndex(Math.min(index, Math.max(0, (nextLists[to]?.channels.length ?? 1) - 1)));
+    setRevealHidden((visible) => !visible);
     setPane("rail");
     setCursor(0);
     cursorRef.current = 0;
     return true;
-  }, [view, revealHidden, lists, category, categories]);
+  }, [view, lists, category, browsableLists, revealHidden, categories, index]);
 
   const toggleCategoryVisibility = useCallback(() => {
     if (view !== "panel" || pane !== "rail") return false;
     if (cursor === 0) return revealHiddenCategories();
     const item = lists[cursor - 1];
-    if (!item || item.name === FAVOURITES) return true;
+    if (!item || isFavouritesList(item)) return true;
     const state = useSettings.getState();
     const playlist = state.activePlaylist();
     if (!playlist) return true;
     const hidden = savedHidden.has(item.name);
     state.setCategoryHidden(playlist.id, item.name, !hidden);
-    if (!hidden) setRevealHidden(true);
+    if (!hidden && !revealHidden) {
+      const categoryAt = categories.findIndex((category) => category.name === item.name);
+      const favouriteStays =
+        isFavouritesList(lists[0]) &&
+        (playlist.hiddenCategoryMode === "search" ||
+          lists[0].channels.some((channel) => channel.group !== item.name));
+      const to = categoryAt + (favouriteStays ? 1 : 0);
+      setCategory(to);
+      setCursor(to + 1);
+      cursorRef.current = to + 1;
+      setRevealHidden(true);
+    }
     return true;
-  }, [view, pane, cursor, lists, savedHidden, revealHiddenCategories]);
+  }, [
+    view,
+    pane,
+    cursor,
+    lists,
+    savedHidden,
+    revealHidden,
+    categories,
+    revealHiddenCategories,
+  ]);
+
+  const redContextRef = useRef({
+    configured,
+    showSettings,
+    showExit,
+    revealHiddenCategories,
+    toggleCategoryVisibility,
+  });
+  redContextRef.current = {
+    configured,
+    showSettings,
+    showExit,
+    revealHiddenCategories,
+    toggleCategoryVisibility,
+  };
 
   useEffect(() => {
     let timer: number | undefined;
     let long = false;
     const onDown = (event: KeyboardEvent) => {
-      if (event.keyCode !== KEY.RED || !configured || showSettings || showExit) return;
+      if (event.keyCode !== KEY.RED) return;
+      const context = redContextRef.current;
+      if (!context.configured || context.showSettings || context.showExit) return;
       event.preventDefault();
       event.stopImmediatePropagation();
+      if (searchingRef.current) return;
       if (event.repeat) {
         window.clearTimeout(timer);
         timer = undefined;
         if (!long) {
           long = true;
-          revealHiddenCategories();
+          context.revealHiddenCategories();
         }
         return;
       }
@@ -782,18 +830,25 @@ export default function App() {
         timer = window.setTimeout(() => {
           timer = undefined;
           long = true;
-          revealHiddenCategories();
+          redContextRef.current.revealHiddenCategories();
         }, 500);
       }
     };
     const onUp = (event: KeyboardEvent) => {
       if (event.keyCode !== KEY.RED) return;
+      const context = redContextRef.current;
+      if (!context.configured || context.showSettings || context.showExit) {
+        window.clearTimeout(timer);
+        timer = undefined;
+        long = false;
+        return;
+      }
       event.preventDefault();
       event.stopImmediatePropagation();
       if (timer !== undefined) {
         window.clearTimeout(timer);
         timer = undefined;
-        toggleCategoryVisibility();
+        if (!searchingRef.current) context.toggleCategoryVisibility();
       }
       long = false;
     };
@@ -804,7 +859,7 @@ export default function App() {
       window.removeEventListener("keydown", onDown);
       window.removeEventListener("keyup", onUp);
     };
-  }, [configured, showSettings, showExit, revealHiddenCategories, toggleCategoryVisibility]);
+  }, []);
 
   const openSettings = useCallback(() => setShowSettings(true), []);
 
@@ -1428,14 +1483,13 @@ export default function App() {
   const railItems = useMemo(
     () =>
       lists.map((l) => ({
-        name:
-          l.name === FAVOURITES
-            ? t("channel.favourites")
-            : l.name === UNCATEGORISED
-              ? t("channel.uncategorised")
-              : l.name,
+        name: isFavouritesList(l)
+          ? t("channel.favourites")
+          : l.name === UNCATEGORISED
+            ? t("channel.uncategorised")
+            : l.name,
         count: l.channels.length,
-        hidden: l.name !== FAVOURITES && savedHidden.has(l.name),
+        hidden: !isFavouritesList(l) && savedHidden.has(l.name),
       })),
     [lists, savedHidden, t],
   );
@@ -1444,8 +1498,12 @@ export default function App() {
     pane !== "rail"
       ? undefined
       : cursor === 0
-        ? t(revealHidden ? "guide.hideHiddenCategories" : "guide.showHiddenCategories")
-        : selectedRailList && selectedRailList.name !== FAVOURITES
+        ? revealHidden
+          ? t("guide.hideHiddenCategories")
+          : savedHidden.size
+            ? t("guide.showHiddenCategories")
+            : undefined
+        : selectedRailList && !isFavouritesList(selectedRailList)
           ? t(
               savedHidden.has(selectedRailList.name)
                 ? "guide.unhideCategory"
@@ -1507,7 +1565,7 @@ export default function App() {
     return {
       at: at + 1,
       of: visible.length,
-      list: displayListName(lists[category]?.name ?? ""),
+      list: displayListName(lists[category]),
     };
   }, [tuner.shown, visible, lists, category, t]);
 
@@ -1633,7 +1691,7 @@ export default function App() {
           />
           <ChannelList
             channels={column}
-            category={displayListName(lists[category]?.name ?? "")}
+            category={displayListName(lists[category])}
             index={index}
             loading={loading}
             focused={pane === "list"}

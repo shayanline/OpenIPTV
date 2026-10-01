@@ -158,6 +158,8 @@ export default {
   "app.noChannel": ({ number }) => `Tidak ada kanal ${number} di daftar putar ini.`,
   "app.removedFavourite": "Dihapus dari favorit",
   "app.addedFavourite": "Ditambahkan ke favorit",
+  "app.hiddenFavouriteUnavailable":
+    "Batalkan sembunyikan kategori ini sebelum menambah favorit.",
   "banner.position": ({ at, of, list }) => `${at} dari ${of} di ${list}`,
   "guide.addIt": "Tambahkan",
   "guide.showMatches": "Tampilkan kecocokan",
@@ -260,6 +262,7 @@ export default {
   "playlist.unhideCategory": ({ name }) => `Batalkan sembunyikan ${name}`,
   "playlist.categorySearch": "Cari kategori",
   "playlist.noCategoryMatches": "Tidak ada kategori yang cocok dengan pencarian ini.",
+  "playlist.noCategories": "Daftar putar ini tidak memiliki kategori.",
   "playlist.removeAria": ({ name }) => `Hapus ${name}`,
   "playlist.removeQuestion": ({ name }) => `Hapus ${name}?`,
   "playlist.removeBody":
@@ -325,14 +328,16 @@ export default {
   "about.qrAlt": ({ url }) => `Kode QR yang mengarah ke ${url}`,
   "settings.phoneAccess": "Akses telepon",
   "phone.setupTitle": "Siapkan dengan telepon Anda",
-  "phone.setupBody": "Pindai kode QR untuk menambahkan daftar putar dan memilih pengaturan dengan lebih mudah.",
+  "phone.setupBody":
+    "Pindai kode QR untuk menambahkan daftar putar dan memilih pengaturan dengan lebih mudah.",
   "phone.addressHint": "Jika tidak dapat memindai, buka alamat ini",
   "phone.codeHint": "Kemudian masukkan kode ini",
   "phone.waiting": "Menunggu telepon terhubung",
   "phone.connected": ({ name }) => `${name} terhubung`,
   "phone.unavailable": "Penyiapan telepon tidak tersedia di jaringan ini.",
   "phone.manualFallback": "Anda tetap dapat memasukkan daftar putar di sebelah kiri.",
-  "phone.pairedHint": "Telepon dapat mengelola daftar putar dan pengaturan saat OpenIPTV berjalan.",
+  "phone.pairedHint":
+    "Telepon dapat mengelola daftar putar dan pengaturan saat OpenIPTV berjalan.",
   "phone.noPhones": "Tidak ada telepon yang dipasangkan.",
   "phone.lastUsed": ({ when }) => `Terakhir digunakan ${when}`,
   "phone.add": "Pasangkan telepon lain",

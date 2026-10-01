@@ -158,6 +158,8 @@ export default {
   "app.noChannel": ({ number }) => `このプレイリストにチャンネル ${number} はありません。`,
   "app.removedFavourite": "お気に入りから削除しました",
   "app.addedFavourite": "お気に入りに追加しました",
+  "app.hiddenFavouriteUnavailable":
+    "お気に入りに追加する前に、このカテゴリーの非表示を解除してください。",
   "banner.position": ({ at, of, list }) => `${list}の${of}件中${at}件目`,
   "guide.addIt": "追加",
   "guide.showMatches": "一致する項目を表示",
@@ -257,6 +259,7 @@ export default {
   "playlist.unhideCategory": ({ name }) => `${name}の非表示を解除`,
   "playlist.categorySearch": "カテゴリーを検索",
   "playlist.noCategoryMatches": "この検索に一致するカテゴリーはありません。",
+  "playlist.noCategories": "このプレイリストにはカテゴリーがありません。",
   "playlist.removeAria": ({ name }) => `${name}を削除`,
   "playlist.removeQuestion": ({ name }) => `${name}を削除しますか？`,
   "playlist.removeBody":
@@ -338,11 +341,14 @@ export default {
   "phone.renameAria": ({ name }) => `${name} の名前を変更`,
   "phone.revokeAria": ({ name }) => `${name} のアクセスを取り消す`,
   "phone.revokeQuestion": ({ name }) => `${name} のアクセスを取り消しますか？`,
-  "phone.revokeBody": "再接続するには、このスマートフォンで新しいQRコードを読み取る必要があります。",
+  "phone.revokeBody":
+    "再接続するには、このスマートフォンで新しいQRコードを読み取る必要があります。",
   "phone.revoke": "アクセスを取り消す",
   "phone.qrAlt": "ローカルスマートフォン設定用QRコード",
-  "phone.conflict": "別のスマートフォンで設定が変更されました。確認してもう一度お試しください。",
-  "phone.tvUnavailable": "テレビを利用できません。OpenIPTVを開いたまま、もう一度お試しください。",
+  "phone.conflict":
+    "別のスマートフォンで設定が変更されました。確認してもう一度お試しください。",
+  "phone.tvUnavailable":
+    "テレビを利用できません。OpenIPTVを開いたまま、もう一度お試しください。",
   "phone.revoked": "このスマートフォンにはアクセス権がありません。",
   "exit.question": "OpenIPTVを閉じますか？",
   "exit.body": "アプリの列からもう一度開けます。",

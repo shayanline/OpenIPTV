@@ -155,6 +155,7 @@ export default {
   "app.noChannel": ({ number }) => `此播放列表中没有频道 ${number}。`,
   "app.removedFavourite": "已从收藏中移除",
   "app.addedFavourite": "已添加到收藏",
+  "app.hiddenFavouriteUnavailable": "添加收藏前，请先取消隐藏此类别。",
   "banner.position": ({ at, of, list }) => `在${list}中第 ${at} 个，共 ${of} 个`,
   "guide.addIt": "添加",
   "guide.showMatches": "显示匹配项",
@@ -246,6 +247,7 @@ export default {
   "playlist.unhideCategory": ({ name }) => `取消隐藏 ${name}`,
   "playlist.categorySearch": "搜索类别",
   "playlist.noCategoryMatches": "没有类别与此搜索匹配。",
+  "playlist.noCategories": "此播放列表没有类别。",
   "playlist.removeAria": ({ name }) => `移除 ${name}`,
   "playlist.removeQuestion": ({ name }) => `移除 ${name}？`,
   "playlist.removeBody":

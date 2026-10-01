@@ -157,6 +157,7 @@ export default {
   "app.noChannel": ({ number }) => `لا توجد قناة ${number} في قائمة التشغيل هذه.`,
   "app.removedFavourite": "تمت الإزالة من المفضلة",
   "app.addedFavourite": "تمت الإضافة إلى المفضلة",
+  "app.hiddenFavouriteUnavailable": "ألغِ إخفاء هذه الفئة قبل الإضافة إلى المفضلة.",
   "banner.position": ({ at, of, list }) => `${at} من ${of} في ${list}`,
   "guide.addIt": "إضافتها",
   "guide.showMatches": "إظهار النتائج",
@@ -249,6 +250,7 @@ export default {
   "playlist.unhideCategory": ({ name }) => `إلغاء إخفاء ${name}`,
   "playlist.categorySearch": "البحث في الفئات",
   "playlist.noCategoryMatches": "لا توجد فئات تطابق هذا البحث.",
+  "playlist.noCategories": "لا توجد فئات في قائمة التشغيل هذه.",
   "playlist.removeAria": ({ name }) => `إزالة ${name}`,
   "playlist.removeQuestion": ({ name }) => `هل تريد إزالة ${name}؟`,
   "playlist.removeBody":

@@ -159,6 +159,8 @@ export default {
   "app.noChannel": ({ number }) => `Geen kanaal ${number} in deze afspeellijst.`,
   "app.removedFavourite": "Uit favorieten verwijderd",
   "app.addedFavourite": "Aan favorieten toegevoegd",
+  "app.hiddenFavouriteUnavailable":
+    "Maak deze categorie zichtbaar voordat u favorieten toevoegt.",
   "banner.position": ({ at, of, list }) => `${at} van ${of} in ${list}`,
   "guide.addIt": "Toevoegen",
   "guide.showMatches": "Overeenkomsten tonen",
@@ -261,6 +263,7 @@ export default {
   "playlist.unhideCategory": ({ name }) => `${name} zichtbaar maken`,
   "playlist.categorySearch": "Categorieën zoeken",
   "playlist.noCategoryMatches": "Geen categorieën komen overeen met deze zoekopdracht.",
+  "playlist.noCategories": "Deze afspeellijst heeft geen categorieën.",
   "playlist.removeAria": ({ name }) => `${name} verwijderen`,
   "playlist.removeQuestion": ({ name }) => `${name} verwijderen?`,
   "playlist.removeBody":
@@ -327,14 +330,16 @@ export default {
   "about.qrAlt": ({ url }) => `QR-code die naar ${url} verwijst`,
   "settings.phoneAccess": "Telefoontoegang",
   "phone.setupTitle": "Instellen met uw telefoon",
-  "phone.setupBody": "Scan de QR-code om eenvoudiger afspeellijsten toe te voegen en instellingen te kiezen.",
+  "phone.setupBody":
+    "Scan de QR-code om eenvoudiger afspeellijsten toe te voegen en instellingen te kiezen.",
   "phone.addressHint": "Kunt u niet scannen, open dan dit adres",
   "phone.codeHint": "Voer daarna deze code in",
   "phone.waiting": "Wachten op verbinding met een telefoon",
   "phone.connected": ({ name }) => `${name} verbonden`,
   "phone.unavailable": "Instellen via de telefoon is niet beschikbaar op dit netwerk.",
   "phone.manualFallback": "U kunt de afspeellijst nog steeds links invoeren.",
-  "phone.pairedHint": "Telefoons kunnen afspeellijsten en instellingen beheren terwijl OpenIPTV actief is.",
+  "phone.pairedHint":
+    "Telefoons kunnen afspeellijsten en instellingen beheren terwijl OpenIPTV actief is.",
   "phone.noPhones": "Er zijn geen telefoons gekoppeld.",
   "phone.lastUsed": ({ when }) => `Laatst gebruikt ${when}`,
   "phone.add": "Nog een telefoon koppelen",
@@ -342,11 +347,14 @@ export default {
   "phone.renameAria": ({ name }) => `${name} hernoemen`,
   "phone.revokeAria": ({ name }) => `Toegang van ${name} intrekken`,
   "phone.revokeQuestion": ({ name }) => `Toegang van ${name} intrekken?`,
-  "phone.revokeBody": "Deze telefoon moet een nieuwe QR-code scannen voordat deze opnieuw verbinding kan maken.",
+  "phone.revokeBody":
+    "Deze telefoon moet een nieuwe QR-code scannen voordat deze opnieuw verbinding kan maken.",
   "phone.revoke": "Toegang intrekken",
   "phone.qrAlt": "QR-code voor lokale telefooninstelling",
-  "phone.conflict": "Instellingen zijn op een andere telefoon gewijzigd. Controleer ze en probeer het opnieuw.",
-  "phone.tvUnavailable": "De tv is niet beschikbaar. Houd OpenIPTV geopend en probeer het opnieuw.",
+  "phone.conflict":
+    "Instellingen zijn op een andere telefoon gewijzigd. Controleer ze en probeer het opnieuw.",
+  "phone.tvUnavailable":
+    "De tv is niet beschikbaar. Houd OpenIPTV geopend en probeer het opnieuw.",
   "phone.revoked": "Deze telefoon heeft geen toegang meer.",
   "exit.question": "OpenIPTV sluiten?",
   "exit.body": "Je kunt het opnieuw openen vanuit de rij met apps.",

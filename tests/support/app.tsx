@@ -30,8 +30,13 @@ function keyEvent(type: "keydown" | "keyup", code: number) {
   window.dispatchEvent(event);
 }
 
-export function pressDown(code: number) {
-  act(() => keyEvent("keydown", code));
+export function pressDown(code: number, repeat = false) {
+  act(() => {
+    const event = new KeyboardEvent("keydown", { bubbles: true, cancelable: true, repeat });
+    Object.defineProperty(event, "keyCode", { get: () => code });
+    Object.defineProperty(event, "which", { get: () => code });
+    window.dispatchEvent(event);
+  });
 }
 
 export function release(code: number) {

@@ -2,11 +2,7 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { act, cleanup, fireEvent, screen } from "@testing-library/react";
 import { KEY } from "../src/hooks/useRemote";
 import { mountApp, press } from "./support/app";
-import {
-  createPairingSession,
-  listPairedPhones,
-  pairPhone,
-} from "../src/services/phoneAccess";
+import { createPairingSession, listPairedPhones, pairPhone } from "../src/services/phoneAccess";
 
 const PLAYLIST = `#EXTM3U
 #EXTINF:-1 tvg-id="a" group-title="News",Alpha
@@ -33,6 +29,11 @@ const MIXED_CATEGORY = "📡 أخبار المساء | Evening News and Headline
 const MIXED_CATEGORIES = `#EXTM3U
 #EXTINF:-1 tvg-id="mixed" group-title="${MIXED_CATEGORY}",Mixed Channel
 http://example.invalid/mixed.m3u8`;
+const MANY_CATEGORIES = `#EXTM3U\n${Array.from(
+  { length: 21 },
+  (_, index) =>
+    `#EXTINF:-1 tvg-id="${index}" group-title="Category ${index + 1}",Channel ${index + 1}\nhttp://example.invalid/${index}.m3u8`,
+).join("\n")}`;
 
 test("settings uses clear sections and concise labels", async () => {
   await mountApp(PLAYLIST);
@@ -123,8 +124,8 @@ test("About explains every category shortcut in one place", async () => {
 
   const heading = screen.getByRole("heading", { level: 4, name: "Category shortcuts" });
   const shortcuts = heading.closest(".category-shortcuts");
-  expect(shortcuts?.textContent).toContain("RedHide or unhide the selected category");
-  expect(shortcuts?.textContent).toContain("Hold RedShow or hide hidden categories");
+  expect(shortcuts?.textContent).toContain("RedIn the category list, hide or unhide the highlighted category");
+  expect(shortcuts?.textContent).toContain("Hold RedAnywhere in the channel list, show or hide hidden categories");
   expect(shortcuts?.textContent).toContain("Changes are saved immediately.");
 });
 
@@ -178,7 +179,7 @@ test("playlist settings can hide and show every category", async () => {
   const { useSettings } = await import("../src/stores/settings");
 
   await act(async () => {
-    fireEvent.click(screen.getByRole("button", { name: "Hide all" }));
+    fireEvent.click(screen.getByRole("button", { name: "Hide all categories" }));
   });
   expect(useSettings.getState().playlists[0].hiddenCategories).toEqual(["News", "Sport"]);
   expect(screen.getByRole("button", { name: "Unhide News" }).getAttribute("aria-pressed")).toBe(
@@ -186,12 +187,49 @@ test("playlist settings can hide and show every category", async () => {
   );
 
   await act(async () => {
-    fireEvent.click(screen.getByRole("button", { name: "Unhide all" }));
+    fireEvent.click(screen.getByRole("button", { name: "Unhide all categories" }));
   });
   expect(useSettings.getState().playlists[0].hiddenCategories).toEqual([]);
   expect(screen.getByRole("button", { name: "Hide News" }).getAttribute("aria-pressed")).toBe(
     "true",
   );
+});
+
+test("category paging recovers when a refresh returns fewer categories", async () => {
+  await mountApp(MANY_CATEGORIES);
+  press(KEY.YELLOW);
+  fireEvent.click(screen.getByRole("button", { name: "Playlists" }));
+  fireEvent.click(screen.getByRole("button", { name: "Manage categories for Test" }));
+  fireEvent.click(screen.getByRole("button", { name: "Next" }));
+  expect(screen.getByText("Category 21")).toBeTruthy();
+
+  const { useChannels } = await import("../src/stores/channels");
+  act(() => {
+    const state = useChannels.getState();
+    useChannels.setState({
+      channels: state.channels.slice(0, 1),
+      categories: state.categories.slice(0, 1),
+    });
+  });
+
+  expect(
+    [...document.querySelectorAll(".sheet-body .field-label")].some(
+      (element) => element.textContent === "Category 1",
+    ),
+  ).toBe(true);
+  expect(Boolean(screen.queryByText("No categories match this search."))).toBe(false);
+});
+
+test("an empty category manager explains that the playlist has no categories", async () => {
+  await mountApp(CATEGORIES);
+  press(KEY.YELLOW);
+  fireEvent.click(screen.getByRole("button", { name: "Playlists" }));
+  fireEvent.click(screen.getByRole("button", { name: "Manage categories for Test" }));
+  const { useChannels } = await import("../src/stores/channels");
+  act(() => useChannels.setState({ channels: [], categories: [] }));
+
+  expect(screen.getByText("This playlist has no categories.")).toBeTruthy();
+  expect(Boolean(screen.queryByText("No categories match this search."))).toBe(false);
 });
 
 test("category settings preserve arbitrary playlist content outside fixed labels", async () => {

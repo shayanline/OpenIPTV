@@ -155,6 +155,7 @@ export default {
   "app.noChannel": ({ number }) => `이 재생목록에 채널 ${number}이(가) 없습니다.`,
   "app.removedFavourite": "즐겨찾기에서 삭제됨",
   "app.addedFavourite": "즐겨찾기에 추가됨",
+  "app.hiddenFavouriteUnavailable": "즐겨찾기에 추가하기 전에 이 카테고리의 숨김을 해제하세요.",
   "banner.position": ({ at, of, list }) => `${list}에서 ${of}개 중 ${at}번째`,
   "guide.addIt": "추가",
   "guide.showMatches": "일치 항목 표시",
@@ -251,6 +252,7 @@ export default {
   "playlist.unhideCategory": ({ name }) => `${name} 숨김 해제`,
   "playlist.categorySearch": "카테고리 검색",
   "playlist.noCategoryMatches": "이 검색과 일치하는 카테고리가 없습니다.",
+  "playlist.noCategories": "이 재생목록에는 카테고리가 없습니다.",
   "playlist.removeAria": ({ name }) => `${name} 삭제`,
   "playlist.removeQuestion": ({ name }) => `${name}을(를) 삭제할까요?`,
   "playlist.removeBody":
@@ -323,7 +325,8 @@ export default {
   "phone.connected": ({ name }) => `${name} 연결됨`,
   "phone.unavailable": "이 네트워크에서는 휴대전화 설정을 사용할 수 없습니다.",
   "phone.manualFallback": "왼쪽에서 재생 목록을 직접 입력할 수 있습니다.",
-  "phone.pairedHint": "OpenIPTV가 실행 중일 때 휴대전화로 재생 목록과 설정을 관리할 수 있습니다.",
+  "phone.pairedHint":
+    "OpenIPTV가 실행 중일 때 휴대전화로 재생 목록과 설정을 관리할 수 있습니다.",
   "phone.noPhones": "페어링된 휴대전화가 없습니다.",
   "phone.lastUsed": ({ when }) => `마지막 사용 ${when}`,
   "phone.add": "다른 휴대전화 페어링",
