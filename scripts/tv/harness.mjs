@@ -297,6 +297,9 @@ export async function walk(cdp, port, selectors, { before } = {}) {
   await click("Add a playlist", "!!document.querySelector('#pl-url')");
   await capture("settings.playlistForm");
   await click("Cancel", "!document.querySelector('#pl-url')");
+  await click("Categories", "!!document.querySelector('.category-settings-list')");
+  await capture("settings.categories");
+  await d.press("Escape", 27, "!document.querySelector('.category-settings-list')");
   await click("Remove", "!!document.querySelector('.dialog')");
   await capture("settings.confirm");
   await click("Keep it", "!document.querySelector('.dialog')");

@@ -1,4 +1,5 @@
 import { useLocale } from "../../hooks/useLocale";
+import { Text } from "../Text";
 
 /**
  * The three controls every settings section is built from.
@@ -7,6 +8,39 @@ import { useLocale } from "../../hooks/useLocale";
  * the file described both the shape of a settings row and the whole of what is in one. They
  * are generic and they are shared, so they live on their own.
  */
+
+export function DetailHeader({
+  parent,
+  title,
+  context,
+  onBack,
+}: {
+  parent: string;
+  title: string;
+  context?: string;
+  onBack: () => void;
+}) {
+  const { t, direction } = useLocale();
+  return (
+    <header className="settings-detail-header">
+      <button
+        type="button"
+        className="settings-detail-back"
+        aria-label={t("settings.backTo", { section: parent })}
+        onClick={onBack}
+      >
+        <span aria-hidden="true">{direction === "rtl" ? "→" : "←"}</span>
+        <span>{parent}</span>
+      </button>
+      <h3>{title}</h3>
+      {context && (
+        <p className="sheet-lead settings-detail-context">
+          <Text value={context} />
+        </p>
+      )}
+    </header>
+  );
+}
 
 export function Row({
   label,

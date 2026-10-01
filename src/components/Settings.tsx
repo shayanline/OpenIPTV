@@ -14,6 +14,18 @@ import { Playlists } from "./settings/Playlists";
 import { Phones } from "./settings/Phones";
 import type { PhoneManagementControl } from "../hooks/usePhoneManagement";
 
+export interface SettingsDetailNavigation {
+  open: (id: string, returnFocus: string, close: () => void) => void;
+  back: () => void;
+  active: boolean;
+}
+
+type DetailEntry = {
+  id: string;
+  returnFocus: string;
+  close: () => void;
+};
+
 type Section =
   | "appearance"
   | "playback"
@@ -59,6 +71,9 @@ export function Settings({
   const inlineEndArrow = direction === "rtl" ? "←" : "→";
   const [section, setSection] = useState<Section>("appearance");
   const [inSections, setInSections] = useState(true);
+  const [details, setDetails] = useState<DetailEntry[]>([]);
+  const detailsRef = useRef(details);
+  detailsRef.current = details;
   const bodyRef = useRef<HTMLDivElement>(null);
   /**
    * Whether a question is outstanding somewhere inside the body.
@@ -98,10 +113,50 @@ export function Settings({
     [focusFirst],
   );
 
+  const backDetail = useCallback(() => {
+    const current = detailsRef.current;
+    const detail = current[current.length - 1];
+    if (!detail) return;
+    detail.close();
+    const remaining = current.slice(0, -1);
+    detailsRef.current = remaining;
+    setDetails(remaining);
+    window.setTimeout(() => {
+      const target = document.querySelector<HTMLElement>(
+        `[data-settings-focus="${detail.returnFocus}"]`,
+      );
+      if (target) target.focus();
+      else focusFirst();
+    }, 0);
+  }, [focusFirst]);
+
+  const openDetail = useCallback(
+    (id: string, returnFocus: string, close: () => void) => {
+      const next = [...detailsRef.current, { id, returnFocus, close }];
+      detailsRef.current = next;
+      setDetails(next);
+      setInSections(false);
+      window.setTimeout(focusFirst, 0);
+    },
+    [focusFirst],
+  );
+
+  const clearDetails = useCallback(() => {
+    for (const detail of [...detailsRef.current].reverse()) detail.close();
+    detailsRef.current = [];
+    setDetails([]);
+  }, []);
+
   const enterBody = useCallback(() => {
     setInSections(false);
     window.setTimeout(focusFirst, 0);
   }, [focusFirst]);
+
+  const detailNavigation: SettingsDetailNavigation = {
+    open: openDetail,
+    back: backDetail,
+    active: details.length > 0,
+  };
 
   /**
    * Back to the section list, and take the highlight with it.
@@ -150,6 +205,7 @@ export function Settings({
         // While the IME is up, RETURN belongs to the keyboard. Blurring dismisses it and
         // keeps the viewer in settings, which is the step back they expect.
         if (editing) (document.activeElement as HTMLInputElement).blur();
+        else if (detailsRef.current.length) backDetail();
         else onClose();
         return;
       }
@@ -190,10 +246,24 @@ export function Settings({
       if ([KEY.UP, KEY.DOWN, KEY.LEFT, KEY.RIGHT].includes(code as never)) {
         event.preventDefault();
         const moved = move(code);
-        if (!moved && code === inlineStart) leaveBody();
+        if (!moved && code === inlineStart) {
+          if (detailsRef.current.length) backDetail();
+          else leaveBody();
+        }
       }
     },
-    [asking, inSections, onClose, move, enterBody, leaveBody, inlineStart, inlineEnd, sections],
+    [
+      asking,
+      inSections,
+      onClose,
+      move,
+      enterBody,
+      leaveBody,
+      backDetail,
+      inlineStart,
+      inlineEnd,
+      sections,
+    ],
   );
 
   useRemote(onKey);
@@ -210,6 +280,7 @@ export function Settings({
               className={`row ${s.id === section ? "selected showing" : ""}`}
               aria-current={s.id === section ? "page" : undefined}
               onClick={() => {
+                if (detailsRef.current.length) clearDetails();
                 setSection(s.id);
                 enterBody();
               }}
@@ -236,12 +307,18 @@ export function Settings({
               ? [
                   { keys: ["\u2191", "\u2193"], label: t("common.move") },
                   { keys: [inlineEndArrow], label: t("common.open") },
-                  { keys: ["Return"], label: t("settings.close") },
+                  {
+                    keys: ["Return"],
+                    label: details.length ? t("common.back") : t("settings.close"),
+                  },
                 ]
               : [
                   { keys: ["\u2191", "\u2193", "\u2190", "\u2192"], label: t("common.move") },
                   { keys: ["OK"], label: t("settings.change") },
-                  { keys: ["Return"], label: t("settings.close") },
+                  {
+                    keys: ["Return"],
+                    label: details.length ? t("common.back") : t("settings.close"),
+                  },
                 ]
           }
         />
@@ -251,7 +328,7 @@ export function Settings({
         {section === "appearance" && <Appearance />}
         {section === "playback" && <Playback />}
         {section === "general" && <General onAsking={ask} />}
-        {section === "playlists" && <Playlists onAsking={ask} />}
+        {section === "playlists" && <Playlists onAsking={ask} navigation={detailNavigation} />}
         {section === "phones" && <Phones management={phoneManagement} onAsking={ask} />}
         {section === "diagnostics" && <Diagnostics />}
         {section === "about" && <About />}

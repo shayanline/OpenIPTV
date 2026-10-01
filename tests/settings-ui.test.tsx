@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { act, cleanup, fireEvent, screen } from "@testing-library/react";
 import { KEY } from "../src/hooks/useRemote";
-import { mountApp, press } from "./support/app";
+import { mountApp, press, settle } from "./support/app";
 import { createPairingSession, listPairedPhones, pairPhone } from "../src/services/phoneAccess";
 
 const PLAYLIST = `#EXTM3U
@@ -133,6 +133,57 @@ test("About explains every category shortcut in one place", async () => {
   expect(shortcuts?.textContent).toContain("Changes are saved immediately.");
 });
 
+test("Categories is a Settings detail screen with hierarchical RETURN", async () => {
+  await mountApp(CATEGORIES);
+  press(KEY.YELLOW);
+  fireEvent.click(screen.getByRole("button", { name: "Playlists" }));
+  const opener = screen.getByRole("button", { name: "Manage categories for Test" });
+  fireEvent.click(opener);
+
+  expect(screen.getByRole("button", { name: "Back to Playlists" })).toBeTruthy();
+  expect(screen.getByRole("heading", { level: 3, name: "Categories" })).toBeTruthy();
+  expect(document.querySelector(".sheet-hints")?.textContent).toContain("Back");
+
+  press(KEY.BACK);
+  await settle(0);
+
+  const restored = screen.getByRole("button", { name: "Manage categories for Test" });
+  expect(document.activeElement).toBe(restored);
+  expect(screen.getByRole("heading", { level: 3, name: "Playlists" })).toBeTruthy();
+  expect(screen.getByRole("heading", { level: 2, name: "Settings" })).toBeTruthy();
+});
+
+test("playlist editors use the same detail back behavior", async () => {
+  await mountApp(PLAYLIST);
+  press(KEY.YELLOW);
+  fireEvent.click(screen.getByRole("button", { name: "Playlists" }));
+  fireEvent.click(screen.getByRole("button", { name: "Edit Test" }));
+
+  expect(screen.getByRole("heading", { level: 3, name: "Edit playlist" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Back to Playlists" })).toBeTruthy();
+
+  press(KEY.BACK);
+  await settle(0);
+  expect(document.activeElement).toBe(screen.getByRole("button", { name: "Edit Test" }));
+});
+
+test("category search and bulk actions expand on demand", async () => {
+  await mountApp(CATEGORIES);
+  press(KEY.YELLOW);
+  fireEvent.click(screen.getByRole("button", { name: "Playlists" }));
+  fireEvent.click(screen.getByRole("button", { name: "Manage categories for Test" }));
+
+  expect(Boolean(screen.queryByRole("textbox", { name: "Search categories" }))).toBe(false);
+  expect(Boolean(screen.queryByRole("button", { name: "Hide all categories" }))).toBe(false);
+
+  fireEvent.click(screen.getByRole("button", { name: "Search categories" }));
+  expect(screen.getByRole("textbox", { name: "Search categories" })).toBeTruthy();
+
+  fireEvent.click(screen.getByRole("button", { name: "Category actions" }));
+  expect(screen.getByRole("button", { name: "Hide all categories" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Show all categories" })).toBeTruthy();
+});
+
 test("each playlist manages its own category visibility", async () => {
   await mountApp(CATEGORIES);
   press(KEY.YELLOW);
@@ -146,18 +197,17 @@ test("each playlist manages its own category visibility", async () => {
   });
 
   expect(screen.getByRole("heading", { level: 3, name: "Categories" })).toBeTruthy();
-  expect(document.querySelector(".category-playlist-name")?.textContent).toBe("Test");
+  expect(document.querySelector(".settings-detail-context")?.textContent).toBe("Test");
   expect(screen.getByText("Hidden category channels")).toBeTruthy();
   expect(
     screen.getByText("Choose whether hidden channels also appear in Search and Favourites"),
   ).toBeTruthy();
   const news = screen.getByRole("button", { name: "Hide News" });
-  expect(news.getAttribute("aria-pressed")).toBe("true");
   await act(async () => {
     fireEvent.click(news);
     fireEvent.click(
       screen.getByRole("button", {
-        name: "Hidden category channels, Keep in Search and Favourites",
+        name: "Hidden category channels, Hide everywhere",
       }),
     );
   });
@@ -166,9 +216,7 @@ test("each playlist manages its own category visibility", async () => {
   const playlist = useSettings.getState().playlists[0];
   expect(playlist.hiddenCategories).toEqual(["News"]);
   expect(playlist.hiddenCategoryMode).toBe("search");
-  expect(screen.getByRole("button", { name: "Unhide News" }).getAttribute("aria-pressed")).toBe(
-    "false",
-  );
+  expect(screen.getByRole("button", { name: "Unhide News" })).toBeTruthy();
 });
 
 test("playlist settings can hide and show every category", async () => {
@@ -182,21 +230,19 @@ test("playlist settings can hide and show every category", async () => {
   });
   const { useSettings } = await import("../src/stores/settings");
 
-  await act(async () => {
-    fireEvent.click(screen.getByRole("button", { name: "Hide all categories" }));
-  });
+  fireEvent.click(screen.getByRole("button", { name: "Category actions" }));
+  fireEvent.click(screen.getByRole("button", { name: "Hide all categories" }));
+  const hideAll = screen.getAllByRole("button", { name: "Hide all categories" });
+  fireEvent.click(hideAll[hideAll.length - 1]);
   expect(useSettings.getState().playlists[0].hiddenCategories).toEqual(["News", "Sport"]);
-  expect(screen.getByRole("button", { name: "Unhide News" }).getAttribute("aria-pressed")).toBe(
-    "false",
-  );
+  expect(screen.getByRole("button", { name: "Unhide News" })).toBeTruthy();
 
+  fireEvent.click(screen.getByRole("button", { name: "Category actions" }));
   await act(async () => {
-    fireEvent.click(screen.getByRole("button", { name: "Unhide all categories" }));
+    fireEvent.click(screen.getByRole("button", { name: "Show all categories" }));
   });
   expect(useSettings.getState().playlists[0].hiddenCategories).toEqual([]);
-  expect(screen.getByRole("button", { name: "Hide News" }).getAttribute("aria-pressed")).toBe(
-    "true",
-  );
+  expect(screen.getByRole("button", { name: "Hide News" })).toBeTruthy();
 });
 
 test("category paging recovers when a refresh returns fewer categories", async () => {
@@ -204,7 +250,8 @@ test("category paging recovers when a refresh returns fewer categories", async (
   press(KEY.YELLOW);
   fireEvent.click(screen.getByRole("button", { name: "Playlists" }));
   fireEvent.click(screen.getByRole("button", { name: "Manage categories for Test" }));
-  fireEvent.click(screen.getByRole("button", { name: "Next" }));
+  const rows = document.querySelectorAll<HTMLButtonElement>(".category-setting-row");
+  fireEvent.keyDown(rows[rows.length - 1], { keyCode: KEY.DOWN });
   expect(screen.getByText("Category 21")).toBeTruthy();
 
   const { useChannels } = await import("../src/stores/channels");
@@ -217,8 +264,8 @@ test("category paging recovers when a refresh returns fewer categories", async (
   });
 
   expect(
-    [...document.querySelectorAll(".sheet-body .field-label")].some(
-      (element) => element.textContent === "Category 1",
+    [...document.querySelectorAll(".sheet-body .category-setting-row")].some((element) =>
+      element.textContent?.includes("Category 1"),
     ),
   ).toBe(true);
   expect(Boolean(screen.queryByText("No categories match this search."))).toBe(false);
@@ -254,9 +301,9 @@ test("category settings preserve arbitrary playlist content outside fixed labels
     );
   });
 
-  const playlistName = document.querySelector(".category-playlist-name [dir='auto']");
+  const playlistName = document.querySelector(".settings-detail-context [dir='auto']");
   expect(playlistName?.textContent).toBe(LONG_PLAYLIST_NAME);
-  const categoryName = document.querySelector(".sheet-body .field-label [dir='auto']");
+  const categoryName = document.querySelector(".sheet-body .category-setting-row [dir='auto']");
   expect(categoryName?.textContent).toBe(MIXED_CATEGORY);
   expect(categoryName?.getAttribute("dir")).toBe("auto");
   expect(screen.getByRole("button", { name: `Hide ${MIXED_CATEGORY}` })).toBeTruthy();
@@ -284,7 +331,7 @@ http://example.invalid/s.m3u8`,
   });
 
   expect(screen.getByRole("heading", { level: 3, name: "Categories" })).toBeTruthy();
-  expect(document.querySelector(".category-playlist-name")?.textContent).toBe("Second");
+  expect(document.querySelector(".settings-detail-context")?.textContent).toBe("Second");
   const category = screen.getByRole("button", { name: "Hide Second Sport" });
   await act(async () => {
     fireEvent.click(category);
@@ -295,7 +342,7 @@ http://example.invalid/s.m3u8`,
   expect(second.hiddenCategories).toEqual(["Second Sport"]);
 
   await act(async () => {
-    fireEvent.click(screen.getByRole("button", { name: "Done" }));
+    fireEvent.click(screen.getByRole("button", { name: "Back to Playlists" }));
   });
   expect(Boolean(screen.queryByRole("status"))).toBe(false);
 });
@@ -317,7 +364,7 @@ test("a failed inactive playlist load does not show categories from the active p
     fireEvent.click(screen.getByRole("button", { name: "Manage categories for Offline" }));
   });
 
-  expect(Boolean(document.querySelector(".category-playlist-name"))).toBe(false);
+  expect(Boolean(document.querySelector(".settings-detail-context"))).toBe(false);
   expect(screen.getByRole("status").textContent).toContain("offline");
   expect(useSettings.getState().activePlaylistId).toBe(first);
 });

@@ -1,28 +1,36 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useLocale } from "../../hooks/useLocale";
 import { useSettings, type HiddenCategoryMode, type Playlist } from "../../stores/settings";
 import { useChannels } from "../../stores/channels";
 import { checkPlaylistUrl, nameFromUrl } from "../../services/playlistUrl";
 import type { MessageKey } from "../../services/locale";
 import { Confirm } from "../Confirm";
+import { Icon } from "../Icon";
 import { Text } from "../Text";
-import { Choice, Row, Toggle } from "./Field";
+import type { SettingsDetailNavigation } from "../Settings";
+import { DetailHeader, Row } from "./Field";
 
 const CATEGORY_PAGE_SIZE = 20;
 
 function CategoryManager({
   playlist,
   categories,
-  onDone,
+  onBack,
+  onAsking,
 }: {
   playlist: Playlist;
   categories: { name: string }[];
-  onDone: () => void;
+  onBack: () => void;
+  onAsking: (asking: boolean) => void;
 }) {
   const { t } = useLocale();
   const settings = useSettings();
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(0);
+  const [searching, setSearching] = useState(false);
+  const [actionsOpen, setActionsOpen] = useState(false);
+  const [confirmingAll, setConfirmingAll] = useState(false);
+  const searchInput = useRef<HTMLInputElement>(null);
   const folded = query.trim().toLocaleLowerCase();
   const matches = folded
     ? categories.filter((category) => category.name.toLocaleLowerCase().includes(folded))
@@ -37,105 +45,182 @@ function CategoryManager({
     { id: "exclude", label: t("playlist.hideEverywhere") },
     { id: "search", label: t("playlist.keepSearchable") },
   ];
+  const modeLabel = modeOptions.find(
+    (option) => option.id === playlist.hiddenCategoryMode,
+  )?.label;
+
+  useEffect(() => {
+    if (searching) window.setTimeout(() => searchInput.current?.focus(), 0);
+  }, [searching]);
+
+  const pageFromRow = (direction: -1 | 1) => {
+    const next = currentPage + direction;
+    if (next < 0 || next >= pages) return false;
+    setPage(next);
+    window.setTimeout(() => {
+      const rows = document.querySelectorAll<HTMLButtonElement>(".category-setting-row");
+      (direction > 0 ? rows[0] : rows[rows.length - 1])?.focus();
+    }, 0);
+    return true;
+  };
+
+  const askHideAll = (open: boolean) => {
+    setConfirmingAll(open);
+    onAsking(open);
+  };
 
   return (
     <>
-      <h3>{t("playlist.manageCategories")}</h3>
-      <p className="sheet-lead category-playlist-name">
-        <Text value={playlist.name} />
-      </p>
+      <DetailHeader
+        parent={t("settings.playlists")}
+        title={t("playlist.manageCategories")}
+        context={playlist.name}
+        onBack={onBack}
+      />
       <Row label={t("playlist.hiddenChannels")} hint={t("playlist.hiddenChannelsHint")}>
-        <Choice
-          label={t("playlist.hiddenChannels")}
-          options={modeOptions}
-          value={playlist.hiddenCategoryMode}
-          onChange={(mode) => settings.setHiddenCategoryMode(playlist.id, mode)}
-        />
-      </Row>
-      <div className="actions">
         <button
           type="button"
           className="btn tonal"
+          aria-label={`${t("playlist.hiddenChannels")}, ${modeLabel}`}
           onClick={() =>
-            settings.setHiddenCategories(
+            settings.setHiddenCategoryMode(
               playlist.id,
-              categories.map((category) => category.name),
+              playlist.hiddenCategoryMode === "exclude" ? "search" : "exclude",
             )
           }
         >
-          {t("playlist.hideAllCategories")}
+          {modeLabel}
         </button>
-        <button
-          type="button"
-          className="btn tonal"
-          onClick={() => settings.setHiddenCategories(playlist.id, [])}
-        >
-          {t("playlist.unhideAllCategories")}
-        </button>
-      </div>
-      <div className="form">
-        <label htmlFor="category-search">{t("playlist.categorySearch")}</label>
-        <input
-          id="category-search"
-          value={query}
-          dir="auto"
-          onChange={(event) => {
-            setQuery(event.target.value);
-            setPage(0);
-          }}
-        />
-      </div>
-      {shown.map((category) => {
-        const hidden = playlist.hiddenCategories.includes(category.name);
-        return (
-          <Row key={category.name} label={<Text value={category.name} />}>
-            <Toggle
-              label={t(hidden ? "playlist.unhideCategory" : "playlist.hideCategory", {
+      </Row>
+      <button
+        type="button"
+        className="settings-action-row"
+        aria-expanded={searching}
+        onClick={() => setSearching((open) => !open)}
+      >
+        <Icon name="search" />
+        <span>{t("playlist.categorySearch")}</span>
+      </button>
+      {searching && (
+        <div className="category-search">
+          <input
+            ref={searchInput}
+            aria-label={t("playlist.categorySearch")}
+            value={query}
+            dir="auto"
+            onChange={(event) => {
+              setQuery(event.target.value);
+              setPage(0);
+            }}
+          />
+        </div>
+      )}
+      <button
+        type="button"
+        className="settings-action-row"
+        aria-expanded={actionsOpen}
+        onClick={() => setActionsOpen((open) => !open)}
+      >
+        <Icon name="categories" />
+        <span>{t("playlist.categoryActions")}</span>
+      </button>
+      {actionsOpen && (
+        <div className="actions category-actions">
+          <button type="button" className="btn tonal" onClick={() => askHideAll(true)}>
+            {t("playlist.hideAllCategories")}
+          </button>
+          <button
+            type="button"
+            className="btn tonal"
+            onClick={() => {
+              settings.setHiddenCategories(playlist.id, []);
+              setActionsOpen(false);
+            }}
+          >
+            {t("playlist.showAllCategories")}
+          </button>
+        </div>
+      )}
+      <div className="category-settings-list">
+        {shown.map((category, row) => {
+          const hidden = playlist.hiddenCategories.includes(category.name);
+          return (
+            <button
+              key={category.name}
+              type="button"
+              className={`category-setting-row ${hidden ? "hidden" : ""}`}
+              aria-label={t(hidden ? "playlist.unhideCategory" : "playlist.hideCategory", {
                 name: category.name,
               })}
-              value={!hidden}
-              onChange={(visible) =>
-                settings.setCategoryHidden(playlist.id, category.name, !visible)
-              }
-            />
-          </Row>
-        );
-      })}
+              onClick={() => settings.setCategoryHidden(playlist.id, category.name, !hidden)}
+              onKeyDown={(event) => {
+                if (event.keyCode === 40 && row === shown.length - 1 && pageFromRow(1)) {
+                  event.preventDefault();
+                  event.stopPropagation();
+                }
+                if (event.keyCode === 38 && row === 0 && pageFromRow(-1)) {
+                  event.preventDefault();
+                  event.stopPropagation();
+                }
+              }}
+            >
+              <Text value={category.name} />
+              <span className={`switch ${hidden ? "" : "on"}`} aria-hidden="true">
+                <span className="switch-track">
+                  <span className="switch-knob" />
+                </span>
+                <span>{t(hidden ? "common.off" : "common.on")}</span>
+              </span>
+            </button>
+          );
+        })}
+      </div>
       {!categories.length ? (
         <p className="sheet-lead">{t("playlist.noCategories")}</p>
       ) : (
-        !shown.length && <p className="sheet-lead">{t("playlist.noCategoryMatches")}</p>
+        !shown.length && (
+          <p className="sheet-lead" role="status">
+            {t("playlist.noCategoryMatches")}
+          </p>
+        )
       )}
-      <div className="actions">
-        {pages > 1 && (
-          <>
-            <button
-              type="button"
-              className="btn tonal"
-              disabled={currentPage === 0}
-              onClick={() => setPage((current) => current - 1)}
-            >
-              {t("common.previous")}
-            </button>
-            <button
-              type="button"
-              className="btn tonal"
-              disabled={currentPage === pages - 1}
-              onClick={() => setPage((current) => current + 1)}
-            >
-              {t("common.next")}
-            </button>
-          </>
-        )}
-        <button type="button" className="btn tonal" onClick={onDone}>
-          {t("common.done")}
-        </button>
-      </div>
+      {!!matches.length && (
+        <p className="category-position">
+          {t("playlist.categoryPosition", {
+            from: currentPage * CATEGORY_PAGE_SIZE + 1,
+            to: currentPage * CATEGORY_PAGE_SIZE + shown.length,
+            total: matches.length,
+          })}
+        </p>
+      )}
+      {confirmingAll && (
+        <Confirm
+          title={t("playlist.hideAllQuestion")}
+          body={t("playlist.hideAllBody")}
+          confirmLabel={t("playlist.hideAllCategories")}
+          cancelLabel={t("common.cancel")}
+          onCancel={() => askHideAll(false)}
+          onConfirm={() => {
+            settings.setHiddenCategories(
+              playlist.id,
+              categories.map((category) => category.name),
+            );
+            setActionsOpen(false);
+            askHideAll(false);
+          }}
+        />
+      )}
     </>
   );
 }
 
-export function Playlists({ onAsking }: { onAsking: (asking: boolean) => void }) {
+export function Playlists({
+  onAsking,
+  navigation,
+}: {
+  onAsking: (asking: boolean) => void;
+  navigation: SettingsDetailNavigation;
+}) {
   const { t } = useLocale();
   const s = useSettings();
   const { load, loading, error, errorKey, errorDetail, channels, categories } = useChannels();
@@ -169,12 +254,14 @@ export function Playlists({ onAsking }: { onAsking: (asking: boolean) => void })
     setName("");
     setUrl("");
     setProblem("");
+    navigation.open("playlist-add", "playlist-add", () => setEditing(null));
   };
   const startEdit = (p: Playlist) => {
     setEditing(p);
     setName(p.name);
     setUrl(p.url);
     setProblem("");
+    navigation.open(`playlist-edit-${p.id}`, `playlist-edit-${p.id}`, () => setEditing(null));
   };
 
   /**
@@ -198,7 +285,7 @@ export function Playlists({ onAsking }: { onAsking: (asking: boolean) => void })
       : s.playlists.length === 0;
     if (editing?.id) s.updatePlaylist(editing.id, label, url.trim());
     else s.addPlaylist(label, url.trim());
-    setEditing(null);
+    navigation.back();
 
     if (!loadsActivePlaylist) {
       setNote(t("playlist.saved", { name: label }));
@@ -240,6 +327,11 @@ export function Playlists({ onAsking }: { onAsking: (asking: boolean) => void })
     }
     setNote("");
     setManaging(playlist.id);
+    navigation.open(
+      `playlist-categories-${playlist.id}`,
+      `playlist-categories-${playlist.id}`,
+      () => setManaging(""),
+    );
   };
 
   const managedPlaylist = s.playlists.find((playlist) => playlist.id === managing);
@@ -248,8 +340,60 @@ export function Playlists({ onAsking }: { onAsking: (asking: boolean) => void })
       <CategoryManager
         playlist={managedPlaylist}
         categories={categories}
-        onDone={() => setManaging("")}
+        onBack={navigation.back}
+        onAsking={onAsking}
       />
+    );
+  }
+
+  if (editing) {
+    return (
+      <>
+        <DetailHeader
+          parent={t("settings.playlists")}
+          title={editing.id ? t("playlist.editTitle") : t("playlist.addTitle")}
+          context={editing.id ? editing.name : undefined}
+          onBack={navigation.back}
+        />
+        <div className="form playlist-form">
+          <label htmlFor="pl-name">{t("onboarding.playlistName")}</label>
+          <input
+            id="pl-name"
+            value={name}
+            dir="auto"
+            onChange={(event) => setName(event.target.value)}
+            placeholder={t("onboarding.optionalAddress")}
+          />
+          <label htmlFor="pl-url">{t("onboarding.playlistAddress")}</label>
+          <input
+            id="pl-url"
+            value={url}
+            spellCheck={false}
+            dir="ltr"
+            className={problem ? "wrong" : ""}
+            aria-invalid={problem ? true : undefined}
+            aria-describedby={problem ? "pl-url-problem" : undefined}
+            onChange={(event) => {
+              setUrl(event.target.value);
+              setProblem("");
+            }}
+            placeholder={t("onboarding.urlPlaceholder")}
+          />
+          {problem && (
+            <p className="field-problem" id="pl-url-problem" role="alert">
+              {t(problem)}
+            </p>
+          )}
+          <div className="actions">
+            <button type="button" className="btn filled" onClick={save}>
+              {t("common.save")}
+            </button>
+            <button type="button" className="btn tonal" onClick={navigation.back}>
+              {t("common.cancel")}
+            </button>
+          </div>
+        </div>
+      </>
     );
   }
 
@@ -302,6 +446,7 @@ export function Playlists({ onAsking }: { onAsking: (asking: boolean) => void })
             <button
               type="button"
               className="btn tonal"
+              data-settings-focus={`playlist-categories-${p.id}`}
               aria-label={t("playlist.manageCategoriesAria", { name: p.name })}
               onClick={() => void manage(p)}
             >
@@ -310,6 +455,7 @@ export function Playlists({ onAsking }: { onAsking: (asking: boolean) => void })
             <button
               type="button"
               className="btn tonal"
+              data-settings-focus={`playlist-edit-${p.id}`}
               aria-label={t("playlist.editAria", { name: p.name })}
               onClick={() => startEdit(p)}
             >
@@ -351,58 +497,19 @@ export function Playlists({ onAsking }: { onAsking: (asking: boolean) => void })
         />
       )}
 
-      {editing ? (
-        <div className="form">
-          <label htmlFor="pl-name">{t("onboarding.playlistName")}</label>
-          <input
-            id="pl-name"
-            value={name}
-            dir="auto"
-            onChange={(e) => setName(e.target.value)}
-            placeholder={t("onboarding.optionalAddress")}
-          />
-          <label htmlFor="pl-url">{t("onboarding.playlistAddress")}</label>
-          <input
-            id="pl-url"
-            value={url}
-            spellCheck={false}
-            dir="ltr"
-            className={problem ? "wrong" : ""}
-            aria-invalid={problem ? true : undefined}
-            aria-describedby={problem ? "pl-url-problem" : undefined}
-            onChange={(e) => {
-              setUrl(e.target.value);
-              setProblem("");
-            }}
-            placeholder={t("onboarding.urlPlaceholder")}
-          />
-          {/* Under the field it belongs to, which is where One UI puts an error, rather than
-              in a popup that has to be dismissed before the mistake can be corrected. */}
-          {problem && (
-            <p className="field-problem" id="pl-url-problem" role="alert">
-              {t(problem)}
-            </p>
-          )}
-          <div className="actions">
-            {/* One filled button per screen, on the action the viewer came here to take. */}
-            <button type="button" className="btn filled" onClick={save}>
-              {t("common.save")}
-            </button>
-            <button type="button" className="btn tonal" onClick={() => setEditing(null)}>
-              {t("common.cancel")}
-            </button>
-          </div>
-        </div>
-      ) : (
-        <div className="actions">
-          <button type="button" className="btn tonal" onClick={startAdd}>
-            {t("common.addPlaylist")}
-          </button>
-          <button type="button" className="btn tonal" onClick={refresh} aria-busy={loading}>
-            {loading ? t("playlist.refreshing") : t("common.refreshPlaylist")}
-          </button>
-        </div>
-      )}
+      <div className="actions">
+        <button
+          type="button"
+          className="btn tonal"
+          data-settings-focus="playlist-add"
+          onClick={startAdd}
+        >
+          {t("common.addPlaylist")}
+        </button>
+        <button type="button" className="btn tonal" onClick={refresh} aria-busy={loading}>
+          {loading ? t("playlist.refreshing") : t("common.refreshPlaylist")}
+        </button>
+      </div>
     </>
   );
 }
