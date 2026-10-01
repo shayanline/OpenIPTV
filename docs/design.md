@@ -210,6 +210,16 @@ for six hours. Past that it is still shown first and refreshed behind the pictur
 and if the bytes come back identical, which is the ordinary case, nothing is parsed and nothing is
 written. Settings has a Refresh that ignores all of it.
 
+## Phone setup on the local network
+
+Typing a playlist address with a television remote is the hardest part of first use, so the TV welcome screen offers the same task on a phone without removing the original path. A vertical divider keeps the manual form on the left and gives the QR code and pairing instructions the right side. The manual form remains complete and usable when local networking is unavailable. Desktop browsers show only the centred manual form because a browser cannot listen for connections from another device.
+
+The television serves the phone interface itself on its private address. `services/phoneServer` owns a dedicated WebAssembly socket, while `services/phoneAccess` creates expiring pairing sessions and stores one credential verifier per remembered phone. The phone sends typed commands through `services/phoneProtocol`, and the existing stores remain the only source of playlist and settings state.
+
+This is local HTTP on a trusted home network. There is no account, hosted relay, analytics request or cloud copy of playlist addresses. OpenIPTV must be running and both devices must be able to reach each other. Browser storage belongs to the television address, so a changed address requires pairing again.
+
+The management socket and compatibility socket are separate artifacts with separate owners. The management worker binds only to the reported private address and serves three fixed phone assets plus versioned API routes. The compatibility worker remains loopback only and cannot serve management data.
+
 ## Two stores, for two different jobs
 
 | | Holds | Why |

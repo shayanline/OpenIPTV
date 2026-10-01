@@ -2,6 +2,50 @@
 
 Notable changes, newest first, in the format of [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## 1.5.0
+
+### Added
+
+- **Phone setup on Samsung TVs.** The first run screen shows a local QR code and six digit fallback code, so a viewer can add the first playlist from a phone instead of typing its address with the remote.
+- **Local phone management.** Authorised phones on the same trusted network can add, edit, remove, refresh and activate playlists, change ordinary settings, clear downloaded cache and manage paired phones while OpenIPTV is running.
+- **Remembered phones.** Several phones can be paired independently, renamed and revoked from the television.
+- **Responsive phone interface.** The locally served management page supports first setup, right to left languages, native controls, conflict recovery and clear offline guidance.
+- **Dedicated management socket.** A separate WebAssembly worker serves the phone interface and its versioned API on the TV private address without exposing the loopback compatibility server.
+
+### Changed
+
+- **First run layout on television.** The manual playlist form remains on the left of a vertical divider, while the QR code and phone setup guidance occupy the right side.
+- **Desktop first run.** Desktop browsers retain the centred manual form and hide TV phone access because browsers cannot accept local network connections.
+- **Complete translations.** Phone setup, pairing status, management actions and access controls are translated across all 17 supported locale catalogs.
+
+### Security
+
+- **Expiring pairing.** QR secrets expire after five minutes or first use, fallback codes are attempt limited and each remembered phone receives a separate credential whose verifier stays on the television.
+- **Bounded local API.** The management server binds only to a private IPv4 address, accepts allowlisted routes and commands, rejects stale revisions and oversized input, and never serves playlist cache contents or arbitrary widget files.
+
+### Fixed
+
+- **Complete application reset.** Reset now revokes remembered phone credentials alongside playlists, preferences, favourites and cached data.
+- **Remote cache clearing.** Clearing cache from a phone also removes compatibility diagnoses, matching the television action.
+- **Management socket recovery.** Worker failures close the socket and allow phone management to start again rather than leaving a dead worker in place.
+
+## 1.4.0
+
+### Added
+
+- **Playback information overlay.** Diagnostics can show the active playback engine, resolution, scan type, video and audio codecs, rendition bitrate, network estimate, buffer ahead, frame rate, dropped frames, adaptive level, and level switches over the picture.
+- **Cross engine reporting.** The overlay reads current values from Samsung AVPlay, hls.js, or native browser HLS when each engine makes them available, and clearly marks values the engine does not report.
+- **Persistent diagnostics control.** Settings, then Diagnostics contains an opt in toggle which keeps the overlay enabled across channel changes, failures, menus, and app restarts until it is turned off.
+
+### Changed
+
+- **Directional overlay placement.** Playback information sits on the right in left to right interfaces and on the left in right to left interfaces, while the channel panel remains above it where they overlap.
+- **Complete translations.** Playback information labels and guidance are included in all 17 supported locale catalogs.
+
+### Fixed
+
+- **Focused toggle contrast.** An off toggle retains a visible track and knob on the light focus surface without using an unnecessarily heavy black treatment.
+
 ## 1.3.0
 
 ### Added

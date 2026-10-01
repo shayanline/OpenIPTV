@@ -27,6 +27,8 @@ import { usePointerAwake } from "./hooks/usePointerAwake";
 import { RETRY_DELAYS_MS, useTuner } from "./hooks/useTuner";
 import { useLocale } from "./hooks/useLocale";
 import { applyDocumentLocale } from "./services/locale";
+import { usePhoneManagement } from "./hooks/usePhoneManagement";
+import { phoneManagementNeeded } from "./services/phoneServer";
 import type { Channel } from "./types";
 
 /*
@@ -164,6 +166,10 @@ export default function App() {
   const settings = useSettings();
   const { locale, direction, t, number } = useLocale();
   const configured = settings.playlists.length > 0;
+  const phoneAccessSupported = onTizen();
+  const phoneManagement = usePhoneManagement(
+    phoneAccessSupported && phoneManagementNeeded(configured),
+  );
 
   useLayoutEffect(() => {
     applyDocumentLocale(locale);
@@ -959,14 +965,6 @@ export default function App() {
       }
 
       // Consistency of Controls: a coloured key does the same thing wherever the viewer is.
-      if (code === KEY.BLUE) {
-        event.preventDefault();
-        const state = useSettings.getState();
-        const show = !state.showPlaybackStats;
-        state.set("showPlaybackStats", show);
-        chrome.say(t(show ? "app.playbackInfoOn" : "app.playbackInfoOff"));
-        return;
-      }
       if (code === KEY.YELLOW) {
         event.preventDefault();
         openSettings();
@@ -1068,12 +1066,8 @@ export default function App() {
            * banner, so the two presses are a toggle rather than one working and the other not.
            */
           case inlineEnd:
-            if (
-              chrome.showing ||
-              (!!current && !fault && useSettings.getState().showPlaybackStats)
-            ) {
+            if (chrome.showing) {
               chrome.clear();
-              useSettings.getState().set("showPlaybackStats", false);
               return;
             }
             break;
@@ -1098,13 +1092,8 @@ export default function App() {
            */
           case KEY.BACK:
           case KEY.ESC:
-            if (
-              chrome.showing ||
-              (!!current && !fault && useSettings.getState().showPlaybackStats)
-            ) {
-              chrome.clear();
-              useSettings.getState().set("showPlaybackStats", false);
-            } else setShowExit(true);
+            if (chrome.showing) chrome.clear();
+            else setShowExit(true);
             return;
           // No default on purpose. An unrecognised key is not an instruction to go
           // somewhere, and the banner below is the whole of the right response: press
@@ -1342,7 +1331,6 @@ export default function App() {
       tuner,
       favouriteCurrent,
       current,
-      fault,
       cursor,
       nudgeCursor,
       openPanel,
@@ -1359,7 +1347,6 @@ export default function App() {
       pickResult,
       inlineStart,
       inlineEnd,
-      t,
     ],
   );
 
@@ -1602,7 +1589,7 @@ export default function App() {
       )}
 
       {/* ---- layer 2, playback information, the banner and its key guide ---------- */}
-      {current && atPlayer && settings.showPlaybackStats && !fault && (
+      {current && !modal && settings.showPlaybackStats && (
         <PlaybackInfo read={tuner.getStats} />
       )}
       {/*
@@ -1723,7 +1710,13 @@ export default function App() {
       {settings.showClock && panelOpen && !modal && <Clock />}
 
       {/* ---- layer 4, the modals --------------------------------------------------- */}
-      {showSettings && <Settings onClose={closeSettings} />}
+      {showSettings && (
+        <Settings
+          onClose={closeSettings}
+          phoneManagement={phoneManagement}
+          showPhoneAccess={phoneAccessSupported}
+        />
+      )}
       {showExit && (
         <ExitDialog watching={!!current && !fault} onCancel={() => setShowExit(false)} />
       )}
@@ -1737,6 +1730,9 @@ export default function App() {
             void load(true);
           }}
           onExit={exitApp}
+          phoneManagement={phoneManagement}
+          onOpenPairing={phoneManagement.openPairing}
+          showPhoneSetup={phoneAccessSupported}
         />
       )}
 

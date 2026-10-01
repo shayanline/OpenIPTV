@@ -104,6 +104,7 @@ interface State {
    * afterwards races the state it is trying to read.
    */
   load: (force?: boolean) => Promise<LoadResult>;
+  validatePlaylist: (name: string, url: string) => Promise<LoadResult>;
   /** Drop cached playlists nothing is configured to watch. Run once, at launch. */
   sweep: () => Promise<void>;
   toggleFavourite: (id: string) => void;
@@ -205,6 +206,24 @@ export const useChannels = create<State>((set, get) => {
     error: "",
     errorKey: "",
     errorDetail: "",
+
+    async validatePlaylist(_name, url): Promise<LoadResult> {
+      try {
+        const response = await fetch(url, { cache: "no-cache" });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const count = parseM3U(await response.text()).length;
+        if (!count) throw new Error("no channels in that playlist");
+        return { count, error: "" };
+      } catch (error) {
+        const detail = error instanceof Error ? error.message : String(error);
+        return {
+          count: 0,
+          error: `Could not load the playlist: ${detail}`,
+          errorKey: "playlist.loadFailed",
+          errorDetail: detail,
+        };
+      }
+    },
 
     async load(force = false): Promise<LoadResult> {
       cancelPending?.();

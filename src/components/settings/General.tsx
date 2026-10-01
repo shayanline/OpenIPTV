@@ -6,6 +6,7 @@ import { Confirm } from "../Confirm";
 import { forgetAll } from "../../services/disk";
 import { forgetRepairHosts } from "../../services/repair";
 import { Row, Toggle } from "./Field";
+import { clearPhoneAccess } from "../../services/phoneAccess";
 
 export function General({ onAsking }: { onAsking: (asking: boolean) => void }) {
   const { t } = useLocale();
@@ -96,6 +97,7 @@ export function General({ onAsking }: { onAsking: (asking: boolean) => void }) {
             // The fourth store follows the same rule, and which hosts this television cannot read
             // is a diagnosis it made rather than a fact.
             forgetRepairHosts();
+            clearPhoneAccess();
             ask(false);
             void load(true);
           }}

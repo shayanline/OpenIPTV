@@ -27,6 +27,10 @@ const GLUE = "public/wasm/manifest-socket.js";
 const WORKER = "public/wasm/manifest-socket.worker.js";
 const MODULE = "public/wasm/manifest-socket.wasm";
 const SOURCE = "wasm/manifest-socket.c";
+const MANAGEMENT_GLUE = "public/wasm/management-socket.js";
+const MANAGEMENT_WORKER = "public/wasm/management-socket.worker.js";
+const MANAGEMENT_MODULE = "public/wasm/management-socket.wasm";
+const MANAGEMENT_SOURCE = "wasm/management-socket.c";
 const SUMS = "wasm/checksums.txt";
 
 /**
@@ -37,18 +41,27 @@ const SUMS = "wasm/checksums.txt";
  * into the file left npm's banner in the middle of it, which shasum then reported as malformed lines
  * while still checking the four real ones.
  */
-const HEADER = `# What the committed WebAssembly was built from, so a change to one without the other is caught.
+const HEADER = `# What the committed WebAssembly modules were built from, so changes cannot drift apart.
 #
-# The module needs Samsung's own fork of Emscripten, which CI cannot install, so the built files are
-# committed and this file ties them to the source. Editing the C without rebuilding, or replacing a
-# binary without touching the C, fails the check until somebody regenerates this deliberately.
+# The compatibility module needs Samsung's Emscripten fork, while the management module imports the
+# same socket ABI directly. The built files are committed because CI does not rebuild either module.
+# Editing C without rebuilding, or replacing a binary without its source, fails this check.
 #
-# The build recipe, including the two patches Samsung's SDK needs, is in docs/testing.md.
+# Both build recipes are in docs/testing.md.
 # Regenerate with: npm run wasm:sums
 `;
 
 if (process.argv.includes("--write")) {
-  const lines = [SOURCE, GLUE, MODULE, WORKER].map((file) => {
+  const lines = [
+    SOURCE,
+    GLUE,
+    MODULE,
+    WORKER,
+    MANAGEMENT_SOURCE,
+    MANAGEMENT_GLUE,
+    MANAGEMENT_MODULE,
+    MANAGEMENT_WORKER,
+  ].map((file) => {
     const digest = createHash("sha256").update(readFileSync(file)).digest("hex");
     return `${digest}  ${file}`;
   });
@@ -79,6 +92,16 @@ try {
   complaints.push(`${MODULE} is not something a browser will compile: ${error.message}`);
 }
 
+const managementModule = readFileSync(MANAGEMENT_MODULE);
+let compiledManagement;
+try {
+  compiledManagement = await WebAssembly.compile(managementModule);
+} catch (error) {
+  complaints.push(
+    `${MANAGEMENT_MODULE} is not something a browser will compile: ${error.message}`,
+  );
+}
+
 for (const name of REQUIRED_EXPORTS) {
   if (!glue.includes(name)) complaints.push(`${GLUE} no longer exports ${name}`);
 }
@@ -99,6 +122,38 @@ for (const name of supplied) {
   if (!asked.has(name)) console.log(`  note: ${WORKER} supplies ${name}, which the module never asks for`);
 }
 
+const managementExports = new Set(
+  compiledManagement ? WebAssembly.Module.exports(compiledManagement).map(({ name }) => name) : [],
+);
+const requiredManagementExports = [
+  "start_server",
+  "receive_request",
+  "request_text",
+  "send_response",
+  "stop_server",
+];
+for (const name of requiredManagementExports) {
+  if (!managementExports.has(name)) complaints.push(`${MANAGEMENT_MODULE} no longer exports ${name}`);
+}
+const managementAsked = new Set(
+  compiledManagement
+    ? WebAssembly.Module.imports(compiledManagement)
+        .map(({ name }) => name)
+        .filter((name) => name.startsWith("__wasm_"))
+    : [],
+);
+const managementWorker = readFileSync(MANAGEMENT_WORKER, "utf8");
+const managementSupplied = new Set(
+  [...managementWorker.matchAll(/__wasm_[a-z_]+:/g)].map(([match]) => match.slice(0, -1)),
+);
+for (const name of managementAsked) {
+  if (!managementSupplied.has(name)) {
+    complaints.push(
+      `${MANAGEMENT_MODULE} asks the host for ${name} and ${MANAGEMENT_WORKER} does not supply it`,
+    );
+  }
+}
+
 if (complaints.length) {
   console.error("The committed WebAssembly does not hold together:\n");
   for (const complaint of complaints) console.error(`  ${complaint}`);
@@ -107,6 +162,7 @@ if (complaints.length) {
 }
 
 console.log(
-  `WebAssembly is consistent: ${module_.length} bytes compile, ${REQUIRED_EXPORTS.length} exports`
-  + ` present, ${asked.size} host socket functions asked for and all supplied.`,
+  `WebAssembly is consistent: ${module_.length + managementModule.length} bytes compile, `
+    + `${REQUIRED_EXPORTS.length + requiredManagementExports.length} exports present, `
+    + `${asked.size + managementAsked.size} host socket functions asked for and all supplied.`,
 );

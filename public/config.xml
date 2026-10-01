@@ -37,6 +37,7 @@
        never performs: the only Tizen application call anywhere is getCurrentApplication()
        .exit() in ExitDialog, which needs no privilege at all. -->
      <tizen:privilege name="http://tizen.org/privilege/internet" />
+     <tizen:privilege name="http://developer.samsung.com/privilege/network.public" />
      <tizen:privilege name="http://developer.samsung.com/privilege/avplay" />
      <tizen:privilege name="http://tizen.org/privilege/tv.inputdevice" />
      <tizen:privilege name="http://tizen.org/privilege/tv.audio" />

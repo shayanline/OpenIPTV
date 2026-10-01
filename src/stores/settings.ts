@@ -81,6 +81,11 @@ interface Settings {
   setHiddenCategories: (playlistId: string, categories: string[]) => void;
   setCategoryHidden: (playlistId: string, category: string, hidden: boolean) => void;
   setHiddenCategoryMode: (playlistId: string, mode: HiddenCategoryMode) => void;
+  replacePlaylists: (
+    playlists: Playlist[],
+    activePlaylistId: string,
+    locale?: LocalePreference,
+  ) => void;
   reset: () => void;
   scale: () => number;
   activePlaylist: () => Playlist | undefined;
@@ -175,6 +180,7 @@ function persist(state: Settings) {
     setHiddenCategories: _hc,
     setCategoryHidden: _ch,
     setHiddenCategoryMode: _cm,
+    replacePlaylists: _rp,
     reset: _re,
     scale: _sc,
     activePlaylist: _ap,
@@ -257,6 +263,11 @@ export const useSettings = create<Settings>((set, get) => ({
         playlist.id === playlistId ? { ...playlist, hiddenCategoryMode: mode } : playlist,
       ),
     });
+    persist(get());
+  },
+
+  replacePlaylists(playlists, activePlaylistId, locale) {
+    set({ playlists, activePlaylistId, ...(locale ? { locale } : {}) });
     persist(get());
   },
 
