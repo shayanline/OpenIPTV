@@ -165,8 +165,6 @@ export default {
   "guide.hideThis": "इसे छिपाएँ",
   "guide.hideCategory": "श्रेणी छिपाएँ",
   "guide.unhideCategory": "श्रेणी को फिर दिखाएँ",
-  "guide.showHiddenCategories": "छिपी श्रेणियाँ दिखाएँ",
-  "guide.hideHiddenCategories": "छिपी श्रेणियाँ फिर छिपाएँ",
   "guide.chooseAnotherPlaylist": "दूसरी प्लेलिस्ट चुनें",
   "guide.closeTheApp": "ऐप बंद करें",
   "guide.anotherChannel": "अन्य चैनल",

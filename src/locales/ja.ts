@@ -169,8 +169,6 @@ export default {
   "guide.hideThis": "これを隠す",
   "guide.hideCategory": "カテゴリーを非表示",
   "guide.unhideCategory": "カテゴリーの非表示を解除",
-  "guide.showHiddenCategories": "非表示のカテゴリーを表示",
-  "guide.hideHiddenCategories": "非表示のカテゴリーを隠す",
   "guide.chooseAnotherPlaylist": "別のプレイリストを選択",
   "guide.closeTheApp": "アプリを閉じる",
   "guide.anotherChannel": "別のチャンネル",

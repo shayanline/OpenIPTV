@@ -167,8 +167,6 @@ export default {
   "guide.hideThis": "إخفاء هذا",
   "guide.hideCategory": "إخفاء الفئة",
   "guide.unhideCategory": "إلغاء إخفاء الفئة",
-  "guide.showHiddenCategories": "إظهار الفئات المخفية",
-  "guide.hideHiddenCategories": "إخفاء الفئات المخفية",
   "guide.chooseAnotherPlaylist": "اختيار قائمة تشغيل أخرى",
   "guide.closeTheApp": "إغلاق التطبيق",
   "guide.anotherChannel": "قناة أخرى",

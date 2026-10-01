@@ -170,8 +170,6 @@ export default {
   "guide.hideThis": "Dit verbergen",
   "guide.hideCategory": "Categorie verbergen",
   "guide.unhideCategory": "Categorie zichtbaar maken",
-  "guide.showHiddenCategories": "Verborgen categorieën tonen",
-  "guide.hideHiddenCategories": "Verborgen categorieën verbergen",
   "guide.chooseAnotherPlaylist": "Een andere afspeellijst kiezen",
   "guide.closeTheApp": "App sluiten",
   "guide.anotherChannel": "Ander kanaal",

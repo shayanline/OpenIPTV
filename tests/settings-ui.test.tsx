@@ -124,8 +124,12 @@ test("About explains every category shortcut in one place", async () => {
 
   const heading = screen.getByRole("heading", { level: 4, name: "Category shortcuts" });
   const shortcuts = heading.closest(".category-shortcuts");
-  expect(shortcuts?.textContent).toContain("RedIn the category list, hide or unhide the highlighted category");
-  expect(shortcuts?.textContent).toContain("Hold RedAnywhere in the channel list, show or hide hidden categories");
+  expect(shortcuts?.textContent).toContain(
+    "RedIn the category list, hide or unhide the highlighted category",
+  );
+  expect(shortcuts?.textContent).toContain(
+    "Hold RedWith a channel or category focused, show or hide hidden categories",
+  );
   expect(shortcuts?.textContent).toContain("Changes are saved immediately.");
 });
 

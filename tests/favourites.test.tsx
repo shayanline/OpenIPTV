@@ -98,7 +98,9 @@ test("hiding every category says how to restore the list", async () => {
 
   assert.deepEqual(rail(), []);
   assert.ok(
-    screen.getByText("All categories are hidden. Hold Red to show them here, or unhide them in Settings, Playlists, Categories."),
+    screen.getByText(
+      "All categories are hidden. Hold Red to show them here, or unhide them in Settings, Playlists, Categories.",
+    ),
   );
 });
 
@@ -121,16 +123,20 @@ test("the red key hides and unhides the selected category immediately", async ()
   assert.ok(screen.getByText("Hide category"));
 
   press(KEY.RED);
-  assert.ok(screen.getByText("Unhide category"));
-  assert.equal(railRow("News")?.classList.contains("hidden"), true);
-  assert.equal(Boolean(railRow("News")?.querySelector(".hidden-state")), true);
-  assert.equal(Boolean(screen.queryByText("Hidden")), false);
+  assert.deepEqual(rail(), ["Sport"]);
   assert.deepEqual(useSettings.getState().playlists[0].hiddenCategories, ["News"]);
 
+  await hold(KEY.RED);
+  assert.equal(cursorOn(), "Sport");
+  press(KEY.UP);
+  assert.ok(screen.getByText("Unhide category"));
   press(KEY.RED);
-  assert.equal(railRow("News")?.classList.contains("hidden"), false);
+
+  assert.deepEqual(rail(), ["News", "Sport"]);
   assert.equal(Boolean(railRow("News")?.querySelector(".hidden-state")), false);
   assert.deepEqual(useSettings.getState().playlists[0].hiddenCategories, []);
+  press(KEY.UP);
+  assert.equal(Boolean(screen.queryByText("Show visible categories only")), false);
 });
 
 test("a real category named Favourites can be hidden", async () => {
@@ -141,40 +147,44 @@ test("a real category named Favourites can be hidden", async () => {
   press(KEY.RED);
 
   assert.deepEqual(useSettings.getState().playlists[0].hiddenCategories, ["Favourites"]);
-  assert.equal(railRow("Favourites")?.classList.contains("hidden"), true);
+  assert.deepEqual(rail(), ["Sport"]);
 });
 
-test("hiding a category keeps the cursor and column on that category", async () => {
-  await mountApp(PLAYLIST, { hiddenCategories: ["News"] });
+test("hiding a category moves to the nearest visible category", async () => {
+  await mountApp(THREE_CATEGORIES, { hiddenCategories: ["News"] });
   press(KEY.LEFT);
 
   press(KEY.RED);
 
-  assert.equal(cursorOn(), "Sport");
-  assert.equal(showing(), "Sport");
+  assert.deepEqual(rail(), ["Kids"]);
+  assert.equal(cursorOn(), "Kids");
+  assert.equal(showing(), "Kids");
 });
 
-test("concealing hidden rows keeps the shown visible category", async () => {
+test("concealing a focused hidden row moves to the next visible category", async () => {
   await mountApp(THREE_CATEGORIES, { hiddenCategories: ["News"] });
+  press(KEY.LEFT);
   await hold(KEY.RED);
-  press(KEY.DOWN);
-  press(KEY.DOWN);
+  assert.equal(cursorOn(), "Sport");
+  press(KEY.UP);
   await settle();
-  assert.equal(showing(), "Sport");
+  assert.equal(cursorOn(), "News");
 
   await hold(KEY.RED);
 
   assert.equal(showing(), "Sport");
-  assert.equal(cursorOn(), "");
+  assert.equal(cursorOn(), "Sport");
 });
 
 test("holding red reveals saved hidden categories without toggling another row", async () => {
   await mountApp(PLAYLIST, { hiddenCategories: ["News"] });
   const { useSettings } = await import("../src/stores/settings");
+  press(KEY.LEFT);
 
   await hold(KEY.RED);
 
   assert.deepEqual(rail(), ["News", "Sport"]);
+  assert.equal(cursorOn(), "Sport");
   assert.equal(Boolean(railRow("News")?.querySelector(".hidden-state")), true);
   assert.deepEqual(useSettings.getState().playlists[0].hiddenCategories, ["News"]);
 
@@ -229,11 +239,12 @@ test("the on-screen Smart Remote red key toggles category visibility", async () 
   fireEvent.mouseDown(red);
   fireEvent.mouseUp(red);
 
-  assert.equal(Boolean(railRow("News")?.querySelector(".hidden-state")), true);
+  assert.deepEqual(rail(), ["Sport"]);
 });
 
 test("holding Red on the on-screen Smart Remote reveals hidden categories", async () => {
   await mountApp(PLAYLIST, { hiddenCategories: ["News"] });
+  press(KEY.LEFT);
   act(() => screen.getByRole("button", { name: "Show Smart Remote" }).click());
   act(() => screen.getByRole("button", { name: "123" }).click());
   const red = screen.getByRole("button", { name: "Red" });
@@ -243,6 +254,7 @@ test("holding Red on the on-screen Smart Remote reveals hidden categories", asyn
   fireEvent.mouseUp(red);
 
   assert.deepEqual(rail(), ["News", "Sport"]);
+  assert.equal(cursorOn(), "Sport");
   assert.equal(Boolean(railRow("News")?.querySelector(".hidden-state")), true);
 });
 
@@ -260,39 +272,18 @@ test("a category hidden with Red stays hidden after the panel closes", async () 
   assert.deepEqual(rail(), ["Sport"]);
 });
 
-test("the red key at the title bar reveals and restores a saved hidden category", async () => {
+test("Red has no action or guide on the title bar", async () => {
   await mountApp(PLAYLIST, { hiddenCategories: ["News"] });
   const { useSettings } = await import("../src/stores/settings");
   press(KEY.LEFT);
   press(KEY.UP);
-  assert.match(
-    document.querySelector(".panel-hints")?.textContent ?? "",
-    /Show hidden categories/,
-  );
+  assert.equal(document.querySelector(".panel-hints")?.textContent?.includes("Red"), false);
 
   press(KEY.RED);
-  assert.deepEqual(rail(), ["News", "Sport"]);
-  assert.match(
-    document.querySelector(".panel-hints")?.textContent ?? "",
-    /Show visible categories only/,
-  );
-  assert.equal(showing(), "Sport");
-  assert.equal(railRow("News")?.classList.contains("hidden"), true);
+  await hold(KEY.RED);
 
-  press(KEY.RED);
   assert.deepEqual(rail(), ["Sport"]);
-  assert.match(
-    document.querySelector(".panel-hints")?.textContent ?? "",
-    /Show hidden categories/,
-  );
-  press(KEY.RED);
-  press(KEY.DOWN);
-  press(KEY.RED);
-  assert.equal(railRow("News")?.classList.contains("hidden"), false);
-  press(KEY.RIGHT);
-  press(KEY.ENTER);
-
-  assert.deepEqual(useSettings.getState().playlists[0].hiddenCategories, []);
+  assert.deepEqual(useSettings.getState().playlists[0].hiddenCategories, ["News"]);
 });
 
 test("a hidden channel cannot be added to an invisible Favourites row", async () => {

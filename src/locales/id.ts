@@ -169,8 +169,6 @@ export default {
   "guide.hideThis": "Sembunyikan ini",
   "guide.hideCategory": "Sembunyikan kategori",
   "guide.unhideCategory": "Batalkan sembunyikan kategori",
-  "guide.showHiddenCategories": "Tampilkan kategori tersembunyi",
-  "guide.hideHiddenCategories": "Sembunyikan kategori tersembunyi",
   "guide.chooseAnotherPlaylist": "Pilih daftar putar lain",
   "guide.closeTheApp": "Tutup aplikasi",
   "guide.anotherChannel": "Kanal lain",

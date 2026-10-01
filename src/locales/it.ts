@@ -170,8 +170,6 @@ export default {
   "guide.hideThis": "Nascondi questo",
   "guide.hideCategory": "Nascondi categoria",
   "guide.unhideCategory": "Rendi visibile la categoria",
-  "guide.showHiddenCategories": "Mostra categorie nascoste",
-  "guide.hideHiddenCategories": "Nascondi categorie nascoste",
   "guide.chooseAnotherPlaylist": "Scegli un’altra playlist",
   "guide.closeTheApp": "Chiudi app",
   "guide.anotherChannel": "Un altro canale",

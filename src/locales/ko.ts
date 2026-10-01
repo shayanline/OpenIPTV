@@ -165,8 +165,6 @@ export default {
   "guide.hideThis": "이 항목 숨기기",
   "guide.hideCategory": "카테고리 숨기기",
   "guide.unhideCategory": "카테고리 숨김 해제",
-  "guide.showHiddenCategories": "숨긴 카테고리 표시",
-  "guide.hideHiddenCategories": "숨긴 카테고리 감추기",
   "guide.chooseAnotherPlaylist": "다른 재생목록 선택",
   "guide.closeTheApp": "앱 닫기",
   "guide.anotherChannel": "다른 채널",

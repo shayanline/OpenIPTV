@@ -165,8 +165,6 @@ export default {
   "guide.hideThis": "隐藏此项",
   "guide.hideCategory": "隐藏类别",
   "guide.unhideCategory": "取消隐藏类别",
-  "guide.showHiddenCategories": "显示隐藏类别",
-  "guide.hideHiddenCategories": "收起隐藏类别",
   "guide.chooseAnotherPlaylist": "选择其他播放列表",
   "guide.closeTheApp": "关闭应用",
   "guide.anotherChannel": "其他频道",

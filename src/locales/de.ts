@@ -172,8 +172,6 @@ export default {
   "guide.hideThis": "Dies ausblenden",
   "guide.hideCategory": "Kategorie ausblenden",
   "guide.unhideCategory": "Kategorie wieder einblenden",
-  "guide.showHiddenCategories": "Ausgeblendete Kategorien anzeigen",
-  "guide.hideHiddenCategories": "Ausgeblendete Kategorien verbergen",
   "guide.chooseAnotherPlaylist": "Andere Wiedergabeliste auswählen",
   "guide.closeTheApp": "App schließen",
   "guide.anotherChannel": "Anderer Sender",

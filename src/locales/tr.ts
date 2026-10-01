@@ -168,8 +168,6 @@ export default {
   "guide.hideThis": "Bunu gizle",
   "guide.hideCategory": "Kategoriyi gizle",
   "guide.unhideCategory": "Kategoriyi görünür yap",
-  "guide.showHiddenCategories": "Gizli kategorileri göster",
-  "guide.hideHiddenCategories": "Gizli kategorileri sakla",
   "guide.chooseAnotherPlaylist": "Başka oynatma listesi seç",
   "guide.closeTheApp": "Uygulamayı kapat",
   "guide.anotherChannel": "Başka kanal",

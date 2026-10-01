@@ -165,8 +165,6 @@ export default {
   "guide.hideThis": "এটি লুকান",
   "guide.hideCategory": "বিভাগ লুকান",
   "guide.unhideCategory": "বিভাগ আনহাইড করুন",
-  "guide.showHiddenCategories": "লুকানো বিভাগ দেখান",
-  "guide.hideHiddenCategories": "লুকানো বিভাগ আড়াল করুন",
   "guide.chooseAnotherPlaylist": "অন্য প্লেলিস্ট বেছে নিন",
   "guide.closeTheApp": "অ্যাপ বন্ধ করুন",
   "guide.anotherChannel": "অন্য চ্যানেল",

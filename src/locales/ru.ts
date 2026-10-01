@@ -169,8 +169,6 @@ export default {
   "guide.hideThis": "Скрыть это",
   "guide.hideCategory": "Скрыть категорию",
   "guide.unhideCategory": "Вернуть скрытую категорию",
-  "guide.showHiddenCategories": "Показать скрытые категории",
-  "guide.hideHiddenCategories": "Спрятать скрытые категории",
   "guide.chooseAnotherPlaylist": "Выбрать другой плейлист",
   "guide.closeTheApp": "Закрыть приложение",
   "guide.anotherChannel": "Другой канал",

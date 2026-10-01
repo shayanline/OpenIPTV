@@ -170,8 +170,6 @@ export default {
   "guide.hideThis": "Ocultar esto",
   "guide.hideCategory": "Ocultar categoría",
   "guide.unhideCategory": "Dejar de ocultar la categoría",
-  "guide.showHiddenCategories": "Mostrar categorías ocultas",
-  "guide.hideHiddenCategories": "Ocultar categorías ocultas",
   "guide.chooseAnotherPlaylist": "Elegir otra lista de reproducción",
   "guide.closeTheApp": "Cerrar la aplicación",
   "guide.anotherChannel": "Otro canal",

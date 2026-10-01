@@ -733,64 +733,95 @@ export default function App() {
   );
 
   const revealHiddenCategories = useCallback(() => {
-    if (view !== "panel") return false;
-    const shown = lists[category];
+    if (view !== "panel" || (pane === "rail" && cursor === 0)) return false;
     const favouriteList = isFavouritesList(browsableLists[0]) ? browsableLists[0] : undefined;
     const nextLists = revealHidden
       ? browsableLists
       : favouriteList
         ? [favouriteList, ...categories]
         : categories;
-    const exact = shown
-      ? nextLists.findIndex((list) =>
-          isFavouritesList(shown)
-            ? isFavouritesList(list)
-            : !isFavouritesList(list) && list.name === shown.name,
-        )
-      : -1;
-    const to = exact >= 0 ? exact : Math.max(0, Math.min(category, nextLists.length - 1));
-    setCategory(to);
-    setIndex(Math.min(index, Math.max(0, (nextLists[to]?.channels.length ?? 1) - 1)));
+    const nearest = (list: LineupList | undefined, fallback: number) => {
+      if (!list) return Math.max(0, Math.min(fallback, nextLists.length - 1));
+      const exact = nextLists.findIndex((candidate) =>
+        isFavouritesList(list)
+          ? isFavouritesList(candidate)
+          : !isFavouritesList(candidate) && candidate.name === list.name,
+      );
+      if (exact >= 0) return exact;
+      const raw = categories.findIndex((category) => category.name === list.name);
+      for (let at = raw + 1; at < categories.length; at++) {
+        const next = nextLists.findIndex(
+          (candidate) => !isFavouritesList(candidate) && candidate.name === categories[at].name,
+        );
+        if (next >= 0) return next;
+      }
+      for (let at = raw - 1; at >= 0; at--) {
+        const previous = nextLists.findIndex(
+          (candidate) => !isFavouritesList(candidate) && candidate.name === categories[at].name,
+        );
+        if (previous >= 0) return previous;
+      }
+      return 0;
+    };
+    const shownAt = nearest(lists[category], category);
+    setCategory(shownAt);
+    setIndex(Math.min(index, Math.max(0, (nextLists[shownAt]?.channels.length ?? 1) - 1)));
+    if (cursor > 0) {
+      const focusedAt = nearest(lists[cursor - 1], cursor - 1);
+      setCursor(focusedAt + 1);
+      cursorRef.current = focusedAt + 1;
+    }
     setRevealHidden((visible) => !visible);
-    setPane("rail");
-    setCursor(0);
-    cursorRef.current = 0;
     return true;
-  }, [view, lists, category, browsableLists, revealHidden, categories, index]);
+  }, [view, pane, cursor, lists, category, browsableLists, revealHidden, categories, index]);
 
   const toggleCategoryVisibility = useCallback(() => {
-    if (view !== "panel" || pane !== "rail") return false;
-    if (cursor === 0) return revealHiddenCategories();
+    if (view !== "panel" || pane !== "rail" || cursor === 0) return false;
     const item = lists[cursor - 1];
     if (!item || isFavouritesList(item)) return true;
     const state = useSettings.getState();
     const playlist = state.activePlaylist();
     if (!playlist) return true;
     const hidden = savedHidden.has(item.name);
-    state.setCategoryHidden(playlist.id, item.name, !hidden);
     if (!hidden && !revealHidden) {
-      const categoryAt = categories.findIndex((category) => category.name === item.name);
+      const hiddenAfter = new Set(savedHidden).add(item.name);
+      const remaining = categories.filter((category) => !hiddenAfter.has(category.name));
       const favouriteStays =
         isFavouritesList(lists[0]) &&
         (playlist.hiddenCategoryMode === "search" ||
           lists[0].channels.some((channel) => channel.group !== item.name));
-      const to = categoryAt + (favouriteStays ? 1 : 0);
+      const nextLists = favouriteStays ? [lists[0], ...remaining] : remaining;
+      const raw = categories.findIndex((category) => category.name === item.name);
+      const nextName =
+        categories.slice(raw + 1).find((category) => !hiddenAfter.has(category.name))?.name ??
+        categories
+          .slice(0, raw)
+          .reverse()
+          .find((category) => !hiddenAfter.has(category.name))?.name;
+      const next = nextName
+        ? nextLists.findIndex(
+            (candidate) => !isFavouritesList(candidate) && candidate.name === nextName,
+          )
+        : 0;
+      const to = Math.max(0, next);
+      setCategory(to);
+      setIndex(0);
+      setCursor(nextLists.length ? to + 1 : 0);
+      cursorRef.current = nextLists.length ? to + 1 : 0;
+    } else if (hidden && revealHidden && savedHidden.size === 1) {
+      const favouriteAppears =
+        isFavouritesList(lists[0]) ||
+        item.channels.some((channel) => favouriteIds.has(channel.id));
+      const categoryAt = categories.findIndex((category) => category.name === item.name);
+      const to = categoryAt + (favouriteAppears ? 1 : 0);
       setCategory(to);
       setCursor(to + 1);
       cursorRef.current = to + 1;
-      setRevealHidden(true);
+      setRevealHidden(false);
     }
+    state.setCategoryHidden(playlist.id, item.name, !hidden);
     return true;
-  }, [
-    view,
-    pane,
-    cursor,
-    lists,
-    savedHidden,
-    revealHidden,
-    categories,
-    revealHiddenCategories,
-  ]);
+  }, [view, pane, cursor, lists, savedHidden, revealHidden, categories, favouriteIds]);
 
   const redContextRef = useRef({
     configured,
@@ -1494,21 +1525,13 @@ export default function App() {
   );
   const selectedRailList = cursor > 0 ? lists[cursor - 1] : undefined;
   const categoryVisibilityGuide =
-    pane !== "rail"
-      ? undefined
-      : cursor === 0
-        ? revealHidden
-          ? t("guide.hideHiddenCategories")
-          : savedHidden.size
-            ? t("guide.showHiddenCategories")
-            : undefined
-        : selectedRailList && !isFavouritesList(selectedRailList)
-          ? t(
-              savedHidden.has(selectedRailList.name)
-                ? "guide.unhideCategory"
-                : "guide.hideCategory",
-            )
-          : undefined;
+    pane === "rail" && cursor > 0 && selectedRailList && !isFavouritesList(selectedRailList)
+      ? t(
+          savedHidden.has(selectedRailList.name)
+            ? "guide.unhideCategory"
+            : "guide.hideCategory",
+        )
+      : undefined;
 
   /**
    * How wide the number column has to be, in figures.
