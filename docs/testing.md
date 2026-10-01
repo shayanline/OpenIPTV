@@ -260,6 +260,17 @@ PATH=/tmp/pybin:$PATH EM_CONFIG=./.emscripten EMCC_WASM_BACKEND=1 \
   -s "EXTRA_EXPORTED_RUNTIME_METHODS=['cwrap']"
 ```
 
+The private network management module imports the same Samsung socket ABI directly, so it can be built with current Emscripten on Apple silicon without changing the compatibility module:
+
+```bash
+emcc wasm/management-socket.c -o public/wasm/management-socket.wasm -Os --no-entry \
+  -s STANDALONE_WASM=1 -s FILESYSTEM=0 -s ALLOW_MEMORY_GROWTH=0 \
+  -s INITIAL_MEMORY=1048576 -s STACK_SIZE=65536 \
+  -s "EXPORTED_FUNCTIONS=['_start_server','_receive_request','_request_text','_send_response','_stop_server','_malloc','_free']"
+```
+
+Its hand written `management-socket.js` loader passes the platform functions directly as WebAssembly imports. It must not wrap or call them in JavaScript because the television refuses host binding calls made outside WebAssembly.
+
 `.emscripten` points `LLVM_ROOT` at `fastcomp/bin` (clang 10, the upstream backend). The bundle's
 nested `fastcomp/fastcomp/bin` is clang 6 with no `llc`, so fastcomp cannot be used on macOS at all.
 
