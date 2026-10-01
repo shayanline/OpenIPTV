@@ -44,9 +44,7 @@ test("settings uses clear sections and concise labels", async () => {
   expect(
     [...document.querySelectorAll(".sheet-rail .row-label")].map((el) => el.textContent),
   ).toEqual(["Appearance", "Playback", "General", "Playlists", "Diagnostics", "About"]);
-  expect(
-    document.querySelector(".settings-breadcrumb")?.textContent?.replace(/[›‹]/g, ""),
-  ).toBe("SettingsAppearance");
+  expect(Boolean(document.querySelector(".settings-breadcrumb"))).toBe(false);
   const appearance = screen.getByRole("button", { name: "Appearance" });
   expect(appearance.getAttribute("aria-current")).toBe("page");
   expect(Boolean(screen.queryByRole("button", { name: "Watching" }))).toBe(false);
@@ -188,9 +186,10 @@ test("Categories is a Settings detail screen with hierarchical RETURN", async ()
   const first = screen.getByRole("button", {
     name: "Hidden category channels, Hide everywhere",
   });
-  expect(
-    document.querySelector(".settings-breadcrumb")?.textContent?.replace(/[›‹]/g, ""),
-  ).toBe("SettingsPlaylistsCategories");
+  expect(Boolean(document.querySelector(".settings-breadcrumb"))).toBe(false);
+  expect(document.querySelector(".settings-detail-appbar")?.textContent).toContain(
+    "Categories",
+  );
   expect(screen.getByRole("heading", { level: 3, name: "Categories" })).toBeTruthy();
   expect(document.querySelector(".sheet-hints")?.textContent).toContain("Back");
   await settle(0);

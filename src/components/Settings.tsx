@@ -270,7 +270,7 @@ export function Settings({
       if (
         detailsRef.current.length &&
         code === KEY.DOWN &&
-        active?.classList.contains("settings-breadcrumb-parent")
+        active?.classList.contains("settings-detail-back")
       ) {
         const first = bodyRef.current?.querySelector<HTMLElement>(
           "[data-settings-detail-first]",
@@ -286,7 +286,7 @@ export function Settings({
         code === KEY.UP &&
         active?.hasAttribute("data-settings-detail-first")
       ) {
-        const back = bodyRef.current?.querySelector<HTMLElement>(".settings-breadcrumb-parent");
+        const back = bodyRef.current?.querySelector<HTMLElement>(".settings-detail-back");
         if (back) {
           event.preventDefault();
           back.focus();
@@ -385,26 +385,19 @@ export function Settings({
       </nav>
 
       <div className="sheet-body" ref={bodyRef}>
-        <nav className="settings-breadcrumb">
-          <span>{t("settings.title")}</span>
-          <span aria-hidden="true">{direction === "rtl" ? "‹" : "›"}</span>
-          {detail ? (
-            <>
-              <button
-                type="button"
-                className="settings-breadcrumb-parent"
-                aria-label={t("settings.backTo", { section: sectionLabel })}
-                onClick={backDetail}
-              >
-                {sectionLabel}
-              </button>
-              <span aria-hidden="true">{direction === "rtl" ? "‹" : "›"}</span>
-              <span className="current">{detail.label}</span>
-            </>
-          ) : (
-            <span className="current">{sectionLabel}</span>
-          )}
-        </nav>
+        {detail && (
+          <header className="settings-detail-appbar">
+            <button
+              type="button"
+              className="settings-detail-back"
+              aria-label={t("settings.backTo", { section: sectionLabel })}
+              onClick={backDetail}
+            >
+              <span aria-hidden="true">{direction === "rtl" ? "→" : "←"}</span>
+            </button>
+            <h3>{detail.label}</h3>
+          </header>
+        )}
         {section === "appearance" && <Appearance />}
         {section === "playback" && <Playback />}
         {section === "general" && <General onAsking={ask} />}

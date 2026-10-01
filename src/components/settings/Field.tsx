@@ -1,5 +1,4 @@
 import { useLocale } from "../../hooks/useLocale";
-import { Text } from "../Text";
 
 /**
  * The three controls every settings section is built from.
@@ -8,19 +7,6 @@ import { Text } from "../Text";
  * the file described both the shape of a settings row and the whole of what is in one. They
  * are generic and they are shared, so they live on their own.
  */
-
-export function DetailHeader({ title, context }: { title: string; context?: string }) {
-  return (
-    <header className="settings-detail-header">
-      <h3>{title}</h3>
-      {context && (
-        <p className="sheet-lead settings-detail-context">
-          <Text value={context} />
-        </p>
-      )}
-    </header>
-  );
-}
 
 export function SettingsListHeader({
   title,

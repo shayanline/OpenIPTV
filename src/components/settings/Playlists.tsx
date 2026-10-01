@@ -8,7 +8,7 @@ import { Confirm } from "../Confirm";
 import { Icon } from "../Icon";
 import { Text } from "../Text";
 import type { SettingsDetailNavigation } from "../Settings";
-import { DetailHeader, Row, SettingsListHeader } from "./Field";
+import { Row, SettingsListHeader } from "./Field";
 
 const CATEGORY_PAGE_SIZE = 20;
 
@@ -69,7 +69,9 @@ function CategoryManager({
 
   return (
     <>
-      <DetailHeader title={t("playlist.manageCategories")} context={playlist.name} />
+      <p className="sheet-lead settings-detail-context">
+        <Text value={playlist.name} />
+      </p>
       <Row label={t("playlist.hiddenChannels")} hint={t("playlist.hiddenChannelsHint")}>
         <button
           type="button"
@@ -348,10 +350,11 @@ export function Playlists({
   if (editing) {
     return (
       <>
-        <DetailHeader
-          title={editing.id ? t("playlist.editTitle") : t("playlist.addTitle")}
-          context={editing.id ? editing.name : undefined}
-        />
+        {editing.id && (
+          <p className="sheet-lead settings-detail-context">
+            <Text value={editing.name} />
+          </p>
+        )}
         <div className="form playlist-form">
           <label htmlFor="pl-name">{t("onboarding.playlistName")}</label>
           <input
