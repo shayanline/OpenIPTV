@@ -1316,15 +1316,14 @@ export default function App() {
             }
             setPane("rail");
           } else if (cursor === 0) {
-            // Search and Settings form a two-control ring, so neither edge falls into a list.
-            setHeaderKey((key) => (key === "search" ? "settings" : "search"));
+            setHeaderKey("search");
           }
           break;
         case inlineEnd:
           event.preventDefault();
           if (pane === "list") chooseChannel();
           else if (cursor === 0) {
-            setHeaderKey((key) => (key === "search" ? "settings" : "search"));
+            setHeaderKey("settings");
           } else if (pane === "rail") setPane("list");
           break;
         case KEY.ENTER:
