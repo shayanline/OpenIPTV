@@ -255,6 +255,7 @@ export default function App() {
   const pointerAwake = usePointerAwake();
   const railTimer = useRef<number | undefined>(undefined);
   const [revealHidden, setRevealHidden] = useState(false);
+  const [softHidden, setSoftHidden] = useState<string[]>([]);
 
   const activePlaylist = settings.activePlaylist();
   const lineup = useMemo(
@@ -266,11 +267,21 @@ export default function App() {
     () => new Set(activePlaylist?.hiddenCategories ?? []),
     [activePlaylist],
   );
+  const softHiddenSet = useMemo(() => new Set(softHidden), [softHidden]);
   const lists = useMemo(() => {
-    if (!revealHidden) return browsableLists;
+    if (!revealHidden && !softHiddenSet.size) return browsableLists;
     const favouriteList = isFavouritesList(browsableLists[0]) ? browsableLists[0] : undefined;
-    return favouriteList ? [favouriteList, ...categories] : categories;
-  }, [browsableLists, categories, revealHidden]);
+    const categoryLists = revealHidden
+      ? categories
+      : categories.filter(
+          (category) => !savedHidden.has(category.name) || softHiddenSet.has(category.name),
+        );
+    return favouriteList ? [favouriteList, ...categoryLists] : categoryLists;
+  }, [browsableLists, categories, revealHidden, savedHidden, softHiddenSet]);
+  useEffect(() => {
+    setRevealHidden(false);
+    setSoftHidden([]);
+  }, [activePlaylist?.id]);
 
   const displayListName = (list: LineupList | undefined) =>
     isFavouritesList(list)
@@ -485,6 +496,7 @@ export default function App() {
 
   const watch = useCallback(() => {
     setRevealHidden(false);
+    setSoftHidden([]);
     setView("watch");
   }, []);
 
@@ -771,6 +783,7 @@ export default function App() {
       setCursor(focusedAt + 1);
       cursorRef.current = focusedAt + 1;
     }
+    if (revealHidden) setSoftHidden([]);
     setRevealHidden((visible) => !visible);
     return true;
   }, [view, pane, cursor, lists, category, browsableLists, revealHidden, categories, index]);
@@ -784,31 +797,13 @@ export default function App() {
     if (!playlist) return true;
     const hidden = savedHidden.has(item.name);
     if (!hidden && !revealHidden) {
-      const hiddenAfter = new Set(savedHidden).add(item.name);
-      const remaining = categories.filter((category) => !hiddenAfter.has(category.name));
-      const favouriteStays =
-        isFavouritesList(lists[0]) &&
-        (playlist.hiddenCategoryMode === "search" ||
-          lists[0].channels.some((channel) => channel.group !== item.name));
-      const nextLists = favouriteStays ? [lists[0], ...remaining] : remaining;
-      const raw = categories.findIndex((category) => category.name === item.name);
-      const nextName =
-        categories.slice(raw + 1).find((category) => !hiddenAfter.has(category.name))?.name ??
-        categories
-          .slice(0, raw)
-          .reverse()
-          .find((category) => !hiddenAfter.has(category.name))?.name;
-      const next = nextName
-        ? nextLists.findIndex(
-            (candidate) => !isFavouritesList(candidate) && candidate.name === nextName,
-          )
-        : 0;
-      const to = Math.max(0, next);
-      setCategory(to);
-      setIndex(0);
-      setCursor(nextLists.length ? to + 1 : 0);
-      cursorRef.current = nextLists.length ? to + 1 : 0;
-    } else if (hidden && revealHidden && savedHidden.size === 1) {
+      setSoftHidden((current) =>
+        current.includes(item.name) ? current : [...current, item.name],
+      );
+    } else if (hidden) {
+      setSoftHidden((current) => current.filter((name) => name !== item.name));
+    }
+    if (hidden && revealHidden && savedHidden.size === 1) {
       const favouriteAppears =
         isFavouritesList(lists[0]) ||
         item.channels.some((channel) => favouriteIds.has(channel.id));

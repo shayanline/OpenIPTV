@@ -123,20 +123,15 @@ test("the red key hides and unhides the selected category immediately", async ()
   assert.ok(screen.getByText("Hide category"));
 
   press(KEY.RED);
-  assert.deepEqual(rail(), ["Sport"]);
+  assert.deepEqual(rail(), ["News", "Sport"]);
+  assert.equal(cursorOn(), "News");
+  assert.equal(Boolean(railRow("News")?.querySelector(".hidden-state")), true);
   assert.deepEqual(useSettings.getState().playlists[0].hiddenCategories, ["News"]);
 
-  await hold(KEY.RED);
-  assert.equal(cursorOn(), "Sport");
-  press(KEY.UP);
-  assert.ok(screen.getByText("Unhide category"));
   press(KEY.RED);
 
-  assert.deepEqual(rail(), ["News", "Sport"]);
   assert.equal(Boolean(railRow("News")?.querySelector(".hidden-state")), false);
   assert.deepEqual(useSettings.getState().playlists[0].hiddenCategories, []);
-  press(KEY.UP);
-  assert.equal(Boolean(screen.queryByText("Show visible categories only")), false);
 });
 
 test("a real category named Favourites can be hidden", async () => {
@@ -147,18 +142,19 @@ test("a real category named Favourites can be hidden", async () => {
   press(KEY.RED);
 
   assert.deepEqual(useSettings.getState().playlists[0].hiddenCategories, ["Favourites"]);
-  assert.deepEqual(rail(), ["Sport"]);
+  assert.equal(Boolean(railRow("Favourites")?.querySelector(".hidden-state")), true);
 });
 
-test("hiding a category moves to the nearest visible category", async () => {
+test("soft hiding does not reveal categories hidden in an earlier session", async () => {
   await mountApp(THREE_CATEGORIES, { hiddenCategories: ["News"] });
   press(KEY.LEFT);
 
   press(KEY.RED);
 
-  assert.deepEqual(rail(), ["Kids"]);
-  assert.equal(cursorOn(), "Kids");
-  assert.equal(showing(), "Kids");
+  assert.deepEqual(rail(), ["Sport", "Kids"]);
+  assert.equal(cursorOn(), "Sport");
+  assert.equal(showing(), "Sport");
+  assert.equal(Boolean(railRow("Sport")?.querySelector(".hidden-state")), true);
 });
 
 test("concealing a focused hidden row moves to the next visible category", async () => {
@@ -239,7 +235,7 @@ test("the on-screen Smart Remote red key toggles category visibility", async () 
   fireEvent.mouseDown(red);
   fireEvent.mouseUp(red);
 
-  assert.deepEqual(rail(), ["Sport"]);
+  assert.equal(Boolean(railRow("News")?.querySelector(".hidden-state")), true);
 });
 
 test("holding Red on the on-screen Smart Remote reveals hidden categories", async () => {
