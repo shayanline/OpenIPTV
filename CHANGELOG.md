@@ -2,6 +2,23 @@
 
 Notable changes, newest first, in the format of [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## 1.4.0
+
+### Added
+
+- **Playback information overlay.** Diagnostics can show the active playback engine, resolution, scan type, video and audio codecs, rendition bitrate, network estimate, buffer ahead, frame rate, dropped frames, adaptive level, and level switches over the picture.
+- **Cross engine reporting.** The overlay reads current values from Samsung AVPlay, hls.js, or native browser HLS when each engine makes them available, and clearly marks values the engine does not report.
+- **Persistent diagnostics control.** Settings, then Diagnostics contains an opt in toggle which keeps the overlay enabled across channel changes, failures, menus, and app restarts until it is turned off.
+
+### Changed
+
+- **Directional overlay placement.** Playback information sits on the right in left to right interfaces and on the left in right to left interfaces, while the channel panel remains above it where they overlap.
+- **Complete translations.** Playback information labels and guidance are included in all 17 supported locale catalogs.
+
+### Fixed
+
+- **Focused toggle contrast.** An off toggle retains a visible track and knob on the light focus surface without using an unnecessarily heavy black treatment.
+
 ## 1.3.0
 
 ### Added
