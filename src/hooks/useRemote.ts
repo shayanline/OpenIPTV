@@ -127,11 +127,18 @@ export function registerRemoteKeys() {
  * legacy accessor and the KeyboardEvent constructor ignores it, so setting it in the init
  * dictionary silently produces a zero. Defining it on the instance is what works.
  */
-export function sendKey(code: number) {
-  const event = new KeyboardEvent("keydown", { bubbles: true, cancelable: true });
+function dispatchKey(type: "keydown" | "keyup", code: number) {
+  const event = new KeyboardEvent(type, { bubbles: true, cancelable: true });
   Object.defineProperty(event, "keyCode", { get: () => code });
   Object.defineProperty(event, "which", { get: () => code });
   window.dispatchEvent(event);
+}
+
+export const sendKeyDown = (code: number) => dispatchKey("keydown", code);
+export const sendKeyUp = (code: number) => dispatchKey("keyup", code);
+export function sendKey(code: number) {
+  sendKeyDown(code);
+  sendKeyUp(code);
 }
 
 export function useRemote(handler: (code: number, event: KeyboardEvent) => void) {

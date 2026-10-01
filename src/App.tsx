@@ -747,17 +747,23 @@ export default function App() {
     ],
   );
 
+  const revealHiddenCategories = useCallback(() => {
+    if (view !== "panel") return false;
+    const shown = lists[category];
+    if (shown && shown.name !== FAVOURITES) {
+      const at = categories.findIndex((item) => item.name === shown.name);
+      if (at >= 0) setCategory(at + (lists[0]?.name === FAVOURITES ? 1 : 0));
+    }
+    setRevealHidden(true);
+    setPane("rail");
+    setCursor(0);
+    cursorRef.current = 0;
+    return true;
+  }, [view, lists, category, categories]);
+
   const toggleCategoryVisibility = useCallback(() => {
     if (view !== "panel" || pane !== "rail") return false;
-    if (cursor === 0) {
-      const shown = lists[category];
-      if (shown && shown.name !== FAVOURITES) {
-        const at = categories.findIndex((item) => item.name === shown.name);
-        if (at >= 0) setCategory(at + (lists[0]?.name === FAVOURITES ? 1 : 0));
-      }
-      setRevealHidden(true);
-      return true;
-    }
+    if (cursor === 0) return revealHiddenCategories();
     const item = lists[cursor - 1];
     if (!item || item.name === FAVOURITES) return true;
     setPendingHidden((hidden) =>
@@ -766,7 +772,51 @@ export default function App() {
         : [...hidden, item.name],
     );
     return true;
-  }, [view, pane, cursor, lists, category, categories]);
+  }, [view, pane, cursor, lists, revealHiddenCategories]);
+
+  useEffect(() => {
+    let timer: number | undefined;
+    let long = false;
+    const onDown = (event: KeyboardEvent) => {
+      if (event.keyCode !== KEY.RED || !configured || showSettings || showExit) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      if (event.repeat) {
+        window.clearTimeout(timer);
+        timer = undefined;
+        if (!long) {
+          long = true;
+          revealHiddenCategories();
+        }
+        return;
+      }
+      if (timer === undefined && !long) {
+        timer = window.setTimeout(() => {
+          timer = undefined;
+          long = true;
+          revealHiddenCategories();
+        }, 500);
+      }
+    };
+    const onUp = (event: KeyboardEvent) => {
+      if (event.keyCode !== KEY.RED) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      if (timer !== undefined) {
+        window.clearTimeout(timer);
+        timer = undefined;
+        toggleCategoryVisibility();
+      }
+      long = false;
+    };
+    window.addEventListener("keydown", onDown);
+    window.addEventListener("keyup", onUp);
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener("keydown", onDown);
+      window.removeEventListener("keyup", onUp);
+    };
+  }, [configured, showSettings, showExit, revealHiddenCategories, toggleCategoryVisibility]);
 
   const openSettings = useCallback(() => {
     if (view === "panel") commitCategoryVisibility();
@@ -931,10 +981,6 @@ export default function App() {
       }
 
       // Consistency of Controls: a coloured key does the same thing wherever the viewer is.
-      if (code === KEY.RED && toggleCategoryVisibility()) {
-        event.preventDefault();
-        return;
-      }
       if (code === KEY.BLUE) {
         event.preventDefault();
         const state = useSettings.getState();
@@ -1293,13 +1339,9 @@ export default function App() {
             setIndex(FIELD);
           } else if (searching) closeSearch();
           // The panel is one thing, so RETURN puts the whole thing away rather than
-          // stepping through its two columns. With nothing playing there is no picture to
-          // go back to, so the only way out is out.
-          else if (current) watch();
-          else {
-            commitCategoryVisibility();
-            setShowExit(true);
-          }
+          // stepping through its two columns. This press closes the panel even before a channel
+          // has played, and a second RETURN from the picture is what offers to close the app.
+          else watch();
           break;
       }
       // Only what the body actually reads. lists.length, moveCursor, banner and retune were all
@@ -1321,7 +1363,6 @@ export default function App() {
       index,
       tuner,
       favouriteCurrent,
-      toggleCategoryVisibility,
       current,
       fault,
       cursor,
@@ -1337,7 +1378,6 @@ export default function App() {
       openSearch,
       openSettings,
       closeSearch,
-      commitCategoryVisibility,
       pickResult,
       inlineStart,
       inlineEnd,

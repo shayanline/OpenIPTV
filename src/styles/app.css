@@ -464,17 +464,11 @@ html.tizen, html.tizen body, html.tizen #root, html.tizen .app { background: tra
  * "which category are these from" stops being obvious. So it waits until then, and then it is
  * still, because by then the column has long since caught up.
  */
-.rail .row.hidden { opacity: 0.46; }
-.rail .row.hidden .row-label { text-decoration: line-through; text-decoration-thickness: 2px; }
-.rail.focused .row.hidden.selected { opacity: 1; }
-.hidden-badge {
-  flex: 0 0 auto;
-  padding: 2px var(--s1);
-  border-radius: var(--r-pill);
-  background: var(--danger);
-  color: #fff;
-  font-size: var(--t-caption);
-}
+.rail .row.hidden { opacity: 0.42; }
+.rail.focused .row.hidden.selected { opacity: 1; color: rgba(0, 0, 0, 0.58); }
+.hidden-state { flex: 0 0 auto; color: var(--text-2); }
+.hidden-state .icon { width: 22px; height: 22px; }
+.rail.focused .row.hidden.selected .hidden-state { color: rgba(0, 0, 0, 0.62); }
 .pane:not(.focused) .row.showing { color: var(--text); }
 .pane:not(.focused) .row.showing::before {
   content: "";

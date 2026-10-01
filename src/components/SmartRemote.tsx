@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { KEY, sendKey } from "../hooks/useRemote";
+import { KEY, sendKey, sendKeyDown, sendKeyUp } from "../hooks/useRemote";
 import { Icon } from "./Icon";
 
 /**
@@ -77,6 +77,15 @@ export function SmartRemote() {
     onMouseDown: (e: React.MouseEvent) => e.preventDefault(),
     onClick: () => send(code, label),
   });
+  const redKey = {
+    onMouseDown: (e: React.MouseEvent) => {
+      e.preventDefault();
+      setLast("Red");
+      sendKeyDown(KEY.RED);
+    },
+    onMouseUp: () => sendKeyUp(KEY.RED),
+    onMouseLeave: () => sendKeyUp(KEY.RED),
+  };
 
   const startDrag = (e: React.PointerEvent) => {
     if ((e.target as HTMLElement).closest("button")) return;
@@ -106,7 +115,7 @@ export function SmartRemote() {
         <div className="keypad">
           <p className="keypad-title">On-screen keypad</p>
           <div className="keypad-colours">
-            <button type="button" className="ck red" {...key(KEY.RED)} aria-label="Red" />
+            <button type="button" className="ck red" {...redKey} aria-label="Red" />
             <button type="button" className="ck green" {...key(KEY.GREEN)} aria-label="Green" />
             <button type="button" className="ck yellow" {...key(KEY.YELLOW)} aria-label="Yellow" />
             <button type="button" className="ck blue" {...key(KEY.BLUE)} aria-label="Blue" />

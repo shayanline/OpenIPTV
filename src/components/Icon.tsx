@@ -41,6 +41,13 @@ const paths: Record<string, React.ReactNode> = {
       <path d="M15.3 15.3l4.5 4.5" />
     </>
   ),
+  hidden: (
+    <>
+      <path d="M2.8 12s3.2-5.2 9.2-5.2 9.2 5.2 9.2 5.2-3.2 5.2-9.2 5.2S2.8 12 2.8 12Z" />
+      <circle cx="12" cy="12" r="2.4" />
+      <path d="M4 4l16 16" />
+    </>
+  ),
   /* Stands in for artwork a channel did not supply. A television, because that is what the
      missing thing is a picture of, and it says "nothing to show here" in no language at all. */
   tv: (

@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, test, vi } from "vitest";
 import assert from "node:assert/strict";
-import { act, cleanup, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, screen } from "@testing-library/react";
 import { KEY } from "../src/hooks/useRemote";
-import { mountApp, press, settle } from "./support/app";
+import { hold, mountApp, press, settle } from "./support/app";
 
 /**
  * The Favourites row, which is in the rail only while there is something in it.
@@ -114,13 +114,25 @@ test("the red key stages category visibility without saving it", async () => {
   press(KEY.RED);
   assert.ok(screen.getByText("Show category"));
   assert.equal(railRow("News")?.classList.contains("hidden"), true);
-  assert.equal(railRow("News")?.textContent?.includes("Hidden"), true);
+  assert.equal(Boolean(railRow("News")?.querySelector(".hidden-state")), true);
+  assert.equal(Boolean(screen.queryByText("Hidden")), false);
   assert.deepEqual(useSettings.getState().playlists[0].hiddenCategories, []);
 
   press(KEY.RED);
   assert.equal(railRow("News")?.classList.contains("hidden"), false);
-  assert.equal(railRow("News")?.textContent?.includes("Hidden"), false);
+  assert.equal(Boolean(railRow("News")?.querySelector(".hidden-state")), false);
   assert.deepEqual(useSettings.getState().playlists[0].hiddenCategories, []);
+});
+
+test("holding red reveals saved hidden categories without toggling another row", async () => {
+  await mountApp(PLAYLIST, { hiddenCategories: ["News"] });
+  const { useSettings } = await import("../src/stores/settings");
+
+  await hold(KEY.RED);
+
+  assert.deepEqual(rail(), ["News", "Sport"]);
+  assert.equal(Boolean(railRow("News")?.querySelector(".hidden-state")), true);
+  assert.deepEqual(useSettings.getState().playlists[0].hiddenCategories, ["News"]);
 });
 
 test("the on-screen Smart Remote red key toggles category visibility", async () => {
@@ -129,9 +141,25 @@ test("the on-screen Smart Remote red key toggles category visibility", async () 
   act(() => screen.getByRole("button", { name: "Show Smart Remote" }).click());
   act(() => screen.getByRole("button", { name: "123" }).click());
 
-  act(() => screen.getByRole("button", { name: "Red" }).click());
+  const red = screen.getByRole("button", { name: "Red" });
+  fireEvent.mouseDown(red);
+  fireEvent.mouseUp(red);
 
-  assert.equal(railRow("News")?.textContent?.includes("Hidden"), true);
+  assert.equal(Boolean(railRow("News")?.querySelector(".hidden-state")), true);
+});
+
+test("holding Red on the on-screen Smart Remote reveals hidden categories", async () => {
+  await mountApp(PLAYLIST, { hiddenCategories: ["News"] });
+  act(() => screen.getByRole("button", { name: "Show Smart Remote" }).click());
+  act(() => screen.getByRole("button", { name: "123" }).click());
+  const red = screen.getByRole("button", { name: "Red" });
+
+  fireEvent.mouseDown(red);
+  await settle(600);
+  fireEvent.mouseUp(red);
+
+  assert.deepEqual(rail(), ["News", "Sport"]);
+  assert.equal(Boolean(railRow("News")?.querySelector(".hidden-state")), true);
 });
 
 test("closing the channel panel saves categories staged with the red key", async () => {

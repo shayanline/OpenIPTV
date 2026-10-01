@@ -141,6 +141,18 @@ test("law 4: RETURN in the panel goes back to the picture rather than closing", 
   assert.equal(document.querySelector(".dialog"), null);
 });
 
+test("RETURN closes the channel panel before offering to exit when nothing is playing", async () => {
+  await mount();
+  assert.ok(panelOpen());
+
+  press(KEY.BACK);
+  assert.equal(panelOpen(), false);
+  assert.equal(Boolean(document.querySelector(".dialog")), false);
+
+  press(KEY.BACK);
+  assert.ok(document.querySelector(".dialog"));
+});
+
 test("a dialled number tunes the channel carrying it", async () => {
   await mount();
   press(KEY.ENTER);
