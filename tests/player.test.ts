@@ -2,9 +2,52 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import assert from "node:assert/strict";
 import { Player, onTizen, type PlayerEvent } from "../src/services/player";
 
-// The browser path loads hls.js on demand. Half a megabyte off the disk is not worth waiting
-// for here, and the one test that goes that way wants the native route anyway.
-vi.mock("hls.js", () => ({ default: { isSupported: () => false } }));
+interface FakeHlsInstance {
+  emit(event: string, data: unknown): void;
+}
+
+type HlsHandler = (event: string, data: unknown) => void;
+
+const hlsMock = vi.hoisted(() => ({
+  supported: false,
+  instance: null as FakeHlsInstance | null,
+}));
+
+vi.mock("hls.js", () => {
+  class FakeHls {
+    static isSupported = () => hlsMock.supported;
+    static Events = {
+      ERROR: "error",
+      LEVEL_SWITCHED: "levelSwitch",
+      MANIFEST_PARSED: "manifestParsed",
+    };
+    static ErrorTypes = { NETWORK_ERROR: "networkError", MEDIA_ERROR: "mediaError" };
+    currentLevel = 2;
+    bandwidthEstimate = 6_200_000;
+    levels = [
+      { width: 640, height: 360, bitrate: 800_000 },
+      { width: 1280, height: 720, bitrate: 2_500_000 },
+      {
+        width: 1920,
+        height: 1080,
+        bitrate: 4_500_000,
+        frameRate: 50,
+        videoCodec: "avc1.640028",
+        audioCodec: "mp4a.40.2",
+      },
+    ];
+    handlers = new Map<string, HlsHandler>();
+    constructor() { hlsMock.instance = this; }
+    on(event: string, handler: HlsHandler) { this.handlers.set(event, handler); }
+    emit(event: string, data: unknown) { this.handlers.get(event)?.(event, data); }
+    loadSource() {}
+    attachMedia() {}
+    startLoad() {}
+    recoverMediaError() {}
+    destroy() {}
+  }
+  return { default: FakeHls };
+});
 
 /**
  * The player, which is the riskiest thing in the application and had no tests at all.
@@ -36,6 +79,27 @@ function fakeAVPlay() {
     pause: () => { calls.push("pause"); state = "PAUSED"; },
     getState: () => state,
     getCurrentTime: () => currentTime,
+    getCurrentStreamInfo: () => [
+      {
+        index: 0,
+        type: "VIDEO",
+        extra_info: JSON.stringify({
+          Width: 1920,
+          Height: 1080,
+          FourCC: "H264",
+          Bit_rate: 4_500_000,
+          Frame_rate: 50,
+        }),
+      },
+      {
+        index: 1,
+        type: "AUDIO",
+        extra_info: JSON.stringify({ FourCC: "AAC", Bit_rate: 192_000 }),
+      },
+    ],
+    getStreamingProperty: (key: string) =>
+      key === "CURRENT_BANDWIDTH" ? "4500000" : key === "AVAILABLE_BITRATE" ? "1500000|3000000|4500000" : "",
+    getVideoSeamlessInfo: () => ({ scan_type: 1, rotation_degree: 0 }),
     setDisplayRect: () => calls.push("setDisplayRect"),
     setDisplayMethod: (m: string) => calls.push(`setDisplayMethod:${m}`),
     // The value as well as the key, since what is asked for matters as much as when.
@@ -65,6 +129,8 @@ const codes = () => events.filter((e) => e.type === "error").map((e) => e.code);
 
 beforeEach(() => {
   vi.useFakeTimers();
+  hlsMock.supported = false;
+  hlsMock.instance = null;
   av = fakeAVPlay();
   (window as unknown as { webapis: unknown }).webapis = { avplay: av };
   tvMuted = false;
@@ -142,6 +208,116 @@ test("buffering progress is passed on, and is absent when the engine says nothin
   assert.equal(buffering.find((e) => e.percent !== undefined)?.percent, 42);
   // A start that said nothing about progress must not read as nought per cent.
   assert.ok(buffering.some((e) => e.percent === undefined), "the start invented a figure");
+});
+
+test("AVPlay statistics normalize current engine values without using playlist labels", () => {
+  player.play("http://example.invalid/a.m3u8");
+  av.prepared?.ok();
+
+  expect(player.getStats()).toEqual({
+    engine: "AVPlay",
+    width: 1920,
+    height: 1080,
+    scan: "progressive",
+    videoCodec: "H264",
+    audioCodec: "AAC",
+    bitrate: 4_500_000,
+    frameRate: 50,
+    levels: 3,
+    switches: 0,
+  });
+});
+
+test("AVPlay statistics stay available when newer optional firmware APIs are absent", () => {
+  delete (av as Partial<typeof av>).getVideoSeamlessInfo;
+  delete (av as Partial<typeof av>).getStreamingProperty;
+  player.play("http://example.invalid/a.m3u8");
+  av.prepared?.ok();
+
+  expect(player.getStats()).toEqual({
+    engine: "AVPlay",
+    width: 1920,
+    height: 1080,
+    videoCodec: "H264",
+    audioCodec: "AAC",
+    bitrate: 4_500_000,
+    frameRate: 50,
+    switches: 0,
+  });
+});
+
+test("AVPlay counts actual adaptive bitrate changes rather than the initial selection", () => {
+  player.play("http://example.invalid/a.m3u8");
+  av.listener?.onevent?.("PLAYER_MSG_BITRATE_CHANGE", "1500000");
+  av.listener?.onevent?.("PLAYER_MSG_BITRATE_CHANGE", "1500000");
+  av.listener?.onevent?.("PLAYER_MSG_BITRATE_CHANGE", "4500000");
+
+  assert.equal(player.getStats().switches, 1);
+});
+
+test("browser statistics use the media element and tolerate older frame counters", () => {
+  delete (window as unknown as { webapis?: unknown }).webapis;
+  const browser = new Player(() => {});
+  const video = document.createElement("video");
+  let total = 0;
+  Object.defineProperties(video, {
+    videoWidth: { configurable: true, value: 1280 },
+    videoHeight: { configurable: true, value: 720 },
+    currentTime: { configurable: true, value: 10 },
+    buffered: {
+      configurable: true,
+      value: { length: 1, start: () => 0, end: () => 15.5 },
+    },
+    getVideoPlaybackQuality: {
+      configurable: true,
+      value: () => ({ totalVideoFrames: total, droppedVideoFrames: 0 }),
+    },
+  });
+  browser.attach(video);
+
+  expect(browser.getStats()).toMatchObject({
+    engine: "Native HLS",
+    width: 1280,
+    height: 720,
+    bufferSeconds: 5.5,
+    droppedFrames: 0,
+    totalFrames: 0,
+  });
+
+  vi.advanceTimersByTime(1000);
+  total = 50;
+  assert.equal(browser.getStats().frameRate, 50);
+  browser.stop();
+});
+
+test("hls.js statistics report the rendition in use and count level changes", async () => {
+  delete (window as unknown as { webapis?: unknown }).webapis;
+  hlsMock.supported = true;
+  const browser = new Player(() => {});
+  const video = document.createElement("video");
+  browser.attach(video);
+  browser.play("http://example.invalid/a.m3u8");
+  await vi.advanceTimersByTimeAsync(0);
+
+  const hls = hlsMock.instance;
+  assert.ok(hls, "hls.js was not created");
+  hls.emit("levelSwitch", { level: 0 });
+  hls.emit("levelSwitch", { level: 2 });
+
+  expect(browser.getStats()).toMatchObject({
+    engine: "hls.js",
+    width: 1920,
+    height: 1080,
+    videoCodec: "avc1.640028",
+    audioCodec: "mp4a.40.2",
+    bitrate: 4_500_000,
+    bandwidth: 6_200_000,
+    frameRate: 50,
+    level: 3,
+    levels: 3,
+    switches: 1,
+  });
+  browser.stop();
 });
 
 test("the adaptive request starts low and asks the set to skip nothing", () => {

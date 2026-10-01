@@ -59,6 +59,7 @@ interface Settings {
   /** How a picture that is not the shape of the screen should be fitted to it. */
   aspectId: AspectId;
   showClock: boolean;
+  showPlaybackStats: boolean;
   resumeLast: boolean;
   sortAlphabetically: boolean;
   /**
@@ -102,6 +103,7 @@ const DEFAULTS = {
      the feeds that get cropped badly, which are the standard definition ones. */
   aspectId: "fill" as AspectId,
   showClock: true,
+  showPlaybackStats: false,
   resumeLast: true,
   sortAlphabetically: false,
   /* Off. Nothing that only some channels need should cost the others anything. */

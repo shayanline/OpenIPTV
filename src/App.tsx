@@ -14,6 +14,7 @@ import { Sidebar } from "./components/Sidebar";
 import { PanelHeader } from "./components/PanelHeader";
 import { Settings } from "./components/Settings";
 import { PlaybackBanner } from "./components/PlaybackBanner";
+import { PlaybackInfo } from "./components/PlaybackInfo";
 import { Onboarding } from "./components/Onboarding";
 import { Clock } from "./components/Clock";
 import { ExitDialog, exitApp } from "./components/ExitDialog";
@@ -862,6 +863,14 @@ export default function App() {
       }
 
       // Consistency of Controls: a coloured key does the same thing wherever the viewer is.
+      if (code === KEY.BLUE) {
+        event.preventDefault();
+        const state = useSettings.getState();
+        const show = !state.showPlaybackStats;
+        state.set("showPlaybackStats", show);
+        chrome.say(t(show ? "app.playbackInfoOn" : "app.playbackInfoOff"));
+        return;
+      }
       if (code === KEY.YELLOW) {
         event.preventDefault();
         setShowSettings(true);
@@ -963,8 +972,12 @@ export default function App() {
            * banner, so the two presses are a toggle rather than one working and the other not.
            */
           case inlineEnd:
-            if (chrome.showing) {
+            if (
+              chrome.showing ||
+              (!!current && !fault && useSettings.getState().showPlaybackStats)
+            ) {
               chrome.clear();
+              useSettings.getState().set("showPlaybackStats", false);
               return;
             }
             break;
@@ -989,8 +1002,13 @@ export default function App() {
            */
           case KEY.BACK:
           case KEY.ESC:
-            if (chrome.showing) chrome.clear();
-            else setShowExit(true);
+            if (
+              chrome.showing ||
+              (!!current && !fault && useSettings.getState().showPlaybackStats)
+            ) {
+              chrome.clear();
+              useSettings.getState().set("showPlaybackStats", false);
+            } else setShowExit(true);
             return;
           // No default on purpose. An unrecognised key is not an instruction to go
           // somewhere, and the banner below is the whole of the right response: press
@@ -1229,6 +1247,7 @@ export default function App() {
       tuner,
       favouriteCurrent,
       current,
+      fault,
       cursor,
       nudgeCursor,
       openPanel,
@@ -1244,6 +1263,7 @@ export default function App() {
       pickResult,
       inlineStart,
       inlineEnd,
+      t,
     ],
   );
 
@@ -1473,7 +1493,10 @@ export default function App() {
         />
       )}
 
-      {/* ---- layer 2, the playback banner and its key guide ----------------------- */}
+      {/* ---- layer 2, playback information, the banner and its key guide ---------- */}
+      {current && atPlayer && settings.showPlaybackStats && !fault && (
+        <PlaybackInfo read={tuner.getStats} />
+      )}
       {/*
        * Held open while a channel is tuning, and for the banner's own notice period after a
        * channel is playing or paused. The picture state separately reports that a channel is
