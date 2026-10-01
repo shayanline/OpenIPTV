@@ -26,6 +26,8 @@ import { usePointerAwake } from "./hooks/usePointerAwake";
 import { RETRY_DELAYS_MS, useTuner } from "./hooks/useTuner";
 import { useLocale } from "./hooks/useLocale";
 import { applyDocumentLocale } from "./services/locale";
+import { usePhoneManagement } from "./hooks/usePhoneManagement";
+import { phoneManagementNeeded } from "./services/phoneServer";
 import type { Channel } from "./types";
 
 /*
@@ -163,6 +165,7 @@ export default function App() {
   const settings = useSettings();
   const { locale, direction, t, number } = useLocale();
   const configured = settings.playlists.length > 0;
+  usePhoneManagement(phoneManagementNeeded(configured));
 
   useLayoutEffect(() => {
     applyDocumentLocale(locale);
