@@ -41,6 +41,8 @@ test("settings uses clear sections and concise labels", async () => {
   expect(screen.getByRole("button", { name: "Playback" }).getAttribute("aria-current")).toBe("page");
   expect(screen.getByText("Screen fit")).toBeTruthy();
   expect(Boolean(screen.queryByText("Resume last channel"))).toBe(false);
+  expect(screen.getByRole("button", { name: "Playback information" })).toBeTruthy();
+  expect(screen.getByText(/Blue remote key/)).toBeTruthy();
   expect(screen.getByText("Compatibility mode")).toBeTruthy();
   expect(screen.getByText(/additional data while repairing/)).toBeTruthy();
 

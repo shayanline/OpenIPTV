@@ -101,6 +101,25 @@ export async function mountApp(
         volumeChanges.push(delta);
       }
       setFit() {}
+      getStats() {
+        return {
+          engine: "hls.js",
+          width: 1920,
+          height: 1080,
+          scan: "progressive",
+          videoCodec: "avc1.640028",
+          audioCodec: "mp4a.40.2",
+          bitrate: 4_500_000,
+          bandwidth: 6_200_000,
+          bufferSeconds: 12.4,
+          frameRate: 50,
+          droppedFrames: 2,
+          totalFrames: 1000,
+          level: 3,
+          levels: 5,
+          switches: 2,
+        };
+      }
       play(url: string) {
         played.push(url);
         // A picture arrives at once, so the tests are about the interface rather than about
