@@ -106,9 +106,7 @@ export default {
   "settings.stretchHint": "映像を変形して画面いっぱいに表示",
   "settings.playbackInfo": "再生情報",
   "settings.playbackInfoHint":
-    "映像の上にライブストリームの詳細を表示します。リモコンの青ボタンでいつでも切り替えられます。",
-  "app.playbackInfoOn": "再生情報を表示",
-  "app.playbackInfoOff": "再生情報を非表示",
+    "ここでオフにするまで、映像の上にライブストリームの詳細を表示します。",
   "playbackInfo.title": "再生情報",
   "playbackInfo.engine": "再生エンジン",
   "playbackInfo.resolution": "解像度",
@@ -125,7 +123,7 @@ export default {
   "playbackInfo.level": "自動品質レベル",
   "playbackInfo.autoLevels": ({ count }) => `自動、${count} レベル`,
   "playbackInfo.switches": "レベル切替回数",
-  "playbackInfo.hideHint": "青または戻るで非表示",
+  "playbackInfo.hideHint": "設定の診断でオフにできます",
   "settings.compatibility": "互換モード",
   "settings.compatibilityHint":
     "チャンネルが1フレーム表示した後に停止する場合に使用します。ストリームの修復中に追加データを使用することがあります。",

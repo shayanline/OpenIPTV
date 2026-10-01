@@ -107,9 +107,7 @@ export default {
   "settings.stretchHint": "Preenche o ecrã distorcendo a imagem",
   "settings.playbackInfo": "Informações de reprodução",
   "settings.playbackInfoHint":
-    "Mostra os detalhes da transmissão em direto sobre a imagem. A tecla azul do comando permite alterar esta opção a qualquer momento.",
-  "app.playbackInfoOn": "Informações de reprodução ativadas",
-  "app.playbackInfoOff": "Informações de reprodução desativadas",
+    "Mostra os detalhes da transmissão em direto sobre a imagem até serem desativados aqui.",
   "playbackInfo.title": "Informações de reprodução",
   "playbackInfo.engine": "Motor",
   "playbackInfo.resolution": "Resolução",
@@ -126,7 +124,7 @@ export default {
   "playbackInfo.level": "Nível adaptativo",
   "playbackInfo.autoLevels": ({ count }) => `Automático, ${count} níveis`,
   "playbackInfo.switches": "Mudanças de nível",
-  "playbackInfo.hideHint": "Azul ou Voltar oculta estas informações",
+  "playbackInfo.hideHint": "Desativar em Definições, Diagnóstico",
   "settings.compatibility": "Modo de compatibilidade",
   "settings.compatibilityHint":
     "Utilize esta opção se um canal mostrar uma imagem e depois parar. Pode utilizar dados adicionais ao reparar a transmissão.",

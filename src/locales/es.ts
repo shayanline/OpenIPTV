@@ -108,9 +108,7 @@ export default {
   "settings.stretchHint": "Rellena la pantalla deformando la imagen",
   "settings.playbackInfo": "Información de reproducción",
   "settings.playbackInfoHint":
-    "Muestra los detalles de la transmisión en directo sobre la imagen. La tecla azul del mando permite cambiarlo en cualquier momento.",
-  "app.playbackInfoOn": "Información de reproducción activada",
-  "app.playbackInfoOff": "Información de reproducción desactivada",
+    "Muestra los detalles de la transmisión en directo sobre la imagen hasta que los desactives aquí.",
   "playbackInfo.title": "Información de reproducción",
   "playbackInfo.engine": "Motor",
   "playbackInfo.resolution": "Resolución",
@@ -127,7 +125,7 @@ export default {
   "playbackInfo.level": "Nivel adaptativo",
   "playbackInfo.autoLevels": ({ count }) => `Automático, ${count} niveles`,
   "playbackInfo.switches": "Cambios de nivel",
-  "playbackInfo.hideHint": "Azul o Volver oculta esta información",
+  "playbackInfo.hideHint": "Desactivar en Ajustes, Diagnóstico",
   "settings.compatibility": "Modo de compatibilidad",
   "settings.compatibilityHint":
     "Úsalo si un canal muestra un fotograma y después se detiene. Puede usar datos adicionales al reparar la transmisión.",

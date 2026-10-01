@@ -71,12 +71,21 @@ export interface MountOptions {
    * ever. Anything asserting on that has to let the channel take a moment, as a real one does.
    */
   slowPicture?: number;
+  playbackStats?: boolean;
+  faultPicture?: boolean;
   locale?: LocalePreference;
 }
 
 export async function mountApp(
   playlist: string,
-  { resume, awaitPlaylist = true, slowPicture = 0, locale }: MountOptions = {},
+  {
+    resume,
+    awaitPlaylist = true,
+    slowPicture = 0,
+    playbackStats = false,
+    faultPicture = false,
+    locale,
+  }: MountOptions = {},
 ) {
   if (!vi.isFakeTimers()) vi.useFakeTimers();
   vi.resetModules();
@@ -124,7 +133,8 @@ export async function mountApp(
         played.push(url);
         // A picture arrives at once, so the tests are about the interface rather than about
         // waiting, unless a test has asked for a channel that takes a moment to join.
-        if (slowPicture) setTimeout(() => this.emit({ type: "playing" }), slowPicture);
+        if (faultPicture) this.emit({ type: "error", code: "TEST_FAILURE" });
+        else if (slowPicture) setTimeout(() => this.emit({ type: "playing" }), slowPicture);
         else this.emit({ type: "playing" });
       }
       resume(url: string) {
@@ -139,6 +149,7 @@ export async function mountApp(
       playlists: [{ id: "pl-1", name: "Test", url: "http://list.invalid/a.m3u" }],
       activePlaylistId: "pl-1",
       resumeLast: !!resume,
+      showPlaybackStats: playbackStats,
       ...(locale ? { locale } : {}),
     }),
   );

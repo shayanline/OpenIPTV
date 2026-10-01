@@ -38,13 +38,6 @@ export function Playback() {
           onChange={(id) => s.set("aspectId", id)}
         />
       </Row>
-      <Row label={t("settings.playbackInfo")} hint={t("settings.playbackInfoHint")}>
-        <Toggle
-          label={t("settings.playbackInfo")}
-          value={s.showPlaybackStats}
-          onChange={(value) => s.set("showPlaybackStats", value)}
-        />
-      </Row>
       <Row label={t("settings.compatibility")} hint={t("settings.compatibilityHint")}>
         <Toggle
           label={t("settings.compatibility")}

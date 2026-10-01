@@ -105,10 +105,7 @@ export default {
   "settings.stretch": "تمديد",
   "settings.stretchHint": "ملء الشاشة بتشويه الصورة",
   "settings.playbackInfo": "معلومات التشغيل",
-  "settings.playbackInfoHint":
-    "اعرض تفاصيل البث المباشر فوق الصورة. يغيّر الزر الأزرق في جهاز التحكم هذا الإعداد في أي وقت.",
-  "app.playbackInfoOn": "تم تشغيل معلومات التشغيل",
-  "app.playbackInfoOff": "تم إيقاف معلومات التشغيل",
+  "settings.playbackInfoHint": "اعرض تفاصيل البث المباشر فوق الصورة حتى توقفها من هنا.",
   "playbackInfo.title": "معلومات التشغيل",
   "playbackInfo.engine": "المشغل",
   "playbackInfo.resolution": "الدقة",
@@ -125,7 +122,7 @@ export default {
   "playbackInfo.level": "مستوى التكيف",
   "playbackInfo.autoLevels": ({ count }) => `تلقائي، ${count} مستويات`,
   "playbackInfo.switches": "تبديلات المستوى",
-  "playbackInfo.hideHint": "الزر الأزرق أو الرجوع يخفي هذه المعلومات",
+  "playbackInfo.hideHint": "أوقفها من الإعدادات، التشخيص",
   "settings.compatibility": "وضع التوافق",
   "settings.compatibilityHint":
     "استخدم هذا الخيار إذا عرضت قناة إطارًا واحدًا ثم توقفت. قد يستخدم بيانات إضافية أثناء إصلاح البث.",

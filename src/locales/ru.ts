@@ -107,9 +107,7 @@ export default {
   "settings.stretchHint": "Заполняет экран, искажая изображение",
   "settings.playbackInfo": "Информация о воспроизведении",
   "settings.playbackInfoHint":
-    "Показывает сведения о прямом потоке поверх изображения. Синяя кнопка пульта переключает их в любое время.",
-  "app.playbackInfoOn": "Информация о воспроизведении включена",
-  "app.playbackInfoOff": "Информация о воспроизведении выключена",
+    "Показывает сведения о прямом потоке поверх изображения, пока вы не отключите их здесь.",
   "playbackInfo.title": "Информация о воспроизведении",
   "playbackInfo.engine": "Проигрыватель",
   "playbackInfo.resolution": "Разрешение",
@@ -126,7 +124,7 @@ export default {
   "playbackInfo.level": "Адаптивный уровень",
   "playbackInfo.autoLevels": ({ count }) => `Автоматически, уровней: ${count}`,
   "playbackInfo.switches": "Переключения уровня",
-  "playbackInfo.hideHint": "Синяя кнопка или Назад скрывает сведения",
+  "playbackInfo.hideHint": "Отключается в Настройках, Диагностика",
   "settings.compatibility": "Режим совместимости",
   "settings.compatibilityHint":
     "Используйте этот режим, если канал показывает один кадр и останавливается. При восстановлении потока могут использоваться дополнительные данные.",

@@ -107,9 +107,7 @@ export default {
   "settings.stretchHint": "Riempie lo schermo deformando l’immagine",
   "settings.playbackInfo": "Informazioni di riproduzione",
   "settings.playbackInfoHint":
-    "Mostra i dettagli dello stream in diretta sopra l’immagine. Il tasto blu del telecomando li attiva o disattiva in qualsiasi momento.",
-  "app.playbackInfoOn": "Informazioni di riproduzione attive",
-  "app.playbackInfoOff": "Informazioni di riproduzione disattive",
+    "Mostra i dettagli dello stream in diretta sopra l’immagine finché non vengono disattivati qui.",
   "playbackInfo.title": "Informazioni di riproduzione",
   "playbackInfo.engine": "Motore",
   "playbackInfo.resolution": "Risoluzione",
@@ -126,7 +124,7 @@ export default {
   "playbackInfo.level": "Livello adattivo",
   "playbackInfo.autoLevels": ({ count }) => `Automatico, ${count} livelli`,
   "playbackInfo.switches": "Cambi di livello",
-  "playbackInfo.hideHint": "Blu o Indietro nasconde queste informazioni",
+  "playbackInfo.hideHint": "Disattiva in Impostazioni, Diagnostica",
   "settings.compatibility": "Modalità compatibilità",
   "settings.compatibilityHint":
     "Usala se un canale mostra un fotogramma e poi si ferma. La riparazione dello stream può usare dati aggiuntivi.",

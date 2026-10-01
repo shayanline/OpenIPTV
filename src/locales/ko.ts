@@ -105,10 +105,7 @@ export default {
   "settings.stretch": "늘이기",
   "settings.stretchHint": "화면을 왜곡하여 화면을 채웁니다",
   "settings.playbackInfo": "재생 정보",
-  "settings.playbackInfoHint":
-    "화면 위에 실시간 스트림 정보를 표시합니다. 리모컨의 파란색 버튼으로 언제든 전환할 수 있습니다.",
-  "app.playbackInfoOn": "재생 정보 켜짐",
-  "app.playbackInfoOff": "재생 정보 꺼짐",
+  "settings.playbackInfoHint": "여기에서 끌 때까지 화면 위에 실시간 스트림 정보를 표시합니다.",
   "playbackInfo.title": "재생 정보",
   "playbackInfo.engine": "재생 엔진",
   "playbackInfo.resolution": "해상도",
@@ -125,7 +122,7 @@ export default {
   "playbackInfo.level": "적응형 레벨",
   "playbackInfo.autoLevels": ({ count }) => `자동, ${count}개 레벨`,
   "playbackInfo.switches": "레벨 전환 횟수",
-  "playbackInfo.hideHint": "파란색 또는 돌아가기 버튼으로 숨기기",
+  "playbackInfo.hideHint": "설정의 진단에서 끌 수 있습니다",
   "settings.compatibility": "호환성 모드",
   "settings.compatibilityHint":
     "채널이 한 프레임을 표시한 뒤 멈추면 사용하세요. 스트림을 복구하는 동안 추가 데이터를 사용할 수 있습니다.",

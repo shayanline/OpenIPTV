@@ -108,9 +108,7 @@ export default {
   "settings.stretchHint": "Füllt den Bildschirm, indem das Bild verzerrt wird",
   "settings.playbackInfo": "Wiedergabeinformationen",
   "settings.playbackInfoHint":
-    "Zeigt Details zum Livestream über dem Bild an. Die blaue Fernbedienungstaste schaltet sie jederzeit um.",
-  "app.playbackInfoOn": "Wiedergabeinformationen ein",
-  "app.playbackInfoOff": "Wiedergabeinformationen aus",
+    "Zeigt Details zum Livestream über dem Bild an, bis sie hier ausgeschaltet werden.",
   "playbackInfo.title": "Wiedergabeinformationen",
   "playbackInfo.engine": "Wiedergabeengine",
   "playbackInfo.resolution": "Auflösung",
@@ -127,7 +125,7 @@ export default {
   "playbackInfo.level": "Adaptives Niveau",
   "playbackInfo.autoLevels": ({ count }) => `Automatisch, ${count} Niveaus`,
   "playbackInfo.switches": "Niveauwechsel",
-  "playbackInfo.hideHint": "Blau oder Zurück blendet dies aus",
+  "playbackInfo.hideHint": "Unter Einstellungen, Diagnose ausschalten",
   "settings.compatibility": "Kompatibilitätsmodus",
   "settings.compatibilityHint":
     "Verwenden Sie dies, wenn ein Sender ein Bild zeigt und dann stoppt. Beim Reparieren des Streams können zusätzliche Daten verwendet werden.",

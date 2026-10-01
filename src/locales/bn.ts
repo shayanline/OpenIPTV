@@ -105,10 +105,7 @@ export default {
   "settings.stretch": "প্রসারিত",
   "settings.stretchHint": "ছবির আকার বিকৃত করে স্ক্রিন ভরাট করে",
   "settings.playbackInfo": "প্লেব্যাক তথ্য",
-  "settings.playbackInfoHint":
-    "ছবির ওপর লাইভ স্ট্রিমের তথ্য দেখান। রিমোটের নীল বোতাম যেকোনো সময় এটি পরিবর্তন করে।",
-  "app.playbackInfoOn": "প্লেব্যাক তথ্য চালু",
-  "app.playbackInfoOff": "প্লেব্যাক তথ্য বন্ধ",
+  "settings.playbackInfoHint": "ছবির ওপর লাইভ স্ট্রিমের তথ্য দেখান, যতক্ষণ না এখান থেকে বন্ধ করেন।",
   "playbackInfo.title": "প্লেব্যাক তথ্য",
   "playbackInfo.engine": "ইঞ্জিন",
   "playbackInfo.resolution": "রেজোলিউশন",
@@ -125,7 +122,7 @@ export default {
   "playbackInfo.level": "অ্যাডাপটিভ স্তর",
   "playbackInfo.autoLevels": ({ count }) => `স্বয়ংক্রিয়, ${count}টি স্তর`,
   "playbackInfo.switches": "স্তর পরিবর্তন",
-  "playbackInfo.hideHint": "নীল বোতাম বা ফিরে যান চাপলে এটি লুকায়",
+  "playbackInfo.hideHint": "সেটিংসের ডায়াগনস্টিকস থেকে বন্ধ করুন",
   "settings.compatibility": "সামঞ্জস্য মোড",
   "settings.compatibilityHint":
     "কোনও চ্যানেল একটি ফ্রেম দেখিয়ে থেমে গেলে এটি ব্যবহার করুন। স্ট্রিম মেরামতের সময় অতিরিক্ত ডেটা ব্যবহার হতে পারে।",

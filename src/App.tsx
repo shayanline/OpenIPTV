@@ -835,14 +835,6 @@ export default function App() {
       }
 
       // Consistency of Controls: a coloured key does the same thing wherever the viewer is.
-      if (code === KEY.BLUE) {
-        event.preventDefault();
-        const state = useSettings.getState();
-        const show = !state.showPlaybackStats;
-        state.set("showPlaybackStats", show);
-        chrome.say(t(show ? "app.playbackInfoOn" : "app.playbackInfoOff"));
-        return;
-      }
       if (code === KEY.YELLOW) {
         event.preventDefault();
         setShowSettings(true);
@@ -944,12 +936,8 @@ export default function App() {
            * banner, so the two presses are a toggle rather than one working and the other not.
            */
           case inlineEnd:
-            if (
-              chrome.showing ||
-              (!!current && !fault && useSettings.getState().showPlaybackStats)
-            ) {
+            if (chrome.showing) {
               chrome.clear();
-              useSettings.getState().set("showPlaybackStats", false);
               return;
             }
             break;
@@ -974,13 +962,8 @@ export default function App() {
            */
           case KEY.BACK:
           case KEY.ESC:
-            if (
-              chrome.showing ||
-              (!!current && !fault && useSettings.getState().showPlaybackStats)
-            ) {
-              chrome.clear();
-              useSettings.getState().set("showPlaybackStats", false);
-            } else setShowExit(true);
+            if (chrome.showing) chrome.clear();
+            else setShowExit(true);
             return;
           // No default on purpose. An unrecognised key is not an instruction to go
           // somewhere, and the banner below is the whole of the right response: press
@@ -1219,7 +1202,6 @@ export default function App() {
       tuner,
       favouriteCurrent,
       current,
-      fault,
       cursor,
       nudgeCursor,
       openPanel,
@@ -1235,7 +1217,6 @@ export default function App() {
       pickResult,
       inlineStart,
       inlineEnd,
-      t,
     ],
   );
 
@@ -1466,7 +1447,7 @@ export default function App() {
       )}
 
       {/* ---- layer 2, playback information, the banner and its key guide ---------- */}
-      {current && atPlayer && settings.showPlaybackStats && !fault && (
+      {current && !modal && settings.showPlaybackStats && (
         <PlaybackInfo read={tuner.getStats} />
       )}
       {/*

@@ -105,10 +105,7 @@ export default {
   "settings.stretch": "खींचें",
   "settings.stretchHint": "चित्र को विकृत करके स्क्रीन भरता है",
   "settings.playbackInfo": "प्लेबैक जानकारी",
-  "settings.playbackInfoHint":
-    "चित्र पर लाइव स्ट्रीम का विवरण दिखाएँ। रिमोट का नीला बटन इसे कभी भी बदल सकता है।",
-  "app.playbackInfoOn": "प्लेबैक जानकारी चालू",
-  "app.playbackInfoOff": "प्लेबैक जानकारी बंद",
+  "settings.playbackInfoHint": "चित्र पर लाइव स्ट्रीम का विवरण तब तक दिखाएँ जब तक इसे यहाँ बंद न करें।",
   "playbackInfo.title": "प्लेबैक जानकारी",
   "playbackInfo.engine": "इंजन",
   "playbackInfo.resolution": "रिज़ॉल्यूशन",
@@ -125,7 +122,7 @@ export default {
   "playbackInfo.level": "अनुकूली स्तर",
   "playbackInfo.autoLevels": ({ count }) => `स्वचालित, ${count} स्तर`,
   "playbackInfo.switches": "स्तर परिवर्तन",
-  "playbackInfo.hideHint": "नीला या वापस बटन इसे छिपाता है",
+  "playbackInfo.hideHint": "सेटिंग्स के डायग्नोस्टिक्स में बंद करें",
   "settings.compatibility": "अनुकूलता मोड",
   "settings.compatibilityHint":
     "अगर कोई चैनल एक फ़्रेम दिखाकर रुक जाए तो इसका उपयोग करें। स्ट्रीम ठीक करते समय अतिरिक्त डेटा इस्तेमाल हो सकता है।",

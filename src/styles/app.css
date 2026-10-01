@@ -757,7 +757,8 @@ html.tizen, html.tizen body, html.tizen #root, html.tizen .app { background: tra
   position: absolute;
   z-index: var(--z-notice);
   top: var(--safe-y);
-  left: var(--safe-x);
+  right: var(--safe-x);
+  left: auto;
   width: 560px;
   max-width: calc(100% - var(--safe-x) * 2);
   padding: var(--s3);
@@ -766,6 +767,10 @@ html.tizen, html.tizen body, html.tizen #root, html.tizen .app { background: tra
   box-shadow: var(--lift);
   pointer-events: none;
   animation: pb-in var(--t-med) var(--ease-enter);
+}
+html[dir="rtl"] .playback-info {
+  left: var(--safe-x);
+  right: auto;
 }
 .playback-info h2 {
   margin: 0 0 var(--s2);
@@ -1223,6 +1228,8 @@ html[dir="rtl"] .language-picker-list { right: auto; left: 0; }
   background: var(--focus);
   color: var(--on-focus);
 }
+.switch:focus:not(.on) .switch-track { background: rgba(16, 16, 19, 0.14); }
+.switch:focus:not(.on) .switch-knob { background: rgba(16, 16, 19, 0.62); }
 
 .preview {
   margin-top: var(--s3);

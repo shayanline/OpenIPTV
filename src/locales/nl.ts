@@ -107,9 +107,7 @@ export default {
   "settings.stretchHint": "Vult het scherm door het beeld te vervormen",
   "settings.playbackInfo": "Afspeelinformatie",
   "settings.playbackInfoHint":
-    "Toon live streamdetails over het beeld. De blauwe toets op de afstandsbediening wijzigt dit op elk moment.",
-  "app.playbackInfoOn": "Afspeelinformatie aan",
-  "app.playbackInfoOff": "Afspeelinformatie uit",
+    "Toon live streamdetails over het beeld totdat u ze hier uitschakelt.",
   "playbackInfo.title": "Afspeelinformatie",
   "playbackInfo.engine": "Afspeelengine",
   "playbackInfo.resolution": "Resolutie",
@@ -126,7 +124,7 @@ export default {
   "playbackInfo.level": "Adaptief niveau",
   "playbackInfo.autoLevels": ({ count }) => `Automatisch, ${count} niveaus`,
   "playbackInfo.switches": "Niveauwisselingen",
-  "playbackInfo.hideHint": "Blauw of Terug verbergt dit",
+  "playbackInfo.hideHint": "Uitschakelen via Instellingen, Diagnostiek",
   "settings.compatibility": "Compatibiliteitsmodus",
   "settings.compatibilityHint":
     "Gebruik dit als een kanaal één beeld toont en daarna stopt. Tijdens het herstellen van de stream kan extra data worden gebruikt.",

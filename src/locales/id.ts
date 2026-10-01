@@ -106,9 +106,7 @@ export default {
   "settings.stretchHint": "Memenuhi layar dengan mengubah bentuk gambar",
   "settings.playbackInfo": "Informasi pemutaran",
   "settings.playbackInfoHint":
-    "Tampilkan detail stream langsung di atas gambar. Tombol Biru pada remote dapat mengubahnya kapan saja.",
-  "app.playbackInfoOn": "Informasi pemutaran aktif",
-  "app.playbackInfoOff": "Informasi pemutaran nonaktif",
+    "Tampilkan detail stream langsung di atas gambar sampai dinonaktifkan di sini.",
   "playbackInfo.title": "Informasi pemutaran",
   "playbackInfo.engine": "Mesin",
   "playbackInfo.resolution": "Resolusi",
@@ -125,7 +123,7 @@ export default {
   "playbackInfo.level": "Tingkat adaptif",
   "playbackInfo.autoLevels": ({ count }) => `Otomatis, ${count} tingkat`,
   "playbackInfo.switches": "Perubahan tingkat",
-  "playbackInfo.hideHint": "Biru atau Kembali menyembunyikan ini",
+  "playbackInfo.hideHint": "Nonaktifkan di Pengaturan, Diagnostik",
   "settings.compatibility": "Mode kompatibilitas",
   "settings.compatibilityHint":
     "Gunakan ini jika kanal menampilkan satu bingkai lalu berhenti. Data tambahan mungkin digunakan saat memperbaiki stream.",

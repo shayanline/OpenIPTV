@@ -146,7 +146,7 @@ const ENGLISH = {
   "settings.stretchHint": "Fills the screen by distorting the picture",
   "settings.playbackInfo": "Playback information",
   "settings.playbackInfoHint":
-    "Show live stream details over the picture. The Blue remote key changes this at any time.",
+    "Show live stream details over the picture until you turn them off here.",
   "settings.compatibility": "Compatibility mode",
   "settings.compatibilityHint":
     "Use this if a channel shows one frame, then stops. It may use additional data while repairing the stream.",
@@ -178,8 +178,6 @@ const ENGLISH = {
   "app.noChannel": ({ number }) => `No channel ${number} in this playlist.`,
   "app.removedFavourite": "Removed from favourites",
   "app.addedFavourite": "Added to favourites",
-  "app.playbackInfoOn": "Playback information on",
-  "app.playbackInfoOff": "Playback information off",
   "banner.position": ({ at, of, list }) => `${at} of ${of} in ${list}`,
   "guide.addIt": "Add it",
   "guide.showMatches": "Show matches",
@@ -203,7 +201,7 @@ const ENGLISH = {
   "playbackInfo.level": "Adaptive level",
   "playbackInfo.autoLevels": ({ count }) => `Auto, ${count} levels`,
   "playbackInfo.switches": "Level switches",
-  "playbackInfo.hideHint": "Blue or Return hides this",
+  "playbackInfo.hideHint": "Turn off in Settings, Diagnostics",
   "guide.chooseAnotherPlaylist": "Choose another playlist",
   "guide.closeTheApp": "Close the app",
   "guide.anotherChannel": "Another channel",
@@ -445,9 +443,7 @@ const PERSIAN: Partial<Record<MessageKey, Message>> = {
   "settings.stretchHint": "پر کردن صفحه با تغییر شکل تصویر",
   "settings.playbackInfo": "اطلاعات پخش",
   "settings.playbackInfoHint":
-    "نمایش جزئیات جریان زنده روی تصویر. دکمه آبی کنترل از راه دور هر زمان آن را تغییر می‌دهد.",
-  "app.playbackInfoOn": "اطلاعات پخش روشن شد",
-  "app.playbackInfoOff": "اطلاعات پخش خاموش شد",
+    "نمایش جزئیات جریان زنده روی تصویر تا زمانی که آن را از اینجا خاموش کنید.",
   "playbackInfo.title": "اطلاعات پخش",
   "playbackInfo.engine": "موتور پخش",
   "playbackInfo.resolution": "وضوح تصویر",
@@ -464,7 +460,7 @@ const PERSIAN: Partial<Record<MessageKey, Message>> = {
   "playbackInfo.level": "سطح تطبیقی",
   "playbackInfo.autoLevels": ({ count }) => `خودکار، ${count} سطح`,
   "playbackInfo.switches": "تغییرات سطح",
-  "playbackInfo.hideHint": "دکمه آبی یا بازگشت این اطلاعات را پنهان می‌کند",
+  "playbackInfo.hideHint": "از تنظیمات، بخش عیب‌یابی خاموش کنید",
   "settings.compatibility": "حالت سازگاری",
   "settings.compatibilityHint":
     "اگر کانال یک فریم نشان می‌دهد و سپس متوقف می‌شود از این گزینه استفاده کنید. ممکن است هنگام تعمیر جریان داده بیشتری مصرف شود.",

@@ -106,9 +106,7 @@ export default {
   "settings.stretchHint": "Görüntüyü bozarak ekranı doldurur",
   "settings.playbackInfo": "Oynatma bilgileri",
   "settings.playbackInfoHint":
-    "Canlı yayın ayrıntılarını görüntünün üzerinde gösterir. Kumandadaki Mavi tuş bunu istediğiniz zaman değiştirir.",
-  "app.playbackInfoOn": "Oynatma bilgileri açık",
-  "app.playbackInfoOff": "Oynatma bilgileri kapalı",
+    "Buradan kapatılana kadar canlı yayın ayrıntılarını görüntünün üzerinde gösterir.",
   "playbackInfo.title": "Oynatma bilgileri",
   "playbackInfo.engine": "Oynatma motoru",
   "playbackInfo.resolution": "Çözünürlük",
@@ -125,7 +123,7 @@ export default {
   "playbackInfo.level": "Uyarlamalı seviye",
   "playbackInfo.autoLevels": ({ count }) => `Otomatik, ${count} seviye`,
   "playbackInfo.switches": "Seviye değişimleri",
-  "playbackInfo.hideHint": "Mavi veya Geri tuşu bunu gizler",
+  "playbackInfo.hideHint": "Ayarlar, Tanılama bölümünden kapatın",
   "settings.compatibility": "Uyumluluk modu",
   "settings.compatibilityHint":
     "Bir kanal tek kare gösterip durursa bunu kullanın. Akışı onarırken ek veri kullanılabilir.",

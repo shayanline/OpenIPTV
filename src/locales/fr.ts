@@ -107,9 +107,7 @@ export default {
   "settings.stretchHint": "Remplit l’écran en déformant l’image",
   "settings.playbackInfo": "Informations de lecture",
   "settings.playbackInfoHint":
-    "Affiche les détails du flux en direct sur l’image. La touche bleue de la télécommande permet de les afficher ou masquer à tout moment.",
-  "app.playbackInfoOn": "Informations de lecture activées",
-  "app.playbackInfoOff": "Informations de lecture désactivées",
+    "Affiche les détails du flux en direct sur l’image jusqu’à leur désactivation ici.",
   "playbackInfo.title": "Informations de lecture",
   "playbackInfo.engine": "Moteur",
   "playbackInfo.resolution": "Résolution",
@@ -126,7 +124,7 @@ export default {
   "playbackInfo.level": "Niveau adaptatif",
   "playbackInfo.autoLevels": ({ count }) => `Automatique, ${count} niveaux`,
   "playbackInfo.switches": "Changements de niveau",
-  "playbackInfo.hideHint": "Bleu ou Retour masque ces informations",
+  "playbackInfo.hideHint": "Désactiver dans Paramètres, Diagnostics",
   "settings.compatibility": "Mode de compatibilité",
   "settings.compatibilityHint":
     "Utilisez cette option si une chaîne affiche une image puis s’arrête. La réparation du flux peut utiliser des données supplémentaires.",
