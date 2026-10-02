@@ -130,7 +130,7 @@ export default {
   "playbackInfo.level": "Niveau adaptatif",
   "playbackInfo.autoLevels": ({ count }) => `Automatique, ${count} niveaux`,
   "playbackInfo.switches": "Changements de niveau",
-  "playbackInfo.hideHint": "Maintenez OK ou désactivez dans Paramètres, Lecture",
+  "playbackInfo.hideHint": "Maintenez pour masquer ou désactivez dans Paramètres, Lecture",
   "settings.compatibility": "Mode de compatibilité",
   "settings.compatibilityHint":
     "Utilisez cette option si une chaîne affiche une image puis s’arrête. La réparation du flux peut utiliser des données supplémentaires.",

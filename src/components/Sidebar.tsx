@@ -3,6 +3,7 @@ import { useLocale } from "../hooks/useLocale";
 import { Icon } from "./Icon";
 import { Text } from "./Text";
 import { ScrollIndicator } from "./ScrollIndicator";
+import { KeyGuide } from "./KeyGuide";
 import { RAIL_ROW_BASE, useWindowed } from "../hooks/useWindowed";
 import { useViewport } from "../hooks/useViewport";
 
@@ -158,11 +159,18 @@ export const Sidebar = memo(function Sidebar({
         <div className="window" style={{ transform: `translateY(${-win.offset}px)` }}>
           {rows}
         </div>
-        {!loading && !categories.length && (
-          <p className="empty">
-            {t(allHidden ? "channel.allCategoriesHidden" : "channel.noCategories")}
-          </p>
-        )}
+        {!loading && !categories.length &&
+          (allHidden ? (
+            <div className="empty">
+              <p>{t("channel.allCategoriesHidden")}</p>
+              <KeyGuide
+                className="empty-guide"
+                items={[{ keys: ["Red"], label: t("playlist.showAllCategories") }]}
+              />
+            </div>
+          ) : (
+            <p className="empty">{t("channel.noCategories")}</p>
+          ))}
       </div>
       <ScrollIndicator count={categories.length} first={win.first} visible={win.visible} />
     </nav>

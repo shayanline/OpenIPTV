@@ -129,7 +129,7 @@ export default {
   "playbackInfo.level": "Uyarlamalı seviye",
   "playbackInfo.autoLevels": ({ count }) => `Otomatik, ${count} seviye`,
   "playbackInfo.switches": "Seviye değişimleri",
-  "playbackInfo.hideHint": "OK düğmesini basılı tutun veya Ayarlar, Oynatma bölümünden kapatın",
+  "playbackInfo.hideHint": "Gizlemek için basılı tutun veya Ayarlar, Oynatma bölümünden kapatın",
   "settings.compatibility": "Uyumluluk modu",
   "settings.compatibilityHint":
     "Bir kanal tek kare gösterip durursa bunu kullanın. Akışı onarırken ek veri kullanılabilir.",

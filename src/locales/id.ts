@@ -129,7 +129,7 @@ export default {
   "playbackInfo.level": "Tingkat adaptif",
   "playbackInfo.autoLevels": ({ count }) => `Otomatis, ${count} tingkat`,
   "playbackInfo.switches": "Perubahan tingkat",
-  "playbackInfo.hideHint": "Tahan OK atau nonaktifkan di Pengaturan, Pemutaran",
+  "playbackInfo.hideHint": "Tahan untuk menyembunyikan atau nonaktifkan di Pengaturan, Pemutaran",
   "settings.compatibility": "Mode kompatibilitas",
   "settings.compatibilityHint":
     "Gunakan ini jika kanal menampilkan satu bingkai lalu berhenti. Data tambahan mungkin digunakan saat memperbaiki stream.",

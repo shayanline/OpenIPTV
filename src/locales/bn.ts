@@ -128,7 +128,7 @@ export default {
   "playbackInfo.level": "অ্যাডাপটিভ স্তর",
   "playbackInfo.autoLevels": ({ count }) => `স্বয়ংক্রিয়, ${count}টি স্তর`,
   "playbackInfo.switches": "স্তর পরিবর্তন",
-  "playbackInfo.hideHint": "ঠিক আছে চেপে ধরুন অথবা সেটিংসের প্লেব্যাক থেকে বন্ধ করুন",
+  "playbackInfo.hideHint": "লুকাতে চেপে ধরুন অথবা সেটিংসের প্লেব্যাক থেকে বন্ধ করুন",
   "settings.compatibility": "সামঞ্জস্য মোড",
   "settings.compatibilityHint":
     "কোনও চ্যানেল একটি ফ্রেম দেখিয়ে থেমে গেলে এটি ব্যবহার করুন। স্ট্রিম মেরামতের সময় অতিরিক্ত ডেটা ব্যবহার হতে পারে।",

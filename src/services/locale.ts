@@ -249,7 +249,7 @@ const ENGLISH = {
   "playbackInfo.level": "Adaptive level",
   "playbackInfo.autoLevels": ({ count }) => `Auto, ${count} levels`,
   "playbackInfo.switches": "Level switches",
-  "playbackInfo.hideHint": "Hold OK, or turn off in Settings, Playback",
+  "playbackInfo.hideHint": "Hold to hide, or turn off in Settings, Playback",
   "guide.chooseAnotherPlaylist": "Choose another playlist",
   "guide.closeTheApp": "Close the app",
   "guide.anotherChannel": "Another channel",
@@ -262,7 +262,7 @@ const ENGLISH = {
   "channel.hidden": "Hidden",
   "channel.noCategories": "No categories yet.",
   "channel.allCategoriesHidden":
-    "All categories are hidden. Hold Red to show them here, or unhide them in Settings, Playlists, Categories.",
+    "All categories are hidden. Show them here, or unhide them in Settings, Playlists, Categories.",
   "channel.nothingInCategory": "Nothing in this category.",
   "channel.noMatches": ({ query }) => `No channel matches “${query}”.`,
   "channel.typeName": "Type a channel name.",
@@ -582,7 +582,7 @@ const PERSIAN: Partial<Record<MessageKey, Message>> = {
   "playbackInfo.level": "سطح تطبیقی",
   "playbackInfo.autoLevels": ({ count }) => `خودکار، ${count} سطح`,
   "playbackInfo.switches": "تغییرات سطح",
-  "playbackInfo.hideHint": "دکمه تأیید را نگه دارید یا از تنظیمات، بخش پخش خاموش کنید",
+  "playbackInfo.hideHint": "برای پنهان کردن نگه دارید یا از تنظیمات، بخش پخش خاموش کنید",
   "settings.compatibility": "حالت سازگاری",
   "settings.compatibilityHint":
     "اگر کانال یک فریم نشان می‌دهد و سپس متوقف می‌شود از این گزینه استفاده کنید. ممکن است هنگام تعمیر جریان داده بیشتری مصرف شود.",

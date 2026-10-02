@@ -128,7 +128,7 @@ export default {
   "playbackInfo.level": "自适应级别",
   "playbackInfo.autoLevels": ({ count }) => `自动，共 ${count} 级`,
   "playbackInfo.switches": "级别切换次数",
-  "playbackInfo.hideHint": "长按确定，或在设置的播放中关闭",
+  "playbackInfo.hideHint": "长按可隐藏，或在设置的播放中关闭",
   "settings.compatibility": "兼容模式",
   "settings.compatibilityHint":
     "如果频道显示一帧后停止，请使用此选项。修复流媒体时可能会使用额外数据。",

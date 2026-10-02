@@ -130,7 +130,7 @@ export default {
   "playbackInfo.level": "Adaptief niveau",
   "playbackInfo.autoLevels": ({ count }) => `Automatisch, ${count} niveaus`,
   "playbackInfo.switches": "Niveauwisselingen",
-  "playbackInfo.hideHint": "Houd OK vast of schakel uit via Instellingen, Afspelen",
+  "playbackInfo.hideHint": "Houd vast om te verbergen of schakel uit via Instellingen, Afspelen",
   "settings.compatibility": "Compatibiliteitsmodus",
   "settings.compatibilityHint":
     "Gebruik dit als een kanaal één beeld toont en daarna stopt. Tijdens het herstellen van de stream kan extra data worden gebruikt.",

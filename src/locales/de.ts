@@ -131,7 +131,7 @@ export default {
   "playbackInfo.level": "Adaptives Niveau",
   "playbackInfo.autoLevels": ({ count }) => `Automatisch, ${count} Niveaus`,
   "playbackInfo.switches": "Niveauwechsel",
-  "playbackInfo.hideHint": "OK halten oder unter Einstellungen, Wiedergabe ausschalten",
+  "playbackInfo.hideHint": "Gedrückt halten zum Ausblenden oder unter Einstellungen, Wiedergabe ausschalten",
   "settings.compatibility": "Kompatibilitätsmodus",
   "settings.compatibilityHint":
     "Verwenden Sie dies, wenn ein Sender ein Bild zeigt und dann stoppt. Beim Reparieren des Streams können zusätzliche Daten verwendet werden.",

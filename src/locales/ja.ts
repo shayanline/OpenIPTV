@@ -129,7 +129,7 @@ export default {
   "playbackInfo.level": "自動品質レベル",
   "playbackInfo.autoLevels": ({ count }) => `自動、${count} レベル`,
   "playbackInfo.switches": "レベル切替回数",
-  "playbackInfo.hideHint": "OKを長押しするか、設定の再生でオフにできます",
+  "playbackInfo.hideHint": "長押しで非表示にするか、設定の再生でオフにできます",
   "settings.compatibility": "互換モード",
   "settings.compatibilityHint":
     "チャンネルが1フレーム表示した後に停止する場合に使用します。ストリームの修復中に追加データを使用することがあります。",

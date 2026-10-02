@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useLocale } from "../hooks/useLocale";
 import type { PlaybackStats } from "../services/player";
+import { KeyGuide } from "./KeyGuide";
 
 const rate = (value?: number): string => {
   if (value === undefined) return "";
@@ -70,7 +71,10 @@ export function PlaybackInfo({ read }: { read: () => PlaybackStats | null }) {
           </div>
         ))}
       </dl>
-      <p>{t("playbackInfo.hideHint")}</p>
+      <KeyGuide
+        className="playback-info-guide"
+        items={[{ keys: ["OK"], label: t("playbackInfo.hideHint") }]}
+      />
     </aside>
   );
 }

@@ -128,7 +128,7 @@ export default {
   "playbackInfo.level": "अनुकूली स्तर",
   "playbackInfo.autoLevels": ({ count }) => `स्वचालित, ${count} स्तर`,
   "playbackInfo.switches": "स्तर परिवर्तन",
-  "playbackInfo.hideHint": "ठीक दबाकर रखें या सेटिंग्स के प्लेबैक में बंद करें",
+  "playbackInfo.hideHint": "छिपाने के लिए दबाकर रखें या सेटिंग्स के प्लेबैक में बंद करें",
   "settings.compatibility": "अनुकूलता मोड",
   "settings.compatibilityHint":
     "अगर कोई चैनल एक फ़्रेम दिखाकर रुक जाए तो इसका उपयोग करें। स्ट्रीम ठीक करते समय अतिरिक्त डेटा इस्तेमाल हो सकता है।",

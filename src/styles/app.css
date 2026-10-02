@@ -967,8 +967,11 @@ html[dir="rtl"] .playback-info {
   font-variant-numeric: tabular-nums;
   text-align: end;
 }
-.playback-info p {
-  margin: var(--s2) 0 0;
+.playback-info-guide {
+  justify-content: flex-start;
+  margin-top: var(--s2);
+  padding-top: var(--s2);
+  border-top: 1px solid var(--line);
   color: var(--text-3);
   font-size: var(--t-caption);
 }
@@ -1189,6 +1192,13 @@ html[dir="rtl"] .playback-info {
 .empty {
   padding: var(--s3) var(--s2);
   color: var(--text-3);
+}
+.empty > p {
+  margin: 0;
+}
+.empty-guide {
+  justify-content: flex-start;
+  margin-top: var(--s2);
 }
 
 /* ================================================================= onboarding ==== */

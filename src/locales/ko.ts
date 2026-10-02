@@ -128,7 +128,7 @@ export default {
   "playbackInfo.level": "적응형 레벨",
   "playbackInfo.autoLevels": ({ count }) => `자동, ${count}개 레벨`,
   "playbackInfo.switches": "레벨 전환 횟수",
-  "playbackInfo.hideHint": "확인을 길게 누르거나 설정의 재생에서 끌 수 있습니다",
+  "playbackInfo.hideHint": "길게 눌러 숨기거나 설정의 재생에서 끌 수 있습니다",
   "settings.compatibility": "호환성 모드",
   "settings.compatibilityHint":
     "채널이 한 프레임을 표시한 뒤 멈추면 사용하세요. 스트림을 복구하는 동안 추가 데이터를 사용할 수 있습니다.",

@@ -131,7 +131,7 @@ export default {
   "playbackInfo.level": "Nivel adaptativo",
   "playbackInfo.autoLevels": ({ count }) => `Automático, ${count} niveles`,
   "playbackInfo.switches": "Cambios de nivel",
-  "playbackInfo.hideHint": "Mantén OK o desactiva en Ajustes, Reproducción",
+  "playbackInfo.hideHint": "Mantén pulsado para ocultar o desactiva en Ajustes, Reproducción",
   "settings.compatibility": "Modo de compatibilidad",
   "settings.compatibilityHint":
     "Úsalo si un canal muestra un fotograma y después se detiene. Puede usar datos adicionales al reparar la transmisión.",

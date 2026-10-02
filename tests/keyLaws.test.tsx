@@ -278,6 +278,7 @@ test("playback information stays enabled through RETURN and Right", async () => 
   press(KEY.RIGHT);
 
   const info = screen.getByRole("complementary", { name: "Playback information" });
+  expect(info.querySelector("kbd")?.textContent).toBe("OK");
   expect(info.textContent).toContain("hls.js");
   expect(info.textContent).toMatch(/1920.*1080/);
   expect(info.textContent).toContain("avc1.640028");
