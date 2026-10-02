@@ -82,6 +82,8 @@ export default {
   "settings.appearance": "Apparence",
   "settings.playback": "Lecture",
   "settings.general": "Général",
+  "settings.applicationData": "Données de l’application",
+  "settings.support": "Assistance",
   "settings.playlists": "Playlists",
   "settings.diagnostics": "Diagnostics",
   "settings.about": "À propos",
@@ -128,7 +130,7 @@ export default {
   "playbackInfo.level": "Niveau adaptatif",
   "playbackInfo.autoLevels": ({ count }) => `Automatique, ${count} niveaux`,
   "playbackInfo.switches": "Changements de niveau",
-  "playbackInfo.hideHint": "Désactiver dans Paramètres, Diagnostics",
+  "playbackInfo.hideHint": "Maintenez OK ou désactivez dans Paramètres, Lecture",
   "settings.compatibility": "Mode de compatibilité",
   "settings.compatibilityHint":
     "Utilisez cette option si une chaîne affiche une image puis s’arrête. La réparation du flux peut utiliser des données supplémentaires.",
@@ -253,6 +255,8 @@ export default {
   "playlist.savedPlaylists": "Listes enregistrées",
   "playlist.editAria": ({ name }) => `Modifier ${name}`,
   "playlist.manageCategories": "Catégories",
+  "playlist.categoryCount": ({ count, total }) =>
+    `${count} ${Number(total) === 1 ? "catégorie" : "catégories"}`,
   "playlist.manageCategoriesAria": ({ name }) => `Gérer les catégories de ${name}`,
   "playlist.categoriesTitle": "Catégories",
   "playlist.hiddenChannels": "Chaînes des catégories masquées",
@@ -289,6 +293,7 @@ export default {
   "diagnostics.title": "Diagnostics",
   "diagnostics.lead":
     "La plateforme et les entrées de la télécommande de cet appareil. Utilisez ces informations lorsqu’une fonction marche sur un appareil mais pas sur un autre.",
+  "diagnostics.deviceInfo": "Appareil et application",
   "diagnostics.app": "Application",
   "diagnostics.platform": "Plateforme",
   "diagnostics.engine": "Moteur",
@@ -331,14 +336,9 @@ export default {
   "about.title": "À propos",
   "about.version": ({ version }) => `Version ${version}`,
   "about.description":
-    "OpenIPTV est un lecteur gratuit et open source pour les playlists M3U. Il ne contient aucune chaîne et n’envoie aucune donnée d’analyse. L’application se connecte uniquement aux playlists, flux et logos que vous choisissez. Vos adresses de playlists et paramètres restent sur cet appareil.",
+    "OpenIPTV ne contient aucune chaîne ni donnée d’analyse et conserve les adresses de playlists et les paramètres sur cet appareil. Le contenu est lu directement depuis les sources ajoutées sans modifier les noms de chaînes ou de catégories. Aucun compte OpenIPTV n’est requis. Le projet est open source et maintenu dans son dépôt public. Utilisez uniquement les flux auxquels vous êtes autorisé à accéder.",
   "about.disclaimer":
     "OpenIPTV n’est affilié à aucun diffuseur ni service de streaming. Regardez uniquement les contenus auxquels vous êtes autorisé à accéder.",
-  "about.categoryShortcuts": "Raccourcis des catégories",
-  "about.holdRed": "Maintenir Rouge",
-  "about.redCategoryAction": "Masquer ou démasquer la catégorie sélectionnée",
-  "about.holdRedCategoryAction": "Afficher ou masquer les catégories masquées",
-  "about.categoryChangesSaved": "Les modifications sont enregistrées immédiatement.",
   "about.qr": "Scannez le code QR pour consulter le code source ou signaler un problème.",
   "about.qrAlt": ({ url }) => `Code QR vers ${url}`,
   "settings.phoneAccess": "Accès par téléphone",

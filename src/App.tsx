@@ -887,6 +887,76 @@ export default function App() {
     };
   }, []);
 
+  const okContextRef = useRef({
+    eligible: false,
+    revealPanel,
+  });
+  okContextRef.current = {
+    eligible:
+      configured &&
+      view === "watch" &&
+      !showSettings &&
+      !showExit &&
+      !!current &&
+      !busy &&
+      !paused &&
+      !fault &&
+      !chrome.showing &&
+      !chrome.digits,
+    revealPanel,
+  };
+
+  useEffect(() => {
+    let timer: number | undefined;
+    let long = false;
+    let pressed = false;
+    const togglePlaybackInfo = () => {
+      const state = useSettings.getState();
+      state.set("showPlaybackStats", !state.showPlaybackStats);
+    };
+    const onDown = (event: KeyboardEvent) => {
+      if (event.keyCode !== KEY.ENTER || !okContextRef.current.eligible) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      pressed = true;
+      if (event.repeat) {
+        window.clearTimeout(timer);
+        timer = undefined;
+        if (!long) {
+          long = true;
+          togglePlaybackInfo();
+        }
+        return;
+      }
+      if (timer === undefined && !long) {
+        timer = window.setTimeout(() => {
+          timer = undefined;
+          long = true;
+          togglePlaybackInfo();
+        }, 500);
+      }
+    };
+    const onUp = (event: KeyboardEvent) => {
+      if (event.keyCode !== KEY.ENTER || !pressed) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      if (timer !== undefined) {
+        window.clearTimeout(timer);
+        timer = undefined;
+        okContextRef.current.revealPanel();
+      }
+      pressed = false;
+      long = false;
+    };
+    window.addEventListener("keydown", onDown);
+    window.addEventListener("keyup", onUp);
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener("keydown", onDown);
+      window.removeEventListener("keyup", onUp);
+    };
+  }, []);
+
   const openSettings = useCallback(() => setShowSettings(true), []);
 
   const closeSettings = useCallback(() => {

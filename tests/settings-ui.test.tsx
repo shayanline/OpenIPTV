@@ -43,7 +43,7 @@ test("settings uses clear sections and concise labels", async () => {
 
   expect(
     [...document.querySelectorAll(".sheet-rail .row-label")].map((el) => el.textContent),
-  ).toEqual(["Appearance", "Playback", "General", "Playlists", "Diagnostics", "About"]);
+  ).toEqual(["Appearance", "Playback", "Playlists", "About"]);
   expect(Boolean(document.querySelector(".settings-breadcrumb"))).toBe(false);
   const appearance = screen.getByRole("button", { name: "Appearance" });
   expect(appearance.getAttribute("aria-current")).toBe("page");
@@ -63,18 +63,10 @@ test("settings uses clear sections and concise labels", async () => {
     "page",
   );
   expect(screen.getByText("Screen fit")).toBeTruthy();
-  expect(Boolean(screen.queryByText("Resume last channel"))).toBe(false);
-  expect(Boolean(screen.queryByRole("button", { name: "Playback information" }))).toBe(false);
+  expect(screen.getByText("Resume last channel")).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Playback information" })).toBeTruthy();
   expect(screen.getByText("Compatibility mode")).toBeTruthy();
   expect(screen.getByText(/additional data while repairing/)).toBeTruthy();
-
-  await act(async () => {
-    fireEvent.click(screen.getByRole("button", { name: "General" }));
-  });
-  expect(screen.getByRole("heading", { level: 3, name: "General" })).toBeTruthy();
-  expect(screen.getByText("Resume last channel")).toBeTruthy();
-  const reset = screen.getByRole("button", { name: "Reset app data" });
-  expect(Boolean(reset.closest(".field"))).toBe(true);
 
   await act(async () => {
     fireEvent.click(screen.getByRole("button", { name: "Playlists" }));
@@ -98,42 +90,42 @@ test("settings uses clear sections and concise labels", async () => {
   await act(async () => {
     fireEvent.click(screen.getByRole("button", { name: /^Secondhttp:\/\/second\.invalid/ }));
   });
-  expect(
-    [...document.querySelectorAll(".sheet-body .sheet-lead")].some(
-      (el) => el.textContent === "Could not refresh: offline. Showing the last saved copy.",
-    ),
-  ).toBe(true);
-  expect(
-    [...document.querySelectorAll(".sheet-body .sheet-lead")].some(
-      (el) => el.textContent === "Playlists are stored on this device only.",
-    ),
-  ).toBe(true);
+  expect(screen.getByRole("status").textContent).toBe(
+    "Could not refresh: offline. Showing the last saved copy.",
+  );
+  expect(screen.getByText("Playlists are stored on this device only.")).toBeTruthy();
 
   await act(async () => {
-    fireEvent.click(screen.getByRole("button", { name: "Diagnostics" }));
+    fireEvent.click(screen.getByRole("button", { name: "About" }));
+  });
+  await act(async () => {
+    fireEvent.click(screen.getByRole("button", { name: "Open" }));
   });
   expect(screen.getByText(/This device's platform and remote input/)).toBeTruthy();
-  expect(screen.getByRole("button", { name: "Playback information" })).toBeTruthy();
-  expect(screen.getByText(/until you turn them off here/)).toBeTruthy();
-  expect(screen.getByText(/last eight keys received by the app/)).toBeTruthy();
+  expect(screen.getByRole("heading", { name: "Device and application" })).toBeTruthy();
+  expect(screen.getByRole("heading", { name: "Compatibility" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Remote keys" })).toBeTruthy();
 });
 
-test("About explains every category shortcut in one place", async () => {
+test("About groups support and application data beneath concise app information", async () => {
   await mountApp(PLAYLIST);
   press(KEY.YELLOW);
   await act(async () => {
     fireEvent.click(screen.getByRole("button", { name: "About" }));
   });
 
-  const heading = screen.getByRole("heading", { level: 4, name: "Category shortcuts" });
-  const shortcuts = heading.closest(".category-shortcuts");
-  expect(shortcuts?.textContent).toContain(
-    "RedIn the category list, hide or unhide the highlighted category",
+  expect(screen.getByRole("heading", { level: 3, name: "About" })).toBeTruthy();
+  expect(screen.getByRole("heading", { level: 4, name: "Support" })).toBeTruthy();
+  expect(screen.getByRole("heading", { level: 4, name: "Application data" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Open" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Clear cache" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Reset app data" })).toBeTruthy();
+  expect(document.querySelector(".about-summary")?.textContent).toContain(
+    "No OpenIPTV account is required.",
   );
-  expect(shortcuts?.textContent).toContain(
-    "Hold RedWith a channel or category focused, show or hide hidden categories",
-  );
-  expect(shortcuts?.textContent).toContain("Changes are saved immediately.");
+  expect(
+    screen.getByRole("link", { name: "https://github.com/shayanline/OpenIPTV" }),
+  ).toHaveProperty("tabIndex", -1);
 });
 
 test("remote navigation reaches the Categories action in a playlist row", async () => {
@@ -249,7 +241,7 @@ test("each playlist manages its own category visibility", async () => {
     fireEvent.click(screen.getByRole("button", { name: "Playlists" }));
   });
   const manage = screen.getByRole("button", { name: "Manage categories for Test" });
-  expect(manage.textContent).toBe("Categories");
+  expect(manage.textContent).toBe("2 Categories");
   await act(async () => {
     fireEvent.click(manage);
   });
@@ -402,7 +394,9 @@ http://example.invalid/s.m3u8`,
   await act(async () => {
     fireEvent.click(screen.getByRole("button", { name: "Back to Playlists" }));
   });
-  expect(Boolean(screen.queryByRole("status"))).toBe(false);
+  expect(screen.getByRole("status").textContent).toBe(
+    "1 channel loaded from the active playlist.",
+  );
 });
 
 test("a failed inactive playlist load does not show categories from the active playlist", async () => {
@@ -434,7 +428,7 @@ test("resetting application data revokes remembered phones", async () => {
   await mountApp(PLAYLIST);
   press(KEY.YELLOW);
 
-  fireEvent.click(screen.getByRole("button", { name: "General" }));
+  fireEvent.click(screen.getByRole("button", { name: "About" }));
   fireEvent.click(screen.getByRole("button", { name: "Reset app data" }));
   const resetButtons = screen.getAllByRole("button", { name: "Reset app data" });
   fireEvent.click(resetButtons[resetButtons.length - 1]);

@@ -7,9 +7,7 @@ import type { MessageKey } from "../services/locale";
 import { KeyGuide } from "./KeyGuide";
 import { About } from "./settings/About";
 import { Appearance } from "./settings/Appearance";
-import { General } from "./settings/General";
 import { Playback } from "./settings/Behaviour";
-import { Diagnostics } from "./settings/Diagnostics";
 import { Playlists } from "./settings/Playlists";
 import { Phones } from "./settings/Phones";
 import type { PhoneManagementControl } from "../hooks/usePhoneManagement";
@@ -27,14 +25,7 @@ type DetailEntry = {
   close: () => void;
 };
 
-type Section =
-  | "appearance"
-  | "playback"
-  | "general"
-  | "playlists"
-  | "phones"
-  | "diagnostics"
-  | "about";
+type Section = "appearance" | "playback" | "playlists" | "phones" | "about";
 
 /**
  * The sections, in the order the rail lists them, each with the glyph beside its name.
@@ -48,10 +39,8 @@ type Section =
 const SECTIONS: { id: Section; label: MessageKey; icon: IconName }[] = [
   { id: "appearance", label: "settings.appearance", icon: "appearance" },
   { id: "playback", label: "settings.playback", icon: "tv" },
-  { id: "general", label: "settings.general", icon: "settings" },
   { id: "playlists", label: "settings.playlists", icon: "playlists" },
   { id: "phones", label: "settings.phoneAccess", icon: "phone" },
-  { id: "diagnostics", label: "settings.diagnostics", icon: "diagnostics" },
   { id: "about", label: "settings.about", icon: "about" },
 ];
 const DESKTOP_SECTIONS = SECTIONS.filter((section) => section.id !== "phones");
@@ -104,6 +93,7 @@ export function Settings({
    * The child raises this while it is asking, and this stands aside.
    */
   const [asking, setAsking] = useState(false);
+  const [okGuide, setOkGuide] = useState(() => t("common.select"));
   // Every control in the body has to be reachable with the four directional buttons,
   // which the browser will not do on its own. Checklist items 2.2 and 3.2.
   const { move, focusFirst, hasTargets } = useSpatialNav(bodyRef, !inSections && !asking);
@@ -121,7 +111,6 @@ export function Settings({
       if (open) interrupted.current = document.activeElement as HTMLElement | null;
       setAsking(open);
       if (open) return;
-      // After the dialog has gone, and only if it is still something that can be focused.
       window.setTimeout(() => {
         const back = interrupted.current;
         interrupted.current = null;
@@ -200,6 +189,43 @@ export function Settings({
     if (focused instanceof HTMLElement && bodyRef.current?.contains(focused)) focused.blur();
     setInSections(true);
   }, []);
+
+  const updateOkGuide = useCallback(
+    (event: React.FocusEvent<HTMLDivElement>) => {
+      const target = event.target;
+      if (!(target instanceof HTMLElement)) return;
+      let label = target.dataset.okGuide;
+      if (!label && target instanceof HTMLInputElement) label = t("common.edit");
+      if (!label && target.classList.contains("settings-detail-back")) label = t("common.back");
+      if (
+        !label &&
+        (target.classList.contains("switch") ||
+          target.classList.contains("chip") ||
+          target.classList.contains("language-picker-current"))
+      )
+        label = t("common.changeIt");
+      if (
+        !label &&
+        (target.classList.contains("language-picker-option") ||
+          target.classList.contains("pl-main"))
+      )
+        label = t("common.select");
+      if (
+        !label &&
+        (target.classList.contains("category-setting-row") ||
+          target.classList.contains("settings-icon-action"))
+      )
+        label = target.getAttribute("aria-label") ?? undefined;
+      if (!label && target instanceof HTMLButtonElement) {
+        label =
+          target.textContent?.replace(/\s+/g, " ").trim() ||
+          target.getAttribute("aria-label") ||
+          undefined;
+      }
+      setOkGuide(label || t("common.select"));
+    },
+    [t],
+  );
 
   /**
    * A section with nothing to operate keeps the focus on the rail.
@@ -374,7 +400,7 @@ export function Settings({
                 ]
               : [
                   { keys: ["\u2191", "\u2193", "\u2190", "\u2192"], label: t("common.move") },
-                  { keys: ["OK"], label: t("settings.change") },
+                  { keys: ["OK"], label: okGuide },
                   {
                     keys: ["Return"],
                     label: details.length ? t("common.back") : t("settings.close"),
@@ -384,7 +410,7 @@ export function Settings({
         />
       </nav>
 
-      <div className="sheet-body" ref={bodyRef}>
+      <div className="sheet-body" ref={bodyRef} onFocusCapture={updateOkGuide}>
         {detail && (
           <header className="settings-detail-appbar">
             <button
@@ -393,18 +419,16 @@ export function Settings({
               aria-label={t("settings.backTo", { section: sectionLabel })}
               onClick={backDetail}
             >
-              <span aria-hidden="true">{direction === "rtl" ? "→" : "←"}</span>
+              <Icon name="back" />
             </button>
             <h3>{detail.label}</h3>
           </header>
         )}
         {section === "appearance" && <Appearance />}
         {section === "playback" && <Playback />}
-        {section === "general" && <General onAsking={ask} />}
         {section === "playlists" && <Playlists onAsking={ask} navigation={detailNavigation} />}
         {section === "phones" && <Phones management={phoneManagement} onAsking={ask} />}
-        {section === "diagnostics" && <Diagnostics />}
-        {section === "about" && <About />}
+        {section === "about" && <About onAsking={ask} navigation={detailNavigation} />}
       </div>
     </div>
   );

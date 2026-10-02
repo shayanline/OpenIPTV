@@ -82,6 +82,8 @@ export default {
   "settings.appearance": "Darstellung",
   "settings.playback": "Wiedergabe",
   "settings.general": "Allgemein",
+  "settings.applicationData": "Anwendungsdaten",
+  "settings.support": "Support",
   "settings.playlists": "Wiedergabelisten",
   "settings.diagnostics": "Diagnose",
   "settings.about": "Info",
@@ -129,7 +131,7 @@ export default {
   "playbackInfo.level": "Adaptives Niveau",
   "playbackInfo.autoLevels": ({ count }) => `Automatisch, ${count} Niveaus`,
   "playbackInfo.switches": "Niveauwechsel",
-  "playbackInfo.hideHint": "Unter Einstellungen, Diagnose ausschalten",
+  "playbackInfo.hideHint": "OK halten oder unter Einstellungen, Wiedergabe ausschalten",
   "settings.compatibility": "Kompatibilitätsmodus",
   "settings.compatibilityHint":
     "Verwenden Sie dies, wenn ein Sender ein Bild zeigt und dann stoppt. Beim Reparieren des Streams können zusätzliche Daten verwendet werden.",
@@ -258,6 +260,8 @@ export default {
   "playlist.savedPlaylists": "Gespeicherte Wiedergabelisten",
   "playlist.editAria": ({ name }) => `${name} bearbeiten`,
   "playlist.manageCategories": "Kategorien",
+  "playlist.categoryCount": ({ count, total }) =>
+    `${count} ${Number(total) === 1 ? "Kategorie" : "Kategorien"}`,
   "playlist.manageCategoriesAria": ({ name }) => `Kategorien von ${name} verwalten`,
   "playlist.categoriesTitle": "Kategorien",
   "playlist.hiddenChannels": "Sender ausgeblendeter Kategorien",
@@ -294,6 +298,7 @@ export default {
   "diagnostics.title": "Diagnose",
   "diagnostics.lead":
     "Die Plattform und die Eingaben der Fernbedienung dieses Geräts. Verwenden Sie diese Details, wenn etwas auf einem Gerät funktioniert, aber auf einem anderen nicht.",
+  "diagnostics.deviceInfo": "Gerät und Anwendung",
   "diagnostics.app": "App",
   "diagnostics.platform": "Plattform",
   "diagnostics.engine": "Engine",
@@ -335,14 +340,9 @@ export default {
   "about.title": "Info",
   "about.version": ({ version }) => `Version ${version}`,
   "about.description":
-    "OpenIPTV ist ein kostenloser Open-Source-Player für M3U-Wiedergabelisten. Er enthält keine Sender und sendet keine Analysedaten. Die App verbindet sich nur mit den von Ihnen ausgewählten Wiedergabelisten, Streams und Logos. Ihre Wiedergabelistenadressen und Einstellungen bleiben auf diesem Gerät.",
+    "OpenIPTV enthält keine Sender oder Analysedaten und speichert Wiedergabelistenadressen und Einstellungen auf diesem Gerät. Inhalte werden direkt aus den hinzugefügten Quellen abgespielt, ohne Sender- oder Kategorienamen zu ändern. Ein OpenIPTV-Konto ist nicht erforderlich. Das Projekt ist quelloffen und wird über sein öffentliches Repository gepflegt. Nutzen Sie nur Streams, auf die Sie zugreifen dürfen.",
   "about.disclaimer":
     "OpenIPTV ist nicht mit Sendern oder Streamingdiensten verbunden. Sehen Sie nur Inhalte an, auf die Sie zugreifen dürfen.",
-  "about.categoryShortcuts": "Kategorie Kurzbefehle",
-  "about.holdRed": "Rot halten",
-  "about.redCategoryAction": "Ausgewählte Kategorie ausblenden oder einblenden",
-  "about.holdRedCategoryAction": "Ausgeblendete Kategorien anzeigen oder verbergen",
-  "about.categoryChangesSaved": "Änderungen werden sofort gespeichert.",
   "about.qr":
     "Scannen Sie den QR-Code, um den Quellcode anzuzeigen oder ein Problem zu melden.",
   "about.qrAlt": ({ url }) => `QR-Code mit Verweis auf ${url}`,

@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import { useLocale } from "../../hooks/useLocale";
+import { KEY, useRemote } from "../../hooks/useRemote";
 import { useSettings, type HiddenCategoryMode, type Playlist } from "../../stores/settings";
 import { useChannels } from "../../stores/channels";
 import { checkPlaylistUrl, nameFromUrl } from "../../services/playlistUrl";
@@ -8,7 +9,7 @@ import { Confirm } from "../Confirm";
 import { Icon } from "../Icon";
 import { Text } from "../Text";
 import type { SettingsDetailNavigation } from "../Settings";
-import { Row, SettingsListHeader } from "./Field";
+import { PageHeader, Row, SettingsListHeader } from "./Field";
 
 const CATEGORY_PAGE_SIZE = 20;
 
@@ -28,7 +29,10 @@ function CategoryManager({
   const [searching, setSearching] = useState(false);
   const [actionsOpen, setActionsOpen] = useState(false);
   const [confirmingAll, setConfirmingAll] = useState(false);
+  const searchButton = useRef<HTMLButtonElement>(null);
   const searchInput = useRef<HTMLInputElement>(null);
+  const moreButton = useRef<HTMLButtonElement>(null);
+  const pageFocus = useRef<-1 | 0 | 1>(0);
   const folded = query.trim().toLocaleLowerCase();
   const matches = folded
     ? categories.filter((category) => category.name.toLocaleLowerCase().includes(folded))
@@ -47,25 +51,88 @@ function CategoryManager({
     (option) => option.id === playlist.hiddenCategoryMode,
   )?.label;
 
-  useEffect(() => {
-    if (searching) window.setTimeout(() => searchInput.current?.focus(), 0);
-  }, [searching]);
-
   const pageFromRow = (direction: -1 | 1) => {
     const next = currentPage + direction;
     if (next < 0 || next >= pages) return false;
+    pageFocus.current = direction;
     setPage(next);
-    window.setTimeout(() => {
-      const rows = document.querySelectorAll<HTMLButtonElement>(".category-setting-row");
-      (direction > 0 ? rows[0] : rows[rows.length - 1])?.focus();
-    }, 0);
     return true;
   };
 
-  const askHideAll = (open: boolean) => {
-    setConfirmingAll(open);
-    onAsking(open);
+  const closeHideAll = () => {
+    moreButton.current?.focus();
+    setConfirmingAll(false);
+    onAsking(false);
   };
+  const closeSearch = () => {
+    searchButton.current?.focus();
+    setSearching(false);
+    onAsking(false);
+  };
+  const openSearch = () => {
+    setActionsOpen(false);
+    setSearching(true);
+    onAsking(true);
+  };
+  const closeActions = () => {
+    moreButton.current?.focus();
+    setActionsOpen(false);
+    onAsking(false);
+  };
+  const openActions = () => {
+    setSearching(false);
+    setActionsOpen(true);
+    onAsking(true);
+  };
+
+  useLayoutEffect(() => {
+    if (searching) {
+      searchInput.current?.focus();
+      return;
+    }
+    if (actionsOpen) {
+      document
+        .querySelector<HTMLButtonElement>(".category-actions-menu .settings-menu-item")
+        ?.focus();
+      return;
+    }
+    if (pageFocus.current) {
+      const direction = pageFocus.current;
+      pageFocus.current = 0;
+      const rows = document.querySelectorAll<HTMLButtonElement>(".category-setting-row");
+      (direction > 0 ? rows[0] : rows[rows.length - 1])?.focus();
+    }
+  }, [searching, actionsOpen, currentPage]);
+
+  useRemote((code, event) => {
+    if (
+      searching &&
+      (code === KEY.BACK || code === KEY.ESC || code === KEY.UP || code === KEY.DOWN)
+    ) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      closeSearch();
+      return;
+    }
+    if (!actionsOpen) return;
+    if (code === KEY.BACK || code === KEY.ESC || code === KEY.LEFT || code === KEY.RIGHT) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      closeActions();
+      return;
+    }
+    if (code !== KEY.UP && code !== KEY.DOWN) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    const items = Array.from(
+      document.querySelectorAll<HTMLButtonElement>(
+        ".category-actions-menu .settings-menu-item",
+      ),
+    );
+    const at = items.indexOf(document.activeElement as HTMLButtonElement);
+    const next = code === KEY.UP ? Math.max(0, at - 1) : Math.min(items.length - 1, at + 1);
+    items[next]?.focus();
+  });
 
   return (
     <>
@@ -77,6 +144,7 @@ function CategoryManager({
           type="button"
           className="btn tonal"
           data-settings-detail-first
+          data-ok-guide={t("common.changeIt")}
           aria-label={`${t("playlist.hiddenChannels")}, ${modeLabel}`}
           onClick={() =>
             settings.setHiddenCategoryMode(
@@ -85,60 +153,77 @@ function CategoryManager({
             )
           }
         >
-          {modeLabel}
+          <span>{modeLabel}</span>
         </button>
       </Row>
-      <SettingsListHeader title={t("playlist.manageCategories")} count={number(matches.length)}>
-        <button
-          type="button"
-          className="settings-icon-action"
-          aria-label={t("playlist.categorySearch")}
-          aria-expanded={searching}
-          onClick={() => setSearching((open) => !open)}
+      <div className="settings-list-tools">
+        <SettingsListHeader
+          title={t("playlist.manageCategories")}
+          count={number(matches.length)}
         >
-          <Icon name="search" />
-        </button>
-        <button
-          type="button"
-          className="settings-icon-action"
-          aria-label={t("playlist.categoryActions")}
-          aria-expanded={actionsOpen}
-          onClick={() => setActionsOpen((open) => !open)}
-        >
-          <Icon name="more" />
-        </button>
-      </SettingsListHeader>
-      {searching && (
-        <div className="category-search">
-          <input
-            ref={searchInput}
+          <button
+            ref={searchButton}
+            type="button"
+            className="settings-icon-action"
             aria-label={t("playlist.categorySearch")}
-            value={query}
-            dir="auto"
-            onChange={(event) => {
-              setQuery(event.target.value);
-              setPage(0);
-            }}
-          />
-        </div>
-      )}
-      {actionsOpen && (
-        <div className="category-actions-menu">
-          <button type="button" className="btn tonal" onClick={() => askHideAll(true)}>
-            {t("playlist.hideAllCategories")}
+            aria-expanded={searching}
+            aria-pressed={!!query}
+            onClick={() => (searching ? closeSearch() : openSearch())}
+          >
+            <Icon name="search" />
           </button>
           <button
+            ref={moreButton}
             type="button"
-            className="btn tonal"
-            onClick={() => {
-              settings.setHiddenCategories(playlist.id, []);
-              setActionsOpen(false);
-            }}
+            className="settings-icon-action"
+            aria-label={t("playlist.categoryActions")}
+            aria-expanded={actionsOpen}
+            onClick={() => (actionsOpen ? closeActions() : openActions())}
           >
-            {t("playlist.showAllCategories")}
+            <Icon name="more" />
           </button>
-        </div>
-      )}
+        </SettingsListHeader>
+        {searching && (
+          <div className="category-search-popup">
+            <input
+              ref={searchInput}
+              aria-label={t("playlist.categorySearch")}
+              value={query}
+              dir="auto"
+              onChange={(event) => {
+                setQuery(event.target.value);
+                setPage(0);
+              }}
+            />
+          </div>
+        )}
+        {actionsOpen && (
+          <div className="category-actions-menu">
+            <button
+              type="button"
+              className="settings-menu-item"
+              onClick={() => {
+                setActionsOpen(false);
+                setConfirmingAll(true);
+              }}
+            >
+              <Icon name="hidden" />
+              <span>{t("playlist.hideAllCategories")}</span>
+            </button>
+            <button
+              type="button"
+              className="settings-menu-item"
+              onClick={() => {
+                settings.setHiddenCategories(playlist.id, []);
+                closeActions();
+              }}
+            >
+              <Icon name="visible" />
+              <span>{t("playlist.showAllCategories")}</span>
+            </button>
+          </div>
+        )}
+      </div>
       <div className="category-settings-list">
         {shown.map((category, row) => {
           const hidden = playlist.hiddenCategories.includes(category.name);
@@ -197,14 +282,13 @@ function CategoryManager({
           body={t("playlist.hideAllBody")}
           confirmLabel={t("playlist.hideAllCategories")}
           cancelLabel={t("common.cancel")}
-          onCancel={() => askHideAll(false)}
+          onCancel={closeHideAll}
           onConfirm={() => {
             settings.setHiddenCategories(
               playlist.id,
               categories.map((category) => category.name),
             );
-            setActionsOpen(false);
-            askHideAll(false);
+            closeHideAll();
           }}
         />
       )}
@@ -340,6 +424,10 @@ export function Playlists({
     );
   };
 
+  const categoryCountFor = (playlist: Playlist) =>
+    playlist.id === s.activePlaylistId && channels.length
+      ? categories.length
+      : playlist.categoryCount;
   const managedPlaylist = s.playlists.find((playlist) => playlist.id === managing);
   if (managedPlaylist) {
     return (
@@ -387,10 +475,10 @@ export function Playlists({
           )}
           <div className="actions">
             <button type="button" className="btn filled" onClick={save}>
-              {t("common.save")}
+              <span>{t("common.save")}</span>
             </button>
             <button type="button" className="btn tonal" onClick={navigation.back}>
-              {t("common.cancel")}
+              <span>{t("common.cancel")}</span>
             </button>
           </div>
         </div>
@@ -400,22 +488,17 @@ export function Playlists({
 
   return (
     <>
-      <h3>{t("settings.playlists")}</h3>
-      {note && (
-        <p className="sheet-lead" role="status">
-          {note}
-        </p>
-      )}
-      <p className="sheet-lead">
-        {loading
-          ? t("playlist.loadingActive")
-          : error
-            ? errorText(errorKey, errorDetail, error)
-            : s.playlists.length
-              ? t("playlist.loadedActive", { count: channels.length })
-              : t("playlist.addToStart")}
+      <PageHeader title={t("settings.playlists")} description={t("playlist.storedLocally")} />
+      <p className="settings-status" role="status">
+        {note ||
+          (loading
+            ? t("playlist.loadingActive")
+            : error
+              ? errorText(errorKey, errorDetail, error)
+              : s.playlists.length
+                ? t("playlist.loadedActive", { count: channels.length })
+                : t("playlist.addToStart"))}
       </p>
-      <p className="sheet-lead">{t("playlist.storedLocally")}</p>
 
       <SettingsListHeader
         title={t("playlist.savedPlaylists")}
@@ -467,15 +550,26 @@ export function Playlists({
             {/* Tonal rather than flat. Flat text at three metres reads as a label, not as
                 something you can press, and One UI gives a medium emphasis control a grey
                 fill precisely so it still looks like a control. */}
-            <button
-              type="button"
-              className="btn tonal"
-              data-settings-focus={`playlist-categories-${p.id}`}
-              aria-label={t("playlist.manageCategoriesAria", { name: p.name })}
-              onClick={() => void manage(p)}
-            >
-              {t("playlist.manageCategories")}
-            </button>
+            {categoryCountFor(p) !== 0 && (
+              <button
+                type="button"
+                className="btn tonal"
+                data-settings-focus={`playlist-categories-${p.id}`}
+                data-ok-guide={t("common.open")}
+                aria-label={t("playlist.manageCategoriesAria", { name: p.name })}
+                onClick={() => void manage(p)}
+              >
+                <Icon name="categories" />
+                <span>
+                  {typeof categoryCountFor(p) === "number"
+                    ? t("playlist.categoryCount", {
+                        count: number(categoryCountFor(p) ?? 0),
+                        total: categoryCountFor(p) ?? 0,
+                      })
+                    : t("playlist.manageCategories")}
+                </span>
+              </button>
+            )}
             <button
               type="button"
               className="btn tonal"
@@ -483,17 +577,19 @@ export function Playlists({
               aria-label={t("playlist.editAria", { name: p.name })}
               onClick={() => startEdit(p)}
             >
-              {t("common.edit")}
+              <Icon name="edit" />
+              <span>{t("common.edit")}</span>
             </button>
             {/* Asked before done. Removing a playlist cannot be undone and the button sits a
                 single press away from the one that plays it. */}
             <button
               type="button"
-              className="btn tonal"
+              className="btn tonal danger"
               aria-label={t("playlist.removeAria", { name: p.name })}
               onClick={() => ask(p.id)}
             >
-              {t("common.remove")}
+              <Icon name="remove" />
+              <span>{t("common.remove")}</span>
             </button>
           </div>
         ))}

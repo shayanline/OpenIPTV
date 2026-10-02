@@ -1,7 +1,7 @@
 import { FONT_SIZES, useSettings } from "../../stores/settings";
 import { useChannels } from "../../stores/channels";
 import { useLocale } from "../../hooks/useLocale";
-import { Choice, Row, Toggle } from "./Field";
+import { Choice, PageHeader, Row, Toggle } from "./Field";
 import { LanguagePicker } from "../LanguagePicker";
 
 export function Appearance() {
@@ -20,24 +20,10 @@ export function Appearance() {
   }));
   // `load` because sorting rebuilds the lists from the playlist that is already in hand: the order
   // is applied while the channels are read, so nothing changes on screen until they are read again.
-  const { channels, load } = useChannels();
-  /**
-   * The preview, in the writing the viewer is actually going to read.
-   *
-   * It previews the text size now that the type face has gone, and the sample is still taken from
-   * the playlist rather than invented: a line of English tells somebody whose channels are named in
-   * Persian, Greek or Thai nothing about whether the size they have chosen is comfortable for the
-   * names they will be reading. The pangram is the fallback for when nothing is loaded yet.
-   */
-  const sample = channels.length
-    ? channels
-        .slice(0, 3)
-        .map((c) => c.name)
-        .join("   \u00b7   ")
-    : "";
+  const { load } = useChannels();
   return (
     <>
-      <h3>{t("settings.appearance")}</h3>
+      <PageHeader title={t("settings.appearance")} />
       <Row label={t("settings.language")} hint={t("settings.languageHint")}>
         <LanguagePicker
           value={s.locale}
@@ -103,10 +89,6 @@ export function Appearance() {
           }}
         />
       </Row>
-      <p className="preview" dir="auto">
-        {sample || t("settings.previewFallback")}
-      </p>
-      <p className="sheet-lead">{t("settings.playlistNamesPreserved")}</p>
     </>
   );
 }

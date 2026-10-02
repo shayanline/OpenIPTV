@@ -82,6 +82,8 @@ export default {
   "settings.appearance": "Aspetto",
   "settings.playback": "Riproduzione",
   "settings.general": "Generali",
+  "settings.applicationData": "Dati applicazione",
+  "settings.support": "Supporto",
   "settings.playlists": "Playlist",
   "settings.diagnostics": "Diagnostica",
   "settings.about": "Informazioni",
@@ -128,7 +130,7 @@ export default {
   "playbackInfo.level": "Livello adattivo",
   "playbackInfo.autoLevels": ({ count }) => `Automatico, ${count} livelli`,
   "playbackInfo.switches": "Cambi di livello",
-  "playbackInfo.hideHint": "Disattiva in Impostazioni, Diagnostica",
+  "playbackInfo.hideHint": "Tieni premuto OK o disattiva in Impostazioni, Riproduzione",
   "settings.compatibility": "Modalità compatibilità",
   "settings.compatibilityHint":
     "Usala se un canale mostra un fotogramma e poi si ferma. La riparazione dello stream può usare dati aggiuntivi.",
@@ -251,6 +253,8 @@ export default {
   "playlist.savedPlaylists": "Playlist salvate",
   "playlist.editAria": ({ name }) => `Modifica ${name}`,
   "playlist.manageCategories": "Categorie",
+  "playlist.categoryCount": ({ count, total }) =>
+    `${count} ${Number(total) === 1 ? "categoria" : "categorie"}`,
   "playlist.manageCategoriesAria": ({ name }) => `Gestisci le categorie di ${name}`,
   "playlist.categoriesTitle": "Categorie",
   "playlist.hiddenChannels": "Canali delle categorie nascoste",
@@ -287,6 +291,7 @@ export default {
   "diagnostics.title": "Diagnostica",
   "diagnostics.lead":
     "La piattaforma e gli input del telecomando di questo dispositivo. Usa questi dettagli quando qualcosa funziona su un dispositivo ma non su un altro.",
+  "diagnostics.deviceInfo": "Dispositivo e applicazione",
   "diagnostics.app": "App",
   "diagnostics.platform": "Piattaforma",
   "diagnostics.engine": "Motore",
@@ -328,14 +333,9 @@ export default {
   "about.title": "Informazioni",
   "about.version": ({ version }) => `Versione ${version}`,
   "about.description":
-    "OpenIPTV è un lettore gratuito e open source per playlist M3U. Non include canali e non invia dati analitici. L’app si connette solo alle playlist, agli stream e ai loghi che scegli. Gli indirizzi delle playlist e le impostazioni restano su questo dispositivo.",
+    "OpenIPTV non include canali o dati analitici e conserva indirizzi delle playlist e impostazioni su questo dispositivo. Riproduce i contenuti direttamente dalle fonti aggiunte senza modificare i nomi di canali o categorie. Non serve un account OpenIPTV. Il progetto è open source ed è gestito tramite il repository pubblico. Usa solo stream a cui sei autorizzato ad accedere.",
   "about.disclaimer":
     "OpenIPTV non è affiliato a emittenti o servizi di streaming. Guarda solo contenuti a cui sei autorizzato ad accedere.",
-  "about.categoryShortcuts": "Scorciatoie categorie",
-  "about.holdRed": "Tieni premuto Rosso",
-  "about.redCategoryAction": "Nascondi o rendi visibile la categoria selezionata",
-  "about.holdRedCategoryAction": "Mostra o nascondi le categorie nascoste",
-  "about.categoryChangesSaved": "Le modifiche vengono salvate subito.",
   "about.qr": "Scansiona il codice QR per vedere il codice sorgente o segnalare un problema.",
   "about.qrAlt": ({ url }) => `Codice QR che rimanda a ${url}`,
   "settings.phoneAccess": "Accesso dal telefono",

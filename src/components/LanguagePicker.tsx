@@ -18,8 +18,8 @@ export function LanguagePicker({
   const currentLabel = t(localeLabelKey(current.id));
 
   const close = () => {
+    currentRef.current?.focus();
     setOpen(false);
-    window.setTimeout(() => currentRef.current?.focus(), 0);
   };
 
   const choose = (next: LocalePreference) => {

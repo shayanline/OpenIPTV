@@ -47,6 +47,7 @@ export interface Playlist {
   url: string;
   hiddenCategories: string[];
   hiddenCategoryMode: HiddenCategoryMode;
+  categoryCount?: number;
 }
 
 interface Settings {
@@ -81,6 +82,7 @@ interface Settings {
   setHiddenCategories: (playlistId: string, categories: string[]) => void;
   setCategoryHidden: (playlistId: string, category: string, hidden: boolean) => void;
   setHiddenCategoryMode: (playlistId: string, mode: HiddenCategoryMode) => void;
+  setPlaylistCategoryCount: (playlistId: string, count: number) => void;
   replacePlaylists: (
     playlists: Playlist[],
     activePlaylistId: string,
@@ -164,6 +166,9 @@ function load(): typeof DEFAULTS {
             ? playlist.hiddenCategories.filter((category) => typeof category === "string")
             : [],
           hiddenCategoryMode: playlist.hiddenCategoryMode === "search" ? "search" : "exclude",
+          ...(typeof playlist.categoryCount === "number" && playlist.categoryCount >= 0
+            ? { categoryCount: Math.floor(playlist.categoryCount) }
+            : {}),
         }))
     : [];
   const canonical = JSON.stringify(merged);
@@ -180,6 +185,7 @@ function persist(state: Settings) {
     setHiddenCategories: _hc,
     setCategoryHidden: _ch,
     setHiddenCategoryMode: _cm,
+    setPlaylistCategoryCount: _cc,
     replacePlaylists: _rp,
     reset: _re,
     scale: _sc,
@@ -228,7 +234,14 @@ export const useSettings = create<Settings>((set, get) => ({
   updatePlaylist(id, name, url) {
     set({
       playlists: get().playlists.map((p) =>
-        p.id === id ? { ...p, name: name.trim(), url: url.trim() } : p,
+        p.id === id
+          ? {
+              ...p,
+              name: name.trim(),
+              url: url.trim(),
+              categoryCount: p.url === url.trim() ? p.categoryCount : undefined,
+            }
+          : p,
       ),
     });
     persist(get());
@@ -254,6 +267,18 @@ export const useSettings = create<Settings>((set, get) => ({
     set({
       playlists: get().playlists.map((playlist) =>
         playlist.id === playlistId ? { ...playlist, hiddenCategoryMode: mode } : playlist,
+      ),
+    });
+    persist(get());
+  },
+
+  setPlaylistCategoryCount(playlistId, count) {
+    const playlist = get().playlists.find((item) => item.id === playlistId);
+    const next = Math.max(0, Math.floor(count));
+    if (!playlist || playlist.categoryCount === next) return;
+    set({
+      playlists: get().playlists.map((item) =>
+        item.id === playlistId ? { ...item, categoryCount: next } : item,
       ),
     });
     persist(get());

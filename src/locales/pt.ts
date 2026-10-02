@@ -82,6 +82,8 @@ export default {
   "settings.appearance": "Aspeto",
   "settings.playback": "Reprodução",
   "settings.general": "Geral",
+  "settings.applicationData": "Dados da aplicação",
+  "settings.support": "Suporte",
   "settings.playlists": "Listas de reprodução",
   "settings.diagnostics": "Diagnóstico",
   "settings.about": "Acerca",
@@ -128,7 +130,7 @@ export default {
   "playbackInfo.level": "Nível adaptativo",
   "playbackInfo.autoLevels": ({ count }) => `Automático, ${count} níveis`,
   "playbackInfo.switches": "Mudanças de nível",
-  "playbackInfo.hideHint": "Desativar em Definições, Diagnóstico",
+  "playbackInfo.hideHint": "Mantenha OK ou desative em Definições, Reprodução",
   "settings.compatibility": "Modo de compatibilidade",
   "settings.compatibilityHint":
     "Utilize esta opção se um canal mostrar uma imagem e depois parar. Pode utilizar dados adicionais ao reparar a transmissão.",
@@ -254,6 +256,8 @@ export default {
   "playlist.savedPlaylists": "Listas guardadas",
   "playlist.editAria": ({ name }) => `Editar ${name}`,
   "playlist.manageCategories": "Categorias",
+  "playlist.categoryCount": ({ count, total }) =>
+    `${count} ${Number(total) === 1 ? "categoria" : "categorias"}`,
   "playlist.manageCategoriesAria": ({ name }) => `Gerir categorias de ${name}`,
   "playlist.categoriesTitle": "Categorias",
   "playlist.hiddenChannels": "Canais em categorias ocultas",
@@ -290,6 +294,7 @@ export default {
   "diagnostics.title": "Diagnóstico",
   "diagnostics.lead":
     "A plataforma e a entrada do comando deste dispositivo. Utilize estes detalhes quando algo funcionar num dispositivo, mas não noutro.",
+  "diagnostics.deviceInfo": "Dispositivo e aplicação",
   "diagnostics.app": "Aplicação",
   "diagnostics.platform": "Plataforma",
   "diagnostics.engine": "Motor",
@@ -331,14 +336,9 @@ export default {
   "about.title": "Acerca",
   "about.version": ({ version }) => `Versão ${version}`,
   "about.description":
-    "OpenIPTV é um leitor gratuito e de código aberto para listas de reprodução M3U. Não inclui canais nem envia dados analíticos. A aplicação liga-se apenas às listas, transmissões e logótipos que escolher. Os endereços das listas e as definições ficam neste dispositivo.",
+    "OpenIPTV não inclui canais ou dados analíticos e guarda os endereços das listas e as definições neste dispositivo. Reproduz conteúdo diretamente das fontes adicionadas sem alterar nomes de canais ou categorias. Não é necessária uma conta OpenIPTV. O projeto é de código aberto e mantido no repositório público. Utilize apenas transmissões a que tenha acesso autorizado.",
   "about.disclaimer":
     "OpenIPTV não está associado a emissoras nem a serviços de transmissão. Veja apenas conteúdos a que está autorizado a aceder.",
-  "about.categoryShortcuts": "Atalhos de categorias",
-  "about.holdRed": "Manter Vermelho",
-  "about.redCategoryAction": "Ocultar ou deixar de ocultar a categoria selecionada",
-  "about.holdRedCategoryAction": "Mostrar ou ocultar as categorias ocultas",
-  "about.categoryChangesSaved": "As alterações são guardadas imediatamente.",
   "about.qr": "Leia o código QR para ver o código-fonte ou comunicar um problema.",
   "about.qrAlt": ({ url }) => `Código QR com ligação para ${url}`,
   "settings.phoneAccess": "Acesso pelo telemóvel",

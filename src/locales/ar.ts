@@ -82,6 +82,8 @@ export default {
   "settings.appearance": "المظهر",
   "settings.playback": "التشغيل",
   "settings.general": "عام",
+  "settings.applicationData": "بيانات التطبيق",
+  "settings.support": "الدعم",
   "settings.playlists": "قوائم التشغيل",
   "settings.diagnostics": "التشخيص",
   "settings.about": "حول",
@@ -126,7 +128,7 @@ export default {
   "playbackInfo.level": "مستوى التكيف",
   "playbackInfo.autoLevels": ({ count }) => `تلقائي، ${count} مستويات`,
   "playbackInfo.switches": "تبديلات المستوى",
-  "playbackInfo.hideHint": "أوقفها من الإعدادات، التشخيص",
+  "playbackInfo.hideHint": "اضغط مطولاً على موافق أو أوقفها من الإعدادات، التشغيل",
   "settings.compatibility": "وضع التوافق",
   "settings.compatibilityHint":
     "استخدم هذا الخيار إذا عرضت قناة إطارًا واحدًا ثم توقفت. قد يستخدم بيانات إضافية أثناء إصلاح البث.",
@@ -239,6 +241,8 @@ export default {
   "playlist.savedPlaylists": "قوائم التشغيل المحفوظة",
   "playlist.editAria": ({ name }) => `تعديل ${name}`,
   "playlist.manageCategories": "الفئات",
+  "playlist.categoryCount": ({ count, total }) =>
+    `${count} ${Number(total) === 1 ? "فئة" : "فئات"}`,
   "playlist.manageCategoriesAria": ({ name }) => `إدارة فئات ${name}`,
   "playlist.categoriesTitle": "الفئات",
   "playlist.hiddenChannels": "قنوات الفئات المخفية",
@@ -273,6 +277,7 @@ export default {
   "diagnostics.title": "التشخيص",
   "diagnostics.lead":
     "منصة هذا الجهاز وإدخال جهاز التحكم. استخدم هذه التفاصيل عندما يعمل شيء على جهاز ولا يعمل على جهاز آخر.",
+  "diagnostics.deviceInfo": "الجهاز والتطبيق",
   "diagnostics.app": "التطبيق",
   "diagnostics.platform": "المنصة",
   "diagnostics.engine": "المحرك",
@@ -313,14 +318,9 @@ export default {
   "about.title": "حول",
   "about.version": ({ version }) => `الإصدار ${version}`,
   "about.description":
-    "OpenIPTV مشغل مجاني ومفتوح المصدر لقوائم تشغيل M3U. لا يتضمن قنوات ولا يرسل بيانات تحليلية. يتصل التطبيق فقط بقوائم التشغيل والتدفقات والشعارات التي تختارها. تبقى عناوين قوائم التشغيل والإعدادات على هذا الجهاز.",
+    "لا يتضمن OpenIPTV قنوات أو بيانات تحليلية، ويحفظ عناوين القوائم والإعدادات على هذا الجهاز. يشغّل المحتوى مباشرة من المصادر التي تضيفها دون تغيير أسماء القنوات أو الفئات. لا يلزم حساب OpenIPTV. المشروع مفتوح المصدر وتتم صيانته عبر مستودعه العام. شغّل فقط التدفقات المصرح لك بالوصول إليها.",
   "about.disclaimer":
     "لا يرتبط OpenIPTV بالمذيعين أو خدمات البث. شاهد فقط المحتوى المصرح لك بالوصول إليه.",
-  "about.categoryShortcuts": "اختصارات الفئات",
-  "about.holdRed": "اضغط مطولاً على الأحمر",
-  "about.redCategoryAction": "إخفاء الفئة المحددة أو إلغاء إخفائها",
-  "about.holdRedCategoryAction": "إظهار الفئات المخفية أو إخفاؤها",
-  "about.categoryChangesSaved": "تُحفظ التغييرات فوراً.",
   "about.qr": "امسح رمز QR لعرض الشفرة المصدرية أو الإبلاغ عن مشكلة.",
   "about.qrAlt": ({ url }) => `رمز QR يرتبط بـ ${url}`,
   "settings.phoneAccess": "الوصول عبر الهاتف",

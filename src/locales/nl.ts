@@ -82,6 +82,8 @@ export default {
   "settings.appearance": "Uiterlijk",
   "settings.playback": "Afspelen",
   "settings.general": "Algemeen",
+  "settings.applicationData": "Appgegevens",
+  "settings.support": "Ondersteuning",
   "settings.playlists": "Afspeellijsten",
   "settings.diagnostics": "Diagnose",
   "settings.about": "Over",
@@ -128,7 +130,7 @@ export default {
   "playbackInfo.level": "Adaptief niveau",
   "playbackInfo.autoLevels": ({ count }) => `Automatisch, ${count} niveaus`,
   "playbackInfo.switches": "Niveauwisselingen",
-  "playbackInfo.hideHint": "Uitschakelen via Instellingen, Diagnostiek",
+  "playbackInfo.hideHint": "Houd OK vast of schakel uit via Instellingen, Afspelen",
   "settings.compatibility": "Compatibiliteitsmodus",
   "settings.compatibilityHint":
     "Gebruik dit als een kanaal één beeld toont en daarna stopt. Tijdens het herstellen van de stream kan extra data worden gebruikt.",
@@ -251,6 +253,8 @@ export default {
   "playlist.savedPlaylists": "Opgeslagen afspeellijsten",
   "playlist.editAria": ({ name }) => `${name} bewerken`,
   "playlist.manageCategories": "Categorieën",
+  "playlist.categoryCount": ({ count, total }) =>
+    `${count} ${Number(total) === 1 ? "categorie" : "categorieën"}`,
   "playlist.manageCategoriesAria": ({ name }) => `Categorieën van ${name} beheren`,
   "playlist.categoriesTitle": "Categorieën",
   "playlist.hiddenChannels": "Kanalen in verborgen categorieën",
@@ -287,6 +291,7 @@ export default {
   "diagnostics.title": "Diagnose",
   "diagnostics.lead":
     "Het platform en de invoer van de afstandsbediening van dit apparaat. Gebruik deze gegevens wanneer iets op het ene apparaat wel werkt en op het andere niet.",
+  "diagnostics.deviceInfo": "Apparaat en toepassing",
   "diagnostics.app": "App",
   "diagnostics.platform": "Platform",
   "diagnostics.engine": "Engine",
@@ -327,14 +332,9 @@ export default {
   "about.title": "Over",
   "about.version": ({ version }) => `Versie ${version}`,
   "about.description":
-    "OpenIPTV is een gratis opensource-speler voor M3U-afspeellijsten. Er zijn geen kanalen inbegrepen en er worden geen analyses verzonden. De app maakt alleen verbinding met de afspeellijsten, streams en logo's die je kiest. Je afspeellijstadressen en instellingen blijven op dit apparaat.",
+    "OpenIPTV bevat geen kanalen of analyses en bewaart afspeellijstadressen en instellingen op dit apparaat. Inhoud wordt rechtstreeks afgespeeld vanuit toegevoegde bronnen zonder kanaal- of categorienamen te wijzigen. Een OpenIPTV-account is niet nodig. Het project is opensource en wordt onderhouden via de openbare repository. Gebruik alleen streams waartoe u toegang mag hebben.",
   "about.disclaimer":
     "OpenIPTV is niet verbonden aan zenders of streamingdiensten. Kijk alleen naar inhoud waartoe je bevoegd bent.",
-  "about.categoryShortcuts": "Categorie sneltoetsen",
-  "about.holdRed": "Rood ingedrukt houden",
-  "about.redCategoryAction": "Geselecteerde categorie verbergen of zichtbaar maken",
-  "about.holdRedCategoryAction": "Verborgen categorieën tonen of verbergen",
-  "about.categoryChangesSaved": "Wijzigingen worden direct opgeslagen.",
   "about.qr": "Scan de QR-code om de broncode te bekijken of een probleem te melden.",
   "about.qrAlt": ({ url }) => `QR-code die naar ${url} verwijst`,
   "settings.phoneAccess": "Telefoontoegang",

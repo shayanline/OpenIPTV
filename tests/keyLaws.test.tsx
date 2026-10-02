@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { act, cleanup, screen } from "@testing-library/react";
 import { KEY } from "../src/hooks/useRemote";
 import {
+  hold,
   mountApp,
   muted,
   panelOpen,
@@ -117,6 +118,28 @@ test("law 2: OK at the picture opens the channel list", async () => {
   press(KEY.ENTER);
   press(KEY.ENTER);
   assert.ok(panelOpen());
+});
+
+test("holding OK at a clear picture toggles playback information without opening the panel", async () => {
+  await mount();
+  press(KEY.ENTER);
+  press(KEY.BACK);
+
+  await hold(KEY.ENTER);
+
+  assert.equal(panelOpen(), false);
+  expect(screen.getByRole("complementary", { name: "Playback information" })).toBeTruthy();
+  assert.equal(
+    JSON.parse(localStorage.getItem("openiptv.settings") ?? "{}").showPlaybackStats,
+    true,
+  );
+
+  await hold(KEY.ENTER);
+
+  assert.equal(panelOpen(), false);
+  expect(Boolean(screen.queryByRole("complementary", { name: "Playback information" }))).toBe(
+    false,
+  );
 });
 
 test("law 4: RETURN clears the screen before it offers to close the app", async () => {

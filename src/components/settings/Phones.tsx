@@ -9,6 +9,8 @@ import {
 } from "../../services/phoneAccess";
 import { Confirm } from "../Confirm";
 import { PhoneSetup } from "../PhoneSetup";
+import { PageHeader } from "./Field";
+import { Icon } from "../Icon";
 
 export function Phones({
   management,
@@ -32,8 +34,7 @@ export function Phones({
 
   return (
     <>
-      <h3>{t("settings.phoneAccess")}</h3>
-      <p className="sheet-lead">{t("phone.pairedHint")}</p>
+      <PageHeader title={t("settings.phoneAccess")} description={t("phone.pairedHint")} />
       {management.pairing && <PhoneSetup management={management} />}
       <div className="phone-list">
         {phones.map((phone) => (
@@ -56,10 +57,10 @@ export function Phones({
                       setEditing("");
                     }}
                   >
-                    {t("common.save")}
+                    <span>{t("common.save")}</span>
                   </button>
                   <button type="button" className="btn tonal" onClick={() => setEditing("")}>
-                    {t("common.cancel")}
+                    <span>{t("common.cancel")}</span>
                   </button>
                 </div>
               </div>
@@ -67,7 +68,11 @@ export function Phones({
               <>
                 <div className="phone-row-main">
                   <strong dir="auto">{phone.name}</strong>
-                  <span>{t("phone.lastUsed", { when: new Date(phone.lastUsedAt).toLocaleDateString(locale) })}</span>
+                  <span>
+                    {t("phone.lastUsed", {
+                      when: new Date(phone.lastUsedAt).toLocaleDateString(locale),
+                    })}
+                  </span>
                 </div>
                 <button
                   type="button"
@@ -78,15 +83,17 @@ export function Phones({
                     setName(phone.name);
                   }}
                 >
-                  {t("common.edit")}
+                  <Icon name="edit" />
+                  <span>{t("common.edit")}</span>
                 </button>
                 <button
                   type="button"
-                  className="btn tonal"
+                  className="btn tonal danger"
                   aria-label={t("phone.revokeAria", { name: phone.name })}
                   onClick={() => ask(phone.id)}
                 >
-                  {t("phone.revoke")}
+                  <Icon name="unlink" />
+                  <span>{t("phone.revoke")}</span>
                 </button>
               </>
             )}
@@ -96,7 +103,8 @@ export function Phones({
       {!phones.length && <p className="sheet-lead">{t("phone.noPhones")}</p>}
       <div className="actions">
         <button type="button" className="btn tonal" onClick={management.openPairing}>
-          {t("phone.add")}
+          <Icon name="plus" />
+          <span>{t("phone.add")}</span>
         </button>
       </div>
       {confirming && (

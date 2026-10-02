@@ -35,14 +35,28 @@ export const remoteVisible = (): boolean => {
 };
 
 const NAMES: Record<number, string> = {
-  [KEY.LEFT]: "Left", [KEY.UP]: "Up", [KEY.RIGHT]: "Right", [KEY.DOWN]: "Down",
-  [KEY.ENTER]: "Select", [KEY.BACK]: "Return",
-  [KEY.CH_UP]: "Channel up", [KEY.CH_DOWN]: "Channel down",
-  [KEY.VOL_UP]: "Volume up", [KEY.VOL_DOWN]: "Volume down",
-  [KEY.RED]: "Red", [KEY.GREEN]: "Green", [KEY.YELLOW]: "Yellow", [KEY.BLUE]: "Blue",
-  [KEY.PLAY_PAUSE]: "Play/Pause", [KEY.PLAY]: "Play", [KEY.PAUSE]: "Pause",
-  [KEY.STOP]: "Stop", [KEY.REWIND]: "Rewind", [KEY.FORWARD]: "Fast forward",
-  [KEY.PREV]: "Track previous", [KEY.NEXT]: "Track next",
+  [KEY.LEFT]: "Left",
+  [KEY.UP]: "Up",
+  [KEY.RIGHT]: "Right",
+  [KEY.DOWN]: "Down",
+  [KEY.ENTER]: "Select",
+  [KEY.BACK]: "Return",
+  [KEY.CH_UP]: "Channel up",
+  [KEY.CH_DOWN]: "Channel down",
+  [KEY.VOL_UP]: "Volume up",
+  [KEY.VOL_DOWN]: "Volume down",
+  [KEY.RED]: "Red",
+  [KEY.GREEN]: "Green",
+  [KEY.YELLOW]: "Yellow",
+  [KEY.BLUE]: "Blue",
+  [KEY.PLAY_PAUSE]: "Play/Pause",
+  [KEY.PLAY]: "Play",
+  [KEY.PAUSE]: "Pause",
+  [KEY.STOP]: "Stop",
+  [KEY.REWIND]: "Rewind",
+  [KEY.FORWARD]: "Fast forward",
+  [KEY.PREV]: "Track previous",
+  [KEY.NEXT]: "Track next",
 };
 
 export function SmartRemote() {
@@ -62,7 +76,9 @@ export function SmartRemote() {
       if (!drag.current) return;
       setPos({ x: e.clientX - drag.current.x, y: e.clientY - drag.current.y });
     };
-    const onUp = () => { drag.current = null; };
+    const onUp = () => {
+      drag.current = null;
+    };
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", onUp);
     return () => {
@@ -77,15 +93,17 @@ export function SmartRemote() {
     onMouseDown: (e: React.MouseEvent) => e.preventDefault(),
     onClick: () => send(code, label),
   });
-  const redKey = {
+  const heldKey = (code: number, label: string) => ({
     onMouseDown: (e: React.MouseEvent) => {
       e.preventDefault();
-      setLast("Red");
-      sendKeyDown(KEY.RED);
+      setLast(label);
+      sendKeyDown(code);
     },
-    onMouseUp: () => sendKeyUp(KEY.RED),
-    onMouseLeave: () => sendKeyUp(KEY.RED),
-  };
+    onMouseUp: () => sendKeyUp(code),
+    onMouseLeave: () => sendKeyUp(code),
+  });
+  const redKey = heldKey(KEY.RED, "Red");
+  const okKey = heldKey(KEY.ENTER, "Select");
 
   const startDrag = (e: React.PointerEvent) => {
     if ((e.target as HTMLElement).closest("button")) return;
@@ -94,8 +112,13 @@ export function SmartRemote() {
 
   if (!open) {
     return (
-      <button type="button" className="remote-open" onMouseDown={(e) => e.preventDefault()}
-              onClick={() => setOpen(true)} aria-label="Show Smart Remote">
+      <button
+        type="button"
+        className="remote-open"
+        onMouseDown={(e) => e.preventDefault()}
+        onClick={() => setOpen(true)}
+        aria-label="Show Smart Remote"
+      >
         Smart Remote
       </button>
     );
@@ -105,8 +128,15 @@ export function SmartRemote() {
     <div className="remote-stage" style={{ transform: `translate(${pos.x}px, ${pos.y}px)` }}>
       <div className="remote-hud">
         <span className="remote-last">{last || "No key yet"}</span>
-        <button type="button" className="remote-hide" onMouseDown={(e) => e.preventDefault()}
-                onClick={() => setOpen(false)} aria-label="Hide the remote">&times;</button>
+        <button
+          type="button"
+          className="remote-hide"
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => setOpen(false)}
+          aria-label="Hide the remote"
+        >
+          &times;
+        </button>
       </div>
 
       {/* The keypad the 123 button raises on a real set, holding everything the hardware
@@ -117,24 +147,50 @@ export function SmartRemote() {
           <div className="keypad-colours">
             <button type="button" className="ck red" {...redKey} aria-label="Red" />
             <button type="button" className="ck green" {...key(KEY.GREEN)} aria-label="Green" />
-            <button type="button" className="ck yellow" {...key(KEY.YELLOW)} aria-label="Yellow" />
+            <button
+              type="button"
+              className="ck yellow"
+              {...key(KEY.YELLOW)}
+              aria-label="Yellow"
+            />
             <button type="button" className="ck blue" {...key(KEY.BLUE)} aria-label="Blue" />
           </div>
           <div className="keypad-digits">
             {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => (
-              <button type="button" key={n} className="dk" {...key(48 + n, `Digit ${n}`)}>{n}</button>
+              <button type="button" key={n} className="dk" {...key(48 + n, `Digit ${n}`)}>
+                {n}
+              </button>
             ))}
             <span />
-            <button type="button" className="dk" {...key(48, "Digit 0")}>0</button>
+            <button type="button" className="dk" {...key(48, "Digit 0")}>
+              0
+            </button>
             <span />
           </div>
           <div className="keypad-transport">
-            <button type="button" className="dk" {...key(KEY.REWIND)} aria-label="Rewind"><Icon name="rewind" /></button>
-            <button type="button" className="dk" {...key(KEY.STOP)} aria-label="Stop"><Icon name="stop" /></button>
-            <button type="button" className="dk" {...key(KEY.FORWARD)} aria-label="Fast forward"><Icon name="forward" /></button>
-            <button type="button" className="dk" {...key(KEY.PREV)} aria-label="Track previous"><Icon name="previous" /></button>
-            <button type="button" className="dk" {...key(KEY.PLAY)} aria-label="Play"><Icon name="play" /></button>
-            <button type="button" className="dk" {...key(KEY.NEXT)} aria-label="Track next"><Icon name="next" /></button>
+            <button type="button" className="dk" {...key(KEY.REWIND)} aria-label="Rewind">
+              <Icon name="rewind" />
+            </button>
+            <button type="button" className="dk" {...key(KEY.STOP)} aria-label="Stop">
+              <Icon name="stop" />
+            </button>
+            <button
+              type="button"
+              className="dk"
+              {...key(KEY.FORWARD)}
+              aria-label="Fast forward"
+            >
+              <Icon name="forward" />
+            </button>
+            <button type="button" className="dk" {...key(KEY.PREV)} aria-label="Track previous">
+              <Icon name="previous" />
+            </button>
+            <button type="button" className="dk" {...key(KEY.PLAY)} aria-label="Play">
+              <Icon name="play" />
+            </button>
+            <button type="button" className="dk" {...key(KEY.NEXT)} aria-label="Track next">
+              <Icon name="next" />
+            </button>
           </div>
         </div>
       )}
@@ -143,21 +199,39 @@ export function SmartRemote() {
         {/* Power. The set owns it, so it is drawn and does nothing. */}
         <div className="remote-top">
           <span className="rk-power" aria-hidden="true">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
-                 strokeLinecap="round">
-              <path d="M12 3.5v8" /><path d="M6.6 6.6a7.5 7.5 0 1 0 10.8 0" />
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+            >
+              <path d="M12 3.5v8" />
+              <path d="M6.6 6.6a7.5 7.5 0 1 0 10.8 0" />
             </svg>
           </span>
         </div>
 
         <div className="remote-assist">
-          <button type="button" className="rk-123" onMouseDown={(e) => e.preventDefault()}
-                  onClick={() => setKeypad((k) => !k)} aria-pressed={keypad}
-                  title="Raise the on-screen keypad">
-            <span className="rk-123-dots"><i /><i /><i /><i /></span>
+          <button
+            type="button"
+            className="rk-123"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => setKeypad((k) => !k)}
+            aria-pressed={keypad}
+            title="Raise the on-screen keypad"
+          >
+            <span className="rk-123-dots">
+              <i />
+              <i />
+              <i />
+              <i />
+            </span>
             <span className="rk-123-label">123</span>
           </button>
-          <span className="rk-mic-hole" aria-hidden="true">MIC</span>
+          <span className="rk-mic-hole" aria-hidden="true">
+            MIC
+          </span>
           <span className="rk-mic" aria-hidden="true">
             <svg viewBox="0 0 24 24" fill="currentColor">
               <rect x="9" y="3" width="6" height="11" rx="3" />
@@ -181,26 +255,44 @@ export function SmartRemote() {
           <button type="button" className="dp left" {...key(KEY.LEFT)} aria-label="Left">
             <i className="chev" />
           </button>
-          <button type="button" className="dp ok" {...key(KEY.ENTER)} aria-label="Select" />
+          <button type="button" className="dp ok" {...okKey} aria-label="Select" />
         </div>
 
         <div className="remote-trio">
           <button type="button" className="rk-round" {...key(KEY.BACK)} aria-label="Return">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9"
-                 strokeLinecap="round" strokeLinejoin="round">
-              <path d="M9 6.5L4.5 11 9 15.5" /><path d="M4.5 11h9a6 6 0 0 1 0 12h-2" />
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.9"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M9 6.5L4.5 11 9 15.5" />
+              <path d="M4.5 11h9a6 6 0 0 1 0 12h-2" />
             </svg>
           </button>
           {/* Home returns to the Smart Hub. The television does that itself, and an app
               that put a confirmation in the way of it would be wrong. */}
           <span className="rk-round inert" aria-hidden="true">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9"
-                 strokeLinecap="round" strokeLinejoin="round">
-              <path d="M3.5 10.5L12 3.5l8.5 7" /><path d="M5.5 9.6V20h13V9.6" />
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.9"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M3.5 10.5L12 3.5l8.5 7" />
+              <path d="M5.5 9.6V20h13V9.6" />
             </svg>
           </span>
-          <button type="button" className="rk-round" {...key(KEY.PLAY_PAUSE)}
-                  aria-label="Play or pause">
+          <button
+            type="button"
+            className="rk-round"
+            {...key(KEY.PLAY_PAUSE)}
+            aria-label="Play or pause"
+          >
             <svg viewBox="0 0 24 24" fill="currentColor">
               <path d="M4 4.5l9 7.5-9 7.5z" />
               <rect x="15" y="4.5" width="2.4" height="15" rx="1" />
@@ -215,17 +307,29 @@ export function SmartRemote() {
               +
             </button>
             <i />
-            <button type="button" className="rock" {...key(KEY.VOL_DOWN)} aria-label="Volume down">
+            <button
+              type="button"
+              className="rock"
+              {...key(KEY.VOL_DOWN)}
+              aria-label="Volume down"
+            >
               &minus;
             </button>
           </span>
-          <span className="rocker-label" aria-hidden="true">CC/AD</span>
+          <span className="rocker-label" aria-hidden="true">
+            CC/AD
+          </span>
           <span className="rocker">
             <button type="button" className="rock" {...key(KEY.CH_UP)} aria-label="Channel up">
               &#8963;
             </button>
             <i />
-            <button type="button" className="rock" {...key(KEY.CH_DOWN)} aria-label="Channel down">
+            <button
+              type="button"
+              className="rock"
+              {...key(KEY.CH_DOWN)}
+              aria-label="Channel down"
+            >
               &#8964;
             </button>
           </span>
@@ -234,11 +338,17 @@ export function SmartRemote() {
         {/* The partner app shortcuts. Left blank rather than carrying other people's
             trademarks into an open source repository, and inert either way. */}
         <div className="remote-apps" aria-hidden="true">
-          <span className="rk-app" /><span className="rk-app" /><span className="rk-app" />
+          <span className="rk-app" />
+          <span className="rk-app" />
+          <span className="rk-app" />
         </div>
-        <div className="remote-apps one" aria-hidden="true"><span className="rk-app" /></div>
+        <div className="remote-apps one" aria-hidden="true">
+          <span className="rk-app" />
+        </div>
 
-        <p className="remote-brand" aria-hidden="true">SAMSUNG</p>
+        <p className="remote-brand" aria-hidden="true">
+          SAMSUNG
+        </p>
       </div>
     </div>
   );
