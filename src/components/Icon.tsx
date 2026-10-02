@@ -85,11 +85,11 @@ const paths: Record<string, React.ReactNode> = {
      than repair, which is what the section does: it says, it does not mend. */
   remoteAccess: (
     <>
-      <rect x="2.7" y="4.4" width="13.8" height="11.2" rx="2" />
-      <path d="M7.2 19.6H12" />
-      <path d="M9.6 15.6v4" />
-      <path d="M18.1 8.1c1.2.9 1.9 2.3 1.9 3.9s-.7 3-1.9 3.9" />
-      <path d="M19.5 5.7c1.7 1.5 2.7 3.8 2.7 6.3s-1 4.8-2.7 6.3" />
+      <rect x="2.7" y="4.4" width="12.8" height="11.2" rx="2" />
+      <path d="M6.7 19.6h4.8" />
+      <path d="M9.1 15.6v4" />
+      <path d="M19.1 8.1c1.2.9 1.9 2.3 1.9 3.9s-.7 3-1.9 3.9" />
+      <path d="M20.5 5.7c1.6 1.5 2.5 3.8 2.5 6.3s-.9 4.8-2.5 6.3" />
     </>
   ),
   diagnostics: (

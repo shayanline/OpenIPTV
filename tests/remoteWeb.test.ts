@@ -290,6 +290,7 @@ test("labels playlist fields and actions with their context", async () => {
   const menus = [...document.querySelectorAll<HTMLButtonElement>('[data-action="open-item-menu"]')];
   expect(menus[0].getAttribute("aria-label")).toContain("One");
   menus[1].click();
+  expect(document.querySelector("[data-item-menu]")?.parentElement).toBe(document.body);
   expect(document.querySelector('[data-menu-action="activate"]')?.textContent).toBe(labels.activate);
 });
 
@@ -538,7 +539,7 @@ test("edits and refreshes an existing playlist", async () => {
   choosePlaylistAction("edit");
   const name = document.querySelector('[name="editName"]') as HTMLInputElement;
   const url = document.querySelector('[name="editUrl"]') as HTMLInputElement;
-  expect(document.activeElement).toBe(name);
+  expect(document.activeElement).toBe(url);
   name.value = "Renamed news";
   name.dispatchEvent(new Event("input", { bubbles: true }));
   url.value = "http://example.com/renamed.m3u";

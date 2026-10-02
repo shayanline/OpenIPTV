@@ -114,7 +114,7 @@
     playback: '<rect x="2.6" y="5" width="18.8" height="13" rx="2.2"/><path d="M8.6 21h6.8"/>',
     general: '<path d="M19.4 12c0-.45-.04-.88-.11-1.3l2.06-1.55a.5.5 0 0 0 .12-.64l-1.95-3.38a.5.5 0 0 0-.6-.22l-2.42.97a7.6 7.6 0 0 0-2.25-1.3l-.37-2.58a.5.5 0 0 0-.49-.42h-3.9a.5.5 0 0 0-.49.42l-.37 2.58c-.82.31-1.57.75-2.25 1.3l-2.42-.97a.5.5 0 0 0-.6.22L1.41 8.51a.5.5 0 0 0 .12.64l2.06 1.55a8.1 8.1 0 0 0 0 2.6l-2.06 1.55a.5.5 0 0 0-.12.64l1.95 3.38a.5.5 0 0 0 .6.22l2.42-.97c.68.55 1.43.99 2.25 1.3l.37 2.58a.5.5 0 0 0 .49.42h3.9a.5.5 0 0 0 .49-.42l.37-2.58a7.6 7.6 0 0 0 2.25-1.3l2.42.97a.5.5 0 0 0 .6-.22l1.95-3.38a.5.5 0 0 0-.12-.64l-2.06-1.55c.07-.42.11-.85.11-1.3Zm-7.4 3.65A3.65 3.65 0 1 1 15.65 12 3.65 3.65 0 0 1 12 15.65Z"/>',
     playlists: '<circle cx="4.9" cy="7" r="1.1"/><circle cx="4.9" cy="12" r="1.1"/><circle cx="4.9" cy="17" r="1.1"/><path d="M9.4 7h10.2M9.4 12h10.2M9.4 17h10.2"/>',
-    devices: '<rect x="2.7" y="4.4" width="13.8" height="11.2" rx="2"/><path d="M7.2 19.6H12M9.6 15.6v4M18.1 8.1c1.2.9 1.9 2.3 1.9 3.9s-.7 3-1.9 3.9M19.5 5.7c1.7 1.5 2.7 3.8 2.7 6.3s-1 4.8-2.7 6.3"/>',
+    devices: '<rect x="2.7" y="4.4" width="12.8" height="11.2" rx="2"/><path d="M6.7 19.6h4.8M9.1 15.6v4M19.1 8.1c1.2.9 1.9 2.3 1.9 3.9s-.7 3-1.9 3.9M20.5 5.7c1.6 1.5 2.5 3.8 2.5 6.3s-.9 4.8-2.5 6.3"/>',
     about: '<circle cx="12" cy="12" r="9"/><path d="M12 11.2v5.4M12 7.6v.1"/>',
   };
 
@@ -257,6 +257,10 @@
 
   function shell(content, message, failed) {
     busy = false;
+    document.body.querySelectorAll("[data-item-menu-root]").forEach(function (menu) {
+      menu.remove();
+    });
+    document.body.style.overflow = "";
     root.removeAttribute("aria-busy");
     if (toastTimer !== null) clearTimeout(toastTimer);
     toastTimer = null;
@@ -541,14 +545,14 @@
             '<form class="playlist edit-card" data-edit-playlist data-return-action="edit-playlist" data-id="' +
             escape(playlist.id) +
             '"><label>' +
-            escape(l.playlistName) +
-            '<input name="editName" value="' +
-            escape(playlist.name) +
-            '" required></label><label>' +
             escape(l.playlistAddress) +
             '<input name="editUrl" type="url" inputmode="url" dir="ltr" value="' +
             escape(playlist.url) +
-            '" required></label><button type="submit">' +
+            '" required></label><label>' +
+            escape(l.playlistName) +
+            '<input name="editName" value="' +
+            escape(playlist.name) +
+            '"></label><button type="submit">' +
             escape(l.save) +
             '</button><button class="quiet" type="button" data-action="cancel-edit-playlist">' +
             escape(l.cancel) +
@@ -588,8 +592,9 @@
             return (
               '<article class="device compact-row"><div><strong>' +
               escape(device.name) +
-              (auth && device.id === auth.deviceId ? '<span class="self-badge">' + escape(l.thisDevice) + "</span>" : "") +
-              '</div><button class="row-menu" type="button" data-action="open-item-menu" data-kind="device" data-id="' +
+              "</strong></div>" +
+              (auth && device.id === auth.deviceId ? '<em class="self-badge">' + escape(l.thisDevice) + "</em>" : "") +
+              '<button class="row-menu" type="button" data-action="open-item-menu" data-kind="device" data-id="' +
               escape(device.id) +
               '" aria-label="' + escape(l.rename + " " + device.name) + '"><i></i><i></i><i></i></button></article>'
             );
@@ -619,9 +624,9 @@
         '<i class="' + (expandedDevices ? "up" : "") + '"></i></button>'
       : "";
     var addPlaylist = addPlaylistOpen
-      ? '<div class="add-card"><input name="newName" aria-label="' + escape(l.playlistName) + '" placeholder="' +
-        escape(l.playlistName) + '"><input name="newUrl" type="url" inputmode="url" dir="ltr" aria-label="' +
+      ? '<div class="add-card"><input name="newUrl" type="url" inputmode="url" dir="ltr" aria-label="' +
         escape(l.playlistAddress) + '" placeholder="' + escape(l.playlistAddress) +
+        '"><input name="newName" aria-label="' + escape(l.playlistName) + '" placeholder="' + escape(l.playlistName) +
         '"><div class="add-actions"><button type="button" data-action="add-playlist">' + escape(l.addPlaylist) +
         '</button><button class="quiet" type="button" data-action="close-add-playlist">' + escape(l.cancel) + "</button></div></div>"
       : "";
@@ -629,8 +634,8 @@
       escape(l.playlists) + '</h2><button class="section-add' + (addPlaylistOpen ? " open" : "") +
       '" type="button" data-action="' + (addPlaylistOpen ? "close-add-playlist" : "open-add-playlist") +
       '" aria-label="' + escape(addPlaylistOpen ? l.cancel : l.addPlaylist) +
-      '"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button></div><div class="stack">' +
-      playlists + "</div>" + playlistToggle + addPlaylist + "</section>";
+      '"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button></div>' +
+      addPlaylist + '<div class="stack">' + playlists + "</div>" + playlistToggle + "</section>";
     var deviceSection = '<section id="devices" data-section="devices"><h2>' + escape(l.devices) +
       '</h2><div class="stack">' + devices + "</div>" + deviceToggle + "</section>";
     var aboutSection = '<section id="about" data-section="about"><h2>' + escape(l.about) +
@@ -933,16 +938,20 @@
     var itemMenu = root.querySelector("[data-item-menu]");
     var itemMenuTitle = root.querySelector("[data-item-menu-title]");
     var itemMenuActions = root.querySelector("[data-item-menu-actions]");
+    document.body.querySelectorAll("[data-item-menu-root]").forEach(function (menu) {
+      menu.remove();
+    });
+    itemMenu.dataset.itemMenuRoot = "true";
+    document.body.appendChild(itemMenu);
     var itemMenuSource = null;
     var itemMenuTimer = null;
     var closeItemMenu = function (restoreFocus) {
       itemMenu.classList.remove("open");
-      document.body.style.overflow = "";
       itemMenuTimer = setTimeout(function () {
         itemMenu.hidden = true;
         itemMenuTimer = null;
-      }, 180);
-      if (restoreFocus !== false) itemMenuSource?.focus();
+      }, 240);
+      if (restoreFocus !== false) itemMenuSource?.focus({ preventScroll: true });
     };
     root.querySelectorAll("[data-action=open-item-menu]").forEach(function (button) {
       button.addEventListener("click", function () {
@@ -969,15 +978,16 @@
             '<button type="button" class="danger" data-menu-action="remove">' + escape(labels().remove) + "</button>"
           : '<button type="button" data-menu-action="rename">' + escape(labels().rename) +
             '</button><button type="button" class="danger" data-menu-action="revoke">' + escape(labels().revoke) + "</button>";
+        itemMenu.classList.remove("open");
         itemMenu.hidden = false;
-        document.body.style.overflow = "hidden";
+        void itemMenu.offsetHeight;
         requestAnimationFrame(function () {
           itemMenu.classList.add("open");
-          itemMenuActions.querySelector("button")?.focus();
+          itemMenuActions.querySelector("button")?.focus({ preventScroll: true });
         });
       });
     });
-    root.querySelectorAll("[data-action=close-item-menu]").forEach(function (button) {
+    itemMenu.querySelectorAll("[data-action=close-item-menu]").forEach(function (button) {
       button.addEventListener("click", function () { closeItemMenu(true); });
     });
     itemMenuActions.addEventListener("click", function (event) {
@@ -992,7 +1002,7 @@
         editingPlaylist = id;
         closeItemMenu(false);
         renderManage();
-        root.querySelector('[name="editName"]')?.focus();
+        root.querySelector('[name="editUrl"]')?.focus();
       } else if (action === "rename" && device) {
         editingDevice = id;
         closeItemMenu(false);
@@ -1030,10 +1040,12 @@
       renderManage();
       root.querySelector('[name="newUrl"]')?.focus();
     });
-    root.querySelector("[data-action=close-add-playlist]")?.addEventListener("click", function () {
-      addPlaylistOpen = false;
-      renderManage();
-      root.querySelector("[data-action=open-add-playlist]")?.focus();
+    root.querySelectorAll("[data-action=close-add-playlist]").forEach(function (button) {
+      button.addEventListener("click", function () {
+        addPlaylistOpen = false;
+        renderManage();
+        root.querySelector("[data-action=open-add-playlist]")?.focus();
+      });
     });
     var add = root.querySelector("[data-action=add-playlist]");
     if (add) add.addEventListener("click", function () {
@@ -1050,7 +1062,7 @@
       button.addEventListener("click", function () {
         editingPlaylist = button.dataset.id;
         renderManage();
-        root.querySelector('[name="editName"]')?.focus();
+        root.querySelector('[name="editUrl"]')?.focus();
       });
     });
     var editPlaylist = root.querySelector("[data-edit-playlist]");
