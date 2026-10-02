@@ -989,17 +989,23 @@ html[dir="rtl"] .playback-info {
   font-size: calc(16px * var(--scale));
 }
 .playback-info-guide > span {
-  flex: 1;
+  display: grid;
+  width: 100%;
   min-width: 0;
+  grid-template-columns: auto auto minmax(0, 1fr);
+  align-items: center;
+  gap: var(--s1);
+}
+.playback-info-guide .guide-prefix,
+.playback-info-guide kbd:last-of-type {
+  margin: 0;
 }
 .playback-info-action {
   display: inline-flex !important;
   min-width: 0;
   flex-wrap: wrap;
+  align-items: center;
   gap: 6px 8px;
-}
-.playback-info-action > span:first-child {
-  white-space: nowrap;
 }
 .settings-path {
   justify-self: start;
@@ -3666,6 +3672,10 @@ html[dir="rtl"] .hints kbd + kbd {
 html[dir="rtl"] .hints kbd:last-of-type {
   margin-right: 5px;
   margin-left: var(--s1);
+}
+html[dir="rtl"] .playback-info-guide .guide-prefix,
+html[dir="rtl"] .playback-info-guide kbd:last-of-type {
+  margin: 0;
 }
 html[dir="rtl"] .no-flex-gap .btn > * + *,
 html[dir="rtl"] .no-flex-gap .chip > * + *,

@@ -128,8 +128,8 @@ export default {
   "playbackInfo.level": "مستوى التكيف",
   "playbackInfo.autoLevels": ({ count }) => `تلقائي، ${count} مستويات`,
   "playbackInfo.switches": "تبديلات المستوى",
-  "playbackInfo.hold": "اضغط مطولاً على",
-  "playbackInfo.hideHint": "للإخفاء أو أوقفها من",
+  "playbackInfo.hold": "للإخفاء، اضغط مطولاً على",
+  "playbackInfo.hideHint": "أو أوقفها من",
   "settings.compatibility": "وضع التوافق",
   "settings.compatibilityHint":
     "استخدم هذا الخيار إذا عرضت قناة إطارًا واحدًا ثم توقفت. قد يستخدم بيانات إضافية أثناء إصلاح البث.",

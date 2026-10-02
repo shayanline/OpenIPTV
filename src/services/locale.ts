@@ -585,8 +585,8 @@ const PERSIAN: Partial<Record<MessageKey, Message>> = {
   "playbackInfo.level": "سطح تطبیقی",
   "playbackInfo.autoLevels": ({ count }) => `خودکار، ${count} سطح`,
   "playbackInfo.switches": "تغییرات سطح",
-  "playbackInfo.hold": "نگه دارید",
-  "playbackInfo.hideHint": "برای پنهان کردن یا از این بخش خاموش کنید",
+  "playbackInfo.hold": "برای پنهان کردن،",
+  "playbackInfo.hideHint": "را نگه دارید یا از این بخش خاموش کنید",
   "settings.compatibility": "حالت سازگاری",
   "settings.compatibilityHint":
     "اگر کانال یک فریم نشان می‌دهد و سپس متوقف می‌شود از این گزینه استفاده کنید. ممکن است هنگام تعمیر جریان داده بیشتری مصرف شود.",
