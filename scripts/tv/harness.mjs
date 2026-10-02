@@ -13,7 +13,7 @@
  */
 import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
-import { extname, join } from "node:path";
+import { extname, isAbsolute, relative, resolve, sep } from "node:path";
 
 const TYPES = {
   ".html": "text/html",
@@ -49,7 +49,12 @@ export function serve(dist, port = 0) {
       res.writeHead(200, { "content-type": "audio/x-mpegurl" });
       return res.end(PLAYLIST);
     }
-    const file = join(dist, path === "/" ? "index.html" : path);
+    const root = resolve(dist);
+    const file = resolve(root, `.${path === "/" ? "/index.html" : path}`);
+    const requested = relative(root, file);
+    if (requested.startsWith(`..${sep}`) || requested === ".." || isAbsolute(requested)) {
+      return res.writeHead(404).end("not found");
+    }
     try {
       const body = await readFile(file);
       res.writeHead(200, {
