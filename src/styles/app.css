@@ -988,17 +988,26 @@ html[dir="rtl"] .playback-info {
   color: var(--text-3);
   font-size: var(--t-caption);
 }
+.playback-info-guide > span {
+  flex: 1;
+  min-width: 0;
+}
 .playback-info-action {
-  flex-wrap: wrap;
-  gap: 6px;
+  display: inline-grid !important;
+  min-width: 0;
+  gap: 8px;
 }
 .settings-path {
+  justify-self: start;
   gap: 5px;
   padding: 3px 8px;
   border-radius: var(--r-pill);
   background: var(--tonal);
   color: var(--text-2);
   font-weight: 600;
+}
+.settings-path > span {
+  gap: 5px;
 }
 .digits {
   position: absolute;
