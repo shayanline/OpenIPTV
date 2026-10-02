@@ -2,7 +2,7 @@
 
 Notable changes, newest first, in the format of [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## Unreleased
+## 1.7.0
 
 ### Added
 
@@ -31,6 +31,7 @@ Notable changes, newest first, in the format of [Keep a Changelog](https://keepa
 - **Remote access recovery.** Development streams recover their listening state after reconnecting, while stop and restart transitions cannot strand the service in a starting state.
 - **Final playlist removal.** Removing the final playlist returns both interfaces to setup immediately while preserving authorised access.
 - **Touch interactions.** List rows yield correctly to page scrolling, Remote access sheets can be dismissed from their backdrop or a downward drag and carousel pages follow horizontal touch gestures.
+
 ## 1.6.0
 
 ### Added
