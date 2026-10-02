@@ -9,7 +9,7 @@
  */
 import { createServer } from "node:http";
 import { readFile as read } from "node:fs/promises";
-import { join } from "node:path";
+import { isAbsolute, relative, resolve, sep } from "node:path";
 
 /**
  * A playlist made to be photographed, which is not the one the gates use.
@@ -74,8 +74,14 @@ export const host = (dist, port) => new Promise((ok, fail) => {
       response.writeHead(200, { "content-type": "audio/x-mpegurl" });
       return response.end(PRESENTATION);
     }
+    const root = resolve(dist);
+    const file = resolve(root, `.${path === "/" ? "/index.html" : path}`);
+    const requested = relative(root, file);
+    if (requested.startsWith(`..${sep}`) || requested === ".." || isAbsolute(requested)) {
+      return response.writeHead(404).end("no");
+    }
     try {
-      const body = await read(join(dist, path === "/" ? "index.html" : path));
+      const body = await read(file);
       const type = path.endsWith(".js") ? "text/javascript"
         : path.endsWith(".css") ? "text/css"
         : path.endsWith(".svg") ? "image/svg+xml"
