@@ -21,9 +21,8 @@ export const KEY = {
   VOL_DOWN: 449,
   ESC: 27,
 
-  // The coloured keys. Only green and yellow are registered and acted on, but all four
-  // are named because the debug remote offers the full set: a key the app deliberately
-  // ignores is worth being able to press.
+  // Red, green and yellow are registered and acted on. Blue stays named because the debug
+  // remote offers it, so a deliberately ignored key can still be exercised.
   RED: 403,
   GREEN: 404,
   YELLOW: 405,
@@ -61,7 +60,7 @@ const REGISTERED = [
   "ChannelUp", "ChannelDown",
   "MediaPlayPause", "MediaPlay", "MediaPause", "MediaStop",
   "MediaRewind", "MediaFastForward", "MediaTrackPrevious", "MediaTrackNext",
-  "ColorF1Green", "ColorF2Yellow",
+  "ColorF0Red", "ColorF1Green", "ColorF2Yellow",
 ];
 
 interface TizenInputDevice {
@@ -128,11 +127,18 @@ export function registerRemoteKeys() {
  * legacy accessor and the KeyboardEvent constructor ignores it, so setting it in the init
  * dictionary silently produces a zero. Defining it on the instance is what works.
  */
-export function sendKey(code: number) {
-  const event = new KeyboardEvent("keydown", { bubbles: true, cancelable: true });
+function dispatchKey(type: "keydown" | "keyup", code: number) {
+  const event = new KeyboardEvent(type, { bubbles: true, cancelable: true });
   Object.defineProperty(event, "keyCode", { get: () => code });
   Object.defineProperty(event, "which", { get: () => code });
   window.dispatchEvent(event);
+}
+
+export const sendKeyDown = (code: number) => dispatchKey("keydown", code);
+export const sendKeyUp = (code: number) => dispatchKey("keyup", code);
+export function sendKey(code: number) {
+  sendKeyDown(code);
+  sendKeyUp(code);
 }
 
 export function useRemote(handler: (code: number, event: KeyboardEvent) => void) {

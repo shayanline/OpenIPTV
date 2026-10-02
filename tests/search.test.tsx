@@ -117,6 +117,25 @@ test("results come from the whole playlist, not the category that was showing", 
   assert.deepEqual(rows(), ["Gamma Sport", "Alpha Sport"]);
 });
 
+test("hidden categories are absent from search by default", async () => {
+  await mountApp(PLAYLIST, { hiddenCategories: ["News"] });
+  await openSearch();
+  await type("alpha");
+
+  assert.deepEqual(rows(), ["Alpha Sport"]);
+});
+
+test("a playlist can keep hidden category channels searchable", async () => {
+  await mountApp(PLAYLIST, {
+    hiddenCategories: ["News"],
+    hiddenCategoryMode: "search",
+  });
+  await openSearch();
+  await type("alpha");
+
+  assert.deepEqual(rows(), ["Alpha News", "Alpha Sport"]);
+});
+
 test("down leaves the field for the results, and up comes back to it", async () => {
   await mountApp(PLAYLIST);
   await openSearch();
@@ -128,7 +147,11 @@ test("down leaves the field for the results, and up comes back to it", async () 
 
   press(KEY.UP);
   await settle(0);
-  assert.equal(document.activeElement, field(), "up from the first result returns to the field");
+  assert.equal(
+    document.activeElement,
+    field(),
+    "up from the first result returns to the field",
+  );
 });
 
 test("OK on a result plays it", async () => {
@@ -141,7 +164,11 @@ test("OK on a result plays it", async () => {
   await settle();
 
   assert.deepEqual(played, ["http://example.invalid/c.m3u8"]);
-  assert.equal(panelOpen(), false, "and the panel gets out of the way, as choosing any row does");
+  assert.equal(
+    panelOpen(),
+    false,
+    "and the panel gets out of the way, as choosing any row does",
+  );
 });
 
 test("choosing a result takes the rail to that channel's category", async () => {
@@ -156,12 +183,9 @@ test("choosing a result takes the rail to that channel's category", async () => 
   press(KEY.ENTER);
   await settle();
 
-  press(KEY.LEFT);        // back into the panel, which reopens on what is playing
+  press(KEY.LEFT); // back into the panel, which reopens on what is playing
   await settle();
-  assert.equal(
-    document.querySelector(".rail .row.showing .row-label")?.textContent,
-    "Sport",
-  );
+  assert.equal(document.querySelector(".rail .row.showing .row-label")?.textContent, "Sport");
 });
 
 test("left and right belong to the caret while the keyboard has the field", async () => {
@@ -184,7 +208,7 @@ test("digits are text in the field rather than a channel number", async () => {
   await mountApp(PLAYLIST);
   await openSearch();
 
-  press(52);              // the "4" key, which outside a search dials channel 4
+  press(52); // the "4" key, which outside a search dials channel 4
   await settle();
 
   assert.deepEqual(played, [], "nothing was tuned");
@@ -224,8 +248,8 @@ test("walking to a category while a search is showing puts the categories back",
   await type("alpha");
   assert.deepEqual(rows(), ["Alpha News", "Alpha Sport"]);
 
-  press(KEY.DOWN);        // out of the field, into the results
-  press(KEY.LEFT);        // and into the rail, which is where it was left: on the title bar
+  press(KEY.DOWN); // out of the field, into the results
+  press(KEY.LEFT); // and into the rail, which is where it was left: on the title bar
   // Down until the cursor is on Sport, rather than a fixed number of presses. The rail keeps the
   // position it had when the search was opened, which is the title bar, so how far Sport is
   // depends on where the viewer came from and is not something a test should assume.
@@ -258,10 +282,13 @@ test("choosing a category by clicking it also puts the categories back", async (
   await openSearch();
   await type("alpha");
 
-  const sport = Array.from(document.querySelectorAll<HTMLElement>(".rail .row"))
-    .find((r) => r.textContent?.includes("Sport"));
+  const sport = Array.from(document.querySelectorAll<HTMLElement>(".rail .row")).find((r) =>
+    r.textContent?.includes("Sport"),
+  );
   assert.ok(sport, "the Sport category is in the rail");
-  await act(async () => { sport.click(); });
+  await act(async () => {
+    sport.click();
+  });
   await settle();
 
   assert.equal(!!field(), false);
@@ -277,11 +304,11 @@ test("leaving the search puts the cursor on a row that exists", async () => {
   await openSearch();
   await type("alpha");
   press(KEY.DOWN);
-  press(KEY.DOWN);        // the second result
+  press(KEY.DOWN); // the second result
 
-  press(KEY.BACK);        // clears the query, and the cursor returns to the field
+  press(KEY.BACK); // clears the query, and the cursor returns to the field
   await settle();
-  press(KEY.BACK);        // an empty field has no search left to go back through
+  press(KEY.BACK); // an empty field has no search left to go back through
   await settle();
 
   assert.equal(selected(), "Alpha News", "the first row of the category");

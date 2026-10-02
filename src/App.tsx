@@ -13,7 +13,13 @@ import { onTizen } from "./services/player";
 import { warmChain } from "./services/logos";
 import { cssMs } from "./services/metrics";
 import { whenIdle } from "./services/idle";
-import { FAVOURITES, listsOf, stepColumn, wrap } from "./services/lineup";
+import {
+  isFavouritesList,
+  lineupOf,
+  stepColumn,
+  wrap,
+  type ChannelList as LineupList,
+} from "./services/lineup";
 import { UNCATEGORISED } from "./services/m3u";
 import { searchChannels } from "./services/search";
 import { KEY, registerRemoteKeys, useRemote } from "./hooks/useRemote";
@@ -264,17 +270,41 @@ export default function App() {
   const chrome = useChrome();
   const pointerAwake = usePointerAwake();
   const railTimer = useRef<number | undefined>(undefined);
+  const [revealHidden, setRevealHidden] = useState(false);
+  const [softHidden, setSoftHidden] = useState<string[]>([]);
 
-  const lists = useMemo(
-    () => listsOf(channels, categories, favourites),
-    [channels, categories, favourites],
+  const activePlaylist = settings.activePlaylist();
+  const lineup = useMemo(
+    () => lineupOf(channels, categories, favourites, activePlaylist),
+    [channels, categories, favourites, activePlaylist],
   );
-  const displayListName = (name: string) =>
-    name === FAVOURITES
+  const { lists: browsableLists, browsableChannels, searchableChannels } = lineup;
+  const savedHidden = useMemo(
+    () => new Set(activePlaylist?.hiddenCategories ?? []),
+    [activePlaylist],
+  );
+  const softHiddenSet = useMemo(() => new Set(softHidden), [softHidden]);
+  const lists = useMemo(() => {
+    if (!revealHidden && !softHiddenSet.size) return browsableLists;
+    const favouriteList = isFavouritesList(browsableLists[0]) ? browsableLists[0] : undefined;
+    const categoryLists = revealHidden
+      ? categories
+      : categories.filter(
+          (category) => !savedHidden.has(category.name) || softHiddenSet.has(category.name),
+        );
+    return favouriteList ? [favouriteList, ...categoryLists] : categoryLists;
+  }, [browsableLists, categories, revealHidden, savedHidden, softHiddenSet]);
+  useEffect(() => {
+    setRevealHidden(false);
+    setSoftHidden([]);
+  }, [activePlaylist?.id]);
+
+  const displayListName = (list: LineupList | undefined) =>
+    isFavouritesList(list)
       ? t("channel.favourites")
-      : name === UNCATEGORISED
+      : list?.name === UNCATEGORISED
         ? t("channel.uncategorised")
-        : name;
+        : (list?.name ?? "");
 
   /**
    * The favourites, as a set, because the channel list asks about every row it draws.
@@ -306,7 +336,10 @@ export default function App() {
    * anything: keyed on what has been typed, every keystroke would rebuild the list and the
    * timer below would only be delaying the render, not the work.
    */
-  const results = useMemo(() => searchChannels(channels, applied), [channels, applied]);
+  const results = useMemo(
+    () => searchChannels(searchableChannels, applied),
+    [searchableChannels, applied],
+  );
 
   /**
    * What the channel column is showing: an answer, or a category.
@@ -478,6 +511,8 @@ export default function App() {
   }, []);
 
   const watch = useCallback(() => {
+    setRevealHidden(false);
+    setSoftHidden([]);
     setView("watch");
   }, []);
 
@@ -490,7 +525,7 @@ export default function App() {
   const locate = useCallback(
     (channel: Channel) => {
       const has = (l: { channels: Channel[] }) => l.channels.some((c) => c.id === channel.id);
-      const real = lists.findIndex((l, i) => !(i === 0 && l.name === FAVOURITES) && has(l));
+      const real = lists.findIndex((list) => !isFavouritesList(list) && has(list));
       return real >= 0 ? real : lists.findIndex(has);
     },
     [lists],
@@ -553,8 +588,10 @@ export default function App() {
   useEffect(() => {
     if (!lists.length || category < lists.length) return;
     const to = lists.length - 1;
-    setCursor(to + 1);
-    cursorRef.current = to + 1;
+    if (cursorRef.current !== 0) {
+      setCursor(to + 1);
+      cursorRef.current = to + 1;
+    }
     showCategory(to, 0, true);
   }, [lists.length, category, showCategory]);
 
@@ -601,7 +638,7 @@ export default function App() {
     resumed.current = true;
     if (!settings.resumeLast) return;
 
-    const found = channels.find((c) => c.id === lastPlayed());
+    const found = browsableChannels.find((c) => c.id === lastPlayed());
     if (!found) {
       if (lastPlayed()) openPanel();
       return;
@@ -614,7 +651,7 @@ export default function App() {
     }
     setPane("list");
     tuner.start(found);
-  }, [channels]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [channels, browsableChannels]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /**
    * Put the rail cursor somewhere, and let the category follow.
@@ -651,7 +688,7 @@ export default function App() {
 
   const jump = useCallback(
     (n: number) => {
-      const found = channels.find((c) => c.number === n);
+      const found = browsableChannels.find((c) => c.number === n);
       if (!found) {
         chrome.say(t("app.noChannel", { number: number(n) }));
         return;
@@ -664,7 +701,7 @@ export default function App() {
       }
       tuner.start(found);
     },
-    [channels, lists, locate, tuner.start, chrome.say, showCategory, t, number],
+    [browsableChannels, lists, locate, tuner.start, chrome.say, showCategory, t, number],
   );
 
   /**
@@ -686,8 +723,17 @@ export default function App() {
     (channel: Channel | undefined) => {
       if (!channel) return;
       const had = favourites.includes(channel.id);
-      const appears = !had && !favourites.length;
-      const vanishes = had && favourites.length === 1;
+      const favouriteList = isFavouritesList(lists[0]) ? lists[0] : undefined;
+      const listed = searchableChannels.some((item) => item.id === channel.id);
+      if (!had && !listed) {
+        chrome.say(t("app.hiddenFavouriteUnavailable"));
+        return;
+      }
+      const appears = !had && !favouriteList;
+      const vanishes =
+        had &&
+        favouriteList?.channels.length === 1 &&
+        favouriteList.channels[0].id === channel.id;
 
       if (appears || vanishes) {
         const from = Math.max(0, cursorRef.current - 1);
@@ -702,8 +748,237 @@ export default function App() {
       toggleFavourite(channel.id);
       chrome.say(had ? t("app.removedFavourite") : t("app.addedFavourite"));
     },
-    [favourites, toggleFavourite, chrome.say, index, showCategory, t],
+    [
+      favourites,
+      lists,
+      searchableChannels,
+      toggleFavourite,
+      chrome.say,
+      index,
+      showCategory,
+      t,
+    ],
   );
+
+  const revealHiddenCategories = useCallback(() => {
+    if (view !== "panel" || (pane === "rail" && cursor === 0)) return false;
+    const favouriteList = isFavouritesList(browsableLists[0]) ? browsableLists[0] : undefined;
+    const nextLists = revealHidden
+      ? browsableLists
+      : favouriteList
+        ? [favouriteList, ...categories]
+        : categories;
+    const nearest = (list: LineupList | undefined, fallback: number) => {
+      if (!list) return Math.max(0, Math.min(fallback, nextLists.length - 1));
+      const exact = nextLists.findIndex((candidate) =>
+        isFavouritesList(list)
+          ? isFavouritesList(candidate)
+          : !isFavouritesList(candidate) && candidate.name === list.name,
+      );
+      if (exact >= 0) return exact;
+      const raw = categories.findIndex((category) => category.name === list.name);
+      for (let at = raw + 1; at < categories.length; at++) {
+        const next = nextLists.findIndex(
+          (candidate) => !isFavouritesList(candidate) && candidate.name === categories[at].name,
+        );
+        if (next >= 0) return next;
+      }
+      for (let at = raw - 1; at >= 0; at--) {
+        const previous = nextLists.findIndex(
+          (candidate) => !isFavouritesList(candidate) && candidate.name === categories[at].name,
+        );
+        if (previous >= 0) return previous;
+      }
+      return 0;
+    };
+    const shownAt = nearest(lists[category], category);
+    setCategory(shownAt);
+    setIndex(Math.min(index, Math.max(0, (nextLists[shownAt]?.channels.length ?? 1) - 1)));
+    if (cursor > 0) {
+      const focusedAt = nearest(lists[cursor - 1], cursor - 1);
+      setCursor(focusedAt + 1);
+      cursorRef.current = focusedAt + 1;
+    }
+    if (revealHidden) setSoftHidden([]);
+    setRevealHidden((visible) => !visible);
+    return true;
+  }, [view, pane, cursor, lists, category, browsableLists, revealHidden, categories, index]);
+
+  const toggleCategoryVisibility = useCallback(() => {
+    if (view !== "panel" || pane !== "rail" || cursor === 0) return false;
+    const item = lists[cursor - 1];
+    if (!item || isFavouritesList(item)) return true;
+    const state = useSettings.getState();
+    const playlist = state.activePlaylist();
+    if (!playlist) return true;
+    const hidden = savedHidden.has(item.name);
+    if (!hidden && !revealHidden) {
+      setSoftHidden((current) =>
+        current.includes(item.name) ? current : [...current, item.name],
+      );
+    } else if (hidden) {
+      setSoftHidden((current) => current.filter((name) => name !== item.name));
+    }
+    if (hidden && revealHidden && savedHidden.size === 1) {
+      const favouriteAppears =
+        isFavouritesList(lists[0]) ||
+        item.channels.some((channel) => favouriteIds.has(channel.id));
+      const categoryAt = categories.findIndex((category) => category.name === item.name);
+      const to = categoryAt + (favouriteAppears ? 1 : 0);
+      setCategory(to);
+      setCursor(to + 1);
+      cursorRef.current = to + 1;
+      setRevealHidden(false);
+    }
+    state.setCategoryHidden(playlist.id, item.name, !hidden);
+    return true;
+  }, [view, pane, cursor, lists, savedHidden, revealHidden, categories, favouriteIds]);
+
+  const redContextRef = useRef({
+    configured,
+    showSettings,
+    showExit,
+    revealHiddenCategories,
+    toggleCategoryVisibility,
+  });
+  redContextRef.current = {
+    configured,
+    showSettings,
+    showExit,
+    revealHiddenCategories,
+    toggleCategoryVisibility,
+  };
+
+  useEffect(() => {
+    let timer: number | undefined;
+    let long = false;
+    const onDown = (event: KeyboardEvent) => {
+      if (event.keyCode !== KEY.RED) return;
+      const context = redContextRef.current;
+      if (!context.configured || context.showSettings || context.showExit) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      if (searchingRef.current) return;
+      if (event.repeat) {
+        window.clearTimeout(timer);
+        timer = undefined;
+        if (!long) {
+          long = true;
+          context.revealHiddenCategories();
+        }
+        return;
+      }
+      if (timer === undefined && !long) {
+        timer = window.setTimeout(() => {
+          timer = undefined;
+          long = true;
+          redContextRef.current.revealHiddenCategories();
+        }, 500);
+      }
+    };
+    const onUp = (event: KeyboardEvent) => {
+      if (event.keyCode !== KEY.RED) return;
+      const context = redContextRef.current;
+      if (!context.configured || context.showSettings || context.showExit) {
+        window.clearTimeout(timer);
+        timer = undefined;
+        long = false;
+        return;
+      }
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      if (timer !== undefined) {
+        window.clearTimeout(timer);
+        timer = undefined;
+        if (!searchingRef.current) context.toggleCategoryVisibility();
+      }
+      long = false;
+    };
+    window.addEventListener("keydown", onDown);
+    window.addEventListener("keyup", onUp);
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener("keydown", onDown);
+      window.removeEventListener("keyup", onUp);
+    };
+  }, []);
+
+  const okContextRef = useRef({
+    eligible: false,
+    revealPanel,
+  });
+  okContextRef.current = {
+    eligible:
+      configured &&
+      view === "watch" &&
+      !showSettings &&
+      !showExit &&
+      !!current &&
+      !busy &&
+      !paused &&
+      !fault &&
+      !chrome.showing &&
+      !chrome.digits,
+    revealPanel,
+  };
+
+  useEffect(() => {
+    let timer: number | undefined;
+    let long = false;
+    let pressed = false;
+    const togglePlaybackInfo = () => {
+      const state = useSettings.getState();
+      state.set("showPlaybackStats", !state.showPlaybackStats);
+    };
+    const onDown = (event: KeyboardEvent) => {
+      if (event.keyCode !== KEY.ENTER || !okContextRef.current.eligible) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      pressed = true;
+      if (event.repeat) {
+        window.clearTimeout(timer);
+        timer = undefined;
+        if (!long) {
+          long = true;
+          togglePlaybackInfo();
+        }
+        return;
+      }
+      if (timer === undefined && !long) {
+        timer = window.setTimeout(() => {
+          timer = undefined;
+          long = true;
+          togglePlaybackInfo();
+        }, 500);
+      }
+    };
+    const onUp = (event: KeyboardEvent) => {
+      if (event.keyCode !== KEY.ENTER || !pressed) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      if (timer !== undefined) {
+        window.clearTimeout(timer);
+        timer = undefined;
+        okContextRef.current.revealPanel();
+      }
+      pressed = false;
+      long = false;
+    };
+    window.addEventListener("keydown", onDown);
+    window.addEventListener("keyup", onUp);
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener("keydown", onDown);
+      window.removeEventListener("keyup", onUp);
+    };
+  }, []);
+
+  const openSettings = useCallback(() => setShowSettings(true), []);
+
+  const closeSettings = useCallback(() => {
+    setShowSettings(false);
+    setRevealHidden(false);
+  }, []);
 
   /**
    * Open search, which means the channel column stops being a category.
@@ -859,7 +1134,7 @@ export default function App() {
       // Consistency of Controls: a coloured key does the same thing wherever the viewer is.
       if (code === KEY.YELLOW) {
         event.preventDefault();
-        setShowSettings(true);
+        openSettings();
         return;
       }
       if (code === KEY.GREEN) {
@@ -888,7 +1163,7 @@ export default function App() {
       if (!channels.length && !loading) {
         if (code === KEY.ENTER) {
           event.preventDefault();
-          setShowSettings(true);
+          openSettings();
           return;
         }
         if (code === KEY.BACK || code === KEY.ESC) {
@@ -1153,22 +1428,21 @@ export default function App() {
             }
             setPane("rail");
           } else if (cursor === 0) {
-            // Search and Settings form a two-control ring, so neither edge falls into a list.
-            setHeaderKey((key) => (key === "search" ? "settings" : "search"));
+            setHeaderKey("search");
           }
           break;
         case inlineEnd:
           event.preventDefault();
           if (pane === "list") chooseChannel();
           else if (cursor === 0) {
-            setHeaderKey((key) => (key === "search" ? "settings" : "search"));
+            setHeaderKey("settings");
           } else if (pane === "rail") setPane("list");
           break;
         case KEY.ENTER:
           event.preventDefault();
           if (pane === "rail") {
             if (cursor === 0) {
-              if (headerKey === "settings") setShowSettings(true);
+              if (headerKey === "settings") openSettings();
               else openSearch();
             }
             // The Tab UI guidance: moving from the category area into the content list puts
@@ -1198,10 +1472,9 @@ export default function App() {
             setIndex(FIELD);
           } else if (searching) closeSearch();
           // The panel is one thing, so RETURN puts the whole thing away rather than
-          // stepping through its two columns. With nothing playing there is no picture to
-          // go back to, so the only way out is out.
-          else if (current) watch();
-          else setShowExit(true);
+          // stepping through its two columns. This press closes the panel even before a channel
+          // has played, and a second RETURN from the picture is what offers to close the app.
+          else watch();
           break;
       }
       // Only what the body actually reads. lists.length, moveCursor, banner and retune were all
@@ -1235,6 +1508,7 @@ export default function App() {
       column,
       headerKey,
       openSearch,
+      openSettings,
       closeSearch,
       pickResult,
       inlineStart,
@@ -1317,21 +1591,28 @@ export default function App() {
     [moveCursor],
   );
 
-  const openSettings = useCallback(() => setShowSettings(true), []);
-
   const railItems = useMemo(
     () =>
       lists.map((l) => ({
-        name:
-          l.name === FAVOURITES
-            ? t("channel.favourites")
-            : l.name === UNCATEGORISED
-              ? t("channel.uncategorised")
-              : l.name,
+        name: isFavouritesList(l)
+          ? t("channel.favourites")
+          : l.name === UNCATEGORISED
+            ? t("channel.uncategorised")
+            : l.name,
         count: l.channels.length,
+        hidden: !isFavouritesList(l) && savedHidden.has(l.name),
       })),
-    [lists, t],
+    [lists, savedHidden, t],
   );
+  const selectedRailList = cursor > 0 ? lists[cursor - 1] : undefined;
+  const categoryVisibilityGuide =
+    pane === "rail" && cursor > 0 && selectedRailList && !isFavouritesList(selectedRailList)
+      ? t(
+          savedHidden.has(selectedRailList.name)
+            ? "guide.unhideCategory"
+            : "guide.hideCategory",
+        )
+      : undefined;
 
   /**
    * How wide the number column has to be, in figures.
@@ -1387,7 +1668,7 @@ export default function App() {
     return {
       at: at + 1,
       of: visible.length,
-      list: displayListName(lists[category]?.name ?? ""),
+      list: displayListName(lists[category]),
     };
   }, [tuner.shown, visible, lists, category, t]);
 
@@ -1506,13 +1787,14 @@ export default function App() {
             selected={searching ? -1 : category}
             cursor={cursor}
             loading={loading}
+            allHidden={categories.length > 0 && !lists.length}
             focused={pane === "rail"}
             scale={settings.scale()}
             onSelect={pickCategory}
           />
           <ChannelList
             channels={column}
-            category={displayListName(lists[category]?.name ?? "")}
+            category={displayListName(lists[category])}
             index={index}
             loading={loading}
             focused={pane === "list"}
@@ -1575,7 +1857,9 @@ export default function App() {
               : [
                   { keys: ["\u2191", "\u2193"], label: t("common.move") },
                   { keys: ["OK"], label: t("common.watch") },
-                  { keys: ["0-9"], label: t("common.channelNumber") },
+                  categoryVisibilityGuide
+                    ? { keys: ["Red"], label: categoryVisibilityGuide }
+                    : { keys: ["0-9"], label: t("common.channelNumber") },
                   {
                     keys: ["Return"],
                     label: current ? t("common.backToPicture") : t("common.closeApp"),
@@ -1589,7 +1873,7 @@ export default function App() {
       {/* ---- layer 4, the modals --------------------------------------------------- */}
       {showSettings && (
         <Settings
-          onClose={() => setShowSettings(false)}
+          onClose={closeSettings}
           remoteAccess={remoteAccess}
           showRemoteAccess={remoteAccessSupported}
         />

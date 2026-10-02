@@ -23,13 +23,37 @@ export let muted = false;
 export let volumeChanges: number[] = [];
 
 /** Presses a key the way the remote does, by keyCode, which is what the app listens for. */
-export function press(code: number) {
-  const event = new KeyboardEvent("keydown", { bubbles: true, cancelable: true });
+function keyEvent(type: "keydown" | "keyup", code: number) {
+  const event = new KeyboardEvent(type, { bubbles: true, cancelable: true });
   Object.defineProperty(event, "keyCode", { get: () => code });
   Object.defineProperty(event, "which", { get: () => code });
+  window.dispatchEvent(event);
+}
+
+export function pressDown(code: number, repeat = false) {
   act(() => {
+    const event = new KeyboardEvent("keydown", { bubbles: true, cancelable: true, repeat });
+    Object.defineProperty(event, "keyCode", { get: () => code });
+    Object.defineProperty(event, "which", { get: () => code });
     window.dispatchEvent(event);
   });
+}
+
+export function release(code: number) {
+  act(() => keyEvent("keyup", code));
+}
+
+export function press(code: number) {
+  act(() => {
+    keyEvent("keydown", code);
+    keyEvent("keyup", code);
+  });
+}
+
+export async function hold(code: number, ms = 600) {
+  pressDown(code);
+  await settle(ms);
+  release(code);
 }
 
 /** Whether the channel panel is open, which the app expresses by removing the away class. */
@@ -74,6 +98,8 @@ export interface MountOptions {
   playbackStats?: boolean;
   faultPicture?: boolean;
   locale?: LocalePreference;
+  hiddenCategories?: string[];
+  hiddenCategoryMode?: "exclude" | "search";
 }
 
 export async function mountApp(
@@ -85,6 +111,8 @@ export async function mountApp(
     playbackStats = false,
     faultPicture = false,
     locale,
+    hiddenCategories = [],
+    hiddenCategoryMode = "exclude",
   }: MountOptions = {},
 ) {
   if (!vi.isFakeTimers()) vi.useFakeTimers();
@@ -146,7 +174,15 @@ export async function mountApp(
   localStorage.setItem(
     "openiptv.settings",
     JSON.stringify({
-      playlists: [{ id: "pl-1", name: "Test", url: "http://list.invalid/a.m3u" }],
+      playlists: [
+        {
+          id: "pl-1",
+          name: "Test",
+          url: "http://list.invalid/a.m3u",
+          hiddenCategories,
+          hiddenCategoryMode,
+        },
+      ],
       activePlaylistId: "pl-1",
       resumeLast: !!resume,
       showPlaybackStats: playbackStats,

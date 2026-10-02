@@ -1,4 +1,4 @@
-import { useCallback, useEffect } from "react";
+import { useCallback, useLayoutEffect } from "react";
 import { KEY } from "./useRemote";
 
 /**
@@ -35,7 +35,15 @@ const FOCUSABLE = [
   "[tabindex]:not([tabindex='-1'])",
 ].join(", ");
 
-interface Box { el: HTMLElement; x: number; y: number; left: number; right: number; top: number; bottom: number }
+interface Box {
+  el: HTMLElement;
+  x: number;
+  y: number;
+  left: number;
+  right: number;
+  top: number;
+  bottom: number;
+}
 
 function boxes(root: HTMLElement): Box[] {
   return Array.from(root.querySelectorAll<HTMLElement>(FOCUSABLE))
@@ -48,8 +56,15 @@ function boxes(root: HTMLElement): Box[] {
     })
     .map((el) => {
       const r = el.getBoundingClientRect();
-      return { el, x: r.left + r.width / 2, y: r.top + r.height / 2,
-               left: r.left, right: r.right, top: r.top, bottom: r.bottom };
+      return {
+        el,
+        x: r.left + r.width / 2,
+        y: r.top + r.height / 2,
+        left: r.left,
+        right: r.right,
+        top: r.top,
+        bottom: r.bottom,
+      };
     });
 }
 
@@ -64,9 +79,13 @@ function pick(from: Box, all: Box[], code: number): HTMLElement | null {
     // Distance along the axis being pressed, measured edge to edge so that adjacent
     // controls of different sizes still feel equidistant.
     const along = horizontal
-      ? (forward ? b.left - from.right : from.left - b.right)
-      : (forward ? b.top - from.bottom : from.top - b.bottom);
-    if (along < -1) continue;                       // behind us, or overlapping
+      ? forward
+        ? b.left - from.right
+        : from.left - b.right
+      : forward
+        ? b.top - from.bottom
+        : from.top - b.bottom;
+    if (along < -1) continue; // behind us, or overlapping
 
     // Drift across the axis. Overlapping controls score zero, which is what keeps a long
     // row from stealing focus off a neighbouring column.
@@ -95,24 +114,31 @@ function pick(from: Box, all: Box[], code: number): HTMLElement | null {
 export function useSpatialNav(root: React.RefObject<HTMLElement | null>, enabled: boolean) {
   const rootRef = root;
 
-  const move = useCallback((code: number): boolean => {
-    const container = rootRef.current;
-    if (!container) return false;
-    const all = boxes(container);
-    if (!all.length) return false;
+  const move = useCallback(
+    (code: number): boolean => {
+      const container = rootRef.current;
+      if (!container) return false;
+      const all = boxes(container);
+      if (!all.length) return false;
 
-    const active = document.activeElement as HTMLElement | null;
-    const current = all.find((b) => b.el === active);
-    if (!current) {
-      all[0].el.focus();
+      const active = document.activeElement as HTMLElement | null;
+      const current = all.find((b) => b.el === active);
+      if (!current) {
+        all[0].el.focus();
+        return true;
+      }
+      const next = pick(current, all, code);
+      if (!next) return false; // at the edge, so stop, do not wrap
+      next.focus();
+      const target = next.getBoundingClientRect();
+      const viewport = container.getBoundingClientRect();
+      if (target.top < viewport.top || target.bottom > viewport.bottom) {
+        next.scrollIntoView({ block: "nearest" });
+      }
       return true;
-    }
-    const next = pick(current, all, code);
-    if (!next) return false;                        // at the edge, so stop, do not wrap
-    next.focus();
-    next.scrollIntoView({ block: "nearest" });
-    return true;
-  }, [rootRef]);
+    },
+    [rootRef],
+  );
 
   // Give focus to something the moment the area becomes active, so the remote is never
   // pointing at nothing.
@@ -123,7 +149,7 @@ export function useSpatialNav(root: React.RefObject<HTMLElement | null>, enabled
     if (all.length && !container.contains(document.activeElement)) all[0].el.focus();
   }, [rootRef]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (enabled) focusFirst();
   }, [enabled, focusFirst]);
 

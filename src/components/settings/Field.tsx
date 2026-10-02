@@ -8,12 +8,56 @@ import { useLocale } from "../../hooks/useLocale";
  * are generic and they are shared, so they live on their own.
  */
 
+export function PageHeader({ title, description }: { title: string; description?: string }) {
+  return (
+    <header className="settings-page-header">
+      <h3>{title}</h3>
+      {description && <p>{description}</p>}
+    </header>
+  );
+}
+
+export function SettingsSection({
+  title,
+  children,
+}: {
+  title: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="settings-section">
+      <h4>{title}</h4>
+      {children}
+    </section>
+  );
+}
+
+export function SettingsListHeader({
+  title,
+  count,
+  children,
+}: {
+  title: string;
+  count?: string;
+  children?: React.ReactNode;
+}) {
+  return (
+    <div className="settings-list-header">
+      <div className="settings-list-title">
+        <h4>{title}</h4>
+        {count && <span className="count">{count}</span>}
+      </div>
+      {children && <div className="settings-list-actions">{children}</div>}
+    </div>
+  );
+}
+
 export function Row({
   label,
   hint,
   children,
 }: {
-  label: string;
+  label: React.ReactNode;
   hint?: string;
   children: React.ReactNode;
 }) {
@@ -50,7 +94,7 @@ export function Choice<T extends string>({
           aria-pressed={o.id === value}
           onClick={() => onChange(o.id)}
         >
-          {o.label}
+          <span>{o.label}</span>
         </button>
       ))}
     </>

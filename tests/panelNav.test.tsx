@@ -2,7 +2,7 @@ import { afterEach, test, vi } from "vitest";
 import assert from "node:assert/strict";
 import { cleanup } from "@testing-library/react";
 import { KEY } from "../src/hooks/useRemote";
-import { mountApp, press, settle } from "./support/app";
+import { mountApp, press, pressDown, release, settle } from "./support/app";
 
 /**
  * Up and down cycle through the title bar and whichever column the cursor is in.
@@ -149,7 +149,7 @@ test("switching back to categories restores the latest category row", async () =
   assert.equal(categoryUnderCursor(), "Sport", "left reset the category cursor");
 });
 
-test("the header cycles Search and Settings in both horizontal directions", async () => {
+test("the header moves directionally and stops at each edge", async () => {
   await mountApp(PLAYLIST);
   press(KEY.UP);
   await settle();
@@ -157,18 +157,38 @@ test("the header cycles Search and Settings in both horizontal directions", asyn
 
   press(KEY.LEFT);
   await settle();
-  assert.equal(barKey(), "Settings", "left from Search did not cycle to Settings");
+  assert.equal(barKey(), "Search", "left moved past the first header control");
 
   press(KEY.RIGHT);
+  press(KEY.RIGHT);
   await settle();
-  assert.equal(barKey(), "Search", "right from Settings did not cycle to Search");
+  assert.equal(barKey(), "Settings", "right moved past the last header control");
+
+  press(KEY.LEFT);
+  await settle();
+  assert.equal(barKey(), "Search");
+});
+
+test("Red on the title bar does not disturb horizontal header focus", async () => {
+  await mountApp(PLAYLIST, { hiddenCategories: ["News"] });
+  press(KEY.UP);
+  await settle();
+  assert.equal(barKey(), "Search");
+
+  press(KEY.RED);
+  pressDown(KEY.RIGHT);
+  pressDown(KEY.RIGHT, true);
+  release(KEY.RIGHT);
+  await settle();
+
+  assert.equal(barKey(), "Settings");
 });
 
 test("vertical movement from Settings returns to the matching channel-list edge", async () => {
   await mountApp(PLAYLIST);
   press(KEY.UP);
   await settle();
-  press(KEY.LEFT);
+  press(KEY.RIGHT);
   await settle();
   assert.equal(barKey(), "Settings");
 

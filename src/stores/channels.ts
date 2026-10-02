@@ -139,6 +139,11 @@ export const useChannels = create<State>((set, get) => {
     if (useSettings.getState().sortAlphabetically) channels = [...channels].sort(byName);
     return { channels, categories: groupByCategory(channels) };
   };
+  const rememberCategoryCount = (url: string, count: number) => {
+    const settings = useSettings.getState();
+    const playlist = settings.playlists.find((item) => item.url === url);
+    if (playlist) settings.setPlaylistCategoryCount(playlist.id, count);
+  };
 
   /**
    * Go and get the playlist.
@@ -162,6 +167,7 @@ export const useChannels = create<State>((set, get) => {
         // Byte for byte what is already on screen. Stamped so the next launch trusts the
         // cache for another six hours rather than asking again immediately.
         write(stampKey(url), String(Date.now()));
+        rememberCategoryCount(url, get().categories.length);
         set({ loading: false, error: "", errorKey: "", errorDetail: "" });
         return { count: get().channels.length, error: "" };
       }
@@ -178,6 +184,7 @@ export const useChannels = create<State>((set, get) => {
        */
       void disk.write(cacheKey(url), text);
       write(stampKey(url), String(Date.now()));
+      rememberCategoryCount(url, parsed.categories.length);
       set({ ...parsed, loading: false, error: "", errorKey: "", errorDetail: "" });
       return { count: parsed.channels.length, error: "" };
     } catch (e) {
@@ -282,6 +289,7 @@ export const useChannels = create<State>((set, get) => {
       if (typeof cached === "string" && cached) {
         const parsed = parse(cached);
         if (parsed.channels.length) {
+          rememberCategoryCount(playlist.url, parsed.categories.length);
           set({ ...parsed, loading: false, error: "", errorKey: "", errorDetail: "" });
           const at = Number(read(stampKey(playlist.url))) || 0;
           if (Date.now() - at < CACHE_TTL_MS)

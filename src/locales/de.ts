@@ -9,6 +9,7 @@ export default {
   "common.changeIt": "Ändern",
   "common.closeApp": "App schließen",
   "common.return": "Zurück",
+  "common.back": "Zurück",
   "common.ok": "OK",
   "common.watch": "Ansehen",
   "common.allChannels": "Alle Sender",
@@ -25,6 +26,9 @@ export default {
   "common.active": "Aktiv",
   "common.edit": "Bearbeiten",
   "common.remove": "Entfernen",
+  "common.previous": "Zurück",
+  "common.next": "Weiter",
+  "common.done": "Fertig",
   "common.keepIt": "Beibehalten",
   "common.close": "Schließen",
   "common.keepWatching": "Weiter ansehen",
@@ -78,6 +82,8 @@ export default {
   "settings.appearance": "Darstellung",
   "settings.playback": "Wiedergabe",
   "settings.general": "Allgemein",
+  "settings.applicationData": "Anwendungsdaten",
+  "settings.support": "Support",
   "settings.playlists": "Wiedergabelisten",
   "settings.diagnostics": "Diagnose",
   "settings.about": "Info",
@@ -125,7 +131,7 @@ export default {
   "playbackInfo.level": "Adaptives Niveau",
   "playbackInfo.autoLevels": ({ count }) => `Automatisch, ${count} Niveaus`,
   "playbackInfo.switches": "Niveauwechsel",
-  "playbackInfo.hideHint": "Unter Einstellungen, Diagnose ausschalten",
+  "playbackInfo.hideHint": "OK halten oder unter Einstellungen, Wiedergabe ausschalten",
   "settings.compatibility": "Kompatibilitätsmodus",
   "settings.compatibilityHint":
     "Verwenden Sie dies, wenn ein Sender ein Bild zeigt und dann stoppt. Beim Reparieren des Streams können zusätzliche Daten verwendet werden.",
@@ -146,6 +152,7 @@ export default {
   "settings.clearCacheDone": "Cache geleert.",
   "settings.resetDone": "Appdaten zurückgesetzt.",
   "settings.close": "Einstellungen schließen",
+  "settings.backTo": ({ section }) => `Zurück zu ${section}`,
   "settings.change": "Ändern",
   "settings.previewFallback": "Der schnelle braune Fuchs springt über den faulen Hund",
   "settings.playlistNamesPreserved":
@@ -158,6 +165,8 @@ export default {
     `Sender ${number} ist in dieser Wiedergabeliste nicht vorhanden.`,
   "app.removedFavourite": "Aus Favoriten entfernt",
   "app.addedFavourite": "Zu Favoriten hinzugefügt",
+  "app.hiddenFavouriteUnavailable":
+    "Blenden Sie diese Kategorie ein, bevor Sie Favoriten hinzufügen.",
   "banner.position": ({ at, of, list }) => `${at} von ${of} in ${list}`,
   "guide.addIt": "Hinzufügen",
   "guide.showMatches": "Treffer anzeigen",
@@ -165,6 +174,8 @@ export default {
   "guide.changeChannel": "Sender wechseln",
   "guide.favourite": "Favorit",
   "guide.hideThis": "Dies ausblenden",
+  "guide.hideCategory": "Kategorie ausblenden",
+  "guide.unhideCategory": "Kategorie wieder einblenden",
   "guide.chooseAnotherPlaylist": "Andere Wiedergabeliste auswählen",
   "guide.closeTheApp": "App schließen",
   "guide.anotherChannel": "Anderer Sender",
@@ -174,7 +185,10 @@ export default {
   "channel.favourites": "Favoriten",
   "channel.uncategorised": "Ohne Kategorie",
   "channel.unnamed": "Unbenannt",
+  "channel.hidden": "Ausgeblendet",
   "channel.noCategories": "Noch keine Kategorien.",
+  "channel.allCategoriesHidden":
+    "Alle Kategorien sind ausgeblendet. Blenden Sie sie in den Playlist Einstellungen wieder ein.",
   "channel.nothingInCategory": "In dieser Kategorie ist nichts enthalten.",
   "channel.noMatches": ({ query }) => `Kein Sender passt zu „${query}“.`,
   "channel.typeName": "Geben Sie einen Sendernamen ein.",
@@ -243,7 +257,33 @@ export default {
   "playlist.addToStart":
     "Fügen Sie eine M3U-Wiedergabelistenadresse hinzu, um mit dem Ansehen zu beginnen.",
   "playlist.storedLocally": "Wiedergabelisten werden nur auf diesem Gerät gespeichert.",
+  "playlist.savedPlaylists": "Gespeicherte Wiedergabelisten",
   "playlist.editAria": ({ name }) => `${name} bearbeiten`,
+  "playlist.manageCategories": "Kategorien",
+  "playlist.categoryCount": ({ count, total }) =>
+    `${count} ${Number(total) === 1 ? "Kategorie" : "Kategorien"}`,
+  "playlist.manageCategoriesAria": ({ name }) => `Kategorien von ${name} verwalten`,
+  "playlist.categoriesTitle": "Kategorien",
+  "playlist.hiddenChannels": "Sender ausgeblendeter Kategorien",
+  "playlist.hiddenChannelsHint":
+    "Wählen Sie, ob ausgeblendete Sender auch in Suche und Favoriten erscheinen",
+  "playlist.hideEverywhere": "Überall ausblenden",
+  "playlist.keepSearchable": "In Suche und Favoriten behalten",
+  "playlist.hideAllCategories": "Alle ausblenden",
+  "playlist.unhideAllCategories": "Alle einblenden",
+  "playlist.showAllCategories": "Alle Kategorien anzeigen",
+  "playlist.categoryActions": "Kategorieaktionen",
+  "playlist.categoryPosition": ({ from, to, total }) => `${from} bis ${to} von ${total}`,
+  "playlist.hideAllQuestion": "Alle Kategorien ausblenden?",
+  "playlist.hideAllBody":
+    "Alle Kategorien dieser Wiedergabeliste werden ausgeblendet. Sie können sie jederzeit wieder anzeigen.",
+  "playlist.addTitle": "Wiedergabeliste hinzufügen",
+  "playlist.editTitle": "Wiedergabeliste bearbeiten",
+  "playlist.hideCategory": ({ name }) => `${name} ausblenden`,
+  "playlist.unhideCategory": ({ name }) => `${name} wieder einblenden`,
+  "playlist.categorySearch": "Kategorien suchen",
+  "playlist.noCategoryMatches": "Keine Kategorie entspricht dieser Suche.",
+  "playlist.noCategories": "Diese Wiedergabeliste hat keine Kategorien.",
   "playlist.removeAria": ({ name }) => `${name} entfernen`,
   "playlist.removeQuestion": ({ name }) => `${name} entfernen?`,
   "playlist.removeBody":
@@ -258,6 +298,7 @@ export default {
   "diagnostics.title": "Diagnose",
   "diagnostics.lead":
     "Die Plattform und die Eingaben der Fernbedienung dieses Geräts. Verwenden Sie diese Details, wenn etwas auf einem Gerät funktioniert, aber auf einem anderen nicht.",
+  "diagnostics.deviceInfo": "Gerät und Anwendung",
   "diagnostics.app": "App",
   "diagnostics.platform": "Plattform",
   "diagnostics.engine": "Engine",
@@ -299,7 +340,7 @@ export default {
   "about.title": "Info",
   "about.version": ({ version }) => `Version ${version}`,
   "about.description":
-    "OpenIPTV ist ein kostenloser Open-Source-Player für M3U-Wiedergabelisten. Er enthält keine Sender und sendet keine Analysedaten. Die App verbindet sich nur mit den von Ihnen ausgewählten Wiedergabelisten, Streams und Logos. Ihre Wiedergabelistenadressen und Einstellungen bleiben auf diesem Gerät.",
+    "OpenIPTV enthält keine Sender oder Analysedaten und speichert Wiedergabelistenadressen und Einstellungen auf diesem Gerät. Inhalte werden direkt aus den hinzugefügten Quellen abgespielt, ohne Sender- oder Kategorienamen zu ändern. Ein OpenIPTV-Konto ist nicht erforderlich. Das Projekt ist quelloffen und wird über sein öffentliches Repository gepflegt. Nutzen Sie nur Streams, auf die Sie zugreifen dürfen.",
   "about.disclaimer":
     "OpenIPTV ist nicht mit Sendern oder Streamingdiensten verbunden. Sehen Sie nur Inhalte an, auf die Sie zugreifen dürfen.",
   "about.qr":

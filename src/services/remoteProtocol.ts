@@ -404,6 +404,8 @@ async function perform(command: RemoteCommand): Promise<CommandResult["reason"] 
       id: playlistId(),
       name: command.name.trim() || new URL(command.url).hostname,
       url: command.url.trim(),
+      hiddenCategories: [],
+      hiddenCategoryMode: "exclude" as const,
     };
     settings.replacePlaylists([playlist], playlist.id, command.locale);
     await channels.load(true);
