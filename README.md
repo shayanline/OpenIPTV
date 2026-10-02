@@ -1,6 +1,11 @@
 # <img src="public/icon.svg" alt="OpenIPTV icon" width="48" align="absmiddle"> OpenIPTV
 
 [![CI](https://github.com/shayanline/OpenIPTV/actions/workflows/ci.yml/badge.svg)](https://github.com/shayanline/OpenIPTV/actions/workflows/ci.yml)
+[![Latest release](https://img.shields.io/github/v/release/shayanline/OpenIPTV?label=release)](https://github.com/shayanline/OpenIPTV/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/shayanline/OpenIPTV/total)](https://github.com/shayanline/OpenIPTV/releases)
+[![Licence](https://img.shields.io/github/license/shayanline/OpenIPTV)](LICENSE)
+[![Tizen](https://img.shields.io/badge/Tizen-5.5%2B-00a4ef)](https://developer.samsung.com/smarttv/develop/specifications/tv-model-groups.html)
+[![Node](https://img.shields.io/badge/Node-22.18%2B-339933?logo=nodedotjs&logoColor=white)](https://nodejs.org/)
 
 An IPTV player for Samsung TVs. Give it the address of an M3U playlist and it plays what is in it.
 
