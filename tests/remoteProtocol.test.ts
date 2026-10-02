@@ -35,10 +35,11 @@ async function load() {
       forgottenRepairHosts += 1;
     },
   }));
-  const protocol = await import("../src/services/phoneProtocol");
+  const protocol = await import("../src/services/remoteProtocol");
   const settings = await import("../src/stores/settings");
   const channels = await import("../src/stores/channels");
-  return { ...protocol, ...settings, ...channels };
+  const setup = await import("../src/stores/setup");
+  return { ...protocol, ...settings, ...channels, ...setup };
 }
 
 beforeEach(() => {
@@ -50,9 +51,9 @@ beforeEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe("phone command parsing", () => {
+describe("remote command parsing", () => {
   test("accepts every ordinary setting with the correct value type", async () => {
-    const { parsePhoneCommand } = await load();
+    const { parseRemoteCommand } = await load();
     const commands = [
       { type: "setting", key: "locale", value: "fr" },
       { type: "setting", key: "fontSizeId", value: "l" },
@@ -63,32 +64,37 @@ describe("phone command parsing", () => {
       { type: "setting", key: "resumeLast", value: false },
       { type: "setting", key: "sortAlphabetically", value: true },
       { type: "setting", key: "compatibility", value: true },
+      {
+        type: "setup.preview",
+        name: "News",
+        url: "http://example.invalid/list.m3u",
+      },
     ];
 
-    for (const command of commands) expect(parsePhoneCommand(command)).toEqual(command);
+    for (const command of commands) expect(parseRemoteCommand(command)).toEqual(command);
   });
 
   test("rejects unknown commands, settings, values, and extra fields", async () => {
-    const { parsePhoneCommand } = await load();
+    const { parseRemoteCommand } = await load();
 
-    expect(parsePhoneCommand({ type: "setting", key: "secret", value: true })).toBeNull();
-    expect(parsePhoneCommand({ type: "setting", key: "showClock", value: "yes" })).toBeNull();
-    expect(parsePhoneCommand({ type: "play", url: "http://example.invalid" })).toBeNull();
+    expect(parseRemoteCommand({ type: "setting", key: "secret", value: true })).toBeNull();
+    expect(parseRemoteCommand({ type: "setting", key: "showClock", value: "yes" })).toBeNull();
+    expect(parseRemoteCommand({ type: "play", url: "http://example.invalid" })).toBeNull();
     expect(
-      parsePhoneCommand({ type: "playlist.remove", id: "pl-1", credential: "leak" }),
+      parseRemoteCommand({ type: "playlist.remove", id: "pl-1", credential: "leak" }),
     ).toBeNull();
   });
 });
 
-describe("phone command application", () => {
+describe("remote command application", () => {
   test("rejects a stale revision without applying its command", async () => {
     const s = await load();
-    const first = await s.applyPhoneCommand({
+    const first = await s.applyRemoteCommand({
       id: "one",
       revision: 0,
       command: { type: "setting", key: "showClock", value: false },
     });
-    const stale = await s.applyPhoneCommand({
+    const stale = await s.applyRemoteCommand({
       id: "two",
       revision: 0,
       command: { type: "setting", key: "showLogos", value: false },
@@ -98,6 +104,70 @@ describe("phone command application", () => {
     expect(stale.ok).toBe(false);
     expect(stale.reason).toBe("conflict");
     expect(s.useSettings.getState().showLogos).toBe(true);
+  });
+
+  test("serializes commands so only one request can claim a revision", async () => {
+    const s = await load();
+    s.useSettings.getState().addPlaylist("One", "http://example.invalid/one.m3u");
+    let release: (value: unknown) => void = () => {};
+    const fetchMock = vi.fn(
+      () =>
+        new Promise((resolve) => {
+          release = resolve;
+        }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const first = s.applyRemoteCommand({
+      id: "refresh-first",
+      revision: 0,
+      command: { type: "playlist.refresh" },
+    });
+    const second = s.applyRemoteCommand({
+      id: "setting-second",
+      revision: 0,
+      command: { type: "setting", key: "showClock", value: false },
+    });
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    release({ ok: true, text: async () => PLAYLIST });
+
+    expect((await first).ok).toBe(true);
+    expect(await second).toMatchObject({ ok: false, reason: "conflict" });
+    expect(s.useSettings.getState().showClock).toBe(true);
+  });
+
+  test("mirrors an in-memory setup draft without adding a playlist", async () => {
+    const s = await load();
+
+    const result = await s.applyRemoteCommand({
+      id: "preview",
+      revision: 0,
+      command: {
+        type: "setup.preview",
+        name: "News",
+        url: "http://example.invalid/list.m3u",
+      },
+    });
+
+    expect(result.ok).toBe(true);
+    expect(s.useSettings.getState().locale).toBe("system");
+    expect(s.useSetup.getState()).toMatchObject({
+      name: "News",
+      url: "http://example.invalid/list.m3u",
+    });
+    expect(result.snapshot.setup).toEqual({
+      name: "News",
+      url: "http://example.invalid/list.m3u",
+    });
+    expect(result.snapshot.revision).toBe(0);
+    const setting = await s.applyRemoteCommand({
+      id: "after-preview",
+      revision: 0,
+      command: { type: "setting", key: "locale", value: "fa" },
+    });
+    expect(setting.ok).toBe(true);
+    expect(s.useSettings.getState().locale).toBe("fa");
+    expect(s.useSettings.getState().playlists).toEqual([]);
   });
 
   test("returns the first result for a duplicate request identifier", async () => {
@@ -112,8 +182,8 @@ describe("phone command application", () => {
       },
     };
 
-    const first = await s.applyPhoneCommand(request);
-    const duplicate = await s.applyPhoneCommand(request);
+    const first = await s.applyRemoteCommand(request);
+    const duplicate = await s.applyRemoteCommand(request);
 
     expect(duplicate).toEqual(first);
     expect(s.useSettings.getState().playlists).toHaveLength(1);
@@ -126,7 +196,7 @@ describe("phone command application", () => {
     const [first, second] = s.useSettings.getState().playlists;
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, text: async () => PLAYLIST }));
 
-    const result = await s.applyPhoneCommand({
+    const result = await s.applyRemoteCommand({
       id: "remove",
       revision: 0,
       command: { type: "playlist.remove", id: first.id },
@@ -143,7 +213,7 @@ describe("phone command application", () => {
       "fetch",
       vi.fn().mockResolvedValue({ ok: true, text: async () => "not a playlist" }),
     );
-    const bad = await failed.applyPhoneCommand({
+    const bad = await failed.applyRemoteCommand({
       id: "bad-setup",
       revision: 0,
       command: {
@@ -159,7 +229,7 @@ describe("phone command application", () => {
 
     const good = await load();
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, text: async () => PLAYLIST }));
-    const result = await good.applyPhoneCommand({
+    const result = await good.applyRemoteCommand({
       id: "good-setup",
       revision: 0,
       command: {
@@ -178,7 +248,7 @@ describe("phone command application", () => {
     const s = await load();
     s.useSettings.getState().set("compatibility", true);
 
-    await s.applyPhoneCommand({
+    await s.applyRemoteCommand({
       id: "compatibility",
       revision: 0,
       command: { type: "setting", key: "compatibility", value: false },
@@ -186,7 +256,7 @@ describe("phone command application", () => {
     expect(repairStops).toBe(1);
     expect(cleared).toBe(0);
 
-    await s.applyPhoneCommand({
+    await s.applyRemoteCommand({
       id: "cache",
       revision: 1,
       command: { type: "cache.clear" },

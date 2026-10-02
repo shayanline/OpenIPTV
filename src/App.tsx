@@ -1,4 +1,12 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import { useChannels } from "./stores/channels";
 import { useSettings } from "./stores/settings";
 import { onTizen } from "./services/player";
@@ -27,8 +35,9 @@ import { usePointerAwake } from "./hooks/usePointerAwake";
 import { RETRY_DELAYS_MS, useTuner } from "./hooks/useTuner";
 import { useLocale } from "./hooks/useLocale";
 import { applyDocumentLocale } from "./services/locale";
-import { usePhoneManagement } from "./hooks/usePhoneManagement";
-import { phoneManagementNeeded } from "./services/phoneServer";
+import { useRemoteAccess } from "./hooks/useRemoteAccess";
+import { developmentRemoteAccess } from "./services/remoteServer";
+import { hasPairedDevices, subscribePairedDevices } from "./services/deviceAccess";
 import type { Channel } from "./types";
 
 /*
@@ -165,10 +174,18 @@ export default function App() {
   } = useChannels();
   const settings = useSettings();
   const { locale, direction, t, number } = useLocale();
+  const [showSettings, setShowSettings] = useState(false);
   const configured = settings.playlists.length > 0;
-  const phoneAccessSupported = onTizen();
-  const phoneManagement = usePhoneManagement(
-    phoneAccessSupported && phoneManagementNeeded(configured),
+  const developmentRemoteAccessEnabled = developmentRemoteAccess();
+  const remoteAccessSupported = onTizen() || developmentRemoteAccessEnabled;
+  const hasRemoteDevices = useSyncExternalStore(
+    subscribePairedDevices,
+    hasPairedDevices,
+    () => false,
+  );
+  const remoteAccess = useRemoteAccess(
+    remoteAccessSupported && (!configured || showSettings || hasRemoteDevices),
+    developmentRemoteAccessEnabled,
   );
 
   useLayoutEffect(() => {
@@ -205,7 +222,6 @@ export default function App() {
   const [cursor, setCursor] = useState(1); // rail row, zero is the title bar
   const [index, setIndex] = useState(0);
   const [pane, setPane] = useState<"rail" | "list">("list");
-  const [showSettings, setShowSettings] = useState(false);
   const [showExit, setShowExit] = useState(false);
 
   /**
@@ -1574,8 +1590,8 @@ export default function App() {
       {showSettings && (
         <Settings
           onClose={() => setShowSettings(false)}
-          phoneManagement={phoneManagement}
-          showPhoneAccess={phoneAccessSupported}
+          remoteAccess={remoteAccess}
+          showRemoteAccess={remoteAccessSupported}
         />
       )}
       {showExit && (
@@ -1591,9 +1607,9 @@ export default function App() {
             void load(true);
           }}
           onExit={exitApp}
-          phoneManagement={phoneManagement}
-          onOpenPairing={phoneManagement.openPairing}
-          showPhoneSetup={phoneAccessSupported}
+          remoteAccess={remoteAccess}
+          onOpenPairing={remoteAccess.openPairing}
+          showRemoteSetup={remoteAccessSupported}
         />
       )}
 

@@ -1,4 +1,7 @@
+import { sendKey } from "../hooks/useRemote";
+import { APP_VERSION, REPO_URL } from "../meta";
 import { clearCache, useChannels } from "../stores/channels";
+import { useSetup } from "../stores/setup";
 import {
   ASPECTS,
   FONT_SIZES,
@@ -16,11 +19,11 @@ import {
 } from "./locale";
 import { checkPlaylistUrl } from "./playlistUrl";
 import {
-  listPairedPhones,
-  renamePairedPhone,
-  revokePairedPhone,
-  type PairedPhone,
-} from "./phoneAccess";
+  listPairedDevices,
+  renamePairedDevice,
+  revokePairedDevice,
+  type PairedDevice,
+} from "./deviceAccess";
 import { forgetRepairHosts, stopRepair } from "./repair";
 
 type BooleanSetting =
@@ -37,19 +40,21 @@ type SettingCommand =
   | { type: "setting"; key: "fontSizeId"; value: string }
   | { type: "setting"; key: "aspectId"; value: AspectId };
 
-export type PhoneCommand =
+export type RemoteCommand =
   | SettingCommand
   | { type: "setup"; locale: LocalePreference; name: string; url: string }
+  | { type: "setup.preview"; name: string; url: string }
   | { type: "playlist.add"; name: string; url: string }
   | { type: "playlist.update"; id: string; name: string; url: string }
   | { type: "playlist.remove"; id: string }
   | { type: "playlist.activate"; id: string }
   | { type: "playlist.refresh" }
   | { type: "cache.clear" }
-  | { type: "phone.rename"; id: string; name: string }
-  | { type: "phone.revoke"; id: string };
+  | { type: "device.rename"; id: string; name: string }
+  | { type: "device.revoke"; id: string }
+  | { type: "remote.key"; code: number };
 
-export interface PhoneSnapshot {
+export interface RemoteSnapshot {
   revision: number;
   locale: string;
   direction: "ltr" | "rtl";
@@ -68,20 +73,22 @@ export interface PhoneSnapshot {
   };
   playlists: Playlist[];
   activePlaylistId: string;
-  phones: PairedPhone[];
+  setup: { name: string; url: string };
+  devices: PairedDevice[];
+  about: { version: string; repository: string };
   operation: { loading: boolean; error: string; errorKey: string; errorDetail: string };
 }
 
 export interface CommandRequest {
   id: string;
   revision: number;
-  command: PhoneCommand;
+  command: RemoteCommand;
 }
 
 export interface CommandResult {
   ok: boolean;
   reason?: "conflict" | "invalid" | "failed" | "notFound";
-  snapshot: PhoneSnapshot;
+  snapshot: RemoteSnapshot;
 }
 
 const BOOLEAN_SETTINGS = new Set<BooleanSetting>([
@@ -93,8 +100,14 @@ const BOOLEAN_SETTINGS = new Set<BooleanSetting>([
   "compatibility",
 ]);
 const CHOICE_SETTINGS = new Set<ChoiceSetting>(["locale", "fontSizeId", "aspectId"]);
+const REMOTE_KEYS = new Set([
+  13, 37, 38, 39, 40, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57,
+  403, 404, 405, 406, 412, 413, 415, 417, 427, 428, 448, 449,
+  10009, 10232, 10233, 10252,
+]);
 const completed = new Map<string, CommandResult>();
 let revision = 0;
+let commandQueue: Promise<void> = Promise.resolve();
 
 function record(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" && !Array.isArray(value)
@@ -128,7 +141,7 @@ function validSetting(key: unknown, value: unknown): SettingCommand | null {
   return null;
 }
 
-export function parsePhoneCommand(value: unknown): PhoneCommand | null {
+export function parseRemoteCommand(value: unknown): RemoteCommand | null {
   const input = record(value);
   if (!input || !text(input.type)) return null;
   if (input.type === "setting" && exact(input, ["type", "key", "value"])) {
@@ -144,6 +157,14 @@ export function parsePhoneCommand(value: unknown): PhoneCommand | null {
     return { type: input.type, locale: input.locale, name: input.name, url: input.url };
   }
   if (
+    input.type === "setup.preview" &&
+    exact(input, ["type", "name", "url"]) &&
+    text(input.name) &&
+    text(input.url)
+  ) {
+    return { type: input.type, name: input.name, url: input.url };
+  }
+  if (
     (input.type === "playlist.add" || input.type === "playlist.update") &&
     exact(input, input.type === "playlist.add" ? ["type", "name", "url"] : ["type", "id", "name", "url"]) &&
     (input.type === "playlist.add" || text(input.id)) &&
@@ -157,19 +178,27 @@ export function parsePhoneCommand(value: unknown): PhoneCommand | null {
   if (
     (input.type === "playlist.remove" ||
       input.type === "playlist.activate" ||
-      input.type === "phone.revoke") &&
+      input.type === "device.revoke") &&
     exact(input, ["type", "id"]) &&
     text(input.id)
   ) {
     return { type: input.type, id: input.id };
   }
   if (
-    input.type === "phone.rename" &&
+    input.type === "device.rename" &&
     exact(input, ["type", "id", "name"]) &&
     text(input.id) &&
     text(input.name)
   ) {
     return { type: input.type, id: input.id, name: input.name };
+  }
+  if (
+    input.type === "remote.key" &&
+    exact(input, ["type", "code"]) &&
+    typeof input.code === "number" &&
+    REMOTE_KEYS.has(input.code)
+  ) {
+    return { type: input.type, code: input.code };
   }
   if (
     (input.type === "playlist.refresh" || input.type === "cache.clear") &&
@@ -180,43 +209,89 @@ export function parsePhoneCommand(value: unknown): PhoneCommand | null {
   return null;
 }
 
-export function phoneSnapshot(): PhoneSnapshot {
+export function remoteSnapshot(): RemoteSnapshot {
   const settings = useSettings.getState();
   const channels = useChannels.getState();
+  const setup = useSetup.getState();
   const locale = resolveLocale(settings.locale);
-  const t = (key: Parameters<typeof translate>[1]) => translate(locale, key);
+  const t = (
+    key: Parameters<typeof translate>[1],
+    values?: Parameters<typeof translate>[2],
+  ) => translate(locale, key, values);
   return {
     revision,
     locale,
     direction: directionFor(locale),
     labels: {
       title: "OpenIPTV",
-      pairTitle: t("phone.setupTitle"),
-      pairBody: t("phone.setupBody"),
-      phoneName: t("phone.phoneName"),
-      code: t("phone.codeHint"),
-      pair: t("phone.add"),
+      pairTitle: t("remote.setupTitle"),
+      pairBody: t("remote.setupBody"),
+      deviceName: t("remote.deviceName"),
+      code: t("remote.codeHint"),
+      pair: t("remote.add"),
       setupTitle: t("playlist.addToStart"),
       playlistName: t("onboarding.playlistName"),
       playlistAddress: t("onboarding.playlistAddress"),
       language: t("settings.language"),
       finish: t("common.addPlaylist"),
+      setupCompleteTitle: t("remote.setupCompleteTitle"),
+      setupCompleteBody: t("remote.setupCompleteBody", {
+        count: channels.channels.length,
+      }),
+      setupFailedTitle: t("remote.setupFailedTitle"),
+      setupLoadFailed: t("remote.setupLoadFailed"),
+      manage: t("settings.title"),
+      connecting: t("picture.connecting"),
+      checkingPlaylist: t("app.loadingPlaylist"),
+      saving: `${t("common.save")}…`,
+      saved: t("playlist.saved", { name: t("settings.title") }),
       playlists: t("settings.playlists"),
       appearance: t("settings.appearance"),
       playback: t("settings.playback"),
       general: t("settings.general"),
-      phones: t("settings.phoneAccess"),
+      devices: t("settings.remoteAccess"),
+      about: t("settings.about"),
+      aboutVersion: t("about.version", { version: APP_VERSION }),
+      aboutDescription: t("about.description"),
+      aboutDisclaimer: t("about.disclaimer"),
+      remoteClose: t("common.close"),
+      remoteUp: t("common.up"),
+      remoteRight: t("common.right"),
+      remoteDown: t("common.down"),
+      remoteLeft: t("common.left"),
+      remoteSelect: t("common.select"),
+      remoteReturn: t("common.returnKey"),
+      remotePlayPause: t("remote.remotePlayPause"),
+      remoteVolumeUp: t("common.volumeUp"),
+      remoteVolumeDown: t("common.volumeDown"),
+      remoteChannelUp: t("common.channelUp"),
+      remoteChannelDown: t("common.channelDown"),
+      remoteRewind: t("common.rewind"),
+      remoteFastForward: t("common.fastForward"),
+      remoteStop: t("common.stop"),
+      remotePlay: t("common.play"),
+      remotePrevious: t("common.trackPrevious"),
+      remoteNext: t("common.trackNext"),
+      remoteRed: t("common.red"),
+      remoteGreen: t("common.green"),
+      remoteYellow: t("common.yellow"),
+      remoteBlue: t("common.blue"),
       addPlaylist: t("common.addPlaylist"),
       remove: t("common.remove"),
       edit: t("common.edit"),
       refresh: t("common.refreshPlaylist"),
       active: t("common.active"),
+      activate: t("remote.activate"),
+      invalidUrl: t("validation.completeAddress"),
+      changeFailed: t("remote.changeFailed"),
+      pairingFailed: t("remote.pairingFailed"),
+      retry: t("remote.retry"),
       cache: t("settings.clearCache"),
       cacheConfirm: t("settings.clearCacheQuestion"),
       removeConfirm: t("playlist.removeBody"),
-      conflict: t("phone.conflict"),
-      unavailable: t("phone.tvUnavailable"),
-      revoked: t("phone.revoked"),
+      conflict: t("remote.conflict"),
+      unavailable: t("remote.tvUnavailable"),
+      revoked: t("remote.revoked"),
       textSize: t("settings.textSize"),
       small: t("settings.small"),
       medium: t("settings.medium"),
@@ -232,10 +307,15 @@ export function phoneSnapshot(): PhoneSnapshot {
       stretch: t("settings.stretch"),
       compatibility: t("settings.compatibility"),
       resumeLast: t("settings.resumeLast"),
-      noPhones: t("phone.noPhones"),
+      noDevices: t("remote.noDevices"),
+      thisDevice: t("remote.thisDevice"),
       rename: t("common.edit"),
-      revoke: t("phone.revoke"),
+      revoke: t("remote.revoke"),
+      revokeConfirm: t("remote.revokeBody"),
+      revokeSelfConfirm: t("remote.revokeSelfBody"),
       save: t("common.save"),
+      open: t("common.open"),
+      close: t("common.close"),
       cancel: t("common.cancel"),
     },
     localeOptions: LOCALE_OPTIONS.map((option) => ({
@@ -255,7 +335,9 @@ export function phoneSnapshot(): PhoneSnapshot {
     },
     playlists: settings.playlists.map((playlist) => ({ ...playlist })),
     activePlaylistId: settings.activePlaylistId,
-    phones: listPairedPhones(),
+    setup: { name: setup.name, url: setup.url },
+    devices: listPairedDevices(),
+    about: { version: APP_VERSION, repository: REPO_URL },
     operation: {
       loading: channels.loading,
       error: channels.error,
@@ -266,7 +348,7 @@ export function phoneSnapshot(): PhoneSnapshot {
 }
 
 function result(ok: boolean, reason?: CommandResult["reason"]): CommandResult {
-  return { ok, ...(reason ? { reason } : {}), snapshot: phoneSnapshot() };
+  return { ok, ...(reason ? { reason } : {}), snapshot: remoteSnapshot() };
 }
 
 function remember(id: string, value: CommandResult): CommandResult {
@@ -277,7 +359,7 @@ function remember(id: string, value: CommandResult): CommandResult {
 
 function playlistId(): string {
   const existing = new Set(useSettings.getState().playlists.map((playlist) => playlist.id));
-  const root = `pl-phone-${Date.now().toString(36)}`;
+  const root = `pl-remote-${Date.now().toString(36)}`;
   let id = root;
   for (let suffix = 2; existing.has(id); suffix += 1) id = `${root}-${suffix}`;
   return id;
@@ -299,11 +381,19 @@ async function applySetting(command: SettingCommand): Promise<void> {
   }
 }
 
-async function perform(command: PhoneCommand): Promise<CommandResult["reason"] | undefined> {
+async function perform(command: RemoteCommand): Promise<CommandResult["reason"] | undefined> {
   const settings = useSettings.getState();
   const channels = useChannels.getState();
+  if (command.type === "remote.key") {
+    sendKey(command.code);
+    return;
+  }
   if (command.type === "setting") {
     await applySetting(command);
+    return;
+  }
+  if (command.type === "setup.preview") {
+    useSetup.getState().set({ name: command.name, url: command.url });
     return;
   }
   if (command.type === "setup") {
@@ -317,19 +407,23 @@ async function perform(command: PhoneCommand): Promise<CommandResult["reason"] |
     };
     settings.replacePlaylists([playlist], playlist.id, command.locale);
     await channels.load(true);
+    useSetup.getState().clear();
     return;
   }
   if (command.type === "playlist.add") {
     if (!checkPlaylistUrl(command.url).ok) return "invalid";
-    settings.addPlaylist(command.name, command.url);
+    const url = command.url.trim();
+    settings.addPlaylist(command.name.trim() || new URL(url).hostname, url);
     return;
   }
   if (command.type === "playlist.update") {
-    if (!settings.playlists.some((playlist) => playlist.id === command.id)) return "notFound";
+    const playlist = settings.playlists.find((item) => item.id === command.id);
+    if (!playlist) return "notFound";
     if (!checkPlaylistUrl(command.url).ok) return "invalid";
-    const active = settings.activePlaylistId === command.id;
-    settings.updatePlaylist(command.id, command.name, command.url);
-    if (active) await channels.load(true);
+    const url = command.url.trim();
+    const reload = settings.activePlaylistId === command.id && playlist.url !== url;
+    settings.updatePlaylist(command.id, command.name.trim() || new URL(url).hostname, url);
+    if (reload) await channels.load(true);
     return;
   }
   if (command.type === "playlist.remove") {
@@ -354,22 +448,37 @@ async function perform(command: PhoneCommand): Promise<CommandResult["reason"] |
     forgetRepairHosts();
     return;
   }
-  if (command.type === "phone.rename") {
-    return renamePairedPhone(command.id, command.name) ? undefined : "notFound";
+  if (command.type === "device.rename") {
+    return renamePairedDevice(command.id, command.name) ? undefined : "notFound";
   }
-  return revokePairedPhone(command.id) ? undefined : "notFound";
+  return revokePairedDevice(command.id) ? undefined : "notFound";
 }
 
-export async function applyPhoneCommand(request: CommandRequest): Promise<CommandResult> {
+async function applyRemoteCommandNow(request: CommandRequest): Promise<CommandResult> {
   const done = completed.get(request.id);
   if (done) return done;
-  if (!request.id || !Number.isInteger(request.revision) || !parsePhoneCommand(request.command)) {
-    return remember(request.id, result(false, "invalid"));
+  const command = parseRemoteCommand(request.command);
+  if (!request.id || !Number.isInteger(request.revision) || !command) {
+    const invalid = result(false, "invalid");
+    return request.id ? remember(request.id, invalid) : invalid;
+  }
+  if (command.type === "setup.preview" || command.type === "remote.key") {
+    const failure = await perform(command);
+    return remember(request.id, result(!failure, failure));
   }
   if (request.revision !== revision) return remember(request.id, result(false, "conflict"));
 
-  const failure = await perform(request.command);
+  const failure = await perform(command);
   if (failure) return remember(request.id, result(false, failure));
   revision += 1;
   return remember(request.id, result(true));
+}
+
+export function applyRemoteCommand(request: CommandRequest): Promise<CommandResult> {
+  const running = commandQueue.then(() => applyRemoteCommandNow(request));
+  commandQueue = running.then(
+    () => undefined,
+    () => undefined,
+  );
+  return running;
 }

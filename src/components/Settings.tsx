@@ -11,15 +11,15 @@ import { General } from "./settings/General";
 import { Playback } from "./settings/Behaviour";
 import { Diagnostics } from "./settings/Diagnostics";
 import { Playlists } from "./settings/Playlists";
-import { Phones } from "./settings/Phones";
-import type { PhoneManagementControl } from "../hooks/usePhoneManagement";
+import { Devices } from "./settings/Devices";
+import type { RemoteAccessControl } from "../hooks/useRemoteAccess";
 
 type Section =
   | "appearance"
   | "playback"
   | "general"
   | "playlists"
-  | "phones"
+  | "devices"
   | "diagnostics"
   | "about";
 
@@ -37,23 +37,23 @@ const SECTIONS: { id: Section; label: MessageKey; icon: IconName }[] = [
   { id: "playback", label: "settings.playback", icon: "tv" },
   { id: "general", label: "settings.general", icon: "settings" },
   { id: "playlists", label: "settings.playlists", icon: "playlists" },
-  { id: "phones", label: "settings.phoneAccess", icon: "phone" },
+  { id: "devices", label: "settings.remoteAccess", icon: "remoteAccess" },
   { id: "diagnostics", label: "settings.diagnostics", icon: "diagnostics" },
   { id: "about", label: "settings.about", icon: "about" },
 ];
-const DESKTOP_SECTIONS = SECTIONS.filter((section) => section.id !== "phones");
+const DESKTOP_SECTIONS = SECTIONS.filter((section) => section.id !== "devices");
 
 export function Settings({
   onClose,
-  phoneManagement,
-  showPhoneAccess = false,
+  remoteAccess,
+  showRemoteAccess = false,
 }: {
   onClose: () => void;
-  phoneManagement: PhoneManagementControl;
-  showPhoneAccess?: boolean;
+  remoteAccess: RemoteAccessControl;
+  showRemoteAccess?: boolean;
 }) {
   const { t, direction } = useLocale();
-  const sections = showPhoneAccess ? SECTIONS : DESKTOP_SECTIONS;
+  const sections = showRemoteAccess ? SECTIONS : DESKTOP_SECTIONS;
   const inlineStart = direction === "rtl" ? KEY.RIGHT : KEY.LEFT;
   const inlineEnd = direction === "rtl" ? KEY.LEFT : KEY.RIGHT;
   const inlineEndArrow = direction === "rtl" ? "←" : "→";
@@ -252,7 +252,7 @@ export function Settings({
         {section === "playback" && <Playback />}
         {section === "general" && <General onAsking={ask} />}
         {section === "playlists" && <Playlists onAsking={ask} />}
-        {section === "phones" && <Phones management={phoneManagement} onAsking={ask} />}
+        {section === "devices" && <Devices remoteAccess={remoteAccess} onAsking={ask} />}
         {section === "diagnostics" && <Diagnostics />}
         {section === "about" && <About />}
       </div>

@@ -1,12 +1,14 @@
 import { afterEach, beforeEach, expect, test } from "vitest";
-import { fireEvent, render, screen, cleanup } from "@testing-library/react";
+import { act, fireEvent, render, screen, cleanup } from "@testing-library/react";
 import { Onboarding } from "../src/components/Onboarding";
 import { useSettings } from "../src/stores/settings";
-import type { PhoneManagementState } from "../src/services/phoneServer";
+import { useSetup } from "../src/stores/setup";
+import type { RemoteAccessState } from "../src/services/remoteServer";
 
 beforeEach(() => {
   localStorage.clear();
   useSettings.getState().set("locale", "en");
+  useSetup.getState().clear();
 });
 
 afterEach(() => {
@@ -17,7 +19,7 @@ test("the first run screen lets the viewer change language before adding a playl
   render(<Onboarding onAdd={() => {}} onExit={() => {}} />);
 
   expect(document.querySelector(".onboard-split")).toBeFalsy();
-  expect(screen.queryByText("Set up with your phone")).toBeNull();
+  expect(screen.queryByText("Set up with another device")).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Language, English" }));
   fireEvent.click(screen.getByRole("option", { name: "فارسی Persian" }));
 
@@ -25,13 +27,34 @@ test("the first run screen lets the viewer change language before adding a playl
   expect(screen.getByText("زبان")).toBeTruthy();
 });
 
-test("the welcome screen keeps manual setup beside phone setup", () => {
-  const management: PhoneManagementState = {
+test("device setup typing and language mirror onto the player welcome form", () => {
+  render(<Onboarding onAdd={() => {}} onExit={() => {}} />);
+
+  act(() => {
+    useSetup.getState().set({
+      name: "Device playlist",
+      url: "http://example.com/device.m3u",
+    });
+    useSettings.getState().set("locale", "fa");
+  });
+
+  expect(screen.getByLabelText("آدرس فهرست").getAttribute("value")).toBe(
+    "http://example.com/device.m3u",
+  );
+  expect(screen.getByLabelText("نام فهرست (اختیاری)").getAttribute("value")).toBe(
+    "Device playlist",
+  );
+});
+
+test("the welcome screen keeps manual setup beside device setup", () => {
+  const management: RemoteAccessState = {
     status: "listening",
     address: "192.168.1.8",
     port: 8976,
+    remotePath: "",
     pairing: { secret: "secret", code: "123456", expiresAt: Date.now() + 60_000 },
-    connectedPhone: "",
+    pairingError: false,
+    connectedDevice: "",
     error: "",
   };
   const added: string[] = [];
@@ -39,8 +62,8 @@ test("the welcome screen keeps manual setup beside phone setup", () => {
     <Onboarding
       onAdd={(name, url) => added.push(`${name}:${url}`)}
       onExit={() => {}}
-      phoneManagement={management}
-      showPhoneSetup
+      remoteAccess={management}
+      showRemoteSetup
     />,
   );
 

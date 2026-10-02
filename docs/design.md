@@ -214,7 +214,7 @@ written. Settings has a Refresh that ignores all of it.
 
 Typing a playlist address with a television remote is the hardest part of first use, so the TV welcome screen offers the same task on a phone without removing the original path. A vertical divider keeps the manual form on the left and gives the QR code and pairing instructions the right side. The manual form remains complete and usable when local networking is unavailable. Desktop browsers show only the centred manual form because a browser cannot listen for connections from another device.
 
-The television serves the phone interface itself on its private address. `services/phoneServer` owns a dedicated WebAssembly socket, while `services/phoneAccess` creates expiring pairing sessions and stores one credential verifier per remembered phone. The phone sends typed commands through `services/phoneProtocol`, and the existing stores remain the only source of playlist and settings state.
+The television serves the remote interface itself on its private address. `services/remoteServer` owns a dedicated WebAssembly socket, while `services/deviceAccess` creates expiring pairing sessions and stores one credential verifier per authorised device. The remote device sends typed commands through `services/remoteProtocol`, and the existing stores remain the only source of playlist and settings state.
 
 This is local HTTP on a trusted home network. There is no account, hosted relay, analytics request or cloud copy of playlist addresses. OpenIPTV must be running and both devices must be able to reach each other. Browser storage belongs to the television address, so a changed address requires pairing again.
 

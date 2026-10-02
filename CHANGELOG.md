@@ -2,6 +2,36 @@
 
 Notable changes, newest first, in the format of [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## Unreleased
+
+### Added
+
+- **Remote access controls.** Authorised devices can control navigation, playback, channels and volume through a touch optimised two page Smart Remote.
+- **Development remote bridge.** Vite can simulate the complete television onboarding and remote access flow between a laptop and another device without a television or emulator.
+- **Guided setup results.** The remote interface shows dedicated success and error pages with channel counts, correction guidance and an explicit path into Settings.
+- **Device management.** Remote access lists authorised devices, identifies the current device and provides compact action sheets for renaming or removing access.
+
+### Changed
+
+- **Device neutral terminology.** Phone access is now Remote access throughout the interface, services, protocol, storage, development bridge, documentation and tests.
+- **Responsive remote interface.** Mobile onboarding, settings, playlists, devices, navigation and result screens now use safe areas, consistent touch targets, grouped One UI lists and compact actions.
+- **Playlist management.** Playlist rows use single line addresses, overflow action sheets, expandable collections and a heading level Add action instead of permanent forms and button clusters.
+- **Remote feedback.** Saving, loading and failure messages now use One UI toast feedback above every overlay without replacing the page or losing focus.
+- **Pairing panel.** Settings uses an aligned two column pairing card with the QR code, manual address, grouped code, expiry guidance and cancellation in one surface.
+- **Complete translations.** Remote access, device management, setup results, self removal warnings and Smart Remote controls are represented across every supported locale catalog.
+
+### Security
+
+- **Deterministic command processing.** Remote commands are serialized, draft previews avoid revision churn and rejected requests always receive a bounded response instead of stalling the management socket.
+- **Single use pairing.** Concurrent pairing claims, cancellation during credential hashing, expiry and attempt exhaustion cannot authorise an additional device.
+
+### Fixed
+
+- **Pairing lifecycle.** Expired, cancelled and failed sessions no longer leave stale QR codes, misleading connection states or reusable secrets.
+- **Remote access recovery.** Development streams recover their listening state after reconnecting, while stop and restart transitions cannot strand the service in a starting state.
+- **Final playlist removal.** Removing the final playlist returns both interfaces to setup immediately while preserving authorised access.
+- **Touch interactions.** List rows yield correctly to page scrolling, Remote access sheets can be dismissed from their backdrop or a downward drag and carousel pages follow horizontal touch gestures.
+
 ## 1.5.0
 
 ### Added

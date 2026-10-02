@@ -135,19 +135,23 @@ describe("management socket worker", () => {
     });
   });
 
-  test("serves only the three phone assets", async () => {
+  test("serves only the remote assets and application icon", async () => {
     const worker = harness();
     await worker.start();
 
     await worker.queueRequest("GET / HTTP/1.1\r\nHost: tv\r\n\r\n");
     expect(worker.responses[0]).toContain("200 OK");
-    expect(worker.responses[0]).toContain("asset:../phone/index.html");
+    expect(worker.responses[0]).toContain("asset:../remote/index.html");
 
-    await worker.queueRequest("GET /phone.css HTTP/1.1\r\nHost: tv\r\n\r\n");
+    await worker.queueRequest("GET /remote.css HTTP/1.1\r\nHost: tv\r\n\r\n");
     expect(worker.responses[1]).toContain("Content-Type: text/css");
 
-    await worker.queueRequest("GET /phone.js HTTP/1.1\r\nHost: tv\r\n\r\n");
+    await worker.queueRequest("GET /remote.js HTTP/1.1\r\nHost: tv\r\n\r\n");
     expect(worker.responses[2]).toContain("Content-Type: text/javascript");
+
+    await worker.queueRequest("GET /icon.svg HTTP/1.1\r\nHost: tv\r\n\r\n");
+    expect(worker.responses[3]).toContain("Content-Type: image/svg+xml");
+    expect(worker.responses[3]).toContain("asset:../icon.svg");
   });
 
   test("forwards bounded API requests to the main thread", async () => {
