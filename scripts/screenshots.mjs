@@ -51,6 +51,41 @@ const TV_REMOTE_SHIM = `(() => {
     terminate() {}
   };
 })()`;
+const PLAYBACK_SHIM = `(() => {
+  let state = "NONE";
+  document.addEventListener("DOMContentLoaded", () => {
+    const style = document.createElement("style");
+    style.textContent = "html,body{background:#000!important}#avplay-surface{visibility:hidden!important}";
+    document.head.appendChild(style);
+  });
+  window.webapis = {
+    avplay: {
+      getState: () => state,
+      open: () => { state = "IDLE"; },
+      stop: () => { state = "IDLE"; },
+      close: () => { state = "NONE"; },
+      setDisplayRect() {},
+      setDisplayMethod() {},
+      setStreamingProperty() {},
+      setBufferingParam() {},
+      setTimeoutForBuffering() {},
+      setListener() {},
+      prepareAsync: (ok) => { state = "READY"; setTimeout(ok, 0); },
+      play: () => { state = "PLAYING"; },
+      getCurrentTime: () => 1000,
+      getCurrentStreamInfo: () => [
+        { index: 0, type: "VIDEO", extra_info: JSON.stringify({
+          Width: 1920, Height: 1080, FourCC: "H264", Bit_rate: 4500000, Frame_rate: 50,
+        }) },
+        { index: 1, type: "AUDIO", extra_info: JSON.stringify({ FourCC: "AAC" }) },
+      ],
+      getStreamingProperty: (key) => key === "CURRENT_BANDWIDTH"
+        ? "4500000" : key === "AVAILABLE_BITRATE" ? "1500000|3000000|4500000" : "",
+      getVideoSeamlessInfo: () => ({ scan_type: 1, rotation_degree: 0 }),
+    },
+    network: { getIp: () => "192.168.1.42" },
+  };
+})()`;
 
 const chrome = findChrome();
 if (!chrome) {
@@ -241,11 +276,18 @@ await app.evaluate(`(() => {
   settings.showPlaybackStats = true;
   localStorage.setItem(key, JSON.stringify(settings));
 })()`);
+const { identifier: playbackShim } = await cdp.send("Page.addScriptToEvaluateOnNewDocument", {
+  source: PLAYBACK_SHIM,
+});
 await cdp.send("Page.reload");
 await sleep(2600);
+const playbackReports = await app.evaluate(
+  `window.webapis?.avplay?.getCurrentStreamInfo?.()[0]?.extra_info || ""`);
+if (!playbackReports) throw new Error("The playback screenshot has no engine reports.");
 await app.press("Enter", 13);
 await sleep(1800);
-await shoot("08-playback-information", "Playback information");
+await shoot("08-playback-information", "1920 × 1080");
+await cdp.send("Page.removeScriptToEvaluateOnNewDocument", { identifier: playbackShim });
 
 // 9 and 10. The phone sized Remote access page, with its management view and Smart Remote.
 const remoteState = {

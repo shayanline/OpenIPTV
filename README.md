@@ -20,7 +20,7 @@ The [demo playlist](https://shayanline.github.io/OpenIPTV/demo/nasa.m3u) contain
 | **Browse categories** | **Search everything** |
 | [<img src="docs/screenshots/05-favourites.png" alt="A favourite channel and the generated Favourites category">](docs/screenshots/05-favourites.png) | [<img src="docs/screenshots/06-settings.png" alt="Playback Settings with screen fit, resume, compatibility and Playback information controls">](docs/screenshots/06-settings.png) |
 | **Keep favourites** | **Adjust playback** |
-| [<img src="docs/screenshots/07-category-management.png" alt="Category management with visibility controls for one playlist">](docs/screenshots/07-category-management.png) | [<img src="docs/screenshots/08-playback-information.png" alt="Playback information centred on the right while a channel connects">](docs/screenshots/08-playback-information.png) |
+| [<img src="docs/screenshots/07-category-management.png" alt="Category management with visibility controls for one playlist">](docs/screenshots/07-category-management.png) | [<img src="docs/screenshots/08-playback-information.png" alt="Playback information showing AVPlay resolution, codecs, bitrate, frame rate and adaptive levels">](docs/screenshots/08-playback-information.png) |
 | **Control categories** | **Inspect playback** |
 
 ### Remote access on another device
