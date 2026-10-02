@@ -32,9 +32,12 @@ var STATUS = {
   500: "Internal Server Error",
 };
 var ASSETS = {
-  "/": { path: "../phone/index.html", type: "text/html; charset=utf-8" },
-  "/phone.css": { path: "../phone/phone.css", type: "text/css; charset=utf-8" },
-  "/phone.js": { path: "../phone/phone.js", type: "text/javascript; charset=utf-8" },
+  "/": { path: "../remote/index.html", type: "text/html; charset=utf-8" },
+  "/remote.css": { path: "../remote/remote.css", type: "text/css; charset=utf-8" },
+  "/remote.js": { path: "../remote/remote.js", type: "text/javascript; charset=utf-8" },
+  "/icon.svg": { path: "../icon.svg", type: "image/svg+xml; charset=utf-8" },
+  "/fonts/Vazirmatn-Regular.ttf": { path: "../fonts/Vazirmatn-Regular.ttf", type: "font/ttf" },
+  "/fonts/Vazirmatn-SemiBold.ttf": { path: "../fonts/Vazirmatn-SemiBold.ttf", type: "font/ttf" },
 };
 var api = null;
 var queue = [];

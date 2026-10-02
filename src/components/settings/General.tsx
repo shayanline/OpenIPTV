@@ -6,7 +6,7 @@ import { Confirm } from "../Confirm";
 import { forgetAll } from "../../services/disk";
 import { forgetRepairHosts } from "../../services/repair";
 import { Row } from "./Field";
-import { clearPhoneAccess } from "../../services/phoneAccess";
+import { clearDeviceAccess } from "../../services/deviceAccess";
 import { Icon } from "../Icon";
 
 export function ApplicationData({ onAsking }: { onAsking: (asking: boolean) => void }) {
@@ -92,7 +92,7 @@ export function ApplicationData({ onAsking }: { onAsking: (asking: boolean) => v
             // The fourth store follows the same rule, and which hosts this television cannot read
             // is a diagnosis it made rather than a fact.
             forgetRepairHosts();
-            clearPhoneAccess();
+            clearDeviceAccess();
             ask(false);
             void load(true);
           }}

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useLocale } from "../hooks/useLocale";
 import type { PlaybackStats } from "../services/player";
+import { KeyGuide, SettingsPath } from "./KeyGuide";
 
 const rate = (value?: number): string => {
   if (value === undefined) return "";
@@ -10,7 +11,7 @@ const rate = (value?: number): string => {
 };
 
 export function PlaybackInfo({ read }: { read: () => PlaybackStats | null }) {
-  const { t } = useLocale();
+  const { t, direction } = useLocale();
   const [stats, setStats] = useState(read);
 
   useEffect(() => {
@@ -70,7 +71,24 @@ export function PlaybackInfo({ read }: { read: () => PlaybackStats | null }) {
           </div>
         ))}
       </dl>
-      <p>{t("playbackInfo.hideHint")}</p>
+      <KeyGuide
+        className="playback-info-guide"
+        items={[
+          {
+            keys: ["OK"],
+            beforeKeys: t("playbackInfo.hold"),
+            label: (
+              <span className="playback-info-action">
+                <span>{t("playbackInfo.hideHint")}</span>
+                <SettingsPath
+                  items={[t("settings.title"), t("settings.playback")]}
+                  direction={direction}
+                />
+              </span>
+            ),
+          },
+        ]}
+      />
     </aside>
   );
 }

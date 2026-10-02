@@ -1,15 +1,16 @@
 import { useEffect, useRef, useState } from "react";
 import { useLocale } from "../hooks/useLocale";
 import { useSettings } from "../stores/settings";
+import { useSetup } from "../stores/setup";
 import { KEY, useRemote } from "../hooks/useRemote";
 import { useSpatialNav } from "../hooks/useSpatialNav";
 import { checkPlaylistUrl, nameFromUrl } from "../services/playlistUrl";
 import type { MessageKey } from "../services/locale";
 import { LanguagePicker } from "./LanguagePicker";
 import { KeyGuide } from "./KeyGuide";
-import { PhoneSetup } from "./PhoneSetup";
-import type { PairingSessionView } from "../services/phoneAccess";
-import type { PhoneManagementState } from "../services/phoneServer";
+import { RemoteSetup } from "./RemoteSetup";
+import type { PairingSessionView } from "../services/deviceAccess";
+import type { RemoteAccessState } from "../services/remoteServer";
 
 /**
  * First run.
@@ -19,36 +20,37 @@ import type { PhoneManagementState } from "../services/phoneServer";
  * one field, one button: the guidance asks for unnecessary levels to be removed and for
  * an app to need no manual.
  */
-const NO_PHONE_MANAGEMENT: PhoneManagementState = {
+const NO_REMOTE_ACCESS: RemoteAccessState = {
   status: "unavailable",
   address: "",
   port: 0,
+  remotePath: "",
   pairing: null,
-  connectedPhone: "",
+  pairingError: false,
+  connectedDevice: "",
   error: "",
 };
 
 export function Onboarding({
   onAdd,
   onExit,
-  phoneManagement = NO_PHONE_MANAGEMENT,
+  remoteAccess = NO_REMOTE_ACCESS,
   onOpenPairing,
-  showPhoneSetup = false,
+  showRemoteSetup = false,
 }: {
   onAdd: (name: string, url: string) => void;
   /** RETURN here closes the application, because this screen is the application's home. */
   onExit: () => void;
-  phoneManagement?: PhoneManagementState;
-  onOpenPairing?: () => PairingSessionView;
-  showPhoneSetup?: boolean;
+  remoteAccess?: RemoteAccessState;
+  onOpenPairing?: () => PairingSessionView | null;
+  showRemoteSetup?: boolean;
 }) {
   const { t } = useLocale();
   const settings = useSettings();
   const box = useRef<HTMLDivElement>(null);
   const first = useRef<HTMLInputElement>(null);
   const { move } = useSpatialNav(box, true);
-  const [name, setName] = useState("");
-  const [url, setUrl] = useState("");
+  const { name, url, set: setSetup } = useSetup();
   const [problem, setProblem] = useState<MessageKey | "">("");
 
   useEffect(() => {
@@ -64,6 +66,7 @@ export function Onboarding({
       return;
     }
     onAdd(name.trim() || nameFromUrl(url), url.trim());
+    useSetup.getState().clear();
   };
 
   useRemote((code, event) => {
@@ -99,7 +102,7 @@ export function Onboarding({
   return (
     <div className="onboard">
       <div className="onboard-box" ref={box}>
-        <div className={showPhoneSetup ? "onboard-split" : "onboard-single"}>
+        <div className={showRemoteSetup ? "onboard-split" : "onboard-single"}>
           <section className="onboard-manual">
             <h1>OpenIPTV</h1>
             <p className="lead">{t("onboarding.description")}</p>
@@ -117,7 +120,7 @@ export function Onboarding({
                 aria-describedby={problem ? "ob-url-problem" : undefined}
                 placeholder={t("onboarding.urlPlaceholder")}
                 onChange={(e) => {
-                  setUrl(e.target.value);
+                  setSetup({ name, url: e.target.value });
                   setProblem("");
                 }}
               />
@@ -132,7 +135,7 @@ export function Onboarding({
                 value={name}
                 dir="auto"
                 placeholder={t("onboarding.takenFromAddress")}
-                onChange={(e) => setName(e.target.value)}
+                onChange={(e) => setSetup({ name: e.target.value, url })}
               />
             </div>
 
@@ -155,10 +158,14 @@ export function Onboarding({
               {t("common.addPlaylist")}
             </button>
           </section>
-          {showPhoneSetup && (
+          {showRemoteSetup && (
             <>
               <div className="onboard-divider" aria-hidden="true" />
-              <PhoneSetup management={phoneManagement} onOpenPairing={onOpenPairing} />
+              <RemoteSetup
+                remoteAccess={remoteAccess}
+                onOpenPairing={onOpenPairing}
+                manualFallback
+              />
             </>
           )}
         </div>

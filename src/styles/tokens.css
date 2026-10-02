@@ -18,14 +18,14 @@
    font-style: normal;
    font-weight: 400;
    font-display: swap;
-   src: url("../assets/fonts/Vazirmatn-Regular.ttf") format("truetype");
+   src: url("/fonts/Vazirmatn-Regular.ttf") format("truetype");
 }
 @font-face {
    font-family: "Vazirmatn";
    font-style: normal;
    font-weight: 600;
    font-display: swap;
-   src: url("../assets/fonts/Vazirmatn-SemiBold.ttf") format("truetype");
+   src: url("/fonts/Vazirmatn-SemiBold.ttf") format("truetype");
 }
 
 :root {

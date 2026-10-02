@@ -179,11 +179,13 @@ const paths: Record<string, React.ReactNode> = {
   ),
   /* A trace, for the screen that reports what this television is. It reads as measurement rather
      than repair, which is what the section does: it says, it does not mend. */
-  phone: (
+  remoteAccess: (
     <>
-      <rect x="6.2" y="2.6" width="11.6" height="18.8" rx="2.2" />
-      <path d="M10 5.5h4" />
-      <path d="M11.9 18.4h.2" />
+      <rect x="2.7" y="4.4" width="12.8" height="11.2" rx="2" />
+      <path d="M6.7 19.6h4.8" />
+      <path d="M9.1 15.6v4" />
+      <path d="M19.1 8.1c1.2.9 1.9 2.3 1.9 3.9s-.7 3-1.9 3.9" />
+      <path d="M20.5 5.7c1.6 1.5 2.5 3.8 2.5 6.3s-.9 4.8-2.5 6.3" />
     </>
   ),
   diagnostics: <path d="M2.8 12.4h4.6l2.5-6.2 3.1 11.6 2.4-5.4h5.8" />,

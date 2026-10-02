@@ -3,7 +3,7 @@ import { act, cleanup, fireEvent, screen } from "@testing-library/react";
 import { KEY } from "../src/hooks/useRemote";
 import { moveWithinPlaylistRow } from "../src/components/Settings";
 import { mountApp, press, settle } from "./support/app";
-import { createPairingSession, listPairedPhones, pairPhone } from "../src/services/phoneAccess";
+import { createPairingSession, listPairedDevices, pairDevice } from "../src/services/deviceAccess";
 
 const PLAYLIST = `#EXTM3U
 #EXTINF:-1 tvg-id="a" group-title="News",Alpha
@@ -253,6 +253,9 @@ test("each playlist manages its own category visibility", async () => {
     screen.getByText("Choose whether hidden channels also appear in Search and Favourites"),
   ).toBeTruthy();
   const news = screen.getByRole("button", { name: "Hide News" });
+  await act(async () => news.focus());
+  expect(document.querySelector(".sheet-hints")?.textContent).toContain("Hide category");
+  expect(document.querySelector(".sheet-hints")?.textContent).not.toContain("Hide News");
   await act(async () => {
     fireEvent.click(news);
     fireEvent.click(
@@ -267,6 +270,8 @@ test("each playlist manages its own category visibility", async () => {
   expect(playlist.hiddenCategories).toEqual(["News"]);
   expect(playlist.hiddenCategoryMode).toBe("search");
   expect(screen.getByRole("button", { name: "Unhide News" })).toBeTruthy();
+  expect(document.querySelector(".sheet-hints")?.textContent).toContain("Unhide category");
+  expect(document.querySelector(".sheet-hints")?.textContent).not.toContain("Unhide News");
 });
 
 test("playlist settings can hide and show every category", async () => {
@@ -421,9 +426,9 @@ test("a failed inactive playlist load does not show categories from the active p
   expect(useSettings.getState().activePlaylistId).toBe(first);
 });
 
-test("resetting application data revokes remembered phones", async () => {
+test("resetting application data revokes authorised devices", async () => {
   const session = createPairingSession();
-  const paired = await pairPhone({ secret: session.secret, name: "Remembered phone" });
+  const paired = await pairDevice({ secret: session.secret, name: "Authorised device" });
   if (!paired.ok) throw new Error("pairing failed");
   await mountApp(PLAYLIST);
   press(KEY.YELLOW);
@@ -433,5 +438,5 @@ test("resetting application data revokes remembered phones", async () => {
   const resetButtons = screen.getAllByRole("button", { name: "Reset app data" });
   fireEvent.click(resetButtons[resetButtons.length - 1]);
 
-  expect(listPairedPhones()).toEqual([]);
+  expect(listPairedDevices()).toEqual([]);
 });

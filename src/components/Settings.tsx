@@ -9,8 +9,8 @@ import { About } from "./settings/About";
 import { Appearance } from "./settings/Appearance";
 import { Playback } from "./settings/Behaviour";
 import { Playlists } from "./settings/Playlists";
-import { Phones } from "./settings/Phones";
-import type { PhoneManagementControl } from "../hooks/usePhoneManagement";
+import { Devices } from "./settings/Devices";
+import type { RemoteAccessControl } from "../hooks/useRemoteAccess";
 
 export interface SettingsDetailNavigation {
   open: (id: string, label: string, returnFocus: string, close: () => void) => void;
@@ -25,7 +25,7 @@ type DetailEntry = {
   close: () => void;
 };
 
-type Section = "appearance" | "playback" | "playlists" | "phones" | "about";
+type Section = "appearance" | "playback" | "playlists" | "devices" | "about";
 
 /**
  * The sections, in the order the rail lists them, each with the glyph beside its name.
@@ -40,10 +40,10 @@ const SECTIONS: { id: Section; label: MessageKey; icon: IconName }[] = [
   { id: "appearance", label: "settings.appearance", icon: "appearance" },
   { id: "playback", label: "settings.playback", icon: "tv" },
   { id: "playlists", label: "settings.playlists", icon: "playlists" },
-  { id: "phones", label: "settings.phoneAccess", icon: "phone" },
+  { id: "devices", label: "settings.remoteAccess", icon: "remoteAccess" },
   { id: "about", label: "settings.about", icon: "about" },
 ];
-const DESKTOP_SECTIONS = SECTIONS.filter((section) => section.id !== "phones");
+const DESKTOP_SECTIONS = SECTIONS.filter((section) => section.id !== "devices");
 
 export function moveWithinPlaylistRow(
   active: Element | null,
@@ -65,15 +65,15 @@ export function moveWithinPlaylistRow(
 
 export function Settings({
   onClose,
-  phoneManagement,
-  showPhoneAccess = false,
+  remoteAccess,
+  showRemoteAccess = false,
 }: {
   onClose: () => void;
-  phoneManagement: PhoneManagementControl;
-  showPhoneAccess?: boolean;
+  remoteAccess: RemoteAccessControl;
+  showRemoteAccess?: boolean;
 }) {
   const { t, direction } = useLocale();
-  const sections = showPhoneAccess ? SECTIONS : DESKTOP_SECTIONS;
+  const sections = showRemoteAccess ? SECTIONS : DESKTOP_SECTIONS;
   const inlineStart = direction === "rtl" ? KEY.RIGHT : KEY.LEFT;
   const inlineEnd = direction === "rtl" ? KEY.LEFT : KEY.RIGHT;
   const inlineEndArrow = direction === "rtl" ? "←" : "→";
@@ -427,7 +427,7 @@ export function Settings({
         {section === "appearance" && <Appearance />}
         {section === "playback" && <Playback />}
         {section === "playlists" && <Playlists onAsking={ask} navigation={detailNavigation} />}
-        {section === "phones" && <Phones management={phoneManagement} onAsking={ask} />}
+        {section === "devices" && <Devices remoteAccess={remoteAccess} onAsking={ask} />}
         {section === "about" && <About onAsking={ask} navigation={detailNavigation} />}
       </div>
     </div>

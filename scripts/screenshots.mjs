@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 /**
- * The six pictures in the README, taken from the running application at 1920 by 1080.
+ * The ten pictures in the README, taken from the running application at 1920 by 1080.
  *
- * A README that describes an interface in prose asks the reader to imagine it. These six let
- * somebody decide in about four seconds whether this is the application they want, which is the
- * whole job: first run, the channel list, the categories, search, favourites and settings, in the
- * order a viewer meets them.
+ * A README that describes an interface in prose asks the reader to imagine it. These ten let
+ * somebody decide quickly whether this is the application they want. They cover first run, browsing,
+ * search, favourites, Settings, category management and Playback information in the order a viewer
+ * meets them.
  *
  * They are captured rather than drawn, from the built application walking its real screens, so they
  * cannot quietly stop matching the way a hand made mockup does. Rerun after any interface change:
@@ -34,6 +34,23 @@ const PORT = 4600;          // not store-assets' 4599, so both can run at once
 const CHROME_PORT = 9334;
 const WIDTH = 1920;
 const HEIGHT = 1080;
+const TV_REMOTE_SHIM = `(() => {
+  window.webapis = { avplay: {}, network: { getIp: () => "192.168.1.42" } };
+  let random = 1;
+  crypto.getRandomValues = (values) => {
+    for (let index = 0; index < values.length; index += 1) values[index] = random++;
+    return values;
+  };
+  window.Worker = class {
+    postMessage(message) {
+      if (message.type !== "start") return;
+      setTimeout(() => this.onmessage?.({
+        data: { type: "listening", address: message.address, port: message.port },
+      }), 0);
+    }
+    terminate() {}
+  };
+})()`;
 
 const chrome = findChrome();
 if (!chrome) {
@@ -63,6 +80,21 @@ await sleep(1500);
 const cdp = await connect(CHROME_PORT);
 await cdp.send("Page.enable");
 await cdp.send("Runtime.enable");
+await cdp.send("Page.addScriptToEvaluateOnNewDocument", {
+  source: `(() => {
+    const RealDate = Date;
+    const fixed = new RealDate("2026-10-02T10:00:00").valueOf();
+    window.Date = class extends RealDate {
+      constructor(...values) { super(...(values.length ? values : [fixed])); }
+      static now() { return fixed; }
+    };
+    document.addEventListener("DOMContentLoaded", () => {
+      const style = document.createElement("style");
+      style.textContent = "*,*::before,*::after{animation:none!important;transition:none!important;caret-color:transparent!important}";
+      document.head.appendChild(style);
+    });
+  })()`,
+});
 await cdp.send("Emulation.setDeviceMetricsOverride", {
   width: WIDTH, height: HEIGHT, deviceScaleFactor: 1, mobile: false,
 });
@@ -73,10 +105,10 @@ const app = driver(cdp, PORT);
  * Capture the screen, having first checked it is the screen that was asked for.
  *
  * The check is the point. A walk that misses a key press carries on and photographs whatever was
- * still open, and six plausible pictures of the wrong screens are worse than a failure, because
+ * still open, and ten plausible pictures of the wrong screens are worse than a failure, because
  * nobody looks twice at a README image. `expect` is text that must be on screen.
  */
-async function shoot(name, expect) {
+async function shoot(name, expect, width = WIDTH, height = HEIGHT) {
   await sleep(600);
   const showing = await app.evaluate(
     `document.body.innerText.includes(${JSON.stringify(expect)})`);
@@ -87,7 +119,7 @@ async function shoot(name, expect) {
   const { data } = await cdp.send("Page.captureScreenshot", { format: "png" });
   const bytes = Buffer.from(data, "base64");
   writeFileSync(`${OUT}/${name}.png`, bytes);
-  console.log(`  ${name}.png  ${WIDTH}x${HEIGHT}  ${Math.round(bytes.length / 1024)}KB`);
+  console.log(`  ${name}.png  ${width}x${height}  ${Math.round(bytes.length / 1024)}KB`);
 }
 
 /** Press one of the panel's title bar keys by its accessible label, as the parity harness does. */
@@ -101,7 +133,7 @@ const keyed = async (label) => {
   if (!hit) throw new Error(`No key labelled "${label}" in the panel's title bar.`);
 };
 
-console.log(`\nSix screenshots, from the built application on port ${PORT}:`);
+console.log(`\nTen screenshots, from the built application on port ${PORT}:`);
 
 /*
  * Everything below runs inside a try, and the reason is a failure that wasted a run rather than
@@ -115,16 +147,19 @@ console.log(`\nSix screenshots, from the built application on port ${PORT}:`);
  */
 try {
 
-// 1. What a viewer sees the very first time, before the seed exists. This is the only shot that
-//    needs the unseeded profile, so it has to come before anything writes to localStorage.
+// 1. What a viewer sees on a television before the seed exists, including local Remote access.
+const { identifier: onboardingShim } = await cdp.send("Page.addScriptToEvaluateOnNewDocument", {
+  source: TV_REMOTE_SHIM,
+});
 await cdp.send("Page.navigate", { url: `http://127.0.0.1:${PORT}/` });
 await sleep(2000);
 await shoot("01-first-run", "playlist");
+await cdp.send("Page.removeScriptToEvaluateOnNewDocument", { identifier: onboardingShim });
 
 // From here on, a playlist exists.
 await app.evaluate(SEED);
 await cdp.send("Page.reload");
-await sleep(2600);
+await sleep(5000);
 
 // 2. The channel list, which is the screen the application opens on and the one used most.
 await shoot("02-channels", "News One");
@@ -167,7 +202,11 @@ await shoot("05-favourites", "Favourites");
 //    screen that raised it and otherwise sits in the middle of this one looking like a caption to
 //    a settings page it has nothing to do with.
 await sleep(4000);
-await app.press("ArrowRight", 39);
+const { identifier: settingsShim } = await cdp.send("Page.addScriptToEvaluateOnNewDocument", {
+  source: TV_REMOTE_SHIM,
+});
+await cdp.send("Page.reload");
+await sleep(2600);
 await keyed("Settings");
 await sleep(500);
 if (!(await app.clickText("Playback"))) {
@@ -175,7 +214,98 @@ if (!(await app.clickText("Playback"))) {
 }
 await shoot("06-settings", "Compatibility mode");
 
-console.log(`\nAll six are in ${OUT}/, and the README shows them.\n`);
+// 7. Category management, where every playlist owns its own visibility and search controls.
+if (!(await app.clickText("Playlists"))) {
+  throw new Error("No Playlists section in Settings, so category management cannot be shown.");
+}
+await sleep(400);
+const openedCategories = await app.evaluate(`(() => {
+  const button = document.querySelector('[data-settings-focus^="playlist-categories-"]');
+  if (!button) return false;
+  button.click();
+  return true;
+})()`);
+if (!openedCategories) throw new Error("No category management action was available in Settings.");
+await app.evaluate(`(() => {
+  const row = document.querySelector(".category-setting-row");
+  row?.focus();
+  row?.dispatchEvent(new FocusEvent("focusin", { bubbles: true }));
+})()`);
+await shoot("07-category-management", "Categories");
+await cdp.send("Page.removeScriptToEvaluateOnNewDocument", { identifier: settingsShim });
+
+// 8. Playback information, enabled before the reload so it appears as soon as a channel is chosen.
+await app.evaluate(`(() => {
+  const key = "openiptv.settings";
+  const settings = JSON.parse(localStorage.getItem(key) || "{}");
+  settings.showPlaybackStats = true;
+  localStorage.setItem(key, JSON.stringify(settings));
+})()`);
+await cdp.send("Page.reload");
+await sleep(2600);
+await app.press("Enter", 13);
+await sleep(1800);
+await shoot("08-playback-information", "Playback information");
+
+// 9 and 10. The phone sized Remote access page, with its management view and Smart Remote.
+const remoteState = {
+  revision: 4,
+  locale: "en",
+  direction: "ltr",
+  labels: {},
+  localeOptions: [{ id: "en", label: "English" }],
+  settings: {
+    locale: "en",
+    fontSizeId: "m",
+    showNumbers: true,
+    showLogos: true,
+    aspectId: "fill",
+    showClock: true,
+    resumeLast: true,
+    sortAlphabetically: false,
+    compatibility: false,
+    showPlaybackStats: false,
+  },
+  playlists: [
+    { id: "example", name: "Example", url: "https://example.com/playlist.m3u" },
+    { id: "family", name: "Family channels", url: "https://example.com/family.m3u" },
+  ],
+  activePlaylistId: "example",
+  setup: { name: "", url: "" },
+  devices: [{ id: "readme-device", name: "Living room phone", createdAt: 1, lastUsedAt: Date.now() }],
+  about: { version: "1.6.0", repository: "https://github.com/shayanline/OpenIPTV" },
+  operation: { loading: false, error: "", errorKey: "", errorDetail: "" },
+};
+cdp.on("Fetch.requestPaused", ({ requestId }) => {
+  void cdp.send("Fetch.fulfillRequest", {
+    requestId,
+    responseCode: 200,
+    responseHeaders: [{ name: "Content-Type", value: "application/json" }],
+    body: Buffer.from(JSON.stringify(remoteState)).toString("base64"),
+  });
+});
+await cdp.send("Fetch.enable", { patterns: [{ urlPattern: "*/api/v1/state" }] });
+await cdp.send("Emulation.setDeviceMetricsOverride", {
+  width: 430, height: 900, deviceScaleFactor: 1, mobile: true,
+});
+await cdp.send("Page.navigate", { url: `http://127.0.0.1:${PORT}/remote/index.html` });
+await sleep(800);
+await app.evaluate(`localStorage.setItem("openiptv.remote", JSON.stringify({ deviceId: "readme-device", credential: "readme" }))`);
+await cdp.send("Page.reload");
+await sleep(1200);
+await app.evaluate(`(() => {
+  document.documentElement.style.scrollBehavior = "auto";
+  document.querySelector(".tabs").style.scrollBehavior = "auto";
+  document.querySelector("#appearance").hidden = true;
+  document.querySelector("#playback").hidden = true;
+  document.querySelector('.tabs a[href="#playlists"]').click();
+})()`);
+await shoot("09-remote-access", "Family channels", 430, 900);
+await app.evaluate(`document.querySelector(".remote-fab")?.click()`);
+await sleep(400);
+await shoot("10-smart-remote", "Smart Remote", 430, 900);
+
+console.log(`\nAll ten are in ${OUT}/, and the README shows them.\n`);
 
 } finally {
   cdp.close();

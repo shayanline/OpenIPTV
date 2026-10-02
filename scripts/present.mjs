@@ -2,7 +2,7 @@
  * The application as it should be photographed, and the server that serves it that way.
  *
  * Two scripts take pictures of this application and they must show the same one. `store-assets.mjs`
- * produces the four screenshots Samsung's form accepts, and `screenshots.mjs` produces the six in
+ * produces the four screenshots Samsung's form accepts, and `screenshots.mjs` produces the ten in
  * the README. When the playlist lived in the first of those, the second either duplicated it or
  * photographed something else, and a reader comparing the store listing with the repository would
  * have been looking at two different applications.
@@ -24,33 +24,33 @@ import { join } from "node:path";
  * people deciding whether this application is what they think it is.
  */
 export const PRESENTATION = `#EXTM3U
-#EXTINF:-1 group-title="News" tvg-quality="FHD",News One
+#EXTINF:-1 group-title="News" tvg-logo="/icon.png" tvg-quality="FHD",News One
 http://example.invalid/1.m3u8
-#EXTINF:-1 group-title="News" tvg-quality="HD",World Report
+#EXTINF:-1 group-title="News" tvg-logo="/icon.png" tvg-quality="HD",World Report
 http://example.invalid/2.m3u8
-#EXTINF:-1 group-title="News",Capital News
+#EXTINF:-1 group-title="News" tvg-logo="/icon.png",Capital News
 http://example.invalid/3.m3u8
-#EXTINF:-1 group-title="Sport" tvg-quality="FHD",Sport One
+#EXTINF:-1 group-title="Sport" tvg-logo="/icon.png" tvg-quality="FHD",Sport One
 http://example.invalid/4.m3u8
-#EXTINF:-1 group-title="Sport",Match Day
+#EXTINF:-1 group-title="Sport" tvg-logo="/icon.png",Match Day
 http://example.invalid/5.m3u8
-#EXTINF:-1 group-title="Sport",Motor Sport
+#EXTINF:-1 group-title="Sport" tvg-logo="/icon.png",Motor Sport
 http://example.invalid/6.m3u8
-#EXTINF:-1 group-title="Film" tvg-quality="FHD",Film One
+#EXTINF:-1 group-title="Film" tvg-logo="/icon.png" tvg-quality="FHD",Film One
 http://example.invalid/7.m3u8
-#EXTINF:-1 group-title="Film",Classics
+#EXTINF:-1 group-title="Film" tvg-logo="/icon.png",Classics
 http://example.invalid/8.m3u8
-#EXTINF:-1 group-title="Music",Music Box
+#EXTINF:-1 group-title="Music" tvg-logo="/icon.png",Music Box
 http://example.invalid/9.m3u8
-#EXTINF:-1 group-title="Music",Live Sessions
+#EXTINF:-1 group-title="Music" tvg-logo="/icon.png",Live Sessions
 http://example.invalid/10.m3u8
-#EXTINF:-1 group-title="Documentary",Nature
+#EXTINF:-1 group-title="Documentary" tvg-logo="/icon.png",Nature
 http://example.invalid/11.m3u8
-#EXTINF:-1 group-title="Documentary",History Today
+#EXTINF:-1 group-title="Documentary" tvg-logo="/icon.png",History Today
 http://example.invalid/12.m3u8
-#EXTINF:-1 group-title="Children",Cartoon Time
+#EXTINF:-1 group-title="Children" tvg-logo="/icon.png",Cartoon Time
 http://example.invalid/13.m3u8
-#EXTINF:-1 group-title="Children",Learn And Play
+#EXTINF:-1 group-title="Children" tvg-logo="/icon.png",Learn And Play
 http://example.invalid/14.m3u8
 `;
 

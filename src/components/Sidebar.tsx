@@ -3,6 +3,7 @@ import { useLocale } from "../hooks/useLocale";
 import { Icon } from "./Icon";
 import { Text } from "./Text";
 import { ScrollIndicator } from "./ScrollIndicator";
+import { KeyGuide, SettingsPath } from "./KeyGuide";
 import { RAIL_ROW_BASE, useWindowed } from "../hooks/useWindowed";
 import { useViewport } from "../hooks/useViewport";
 
@@ -99,7 +100,7 @@ export const Sidebar = memo(function Sidebar({
   scale,
   onSelect,
 }: Props) {
-  const { t, number } = useLocale();
+  const { t, number, direction } = useLocale();
   const viewport = useRef<HTMLDivElement>(null);
   const height = useViewport(viewport);
   // Cursor zero is the Settings key in the header, so the list's own cursor is one behind.
@@ -158,11 +159,28 @@ export const Sidebar = memo(function Sidebar({
         <div className="window" style={{ transform: `translateY(${-win.offset}px)` }}>
           {rows}
         </div>
-        {!loading && !categories.length && (
-          <p className="empty">
-            {t(allHidden ? "channel.allCategoriesHidden" : "channel.noCategories")}
-          </p>
-        )}
+        {!loading && !categories.length &&
+          (allHidden ? (
+            <div className="empty">
+              <p>{t("channel.allCategoriesHidden")}</p>
+              <div className="empty-guide-row">
+                <KeyGuide
+                  className="empty-guide"
+                  items={[{ keys: ["Red"], label: t("playlist.showAllCategories") }]}
+                />
+                <SettingsPath
+                  items={[
+                    t("settings.title"),
+                    t("settings.playlists"),
+                    t("playlist.categoriesTitle"),
+                  ]}
+                  direction={direction}
+                />
+              </div>
+            </div>
+          ) : (
+            <p className="empty">{t("channel.noCategories")}</p>
+          ))}
       </div>
       <ScrollIndicator count={categories.length} first={win.first} visible={win.visible} />
     </nav>

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import assert from "node:assert/strict";
-import { act, cleanup, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, screen } from "@testing-library/react";
 import { KEY } from "../src/hooks/useRemote";
 import {
   hold,
@@ -142,6 +142,49 @@ test("holding OK at a clear picture toggles playback information without opening
   );
 });
 
+test("holding OK toggles playback information while the title badge is visible", async () => {
+  await mount();
+  press(KEY.ENTER);
+  await settle();
+
+  await hold(KEY.ENTER);
+
+  assert.equal(panelOpen(), false);
+  assert.equal(
+    JSON.parse(localStorage.getItem("openiptv.settings") ?? "{}").showPlaybackStats,
+    true,
+  );
+});
+
+test("holding OK toggles playback information while a stream is loading", async () => {
+  await mount({ slowPicture: 2_000 });
+  press(KEY.ENTER);
+  await settle();
+
+  await hold(KEY.ENTER);
+
+  assert.equal(panelOpen(), false);
+  assert.equal(
+    JSON.parse(localStorage.getItem("openiptv.settings") ?? "{}").showPlaybackStats,
+    true,
+  );
+});
+
+test("the clock remains visible everywhere except Settings", async () => {
+  await mount();
+  expect(document.querySelector(".clock")).toBeTruthy();
+
+  press(KEY.ENTER);
+  await settle();
+  expect(document.querySelector(".clock")).toBeTruthy();
+
+  press(KEY.YELLOW);
+  expect(document.querySelector(".clock")).toBeNull();
+
+  press(KEY.BACK);
+  expect(document.querySelector(".clock")).toBeTruthy();
+});
+
 test("law 4: RETURN clears the screen before it offers to close the app", async () => {
   await mount();
   press(KEY.ENTER); // watching, banner up
@@ -238,6 +281,24 @@ test("the debug Smart Remote starts closed and wires volume controls", async () 
   assert.deepEqual(volumeChanges, [0.1, -0.1]);
 });
 
+test("holding OK on the debug Smart Remote toggles playback information", async () => {
+  await mount();
+  press(KEY.ENTER);
+  press(KEY.BACK);
+  fireEvent.click(screen.getByRole("button", { name: "Show Smart Remote" }));
+  const ok = screen.getByRole("button", { name: "Select" });
+
+  fireEvent.pointerDown(ok, { pointerId: 1 });
+  await settle(600);
+  fireEvent.pointerUp(ok, { pointerId: 1 });
+
+  assert.equal(panelOpen(), false);
+  assert.equal(
+    JSON.parse(localStorage.getItem("openiptv.settings") ?? "{}").showPlaybackStats,
+    true,
+  );
+});
+
 test("double clicking the browser video toggles application fullscreen", async () => {
   await mount();
   const video = document.querySelector("video");
@@ -278,6 +339,7 @@ test("playback information stays enabled through RETURN and Right", async () => 
   press(KEY.RIGHT);
 
   const info = screen.getByRole("complementary", { name: "Playback information" });
+  expect(info.querySelector("kbd")?.textContent).toBe("OK");
   expect(info.textContent).toContain("hls.js");
   expect(info.textContent).toMatch(/1920.*1080/);
   expect(info.textContent).toContain("avc1.640028");
