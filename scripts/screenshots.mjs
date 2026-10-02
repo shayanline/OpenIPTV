@@ -36,6 +36,11 @@ const WIDTH = 1920;
 const HEIGHT = 1080;
 const TV_REMOTE_SHIM = `(() => {
   window.webapis = { avplay: {}, network: { getIp: () => "192.168.1.42" } };
+  let random = 1;
+  crypto.getRandomValues = (values) => {
+    for (let index = 0; index < values.length; index += 1) values[index] = random++;
+    return values;
+  };
   window.Worker = class {
     postMessage(message) {
       if (message.type !== "start") return;
@@ -83,6 +88,11 @@ await cdp.send("Page.addScriptToEvaluateOnNewDocument", {
       constructor(...values) { super(...(values.length ? values : [fixed])); }
       static now() { return fixed; }
     };
+    document.addEventListener("DOMContentLoaded", () => {
+      const style = document.createElement("style");
+      style.textContent = "*,*::before,*::after{animation:none!important;transition:none!important;caret-color:transparent!important}";
+      document.head.appendChild(style);
+    });
   })()`,
 });
 await cdp.send("Emulation.setDeviceMetricsOverride", {
