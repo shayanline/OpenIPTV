@@ -130,7 +130,7 @@ export default {
   "playbackInfo.level": "Niveau adaptatif",
   "playbackInfo.autoLevels": ({ count }) => `Automatique, ${count} niveaux`,
   "playbackInfo.switches": "Changements de niveau",
-  "playbackInfo.hideHint": "Maintenez pour masquer ou désactivez dans Paramètres, Lecture",
+  "playbackInfo.hideHint": "Maintenez pour masquer ou désactivez dans",
   "settings.compatibility": "Mode de compatibilité",
   "settings.compatibilityHint":
     "Utilisez cette option si une chaîne affiche une image puis s’arrête. La réparation du flux peut utiliser des données supplémentaires.",
@@ -185,7 +185,7 @@ export default {
   "channel.hidden": "Masquée",
   "channel.noCategories": "Aucune catégorie pour le moment.",
   "channel.allCategoriesHidden":
-    "Toutes les catégories sont masquées. Réaffichez-les dans les paramètres de la playlist.",
+    "Toutes les catégories sont masquées.",
   "channel.nothingInCategory": "Cette catégorie est vide.",
   "channel.noMatches": ({ query }) => `Aucune chaîne ne correspond à « ${query} ».`,
   "channel.typeName": "Saisissez un nom de chaîne.",

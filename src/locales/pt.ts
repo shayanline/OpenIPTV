@@ -130,7 +130,7 @@ export default {
   "playbackInfo.level": "Nível adaptativo",
   "playbackInfo.autoLevels": ({ count }) => `Automático, ${count} níveis`,
   "playbackInfo.switches": "Mudanças de nível",
-  "playbackInfo.hideHint": "Mantenha premido para ocultar ou desative em Definições, Reprodução",
+  "playbackInfo.hideHint": "Mantenha premido para ocultar ou desative em",
   "settings.compatibility": "Modo de compatibilidade",
   "settings.compatibilityHint":
     "Utilize esta opção se um canal mostrar uma imagem e depois parar. Pode utilizar dados adicionais ao reparar a transmissão.",
@@ -186,7 +186,7 @@ export default {
   "channel.hidden": "Oculta",
   "channel.noCategories": "Ainda não existem categorias.",
   "channel.allCategoriesHidden":
-    "Todas as categorias estão ocultas. Volte a mostrá-las nas definições da lista.",
+    "Todas as categorias estão ocultas.",
   "channel.nothingInCategory": "Não existe nada nesta categoria.",
   "channel.noMatches": ({ query }) => `Nenhum canal corresponde a “${query}”.`,
   "channel.typeName": "Escreva o nome de um canal.",

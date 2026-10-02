@@ -128,7 +128,7 @@ export default {
   "playbackInfo.level": "自适应级别",
   "playbackInfo.autoLevels": ({ count }) => `自动，共 ${count} 级`,
   "playbackInfo.switches": "级别切换次数",
-  "playbackInfo.hideHint": "长按可隐藏，或在设置的播放中关闭",
+  "playbackInfo.hideHint": "长按可隐藏，或在此处关闭",
   "settings.compatibility": "兼容模式",
   "settings.compatibilityHint":
     "如果频道显示一帧后停止，请使用此选项。修复流媒体时可能会使用额外数据。",
@@ -180,7 +180,7 @@ export default {
   "channel.unnamed": "未命名",
   "channel.hidden": "已隐藏",
   "channel.noCategories": "还没有类别。",
-  "channel.allCategoriesHidden": "所有类别均已隐藏。请在播放列表设置中重新显示。",
+  "channel.allCategoriesHidden": "所有类别均已隐藏。",
   "channel.nothingInCategory": "此类别中没有内容。",
   "channel.noMatches": ({ query }) => `没有频道匹配“${query}”。`,
   "channel.typeName": "输入频道名称。",

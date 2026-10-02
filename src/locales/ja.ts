@@ -129,7 +129,7 @@ export default {
   "playbackInfo.level": "自動品質レベル",
   "playbackInfo.autoLevels": ({ count }) => `自動、${count} レベル`,
   "playbackInfo.switches": "レベル切替回数",
-  "playbackInfo.hideHint": "長押しで非表示にするか、設定の再生でオフにできます",
+  "playbackInfo.hideHint": "長押しで非表示にするか、次の場所でオフにできます",
   "settings.compatibility": "互換モード",
   "settings.compatibilityHint":
     "チャンネルが1フレーム表示した後に停止する場合に使用します。ストリームの修復中に追加データを使用することがあります。",
@@ -185,7 +185,7 @@ export default {
   "channel.hidden": "非表示",
   "channel.noCategories": "カテゴリはまだありません。",
   "channel.allCategoriesHidden":
-    "すべてのカテゴリーが非表示です。プレイリスト設定で再表示できます。",
+    "すべてのカテゴリーが非表示です。",
   "channel.nothingInCategory": "このカテゴリには何もありません。",
   "channel.noMatches": ({ query }) => `「${query}」に一致するチャンネルはありません。`,
   "channel.typeName": "チャンネル名を入力してください。",

@@ -14,7 +14,26 @@
 export interface Guide {
   /** The keys to press, drawn as badges. Arrows are written as the arrows themselves. */
   keys: string[];
-  label: string;
+  label: React.ReactNode;
+}
+
+export function SettingsPath({
+  items,
+  direction,
+}: {
+  items: string[];
+  direction: "ltr" | "rtl";
+}) {
+  return (
+    <span className="settings-path">
+      {items.map((item, index) => (
+        <span key={`${item}-${index}`}>
+          {index > 0 && <span aria-hidden="true">{direction === "rtl" ? "‹" : "›"}</span>}
+          <span>{item}</span>
+        </span>
+      ))}
+    </span>
+  );
 }
 
 export function KeyGuide({ items, className = "" }: {
@@ -24,8 +43,8 @@ export function KeyGuide({ items, className = "" }: {
 }) {
   return (
     <div className={`hints ${className}`}>
-      {items.map((item) => (
-        <span key={item.keys.join() + item.label}>
+      {items.map((item, index) => (
+        <span key={`${item.keys.join()}-${index}`}>
           {item.keys.map((key) => <kbd key={key}>{key}</kbd>)}
           {item.label}
         </span>

@@ -130,7 +130,7 @@ export default {
   "playbackInfo.level": "Адаптивный уровень",
   "playbackInfo.autoLevels": ({ count }) => `Автоматически, уровней: ${count}`,
   "playbackInfo.switches": "Переключения уровня",
-  "playbackInfo.hideHint": "Удерживайте, чтобы скрыть, или отключите в Настройках, Воспроизведение",
+  "playbackInfo.hideHint": "Удерживайте, чтобы скрыть, или отключите в",
   "settings.compatibility": "Режим совместимости",
   "settings.compatibilityHint":
     "Используйте этот режим, если канал показывает один кадр и останавливается. При восстановлении потока могут использоваться дополнительные данные.",
@@ -185,7 +185,7 @@ export default {
   "channel.hidden": "Скрыта",
   "channel.noCategories": "Категорий пока нет.",
   "channel.allCategoriesHidden":
-    "Все категории скрыты. Покажите их снова в настройках плейлиста.",
+    "Все категории скрыты.",
   "channel.nothingInCategory": "В этой категории ничего нет.",
   "channel.noMatches": ({ query }) => `Каналов, соответствующих запросу «${query}», нет.`,
   "channel.typeName": "Введите название канала.",

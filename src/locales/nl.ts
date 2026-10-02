@@ -130,7 +130,7 @@ export default {
   "playbackInfo.level": "Adaptief niveau",
   "playbackInfo.autoLevels": ({ count }) => `Automatisch, ${count} niveaus`,
   "playbackInfo.switches": "Niveauwisselingen",
-  "playbackInfo.hideHint": "Houd vast om te verbergen of schakel uit via Instellingen, Afspelen",
+  "playbackInfo.hideHint": "Houd vast om te verbergen of schakel uit via",
   "settings.compatibility": "Compatibiliteitsmodus",
   "settings.compatibilityHint":
     "Gebruik dit als een kanaal één beeld toont en daarna stopt. Tijdens het herstellen van de stream kan extra data worden gebruikt.",
@@ -186,7 +186,7 @@ export default {
   "channel.hidden": "Verborgen",
   "channel.noCategories": "Nog geen categorieën.",
   "channel.allCategoriesHidden":
-    "Alle categorieën zijn verborgen. Toon ze opnieuw in de afspeellijstinstellingen.",
+    "Alle categorieën zijn verborgen.",
   "channel.nothingInCategory": "Niets in deze categorie.",
   "channel.noMatches": ({ query }) => `Geen kanaal komt overeen met “${query}”.`,
   "channel.typeName": "Typ een kanaalnaam.",

@@ -130,7 +130,7 @@ export default {
   "playbackInfo.level": "Livello adattivo",
   "playbackInfo.autoLevels": ({ count }) => `Automatico, ${count} livelli`,
   "playbackInfo.switches": "Cambi di livello",
-  "playbackInfo.hideHint": "Tieni premuto per nascondere o disattiva in Impostazioni, Riproduzione",
+  "playbackInfo.hideHint": "Tieni premuto per nascondere o disattiva in",
   "settings.compatibility": "Modalità compatibilità",
   "settings.compatibilityHint":
     "Usala se un canale mostra un fotogramma e poi si ferma. La riparazione dello stream può usare dati aggiuntivi.",
@@ -186,7 +186,7 @@ export default {
   "channel.hidden": "Nascosta",
   "channel.noCategories": "Nessuna categoria.",
   "channel.allCategoriesHidden":
-    "Tutte le categorie sono nascoste. Mostrale di nuovo nelle impostazioni della playlist.",
+    "Tutte le categorie sono nascoste.",
   "channel.nothingInCategory": "Niente in questa categoria.",
   "channel.noMatches": ({ query }) => `Nessun canale corrisponde a “${query}”.`,
   "channel.typeName": "Digita il nome di un canale.",

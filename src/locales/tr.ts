@@ -129,7 +129,7 @@ export default {
   "playbackInfo.level": "Uyarlamalı seviye",
   "playbackInfo.autoLevels": ({ count }) => `Otomatik, ${count} seviye`,
   "playbackInfo.switches": "Seviye değişimleri",
-  "playbackInfo.hideHint": "Gizlemek için basılı tutun veya Ayarlar, Oynatma bölümünden kapatın",
+  "playbackInfo.hideHint": "Gizlemek için basılı tutun veya şuradan kapatın",
   "settings.compatibility": "Uyumluluk modu",
   "settings.compatibilityHint":
     "Bir kanal tek kare gösterip durursa bunu kullanın. Akışı onarırken ek veri kullanılabilir.",
@@ -184,7 +184,7 @@ export default {
   "channel.hidden": "Gizli",
   "channel.noCategories": "Henüz kategori yok.",
   "channel.allCategoriesHidden":
-    "Tüm kategoriler gizli. Oynatma listesi ayarlarından yeniden gösterin.",
+    "Tüm kategoriler gizli.",
   "channel.nothingInCategory": "Bu kategoride hiçbir şey yok.",
   "channel.noMatches": ({ query }) => `“${query}” ile eşleşen kanal yok.`,
   "channel.typeName": "Bir kanal adı yazın.",

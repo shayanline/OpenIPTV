@@ -128,7 +128,7 @@ export default {
   "playbackInfo.level": "مستوى التكيف",
   "playbackInfo.autoLevels": ({ count }) => `تلقائي، ${count} مستويات`,
   "playbackInfo.switches": "تبديلات المستوى",
-  "playbackInfo.hideHint": "اضغط مطولاً للإخفاء أو أوقفها من الإعدادات، التشغيل",
+  "playbackInfo.hideHint": "اضغط مطولاً للإخفاء أو أوقفها من",
   "settings.compatibility": "وضع التوافق",
   "settings.compatibilityHint":
     "استخدم هذا الخيار إذا عرضت قناة إطارًا واحدًا ثم توقفت. قد يستخدم بيانات إضافية أثناء إصلاح البث.",
@@ -182,7 +182,7 @@ export default {
   "channel.unnamed": "بلا اسم",
   "channel.hidden": "مخفية",
   "channel.noCategories": "لا توجد فئات بعد.",
-  "channel.allCategoriesHidden": "جميع الفئات مخفية. أظهرها مرة أخرى في إعدادات قائمة التشغيل.",
+  "channel.allCategoriesHidden": "جميع الفئات مخفية.",
   "channel.nothingInCategory": "لا يوجد شيء في هذه الفئة.",
   "channel.noMatches": ({ query }) => `لا توجد قناة تطابق «${query}».`,
   "channel.typeName": "اكتب اسم قناة.",

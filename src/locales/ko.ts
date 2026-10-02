@@ -128,7 +128,7 @@ export default {
   "playbackInfo.level": "적응형 레벨",
   "playbackInfo.autoLevels": ({ count }) => `자동, ${count}개 레벨`,
   "playbackInfo.switches": "레벨 전환 횟수",
-  "playbackInfo.hideHint": "길게 눌러 숨기거나 설정의 재생에서 끌 수 있습니다",
+  "playbackInfo.hideHint": "길게 눌러 숨기거나 다음에서 끌 수 있습니다",
   "settings.compatibility": "호환성 모드",
   "settings.compatibilityHint":
     "채널이 한 프레임을 표시한 뒤 멈추면 사용하세요. 스트림을 복구하는 동안 추가 데이터를 사용할 수 있습니다.",
@@ -181,7 +181,7 @@ export default {
   "channel.hidden": "숨김",
   "channel.noCategories": "아직 카테고리가 없습니다.",
   "channel.allCategoriesHidden":
-    "모든 카테고리가 숨겨져 있습니다. 재생 목록 설정에서 다시 표시하세요.",
+    "모든 카테고리가 숨겨져 있습니다.",
   "channel.nothingInCategory": "이 카테고리에는 아무것도 없습니다.",
   "channel.noMatches": ({ query }) => `“${query}”와(과) 일치하는 채널이 없습니다.`,
   "channel.typeName": "채널 이름을 입력하세요.",

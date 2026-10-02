@@ -131,7 +131,7 @@ export default {
   "playbackInfo.level": "Adaptives Niveau",
   "playbackInfo.autoLevels": ({ count }) => `Automatisch, ${count} Niveaus`,
   "playbackInfo.switches": "Niveauwechsel",
-  "playbackInfo.hideHint": "Gedrückt halten zum Ausblenden oder unter Einstellungen, Wiedergabe ausschalten",
+  "playbackInfo.hideHint": "Gedrückt halten zum Ausblenden oder ausschalten unter",
   "settings.compatibility": "Kompatibilitätsmodus",
   "settings.compatibilityHint":
     "Verwenden Sie dies, wenn ein Sender ein Bild zeigt und dann stoppt. Beim Reparieren des Streams können zusätzliche Daten verwendet werden.",
@@ -188,7 +188,7 @@ export default {
   "channel.hidden": "Ausgeblendet",
   "channel.noCategories": "Noch keine Kategorien.",
   "channel.allCategoriesHidden":
-    "Alle Kategorien sind ausgeblendet. Blenden Sie sie in den Playlist Einstellungen wieder ein.",
+    "Alle Kategorien sind ausgeblendet.",
   "channel.nothingInCategory": "In dieser Kategorie ist nichts enthalten.",
   "channel.noMatches": ({ query }) => `Kein Sender passt zu „${query}“.`,
   "channel.typeName": "Geben Sie einen Sendernamen ein.",

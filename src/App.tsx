@@ -905,21 +905,21 @@ export default function App() {
 
   const okContextRef = useRef({
     eligible: false,
-    revealPanel,
+    shortPress: revealPanel,
   });
   okContextRef.current = {
-    eligible:
-      configured &&
-      view === "watch" &&
-      !showSettings &&
-      !showExit &&
-      !!current &&
-      !busy &&
-      !paused &&
-      !fault &&
-      !chrome.showing &&
-      !chrome.digits,
-    revealPanel,
+    eligible: configured && !showSettings && !showExit,
+    shortPress: () => {
+      if (chrome.digits) {
+        jump(Number(chrome.commitDigits()));
+        return;
+      }
+      if (!channels.length && !loading) {
+        setShowSettings(true);
+        return;
+      }
+      revealPanel();
+    },
   };
 
   useEffect(() => {
@@ -931,7 +931,8 @@ export default function App() {
       state.set("showPlaybackStats", !state.showPlaybackStats);
     };
     const onDown = (event: KeyboardEvent) => {
-      if (event.keyCode !== KEY.ENTER || !okContextRef.current.eligible) return;
+      const panelClosed = document.querySelector(".panel")?.classList.contains("away");
+      if (event.keyCode !== KEY.ENTER || !okContextRef.current.eligible || !panelClosed) return;
       event.preventDefault();
       event.stopImmediatePropagation();
       pressed = true;
@@ -959,7 +960,7 @@ export default function App() {
       if (timer !== undefined) {
         window.clearTimeout(timer);
         timer = undefined;
-        okContextRef.current.revealPanel();
+        okContextRef.current.shortPress();
       }
       pressed = false;
       long = false;
@@ -1868,7 +1869,7 @@ export default function App() {
           }
         />
       </div>
-      {settings.showClock && panelOpen && !modal && <Clock />}
+      {settings.showClock && !showSettings && <Clock />}
 
       {/* ---- layer 4, the modals --------------------------------------------------- */}
       {showSettings && (

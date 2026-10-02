@@ -918,27 +918,40 @@ html.tizen .app {
   z-index: var(--z-notice);
   top: var(--safe-y);
   right: var(--safe-x);
+  display: flex;
+  min-height: 52px;
+  align-items: center;
+  justify-content: center;
   padding: var(--s1) var(--s2);
   border-radius: var(--r-pill);
   background: var(--surface-1);
   font-size: var(--t-section);
   font-variant-numeric: tabular-nums;
+  line-height: 1;
   color: var(--text);
 }
 .playback-info {
   position: absolute;
   z-index: var(--z-notice);
-  top: var(--safe-y);
+  top: 50%;
   right: var(--safe-x);
   left: auto;
   width: 560px;
   max-width: calc(100% - var(--safe-x) * 2);
+  max-height: calc(100% - var(--safe-y) * 2);
+  transform: translateY(-50%);
   padding: var(--s3);
   border-radius: var(--r-lg);
   background: var(--over-video);
   box-shadow: var(--lift);
   pointer-events: none;
-  animation: pb-in var(--t-med) var(--ease-enter);
+  animation: playback-info-in var(--t-med) var(--ease-enter);
+}
+@keyframes playback-info-in {
+  from {
+    transform: translateY(calc(-50% + 16px));
+    opacity: 0;
+  }
 }
 html[dir="rtl"] .playback-info {
   left: var(--safe-x);
@@ -974,6 +987,18 @@ html[dir="rtl"] .playback-info {
   border-top: 1px solid var(--line);
   color: var(--text-3);
   font-size: var(--t-caption);
+}
+.playback-info-action {
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.settings-path {
+  gap: 5px;
+  padding: 3px 8px;
+  border-radius: var(--r-pill);
+  background: var(--tonal);
+  color: var(--text-2);
+  font-weight: 600;
 }
 .digits {
   position: absolute;
