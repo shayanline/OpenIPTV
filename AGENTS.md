@@ -10,6 +10,12 @@ by a 2020 television every time somebody switches the set on.
 
 Node 22.18 or newer, pinned in `.nvmrc`.
 
+## README audience
+
+`README.md` serves repository visitors and people deciding whether to install and use OpenIPTV. Lead with product value, screenshots, supported playlist sources, the easiest installation path, and concise guidance that helps someone start watching.
+
+Keep implementation decisions, internal architecture, cache and retry timing, socket lifecycle, and engineering rationale in [the design notes](docs/design.md), [the testing notes](docs/testing.md), source code, or contributor documentation. Include technical detail in the README only when a user needs it to try, install, configure, or recover the application. Use GitHub links, alerts, tables, keycaps, and collapsed details when they make the user path faster to scan.
+
 ## Verification
 
 Choose checks from the changed files and behavior. Start with the smallest check that can detect a regression, then widen only when the impact cannot be mapped safely or a relevant failure indicates a broader problem. Do not run a check only because it exists.

@@ -7,7 +7,7 @@
 [![Tizen](https://img.shields.io/badge/Tizen-5.5%2B-00a4ef)](https://developer.samsung.com/smarttv/develop/specifications/tv-model-groups.html)
 [![Node](https://img.shields.io/badge/Node-22.18%2B-339933?logo=nodedotjs&logoColor=white)](https://nodejs.org/)
 
-OpenIPTV is a private, open source IPTV player for Samsung TVs. Add an extended M3U playlist or Xtream login, then browse and play your channels through an interface designed for the television.
+OpenIPTV is a private, open source IPTV player for Samsung TVs. Add an [extended M3U playlist or Xtream login](#add-playlists), then browse and play your channels through an interface designed for the television.
 
 Your playlists, preferences, and favourites stay on your device. OpenIPTV has no accounts, analytics, advertising, or project operated service.
 
@@ -24,7 +24,7 @@ Your playlists, preferences, and favourites stay on your device. OpenIPTV has no
 |  |  |
 |:--|:--|
 | [<img src="docs/screenshots/01-first-run.png" alt="OpenIPTV setup on a television with M3U, Xtream, and setup from another device">](docs/screenshots/01-first-run.png) | [<img src="docs/screenshots/02-channels.png" alt="The channel panel on a television with categories and channel rows">](docs/screenshots/02-channels.png) |
-| **Set up OpenIPTV** | **Browse channels** |
+| [**Set up OpenIPTV**](#add-playlists) | **Browse channels** |
 | [<img src="docs/screenshots/04-search.png" alt="Search on a television with the query news and matching channels">](docs/screenshots/04-search.png) | [<img src="docs/screenshots/06-settings.png" alt="Settings on a television with the Playback section open">](docs/screenshots/06-settings.png) |
 | **Search channels** | **Change Playback settings** |
 
@@ -34,9 +34,9 @@ Your playlists, preferences, and favourites stay on your device. OpenIPTV has no
 |  |  |
 |:--|:--|
 | [<img src="docs/screenshots/03-categories.png" alt="The Categories list on a television with Sport selected">](docs/screenshots/03-categories.png) | [<img src="docs/screenshots/05-favourites.png" alt="A channel added to Favourites on a television">](docs/screenshots/05-favourites.png) |
-| **Browse Categories** | **Add channels to Favourites** |
+| [**Browse Categories**](#add-playlists) | **Add channels to Favourites** |
 | [<img src="docs/screenshots/07-category-management.png" alt="Settings on a television with Categories for a playlist open">](docs/screenshots/07-category-management.png) | [<img src="docs/screenshots/08-playback-information.png" alt="Playback information over a channel on a television">](docs/screenshots/08-playback-information.png) |
-| **Manage Categories for a playlist** | **View Playback information** |
+| [**Manage Categories for a playlist**](#add-playlists) | **View Playback information** |
 
 </details>
 
@@ -45,7 +45,7 @@ Your playlists, preferences, and favourites stay on your device. OpenIPTV has no
 |  |  |
 |:--:|:--:|
 | [<img src="docs/screenshots/09-remote-access.png" alt="Remote access on a phone showing Playlists, Devices, and About" width="215">](docs/screenshots/09-remote-access.png) | [<img src="docs/screenshots/10-smart-remote.png" alt="Both Smart Remote pages showing navigation, channel, volume, number, colour, and playback controls" width="410">](docs/screenshots/10-smart-remote.png) |
-| **Manage Playlists and Devices** | **Use every Smart Remote control** |
+| [**Manage OpenIPTV from another device**](#remote-access) | [**Use every Smart Remote control**](#remote-button-reference) |
 
 ## What you can do
 
@@ -61,7 +61,7 @@ OpenIPTV focuses on live viewing, without a programme guide or recording feature
 OpenIPTV supports Samsung TVs from 2020 onwards, running Tizen 5.5 or later. The television and computer used for installation must share the same local network.
 
 > [!TIP]
-> **TizenBrew Installer Desktop is the easiest installation route.** It downloads the latest OpenIPTV release and guides you through installation.
+> **[TizenBrew Installer Desktop](#install-with-tizenbrew) is the easiest installation route.** It downloads the latest OpenIPTV release and guides you through installation.
 
 ### Prepare the television
 
@@ -77,10 +77,12 @@ OpenIPTV supports Samsung TVs from 2020 onwards, running Tizen 5.5 or later. The
 4. Follow the certificate prompts, install OpenIPTV, and launch it from the television application list.
 
 > [!NOTE]
-> Tizen 7 and later can resign the released widget for the connected television. Earlier versions may need a locally signed build.
+> Tizen 7 and later can resign the released widget for the connected television. Earlier versions may need a [locally signed build](#build-and-sign-manually).
+
+### Build and sign manually
 
 <details>
-<summary>Build and sign OpenIPTV manually</summary>
+<summary>Show manual build instructions</summary>
 
 Install Node 22.18 or later and Tizen Studio. In Certificate Manager, create an author certificate and a Samsung distributor certificate for your television. Install the Samsung Certificate Extension, sign in with a Samsung account, and keep the television on and connected while creating the certificate.
 
@@ -110,10 +112,12 @@ Save several playlists and activate one at a time. Each playlist keeps its own c
 
 Remote access is available from the first run screen or Settings, then Remote access. Keep OpenIPTV open and connect a phone or tablet to the same trusted local network, then scan the QR code or enter the displayed address and pairing code.
 
-A paired device can manage playlists, ordinary settings, application data, authorised devices, and playback. Smart Remote provides navigation, number, colour, channel, volume, and playback controls.
+A paired device can manage playlists, ordinary settings, application data, authorised devices, and playback. [Smart Remote](#remote-button-reference) provides navigation, number, colour, channel, volume, and playback controls.
+
+### Remote button reference
 
 <details>
-<summary>Remote button reference</summary>
+<summary>Show remote controls</summary>
 
 | Key | Watching | Channel panel | Search |
 |:--|:--|:--|:--|
@@ -143,11 +147,11 @@ A paired device can manage playlists, ordinary settings, application data, autho
 <summary>Common issues</summary>
 
 - **TizenBrew cannot connect.** Repeat [Prepare the television](#prepare-the-television), including the restart, and avoid guest networks that isolate devices.
-- **Installation reports certificate error 118 or -12.** Use the manual signing instructions above.
-- **A playlist address is refused.** Enter a complete HTTP or HTTPS address, or choose Xtream login.
-- **An Xtream channel will not play.** Try the other stream format.
+- **Installation reports certificate error 118 or -12.** Follow [Build and sign manually](#build-and-sign-manually).
+- **A playlist address is refused.** Review the supported details under [Add playlists](#add-playlists).
+- **An Xtream channel will not play.** Try the other stream format under [Add playlists](#add-playlists).
 - **A channel shows one frame and stops.** Turn on Compatibility mode under Settings, then Playback.
-- **A remote key does nothing.** Open Settings, About, Support, Diagnostics, then Remote buttons to confirm that the television sent it to the app.
+- **A remote key does nothing.** Open Settings, About, Support, Diagnostics, then Remote buttons, then compare it with the [remote button reference](#remote-button-reference).
 - **Logos are slow to appear.** Turn Show channel logos off under Settings, then Appearance.
 
 </details>
