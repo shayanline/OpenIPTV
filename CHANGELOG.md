@@ -2,6 +2,27 @@
 
 Notable changes, newest first, in the format of [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## 1.8.0
+
+### Added
+
+- **Xtream playlist setup.** Viewers can enter a server address, username, password and stream format while OpenIPTV builds the standard M3U Plus address locally.
+- **Xtream remote setup.** Paired devices offer the same Xtream creation and editing flow as the television interface.
+
+### Changed
+
+- **Playlist source selection.** M3U remains the default, while compatible Xtream addresses reopen as credential fields and public or nonstandard addresses remain in the M3U editor.
+- **Stream format selection.** Xtream setup supports HLS and MPEG TS with a consistent, inset format control across left to right and right to left interfaces.
+- **Complete translations.** Xtream setup and stream format labels are represented across every supported locale catalog.
+
+### Security
+
+- **Credential presentation.** Password fields stay masked and saved playlist summaries conceal Xtream password values.
+
+### Fixed
+
+- **Failed playlist isolation.** A failed authentication or playlist switch leaves the new playlist empty instead of presenting channels and categories from the previously active playlist.
+
 ## 1.7.0
 
 ### Added
