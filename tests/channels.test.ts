@@ -216,6 +216,28 @@ test("switching playlist calls off a refresh queued for the old one", async () =
   assert.equal(fetchMock.mock.calls[0][0], "http://list.invalid/b.m3u");
 });
 
+test("a failed playlist switch cannot inherit channels or categories from the previous playlist", async () => {
+  const s = await load();
+  configure(s);
+  const fetchMock = vi
+    .fn()
+    .mockResolvedValueOnce({ ok: true, text: async () => PLAYLIST })
+    .mockRejectedValueOnce(new Error("unauthorised"));
+  vi.stubGlobal("fetch", fetchMock);
+  await s.useChannels.getState().load();
+
+  s.useSettings.getState().addPlaylist("Wrong credentials", "http://list.invalid/wrong.m3u");
+  const next = s.useSettings.getState().playlists[1];
+  s.useSettings.getState().set("activePlaylistId", next.id);
+  const result = await s.useChannels.getState().load(true);
+
+  assert.equal(result.errorKey, "playlist.loadFailed");
+  assert.equal(result.count, 0);
+  assert.deepEqual(s.useChannels.getState().channels, []);
+  assert.deepEqual(s.useChannels.getState().categories, []);
+  assert.equal(s.useSettings.getState().playlists[1].categoryCount, undefined);
+});
+
 test("a failure with nothing cached says so plainly", async () => {
   const s = await load();
   configure(s);

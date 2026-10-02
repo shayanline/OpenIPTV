@@ -1,6 +1,12 @@
 import { test } from "vitest";
 import assert from "node:assert/strict";
-import { checkPlaylistUrl, nameFromUrl } from "../src/services/playlistUrl";
+import {
+  checkPlaylistUrl,
+  nameFromUrl,
+  parseXtreamPlaylistUrl,
+  redactPlaylistUrl,
+  xtreamPlaylistUrl,
+} from "../src/services/playlistUrl";
 
 /**
  * The point of these is the line between the two kinds of wrong. An address that cannot
@@ -62,5 +68,71 @@ test("surrounding whitespace is forgiven rather than rejected", () => {
 test("a name is taken from the file, then the host", () => {
   assert.equal(nameFromUrl("https://example.com/lists/my-channels.m3u"), "my channels");
   assert.equal(nameFromUrl("https://www.example.com/"), "example.com");
+  assert.equal(
+    nameFromUrl("https://provider.example/get.php?username=user&password=pass"),
+    "provider.example",
+  );
   assert.equal(nameFromUrl("nonsense"), "Untitled");
+});
+
+test("Xtream credentials become an encoded M3U Plus address", () => {
+  assert.equal(
+    xtreamPlaylistUrl(" https://provider.example:8443/portal/ ", "user name", "p&ss", "m3u8"),
+    "https://provider.example:8443/portal/get.php?username=user+name&password=p%26ss&type=m3u_plus&output=m3u8",
+  );
+});
+
+test("an existing Xtream endpoint is reused and MPEG TS remains available", () => {
+  assert.equal(
+    xtreamPlaylistUrl("http://provider.example/get.php?old=1", "user", "pass", "ts"),
+    "http://provider.example/get.php?username=user&password=pass&type=m3u_plus&output=ts",
+  );
+});
+
+test("incomplete Xtream credentials do not produce a playlist address", () => {
+  assert.equal(xtreamPlaylistUrl("https://provider.example", "", "pass", "m3u8"), "");
+  assert.equal(xtreamPlaylistUrl("not a server", "user", "pass", "m3u8"), "");
+});
+
+test("saved Xtream addresses are parsed back into editable credentials", () => {
+  assert.deepEqual(
+    parseXtreamPlaylistUrl(
+      "https://provider.example:8443/portal/get.php?username=user+name&password=p%26ss&type=m3u_plus&output=ts",
+    ),
+    {
+      server: "https://provider.example:8443/portal",
+      username: "user name",
+      password: "p&ss",
+      output: "ts",
+    },
+  );
+});
+
+test("nonstandard and incomplete addresses stay in the M3U editor", () => {
+  assert.equal(parseXtreamPlaylistUrl("https://example.com/list.m3u"), null);
+  assert.equal(
+    parseXtreamPlaylistUrl(
+      "https://provider.example/get.php?username=user&type=m3u_plus&output=m3u8",
+    ),
+    null,
+  );
+  assert.equal(
+    parseXtreamPlaylistUrl(
+      "https://provider.example/get.php?username=user&password=pass&type=m3u_plus&output=rtmp",
+    ),
+    null,
+  );
+});
+
+test("saved playlist summaries hide Xtream passwords", () => {
+  assert.equal(
+    redactPlaylistUrl(
+      "https://provider.example/get.php?username=user&password=secret&type=m3u_plus&output=m3u8",
+    ),
+    "https://provider.example/get.php?username=user&password=••••••••&type=m3u_plus&output=m3u8",
+  );
+  assert.equal(
+    redactPlaylistUrl("https://example.com/list.m3u"),
+    "https://example.com/list.m3u",
+  );
 });

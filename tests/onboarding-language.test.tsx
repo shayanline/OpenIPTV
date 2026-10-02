@@ -46,6 +46,32 @@ test("device setup typing and language mirror onto the player welcome form", () 
   );
 });
 
+test("M3U stays the default and Xtream login builds a playlist address", () => {
+  const added: { name: string; url: string }[] = [];
+  render(<Onboarding onAdd={(name, url) => added.push({ name, url })} onExit={() => {}} />);
+
+  expect(screen.getByRole("button", { name: "M3U playlist" }).getAttribute("aria-pressed")).toBe(
+    "true",
+  );
+  expect(screen.getByLabelText("Playlist address")).toBeTruthy();
+  expect(screen.queryByLabelText("Server address")).toBeNull();
+
+  fireEvent.click(screen.getByRole("button", { name: "Xtream login" }));
+  fireEvent.change(screen.getByLabelText("Server address"), {
+    target: { value: "https://provider.example:8443" },
+  });
+  fireEvent.change(screen.getByLabelText("Username"), { target: { value: "viewer" } });
+  fireEvent.change(screen.getByLabelText("Password"), { target: { value: "secret" } });
+  fireEvent.click(screen.getByRole("button", { name: "Add a playlist" }));
+
+  expect(added).toEqual([
+    {
+      name: "provider.example",
+      url: "https://provider.example:8443/get.php?username=viewer&password=secret&type=m3u_plus&output=m3u8",
+    },
+  ]);
+});
+
 test("the welcome screen keeps manual setup beside device setup", () => {
   const management: RemoteAccessState = {
     status: "listening",

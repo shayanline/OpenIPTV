@@ -23,6 +23,83 @@ const no = (problem: string, problemKey: MessageKey): UrlCheck => ({
   problemKey,
 });
 
+export type XtreamOutput = "m3u8" | "ts";
+
+export interface XtreamCredentials {
+  server: string;
+  username: string;
+  password: string;
+  output: XtreamOutput;
+}
+
+export function xtreamPlaylistUrl(
+  server: string,
+  username: string,
+  password: string,
+  output: XtreamOutput,
+): string {
+  if (!server.trim() || !username.trim() || !password) return "";
+  try {
+    const url = new URL(server.trim());
+    if (
+      (url.protocol !== "http:" && url.protocol !== "https:") ||
+      !url.hostname.includes(".")
+    ) {
+      return "";
+    }
+    if (!/\/get\.php$/i.test(url.pathname)) {
+      url.pathname = `${url.pathname.replace(/\/+$/, "")}/get.php`;
+    }
+    url.search = "";
+    url.hash = "";
+    url.searchParams.set("username", username.trim());
+    url.searchParams.set("password", password);
+    url.searchParams.set("type", "m3u_plus");
+    url.searchParams.set("output", output);
+    return url.toString();
+  } catch {
+    return "";
+  }
+}
+
+export function parseXtreamPlaylistUrl(raw: string): XtreamCredentials | null {
+  try {
+    const url = new URL(raw.trim());
+    const username = url.searchParams.get("username") ?? "";
+    const password = url.searchParams.get("password") ?? "";
+    const output = url.searchParams.get("output");
+    if (
+      !/\/get\.php$/i.test(url.pathname) ||
+      !username ||
+      !password ||
+      url.searchParams.get("type") !== "m3u_plus" ||
+      (output !== "m3u8" && output !== "ts")
+    ) {
+      return null;
+    }
+    const path = url.pathname.replace(/\/get\.php$/i, "");
+    return {
+      server: path ? `${url.origin}${path}` : url.origin,
+      username,
+      password,
+      output,
+    };
+  } catch {
+    return null;
+  }
+}
+
+export function redactPlaylistUrl(raw: string): string {
+  try {
+    const url = new URL(raw);
+    if (!url.searchParams.has("password")) return raw;
+    url.searchParams.set("password", "••••••••");
+    return url.toString().replace(encodeURIComponent("••••••••"), "••••••••");
+  } catch {
+    return raw;
+  }
+}
+
 export function checkPlaylistUrl(raw: string): UrlCheck {
   const value = raw.trim();
   if (!value) return no("Enter the address of a playlist.", "validation.enterAddress");
@@ -59,7 +136,7 @@ export function nameFromUrl(raw: string): string {
   try {
     const url = new URL(raw.trim());
     const file = url.pathname.split("/").filter(Boolean).pop() ?? "";
-    const stem = file
+    const stem = (file.toLowerCase() === "get.php" ? "" : file)
       .replace(/\.(m3u8?|txt)$/i, "")
       .replace(/[-_]+/g, " ")
       .trim();
