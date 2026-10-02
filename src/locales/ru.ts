@@ -130,7 +130,8 @@ export default {
   "playbackInfo.level": "Адаптивный уровень",
   "playbackInfo.autoLevels": ({ count }) => `Автоматически, уровней: ${count}`,
   "playbackInfo.switches": "Переключения уровня",
-  "playbackInfo.hideHint": "Удерживайте, чтобы скрыть, или отключите в",
+  "playbackInfo.hold": "Удерживайте",
+  "playbackInfo.hideHint": "чтобы скрыть, или отключите в",
   "settings.compatibility": "Режим совместимости",
   "settings.compatibilityHint":
     "Используйте этот режим, если канал показывает один кадр и останавливается. При восстановлении потока могут использоваться дополнительные данные.",

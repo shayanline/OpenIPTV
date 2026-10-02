@@ -1151,6 +1151,9 @@ html[dir="rtl"] .playback-info {
   display: inline-flex;
   align-items: center;
 }
+.hints .guide-prefix {
+  margin-right: var(--s1);
+}
 /* A guide that follows content it belongs to is ruled off from it. */
 .hints.ruled {
   padding-top: var(--s2);
@@ -3651,6 +3654,10 @@ html[dir="rtl"] .remote-stage {
   left: 28px;
   right: auto;
   direction: ltr;
+}
+html[dir="rtl"] .hints .guide-prefix {
+  margin-right: 0;
+  margin-left: var(--s1);
 }
 html[dir="rtl"] .hints kbd + kbd {
   margin-left: 0;

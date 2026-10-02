@@ -130,7 +130,8 @@ export default {
   "playbackInfo.level": "Livello adattivo",
   "playbackInfo.autoLevels": ({ count }) => `Automatico, ${count} livelli`,
   "playbackInfo.switches": "Cambi di livello",
-  "playbackInfo.hideHint": "Tieni premuto per nascondere o disattiva in",
+  "playbackInfo.hold": "Tieni premuto",
+  "playbackInfo.hideHint": "per nascondere o disattiva in",
   "settings.compatibility": "Modalità compatibilità",
   "settings.compatibilityHint":
     "Usala se un canale mostra un fotogramma e poi si ferma. La riparazione dello stream può usare dati aggiuntivi.",

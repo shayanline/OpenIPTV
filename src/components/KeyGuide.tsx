@@ -14,6 +14,7 @@
 export interface Guide {
   /** The keys to press, drawn as badges. Arrows are written as the arrows themselves. */
   keys: string[];
+  beforeKeys?: React.ReactNode;
   label: React.ReactNode;
 }
 
@@ -45,6 +46,7 @@ export function KeyGuide({ items, className = "" }: {
     <div className={`hints ${className}`}>
       {items.map((item, index) => (
         <span key={`${item.keys.join()}-${index}`}>
+          {item.beforeKeys && <span className="guide-prefix">{item.beforeKeys}</span>}
           {item.keys.map((key) => <kbd key={key}>{key}</kbd>)}
           {item.label}
         </span>

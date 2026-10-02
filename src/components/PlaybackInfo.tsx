@@ -76,6 +76,7 @@ export function PlaybackInfo({ read }: { read: () => PlaybackStats | null }) {
         items={[
           {
             keys: ["OK"],
+            beforeKeys: t("playbackInfo.hold"),
             label: (
               <span className="playback-info-action">
                 <span>{t("playbackInfo.hideHint")}</span>
