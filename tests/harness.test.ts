@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { request } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -99,4 +99,10 @@ test("waits for a requested key transition instead of sleeping", async () => {
   };
   await driver(cdp, 4321).press("ArrowLeft", 37, "window.ready");
   assert.equal(ready, true);
+});
+
+test("shows both Smart Remote pages in the README screenshot", () => {
+  const image = readFileSync(join(process.cwd(), "docs/screenshots/10-smart-remote.png"));
+  assert.equal(image.subarray(1, 4).toString(), "PNG");
+  assert.deepEqual([image.readUInt32BE(16), image.readUInt32BE(20)], [820, 900]);
 });

@@ -345,7 +345,36 @@ await app.evaluate(`(() => {
 await shoot("09-remote-access", "Family channels", 430, 900);
 await app.evaluate(`document.querySelector(".remote-fab")?.click()`);
 await sleep(400);
-await shoot("10-smart-remote", "Smart Remote", 430, 900);
+await cdp.send("Emulation.setDeviceMetricsOverride", {
+  width: 820, height: 900, deviceScaleFactor: 1, mobile: true,
+});
+const remoteCatalogueReady = await app.evaluate(`(() => {
+  const sheet = document.querySelector(".remote-sheet");
+  const carousel = document.querySelector(".remote-carousel");
+  const track = document.querySelector(".remote-track");
+  const pages = [...document.querySelectorAll(".remote-page")];
+  const indicators = document.querySelector(".remote-pages");
+  if (!sheet || !carousel || !track || pages.length !== 2 || !indicators) return false;
+  sheet.style.width = "798px";
+  carousel.style.width = "694px";
+  carousel.style.overflow = "visible";
+  track.style.width = "694px";
+  track.style.display = "grid";
+  track.style.gridTemplateColumns = "340px 340px";
+  track.style.transform = "none";
+  for (const page of pages) {
+    page.style.width = "340px";
+    page.style.minWidth = "340px";
+    page.style.flex = "none";
+  }
+  indicators.hidden = true;
+  return pages.every((page) => {
+    const bounds = page.getBoundingClientRect();
+    return bounds.width === 340 && bounds.left >= 0 && bounds.right <= innerWidth;
+  });
+})()`);
+if (!remoteCatalogueReady) throw new Error("Both Smart Remote pages did not fit the catalogue.");
+await shoot("10-smart-remote", "Smart Remote", 820, 900);
 
 console.log(`\nAll ten are in ${OUT}/, and the README shows them.\n`);
 
