@@ -1,3 +1,4 @@
+import type { HiddenCategoryMode } from "../stores/settings";
 import type { Channel } from "../types";
 
 /**
@@ -44,7 +45,18 @@ export function stepColumn(index: number, delta: number, count: number, withFiel
 export interface ChannelList {
   name: string;
   channels: Channel[];
+  synthetic?: "favourites";
 }
+
+export const isFavouritesList = (list: ChannelList | undefined) =>
+  list?.synthetic === "favourites";
+
+interface Visibility {
+  hiddenCategories: readonly string[];
+  hiddenCategoryMode: HiddenCategoryMode;
+}
+
+const VISIBLE: Visibility = { hiddenCategories: [], hiddenCategoryMode: "exclude" };
 
 /**
  * The playlist's own categories, with Favourites first while there is something in it.
@@ -57,15 +69,31 @@ export interface ChannelList {
  * channel, not to be taken somewhere else. The green key is the only thing that can add or
  * remove this row, so it is the one place that corrects for it.
  */
-export function listsOf(
+export function lineupOf(
   channels: Channel[],
   categories: ChannelList[],
   favourites: string[],
-): ChannelList[] {
+  visibility: Visibility = VISIBLE,
+): {
+  lists: ChannelList[];
+  browsableChannels: Channel[];
+  searchableChannels: Channel[];
+} {
+  const hidden = new Set(visibility.hiddenCategories);
+  const browsableChannels = hidden.size
+    ? channels.filter((channel) => !hidden.has(channel.group))
+    : channels;
+  const visibleCategories = hidden.size
+    ? categories.filter((category) => !hidden.has(category.name))
+    : categories;
+  const searchableChannels =
+    visibility.hiddenCategoryMode === "search" ? channels : browsableChannels;
   const wanted = new Set(favourites);
-  const mine = channels.filter((c) => wanted.has(c.id));
-  if (!mine.length) return categories;
-  return [{ name: FAVOURITES, channels: mine }, ...categories];
+  const mine = searchableChannels.filter((channel) => wanted.has(channel.id));
+  const lists: ChannelList[] = mine.length
+    ? [{ name: FAVOURITES, channels: mine, synthetic: "favourites" }, ...visibleCategories]
+    : visibleCategories;
+  return { lists, browsableChannels, searchableChannels };
 }
 
 /**

@@ -7,7 +7,15 @@
  * lighter, geometric character. Everything takes its colour from the text around it.
  */
 const SOLID = new Set([
-  "settings", "pause", "star", "rewind", "stop", "forward", "previous", "play", "next",
+  "settings",
+  "pause",
+  "star",
+  "rewind",
+  "stop",
+  "forward",
+  "previous",
+  "play",
+  "next",
 ]);
 
 const paths: Record<string, React.ReactNode> = {
@@ -15,13 +23,35 @@ const paths: Record<string, React.ReactNode> = {
     <path d="M19.4 12c0-.45-.04-.88-.11-1.3l2.06-1.55a.5.5 0 0 0 .12-.64l-1.95-3.38a.5.5 0 0 0-.6-.22l-2.42.97a7.6 7.6 0 0 0-2.25-1.3l-.37-2.58a.5.5 0 0 0-.49-.42h-3.9a.5.5 0 0 0-.49.42l-.37 2.58c-.82.31-1.57.75-2.25 1.3l-2.42-.97a.5.5 0 0 0-.6.22L1.41 8.51a.5.5 0 0 0 .12.64l2.06 1.55a8.1 8.1 0 0 0 0 2.6l-2.06 1.55a.5.5 0 0 0-.12.64l1.95 3.38a.5.5 0 0 0 .6.22l2.42-.97c.68.55 1.43.99 2.25 1.3l.37 2.58a.5.5 0 0 0 .49.42h3.9a.5.5 0 0 0 .49-.42l.37-2.58a7.6 7.6 0 0 0 2.25-1.3l2.42.97a.5.5 0 0 0 .6-.22l1.95-3.38a.5.5 0 0 0-.12-.64l-2.06-1.55c.07-.42.11-.85.11-1.3Zm-7.4 3.65A3.65 3.65 0 1 1 15.65 12 3.65 3.65 0 0 1 12 15.65Z" />
   ),
   pause: <path d="M8.4 5.4h3.1v13.2H8.4zM12.5 5.4h3.1v13.2h-3.1z" />,
-  rewind: <><path d="M11 5.5v13L3 12z" /><path d="M21 5.5v13l-8-6.5z" /></>,
+  rewind: (
+    <>
+      <path d="M11 5.5v13L3 12z" />
+      <path d="M21 5.5v13l-8-6.5z" />
+    </>
+  ),
   stop: <rect x="5" y="5" width="14" height="14" rx="1.5" />,
-  forward: <><path d="M13 5.5v13l8-6.5z" /><path d="M3 5.5v13l8-6.5z" /></>,
-  previous: <><path d="M5 5.5v13" /><path d="M19 5.5v13l-9-6.5z" /></>,
+  forward: (
+    <>
+      <path d="M13 5.5v13l8-6.5z" />
+      <path d="M3 5.5v13l8-6.5z" />
+    </>
+  ),
+  previous: (
+    <>
+      <path d="M5 5.5v13" />
+      <path d="M19 5.5v13l-9-6.5z" />
+    </>
+  ),
   play: <path d="M6 4.5l13 7.5-13 7.5z" />,
-  next: <><path d="M19 5.5v13" /><path d="M5 5.5v13l9-6.5z" /></>,
-  star: <path d="M12 3.6l2.58 5.23 5.77.84-4.18 4.07.99 5.75L12 16.77l-5.16 2.72.99-5.75-4.18-4.07 5.77-.84z" />,
+  next: (
+    <>
+      <path d="M19 5.5v13" />
+      <path d="M5 5.5v13l9-6.5z" />
+    </>
+  ),
+  star: (
+    <path d="M12 3.6l2.58 5.23 5.77.84-4.18 4.07.99 5.75L12 16.77l-5.16 2.72.99-5.75-4.18-4.07 5.77-.84z" />
+  ),
   /* Something is wrong, said as calmly as a symbol can. A round outline rather than the usual
      triangle: a triangle is a hazard, and a channel that is off the air is not a danger, it is
      a disappointment. */
@@ -39,6 +69,72 @@ const paths: Record<string, React.ReactNode> = {
     <>
       <circle cx="10.6" cy="10.6" r="6.4" />
       <path d="M15.3 15.3l4.5 4.5" />
+    </>
+  ),
+  more: (
+    <>
+      <circle cx="5" cy="12" r="1" fill="currentColor" stroke="none" />
+      <circle cx="12" cy="12" r="1" fill="currentColor" stroke="none" />
+      <circle cx="19" cy="12" r="1" fill="currentColor" stroke="none" />
+    </>
+  ),
+  back: (
+    <>
+      <path d="M19 12H5" />
+      <path d="M11 6l-6 6 6 6" />
+    </>
+  ),
+  plus: (
+    <>
+      <path d="M12 5v14" />
+      <path d="M5 12h14" />
+    </>
+  ),
+  refresh: (
+    <>
+      <path d="M19 8.2A8 8 0 1 0 20 14" />
+      <path d="M19 3.8v4.4h-4.4" />
+    </>
+  ),
+  edit: (
+    <>
+      <path d="M4.5 19.5l4.2-1 10-10a2.1 2.1 0 0 0-3-3l-10 10-1.2 4Z" />
+      <path d="M14.4 6.8l3 3" />
+    </>
+  ),
+  remove: (
+    <>
+      <path d="M4.5 7h15" />
+      <path d="M9 4.5h6" />
+      <path d="M7 7l.8 12h8.4L17 7" />
+      <path d="M10 10.5v5" />
+      <path d="M14 10.5v5" />
+    </>
+  ),
+  clear: (
+    <>
+      <path d="M5 16.5L14.5 7l4.5 4.5-7.5 7.5H7.5Z" />
+      <path d="M3.5 20h17" />
+    </>
+  ),
+  unlink: (
+    <>
+      <path d="M9.5 14.5l5-5" />
+      <path d="M7.2 16.8l-1.3 1.3a3.5 3.5 0 0 1-5-5l3.2-3.2a3.5 3.5 0 0 1 4.9 0" />
+      <path d="M16.8 7.2l1.3-1.3a3.5 3.5 0 0 1 5 5l-3.2 3.2a3.5 3.5 0 0 1-4.9 0" />
+    </>
+  ),
+  visible: (
+    <>
+      <path d="M2.8 12s3.2-5.2 9.2-5.2 9.2 5.2 9.2 5.2-3.2 5.2-9.2 5.2S2.8 12 2.8 12Z" />
+      <circle cx="12" cy="12" r="2.4" />
+    </>
+  ),
+  hidden: (
+    <>
+      <path d="M2.8 12s3.2-5.2 9.2-5.2 9.2 5.2 9.2 5.2-3.2 5.2-9.2 5.2S2.8 12 2.8 12Z" />
+      <circle cx="12" cy="12" r="2.4" />
+      <path d="M4 4l16 16" />
     </>
   ),
   /* Stands in for artwork a channel did not supply. A television, because that is what the
@@ -90,9 +186,7 @@ const paths: Record<string, React.ReactNode> = {
       <path d="M11.9 18.4h.2" />
     </>
   ),
-  diagnostics: (
-    <path d="M2.8 12.4h4.6l2.5-6.2 3.1 11.6 2.4-5.4h5.8" />
-  ),
+  diagnostics: <path d="M2.8 12.4h4.6l2.5-6.2 3.1 11.6 2.4-5.4h5.8" />,
   /* The version and the licence. A circle with an i, and deliberately close to `warn` above,
      since both are the same gesture: a round outline saying something quietly. */
   about: (
@@ -109,10 +203,17 @@ export type IconName = keyof typeof paths;
 export function Icon({ name }: { name: IconName }) {
   const solid = SOLID.has(name);
   return (
-    <svg className="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"
-         fill={solid ? "currentColor" : "none"}
-         stroke={solid ? "none" : "currentColor"}
-         strokeWidth={solid ? 0 : 1.8} strokeLinecap="round" strokeLinejoin="round">
+    <svg
+      className={`icon icon-${name}`}
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+      focusable="false"
+      fill={solid ? "currentColor" : "none"}
+      stroke={solid ? "none" : "currentColor"}
+      strokeWidth={solid ? 0 : 1.8}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
       {paths[name]}
     </svg>
   );

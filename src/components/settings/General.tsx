@@ -5,10 +5,11 @@ import { clearCache, useChannels } from "../../stores/channels";
 import { Confirm } from "../Confirm";
 import { forgetAll } from "../../services/disk";
 import { forgetRepairHosts } from "../../services/repair";
-import { Row, Toggle } from "./Field";
+import { Row } from "./Field";
 import { clearPhoneAccess } from "../../services/phoneAccess";
+import { Icon } from "../Icon";
 
-export function General({ onAsking }: { onAsking: (asking: boolean) => void }) {
+export function ApplicationData({ onAsking }: { onAsking: (asking: boolean) => void }) {
   const { t } = useLocale();
   const s = useSettings();
   const { load, clearPersonal } = useChannels();
@@ -26,14 +27,6 @@ export function General({ onAsking }: { onAsking: (asking: boolean) => void }) {
 
   return (
     <>
-      <h3>{t("settings.general")}</h3>
-      <Row label={t("settings.resumeLast")} hint={t("settings.resumeLastHint")}>
-        <Toggle
-          label={t("settings.resumeLast")}
-          value={s.resumeLast}
-          onChange={(v) => s.set("resumeLast", v)}
-        />
-      </Row>
       <Row label={t("settings.clearCache")} hint={t("settings.clearCacheHint")}>
         <button
           type="button"
@@ -41,7 +34,8 @@ export function General({ onAsking }: { onAsking: (asking: boolean) => void }) {
           aria-label={t("settings.clearCache")}
           onClick={() => askClear(true)}
         >
-          {t("common.clear")}
+          <Icon name="clear" />
+          <span>{t("common.clear")}</span>
         </button>
       </Row>
       {/**
@@ -58,7 +52,8 @@ export function General({ onAsking }: { onAsking: (asking: boolean) => void }) {
           aria-label={t("settings.resetData")}
           onClick={() => ask(true)}
         >
-          {t("settings.resetData")}
+          <Icon name="remove" />
+          <span>{t("settings.resetData")}</span>
         </button>
       </Row>
 

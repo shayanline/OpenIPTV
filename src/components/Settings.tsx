@@ -7,21 +7,25 @@ import type { MessageKey } from "../services/locale";
 import { KeyGuide } from "./KeyGuide";
 import { About } from "./settings/About";
 import { Appearance } from "./settings/Appearance";
-import { General } from "./settings/General";
 import { Playback } from "./settings/Behaviour";
-import { Diagnostics } from "./settings/Diagnostics";
 import { Playlists } from "./settings/Playlists";
 import { Phones } from "./settings/Phones";
 import type { PhoneManagementControl } from "../hooks/usePhoneManagement";
 
-type Section =
-  | "appearance"
-  | "playback"
-  | "general"
-  | "playlists"
-  | "phones"
-  | "diagnostics"
-  | "about";
+export interface SettingsDetailNavigation {
+  open: (id: string, label: string, returnFocus: string, close: () => void) => void;
+  back: () => void;
+  active: boolean;
+}
+
+type DetailEntry = {
+  id: string;
+  label: string;
+  returnFocus: string;
+  close: () => void;
+};
+
+type Section = "appearance" | "playback" | "playlists" | "phones" | "about";
 
 /**
  * The sections, in the order the rail lists them, each with the glyph beside its name.
@@ -35,13 +39,29 @@ type Section =
 const SECTIONS: { id: Section; label: MessageKey; icon: IconName }[] = [
   { id: "appearance", label: "settings.appearance", icon: "appearance" },
   { id: "playback", label: "settings.playback", icon: "tv" },
-  { id: "general", label: "settings.general", icon: "settings" },
   { id: "playlists", label: "settings.playlists", icon: "playlists" },
   { id: "phones", label: "settings.phoneAccess", icon: "phone" },
-  { id: "diagnostics", label: "settings.diagnostics", icon: "diagnostics" },
   { id: "about", label: "settings.about", icon: "about" },
 ];
 const DESKTOP_SECTIONS = SECTIONS.filter((section) => section.id !== "phones");
+
+export function moveWithinPlaylistRow(
+  active: Element | null,
+  code: number,
+  inlineStart: number,
+  inlineEnd: number,
+): boolean {
+  const playlistRow = active instanceof HTMLElement ? active.closest(".pl") : null;
+  if (!playlistRow || (code !== inlineStart && code !== inlineEnd)) return false;
+  const actions = Array.from(playlistRow.children).filter(
+    (child): child is HTMLButtonElement => child instanceof HTMLButtonElement,
+  );
+  const at = actions.indexOf(active as HTMLButtonElement);
+  const next = at + (code === inlineEnd ? 1 : -1);
+  if (next < 0 || next >= actions.length) return false;
+  actions[next].focus();
+  return true;
+}
 
 export function Settings({
   onClose,
@@ -59,6 +79,9 @@ export function Settings({
   const inlineEndArrow = direction === "rtl" ? "←" : "→";
   const [section, setSection] = useState<Section>("appearance");
   const [inSections, setInSections] = useState(true);
+  const [details, setDetails] = useState<DetailEntry[]>([]);
+  const detailsRef = useRef(details);
+  detailsRef.current = details;
   const bodyRef = useRef<HTMLDivElement>(null);
   /**
    * Whether a question is outstanding somewhere inside the body.
@@ -70,6 +93,7 @@ export function Settings({
    * The child raises this while it is asking, and this stands aside.
    */
   const [asking, setAsking] = useState(false);
+  const [okGuide, setOkGuide] = useState(() => t("common.select"));
   // Every control in the body has to be reachable with the four directional buttons,
   // which the browser will not do on its own. Checklist items 2.2 and 3.2.
   const { move, focusFirst, hasTargets } = useSpatialNav(bodyRef, !inSections && !asking);
@@ -87,7 +111,6 @@ export function Settings({
       if (open) interrupted.current = document.activeElement as HTMLElement | null;
       setAsking(open);
       if (open) return;
-      // After the dialog has gone, and only if it is still something that can be focused.
       window.setTimeout(() => {
         const back = interrupted.current;
         interrupted.current = null;
@@ -98,10 +121,56 @@ export function Settings({
     [focusFirst],
   );
 
+  const backDetail = useCallback(() => {
+    const current = detailsRef.current;
+    const detail = current[current.length - 1];
+    if (!detail) return;
+    detail.close();
+    const remaining = current.slice(0, -1);
+    detailsRef.current = remaining;
+    setDetails(remaining);
+    window.setTimeout(() => {
+      const target = document.querySelector<HTMLElement>(
+        `[data-settings-focus="${detail.returnFocus}"]`,
+      );
+      if (target) target.focus();
+      else focusFirst();
+    }, 0);
+  }, [focusFirst]);
+
+  const openDetail = useCallback(
+    (id: string, label: string, returnFocus: string, close: () => void) => {
+      const next = [...detailsRef.current, { id, label, returnFocus, close }];
+      detailsRef.current = next;
+      setDetails(next);
+      setInSections(false);
+      window.setTimeout(() => {
+        const first = bodyRef.current?.querySelector<HTMLElement>(
+          "[data-settings-detail-first]",
+        );
+        if (first) first.focus();
+        else focusFirst();
+      }, 0);
+    },
+    [focusFirst],
+  );
+
+  const clearDetails = useCallback(() => {
+    for (const detail of [...detailsRef.current].reverse()) detail.close();
+    detailsRef.current = [];
+    setDetails([]);
+  }, []);
+
   const enterBody = useCallback(() => {
     setInSections(false);
     window.setTimeout(focusFirst, 0);
   }, [focusFirst]);
+
+  const detailNavigation: SettingsDetailNavigation = {
+    open: openDetail,
+    back: backDetail,
+    active: details.length > 0,
+  };
 
   /**
    * Back to the section list, and take the highlight with it.
@@ -121,6 +190,43 @@ export function Settings({
     setInSections(true);
   }, []);
 
+  const updateOkGuide = useCallback(
+    (event: React.FocusEvent<HTMLDivElement>) => {
+      const target = event.target;
+      if (!(target instanceof HTMLElement)) return;
+      let label = target.dataset.okGuide;
+      if (!label && target instanceof HTMLInputElement) label = t("common.edit");
+      if (!label && target.classList.contains("settings-detail-back")) label = t("common.back");
+      if (
+        !label &&
+        (target.classList.contains("switch") ||
+          target.classList.contains("chip") ||
+          target.classList.contains("language-picker-current"))
+      )
+        label = t("common.changeIt");
+      if (
+        !label &&
+        (target.classList.contains("language-picker-option") ||
+          target.classList.contains("pl-main"))
+      )
+        label = t("common.select");
+      if (
+        !label &&
+        (target.classList.contains("category-setting-row") ||
+          target.classList.contains("settings-icon-action"))
+      )
+        label = target.getAttribute("aria-label") ?? undefined;
+      if (!label && target instanceof HTMLButtonElement) {
+        label =
+          target.textContent?.replace(/\s+/g, " ").trim() ||
+          target.getAttribute("aria-label") ||
+          undefined;
+      }
+      setOkGuide(label || t("common.select"));
+    },
+    [t],
+  );
+
   /**
    * A section with nothing to operate keeps the focus on the rail.
    *
@@ -134,8 +240,8 @@ export function Settings({
    * Before paint, so the rail's highlight never visibly flickers off and back.
    */
   useLayoutEffect(() => {
-    if (!inSections && !asking && !hasTargets()) leaveBody();
-  }, [inSections, asking, section, hasTargets, leaveBody]);
+    if (!inSections && !asking && !details.length && !hasTargets()) leaveBody();
+  }, [inSections, asking, section, details.length, hasTargets, leaveBody]);
 
   // Settings takes the whole remote while it is open, so App stops handling keys and
   // this owns navigation. Left and right move between the rail and the body, which is
@@ -150,6 +256,7 @@ export function Settings({
         // While the IME is up, RETURN belongs to the keyboard. Blurring dismisses it and
         // keeps the viewer in settings, which is the step back they expect.
         if (editing) (document.activeElement as HTMLInputElement).blur();
+        else if (detailsRef.current.length) backDetail();
         else onClose();
         return;
       }
@@ -185,18 +292,67 @@ export function Settings({
         return;
       }
 
+      const active = document.activeElement;
+      if (
+        detailsRef.current.length &&
+        code === KEY.DOWN &&
+        active?.classList.contains("settings-detail-back")
+      ) {
+        const first = bodyRef.current?.querySelector<HTMLElement>(
+          "[data-settings-detail-first]",
+        );
+        if (first) {
+          event.preventDefault();
+          first.focus();
+          return;
+        }
+      }
+      if (
+        detailsRef.current.length &&
+        code === KEY.UP &&
+        active?.hasAttribute("data-settings-detail-first")
+      ) {
+        const back = bodyRef.current?.querySelector<HTMLElement>(".settings-detail-back");
+        if (back) {
+          event.preventDefault();
+          back.focus();
+          return;
+        }
+      }
+
+      if (moveWithinPlaylistRow(active, code, inlineStart, inlineEnd)) {
+        event.preventDefault();
+        return;
+      }
+
       // Inside the body, arrows move focus between controls geometrically. When a move
       // finds nothing to the left, the rail is the natural next stop.
       if ([KEY.UP, KEY.DOWN, KEY.LEFT, KEY.RIGHT].includes(code as never)) {
         event.preventDefault();
         const moved = move(code);
-        if (!moved && code === inlineStart) leaveBody();
+        if (!moved && code === inlineStart && !detailsRef.current.length) leaveBody();
       }
     },
-    [asking, inSections, onClose, move, enterBody, leaveBody, inlineStart, inlineEnd, sections],
+    [
+      asking,
+      inSections,
+      onClose,
+      move,
+      enterBody,
+      leaveBody,
+      backDetail,
+      inlineStart,
+      inlineEnd,
+      sections,
+    ],
   );
 
   useRemote(onKey);
+
+  const sectionLabel = t(
+    sections.find((item) => item.id === section)?.label ?? "settings.title",
+  );
+  const detail = details[details.length - 1];
 
   return (
     <div className="sheet" dir={direction}>
@@ -210,6 +366,7 @@ export function Settings({
               className={`row ${s.id === section ? "selected showing" : ""}`}
               aria-current={s.id === section ? "page" : undefined}
               onClick={() => {
+                if (detailsRef.current.length) clearDetails();
                 setSection(s.id);
                 enterBody();
               }}
@@ -236,25 +393,42 @@ export function Settings({
               ? [
                   { keys: ["\u2191", "\u2193"], label: t("common.move") },
                   { keys: [inlineEndArrow], label: t("common.open") },
-                  { keys: ["Return"], label: t("settings.close") },
+                  {
+                    keys: ["Return"],
+                    label: details.length ? t("common.back") : t("settings.close"),
+                  },
                 ]
               : [
                   { keys: ["\u2191", "\u2193", "\u2190", "\u2192"], label: t("common.move") },
-                  { keys: ["OK"], label: t("settings.change") },
-                  { keys: ["Return"], label: t("settings.close") },
+                  { keys: ["OK"], label: okGuide },
+                  {
+                    keys: ["Return"],
+                    label: details.length ? t("common.back") : t("settings.close"),
+                  },
                 ]
           }
         />
       </nav>
 
-      <div className="sheet-body" ref={bodyRef}>
+      <div className="sheet-body" ref={bodyRef} onFocusCapture={updateOkGuide}>
+        {detail && (
+          <header className="settings-detail-appbar">
+            <button
+              type="button"
+              className="settings-detail-back"
+              aria-label={t("settings.backTo", { section: sectionLabel })}
+              onClick={backDetail}
+            >
+              <Icon name="back" />
+            </button>
+            <h3>{detail.label}</h3>
+          </header>
+        )}
         {section === "appearance" && <Appearance />}
         {section === "playback" && <Playback />}
-        {section === "general" && <General onAsking={ask} />}
-        {section === "playlists" && <Playlists onAsking={ask} />}
+        {section === "playlists" && <Playlists onAsking={ask} navigation={detailNavigation} />}
         {section === "phones" && <Phones management={phoneManagement} onAsking={ask} />}
-        {section === "diagnostics" && <Diagnostics />}
-        {section === "about" && <About />}
+        {section === "about" && <About onAsking={ask} navigation={detailNavigation} />}
       </div>
     </div>
   );

@@ -23,13 +23,14 @@ import { useViewport } from "../hooks/useViewport";
  * by pressing up and nothing sits outside the four directional path.
  */
 interface Props {
-  categories: { name: string; count: number }[];
+  categories: { name: string; count: number; hidden: boolean }[];
   /** Which category the channel list is showing. */
   selected: number;
   /** Which row the remote is on. Zero is the title bar, so a category is index + 1. */
   cursor: number;
   /** So an arriving playlist is not announced as a playlist with nothing in it. */
   loading: boolean;
+  allHidden: boolean;
   focused: boolean;
   scale: number;
   /** Must be stable, or every row rebuilds on every press. */
@@ -42,6 +43,7 @@ const Row = memo(function Row({
   index,
   selected,
   showing,
+  hidden,
   top,
   height,
   onPick,
@@ -51,15 +53,16 @@ const Row = memo(function Row({
   index: number;
   selected: boolean;
   showing: boolean;
+  hidden: boolean;
   top: number;
   height: number;
   onPick: (index: number) => void;
 }) {
-  const { number } = useLocale();
+  const { t, number } = useLocale();
   return (
     <button
       type="button"
-      className={`row ${selected ? "selected" : ""} ${showing ? "showing" : ""}`}
+      className={`row ${selected ? "selected" : ""} ${showing ? "showing" : ""} ${hidden ? "hidden" : ""}`}
       style={{ top, height }}
       onClick={() => onPick(index)}
     >
@@ -68,6 +71,11 @@ const Row = memo(function Row({
           removes the logical end of the string, which in a right to left run is its visual
           beginning, so what is left on screen is the middle of a word. */}
       <Text value={name} className="row-label two-line" />
+      {hidden && (
+        <span className="hidden-state" role="img" aria-label={t("channel.hidden")}>
+          <Icon name="hidden" />
+        </span>
+      )}
       <span className="count">{number(count)}</span>
     </button>
   );
@@ -86,6 +94,7 @@ export const Sidebar = memo(function Sidebar({
   selected,
   cursor,
   loading,
+  allHidden,
   focused,
   scale,
   onSelect,
@@ -113,6 +122,7 @@ export const Sidebar = memo(function Sidebar({
         index={i}
         selected={cursor === i + 1}
         showing={i === selected}
+        hidden={categories[i].hidden}
         top={i * win.row}
         height={win.row}
         onPick={onSelect}
@@ -148,7 +158,11 @@ export const Sidebar = memo(function Sidebar({
         <div className="window" style={{ transform: `translateY(${-win.offset}px)` }}>
           {rows}
         </div>
-        {!loading && !categories.length && <p className="empty">{t("channel.noCategories")}</p>}
+        {!loading && !categories.length && (
+          <p className="empty">
+            {t(allHidden ? "channel.allCategoriesHidden" : "channel.noCategories")}
+          </p>
+        )}
       </div>
       <ScrollIndicator count={categories.length} first={win.first} visible={win.visible} />
     </nav>

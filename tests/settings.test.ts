@@ -81,6 +81,30 @@ test("a primitive saved value falls back to defaults rather than throwing", asyn
   assert.equal(useSettings.getState().showClock, true);
 });
 
+test("malformed playlist visibility falls back without breaking settings", async () => {
+  localStorage.setItem(
+    KEY,
+    JSON.stringify({
+      playlists: [
+        null,
+        {
+          id: "pl-1",
+          name: "One",
+          url: "http://a.invalid/x.m3u",
+          hiddenCategories: ["News", 4],
+          hiddenCategoryMode: "unexpected",
+        },
+      ],
+      activePlaylistId: "pl-1",
+    }),
+  );
+
+  const { useSettings } = await load();
+  assert.equal(useSettings.getState().playlists.length, 1);
+  assert.deepEqual(useSettings.getState().playlists[0].hiddenCategories, ["News"]);
+  assert.equal(useSettings.getState().playlists[0].hiddenCategoryMode, "exclude");
+});
+
 test("what is written back is data, never the actions", async () => {
   const { useSettings } = await load();
   useSettings.getState().set("showClock", false);
@@ -92,6 +116,7 @@ test("what is written back is data, never the actions", async () => {
     "addPlaylist",
     "removePlaylist",
     "updatePlaylist",
+    "setHiddenCategories",
     "reset",
     "font",
     "scale",
@@ -115,6 +140,75 @@ test("adding a second playlist does not steal the active one", async () => {
   const first = useSettings.getState().activePlaylistId;
   useSettings.getState().addPlaylist("Second", "http://b.invalid/y.m3u");
   assert.equal(useSettings.getState().activePlaylistId, first);
+});
+
+test("new and existing playlists gain private category visibility defaults", async () => {
+  localStorage.setItem(
+    KEY,
+    JSON.stringify({
+      playlists: [{ id: "pl-old", name: "Old", url: "http://old.invalid/list.m3u" }],
+      activePlaylistId: "pl-old",
+    }),
+  );
+  const { useSettings } = await load();
+
+  assert.deepEqual(useSettings.getState().playlists[0].hiddenCategories, []);
+  assert.equal(useSettings.getState().playlists[0].hiddenCategoryMode, "exclude");
+
+  useSettings.getState().addPlaylist("New", "http://new.invalid/list.m3u");
+  assert.deepEqual(useSettings.getState().playlists[1].hiddenCategories, []);
+  assert.equal(useSettings.getState().playlists[1].hiddenCategoryMode, "exclude");
+});
+
+test("category visibility stays with its playlist and survives a reload", async () => {
+  const { useSettings } = await load();
+  const settings = useSettings.getState();
+  settings.addPlaylist("First", "http://a.invalid/x.m3u");
+  settings.addPlaylist("Second", "http://b.invalid/y.m3u");
+  const [first, second] = useSettings.getState().playlists;
+
+  useSettings.getState().setCategoryHidden(first.id, "News", true);
+  useSettings.getState().setHiddenCategoryMode(first.id, "search");
+
+  assert.deepEqual(useSettings.getState().playlists[0].hiddenCategories, ["News"]);
+  assert.equal(useSettings.getState().playlists[0].hiddenCategoryMode, "search");
+  assert.deepEqual(useSettings.getState().playlists[1].hiddenCategories, []);
+  assert.equal(useSettings.getState().playlists[1].hiddenCategoryMode, "exclude");
+
+  const reloaded = await load();
+  assert.deepEqual(reloaded.useSettings.getState().playlists[0].hiddenCategories, ["News"]);
+  assert.equal(reloaded.useSettings.getState().playlists[0].hiddenCategoryMode, "search");
+  assert.deepEqual(reloaded.useSettings.getState().playlists[1].hiddenCategories, []);
+  assert.equal(second.name, "Second");
+});
+
+test("a playlist can replace its hidden category set in one write", async () => {
+  const { useSettings } = await load();
+  useSettings.getState().addPlaylist("First", "http://a.invalid/x.m3u");
+  useSettings.getState().addPlaylist("Second", "http://b.invalid/y.m3u");
+  const [first] = useSettings.getState().playlists;
+
+  useSettings.getState().setHiddenCategories(first.id, ["News", "Sport"]);
+
+  assert.deepEqual(useSettings.getState().playlists[0].hiddenCategories, ["News", "Sport"]);
+  assert.deepEqual(useSettings.getState().playlists[1].hiddenCategories, []);
+  const reloaded = await load();
+  assert.deepEqual(reloaded.useSettings.getState().playlists[0].hiddenCategories, [
+    "News",
+    "Sport",
+  ]);
+});
+
+test("showing a category removes only that exact playlist category", async () => {
+  const { useSettings } = await load();
+  useSettings.getState().addPlaylist("First", "http://a.invalid/x.m3u");
+  const id = useSettings.getState().playlists[0].id;
+
+  useSettings.getState().setCategoryHidden(id, "News", true);
+  useSettings.getState().setCategoryHidden(id, "NEWS", true);
+  useSettings.getState().setCategoryHidden(id, "News", false);
+
+  assert.deepEqual(useSettings.getState().playlists[0].hiddenCategories, ["NEWS"]);
 });
 
 test("removing the active playlist promotes another rather than leaving nothing active", async () => {

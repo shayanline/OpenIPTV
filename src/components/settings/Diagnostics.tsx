@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useLocale } from "../../hooks/useLocale";
 import { KEY, keyGrants, supportedKeys } from "../../hooks/useRemote";
 import { supportsFlexGap } from "../../services/capabilities";
@@ -6,8 +6,8 @@ import * as disk from "../../services/disk";
 import { repairState } from "../../services/repair";
 import type { MessageKey } from "../../services/locale";
 import { APP_VERSION } from "../../meta";
-import { useSettings } from "../../stores/settings";
-import { Row, Toggle } from "./Field";
+import { PageHeader } from "./Field";
+import { Icon } from "../Icon";
 
 /**
  * What this particular television is, and what its remote actually sends.
@@ -72,10 +72,27 @@ function Fact({ label, value }: { label: string; value: string }) {
   );
 }
 
-export function Diagnostics() {
+function FactGroup({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <section className="diag-group">
+      <h4>{title}</h4>
+      <div className="diag-facts">{children}</div>
+    </section>
+  );
+}
+
+export function Diagnostics({
+  onAsking,
+  nested = false,
+}: {
+  onAsking: (asking: boolean) => void;
+  nested?: boolean;
+}) {
   const { t } = useLocale();
-  const settings = useSettings();
   const [presses, setPresses] = useState<Press[]>([]);
+  const [testing, setTesting] = useState(false);
+  const testButton = useRef<HTMLButtonElement>(null);
+  const tester = useRef<HTMLDivElement>(null);
   /**
    * What the cache is holding, which is the one fact here that is not fixed.
    *
@@ -181,60 +198,124 @@ export function Diagnostics() {
    * nothing, and a log that only shows the keys the app already handles could not tell a
    * button that never arrived from a button that arrived and was ignored.
    */
+  const closeTester = useCallback(() => {
+    testButton.current?.focus();
+    setTesting(false);
+    onAsking(false);
+  }, [onAsking]);
+
+  useLayoutEffect(() => {
+    if (testing) tester.current?.focus();
+  }, [testing]);
+
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
+    if (!testing) return;
+    const onKey = (event: KeyboardEvent) => {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      if (event.keyCode === KEY.BACK || event.keyCode === KEY.ESC) {
+        closeTester();
+        return;
+      }
       setPresses((had) =>
-        [{ code: e.keyCode, key: e.key, at: Date.now() }, ...had].slice(0, KEPT),
+        [{ code: event.keyCode, key: event.key, at: Date.now() }, ...had].slice(0, KEPT),
       );
     };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
-  }, []);
+  }, [testing, closeTester]);
+
+  const deviceLabels: MessageKey[] = [
+    "diagnostics.app",
+    "diagnostics.platform",
+    "diagnostics.engine",
+    "diagnostics.screen",
+    "diagnostics.memory",
+    "diagnostics.scriptHeap",
+  ];
+  const deviceFacts = facts.current.filter((fact) => deviceLabels.includes(fact.label));
+  const compatibilityFacts = facts.current.filter((fact) => !deviceLabels.includes(fact.label));
 
   return (
     <>
-      <h3>{t("diagnostics.title")}</h3>
-      <p className="sheet-lead">{t("diagnostics.lead")}</p>
-      <Row label={t("settings.playbackInfo")} hint={t("settings.playbackInfoHint")}>
-        <Toggle
-          label={t("settings.playbackInfo")}
-          value={settings.showPlaybackStats}
-          onChange={(value) => settings.set("showPlaybackStats", value)}
-        />
-      </Row>
-
-      <div className="diag-facts">
-        {facts.current.map((f) => (
-          <Fact key={f.label} label={t(f.label)} value={f.value} />
-        ))}
-        {/* Not in `facts`, because that is read once during render and this arrives later. */}
-        <Fact label={t("diagnostics.cached")} value={cache} />
-        {/*
-         * Compatibility, read on every render rather than once, because it is the one fact here
-         * that changes while somebody is looking at it: a channel repaired in the last minute
-         * moves this from idle to serving. It is also the only way to tell "this television
-         * cannot do it" from "nothing has needed it yet", which is the first question anybody
-         * asks when the toggle appears to have done nothing.
-         */}
-        <Fact label={t("diagnostics.compatibility")} value={compatibilityFact(t)} />
+      {!nested && (
+        <PageHeader title={t("diagnostics.title")} description={t("diagnostics.lead")} />
+      )}
+      {nested && <p className="sheet-lead diag-nested-lead">{t("diagnostics.lead")}</p>}
+      <div className="diag-groups">
+        <FactGroup title={t("diagnostics.deviceInfo")}>
+          {deviceFacts.map((fact) => (
+            <Fact key={fact.label} label={t(fact.label)} value={fact.value} />
+          ))}
+          <Fact label={t("diagnostics.cached")} value={cache} />
+        </FactGroup>
+        <FactGroup title={t("diagnostics.compatibility")}>
+          {compatibilityFacts.map((fact) => (
+            <Fact key={fact.label} label={t(fact.label)} value={fact.value} />
+          ))}
+          <Fact label={t("diagnostics.compatibility")} value={compatibilityFact(t)} />
+        </FactGroup>
       </div>
 
-      <h4 className="diag-heading">{t("diagnostics.remoteKeys")}</h4>
-      <p className="sheet-lead">{t("diagnostics.remoteLead")}</p>
-      <div className="diag-keys">
-        {presses.length === 0 ? (
-          <p className="empty">{t("diagnostics.noKeys")}</p>
-        ) : (
-          presses.map((p) => (
-            <div className="diag-press" key={`${p.at}-${p.code}`}>
-              <span className="diag-code">{p.code}</span>
-              <span className="diag-name">
-                {NAMED[p.code] ?? p.key ?? "not a key this app knows"}
-              </span>
+      <section className="diag-remote">
+        <div>
+          <h4>{t("diagnostics.remoteKeys")}</h4>
+          <p>{t("diagnostics.remoteLead")}</p>
+        </div>
+        <button
+          ref={testButton}
+          type="button"
+          className="btn tonal"
+          data-settings-detail-first
+          data-ok-guide={t("common.open")}
+          onClick={() => {
+            setPresses([]);
+            setTesting(true);
+            onAsking(true);
+          }}
+        >
+          <Icon name="diagnostics" />
+          <span>{t("diagnostics.remoteKeys")}</span>
+        </button>
+      </section>
+
+      {testing && (
+        <div className="dialog-scrim" onClick={closeTester}>
+          <div
+            ref={tester}
+            className="diag-tester"
+            role="dialog"
+            aria-modal="true"
+            aria-label={t("diagnostics.remoteKeys")}
+            tabIndex={-1}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <h2>{t("diagnostics.remoteKeys")}</h2>
+            <p>{t("diagnostics.remoteLead")}</p>
+            {presses.length ? (
+              <div className="diag-latest">
+                <strong>
+                  {NAMED[presses[0].code] ?? presses[0].key ?? t("diagnostics.unknown")}
+                </strong>
+                <span>{presses[0].code}</span>
+              </div>
+            ) : (
+              <p className="empty">{t("diagnostics.noKeys")}</p>
+            )}
+            <div className="diag-key-history">
+              {presses.slice(1).map((press) => (
+                <span key={`${press.at}-${press.code}`}>
+                  <b>{press.code}</b>
+                  {NAMED[press.code] ?? press.key ?? "not a key this app knows"}
+                </span>
+              ))}
             </div>
-          ))
-        )}
-      </div>
+            <button type="button" className="btn tonal" onClick={closeTester}>
+              <span>{t("common.close")}</span>
+            </button>
+          </div>
+        </div>
+      )}
     </>
   );
 }
