@@ -125,7 +125,7 @@ let inFlight: AbortController | null = null;
 let channelPlaylistUrl = "";
 
 const requestUrl = (url: string) => {
-  if (globalThis.location?.protocol !== "https:") return url;
+  if (window.location.protocol !== "https:") return url;
   const request = new URL(url);
   if (request.protocol !== "http:") return url;
   request.protocol = "https:";

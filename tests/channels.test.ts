@@ -120,7 +120,7 @@ test("an HTTPS browser upgrades an HTTP playlist before fetching", async () => {
     s,
     "http://provider.example:80/get.php?username=viewer&password=secret&type=m3u_plus&output=m3u8",
   );
-  vi.stubGlobal("location", { protocol: "https:" });
+  vi.stubGlobal("window", { location: { protocol: "https:" } });
   const fetchMock = vi.fn().mockResolvedValue({ ok: true, text: async () => PLAYLIST });
   vi.stubGlobal("fetch", fetchMock);
 
