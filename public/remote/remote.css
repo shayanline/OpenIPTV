@@ -142,6 +142,9 @@ section[data-section] .section-title-row h2 { min-width: 0; margin: 0; }
 .about-card p { max-width: 62ch; margin: 0; line-height: 1.55; }
 .repository-link { display: flex; min-height: 44px; align-items: center; overflow-wrap: anywhere; border-radius: var(--control-radius); color: var(--blue); text-decoration: none; -webkit-tap-highlight-color: transparent; }
 .repository-link:hover, .repository-link:active { color: #76b4ff; }
+.about-data { display: grid; gap: 12px; margin-top: 4px; padding-top: 18px; border-top: 1px solid var(--line); }
+.about-data h3 { margin: 0; font-size: 18px; }
+.about-data button { justify-self: start; }
 .item-menu-overlay { position: fixed; inset: 0; z-index: 40; display: flex; width: 100vw; height: 100vh; height: 100dvh; align-items: flex-end; justify-content: center; overflow: hidden; overscroll-behavior: contain; touch-action: none; }
 .item-menu-overlay[hidden] { display: none !important; }
 .item-menu-backdrop { position: absolute; inset: 0; width: 100%; height: 100%; min-height: 0; padding: 0; border-radius: 0; background: rgba(0, 0, 0, 0.62); opacity: 0; transition: opacity 240ms ease; will-change: opacity; }

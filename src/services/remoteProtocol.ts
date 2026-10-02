@@ -32,7 +32,8 @@ type BooleanSetting =
   | "showClock"
   | "resumeLast"
   | "sortAlphabetically"
-  | "compatibility";
+  | "compatibility"
+  | "showPlaybackStats";
 type ChoiceSetting = "locale" | "fontSizeId" | "aspectId";
 type SettingCommand =
   | { type: "setting"; key: BooleanSetting; value: boolean }
@@ -70,6 +71,7 @@ export interface RemoteSnapshot {
     resumeLast: boolean;
     sortAlphabetically: boolean;
     compatibility: boolean;
+    showPlaybackStats: boolean;
   };
   playlists: Playlist[];
   activePlaylistId: string;
@@ -98,6 +100,7 @@ const BOOLEAN_SETTINGS = new Set<BooleanSetting>([
   "resumeLast",
   "sortAlphabetically",
   "compatibility",
+  "showPlaybackStats",
 ]);
 const CHOICE_SETTINGS = new Set<ChoiceSetting>(["locale", "fontSizeId", "aspectId"]);
 const REMOTE_KEYS = new Set([
@@ -306,7 +309,9 @@ export function remoteSnapshot(): RemoteSnapshot {
       fit: t("settings.fit"),
       stretch: t("settings.stretch"),
       compatibility: t("settings.compatibility"),
+      playbackInfo: t("settings.playbackInfo"),
       resumeLast: t("settings.resumeLast"),
+      applicationData: t("settings.applicationData"),
       noDevices: t("remote.noDevices"),
       thisDevice: t("remote.thisDevice"),
       rename: t("common.edit"),
@@ -332,6 +337,7 @@ export function remoteSnapshot(): RemoteSnapshot {
       resumeLast: settings.resumeLast,
       sortAlphabetically: settings.sortAlphabetically,
       compatibility: settings.compatibility,
+      showPlaybackStats: settings.showPlaybackStats,
     },
     playlists: settings.playlists.map((playlist) => ({ ...playlist })),
     activePlaylistId: settings.activePlaylistId,

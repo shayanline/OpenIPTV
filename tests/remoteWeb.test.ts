@@ -32,7 +32,6 @@ const labels = {
   playlists: "Playlists",
   appearance: "Appearance",
   playback: "Playback",
-  general: "General",
   devices: "Paired devices",
   about: "About",
   aboutVersion: "Version 1.5.0",
@@ -98,6 +97,7 @@ const snapshot = (change: Record<string, unknown> = {}) => ({
     resumeLast: true,
     sortAlphabetically: false,
     compatibility: false,
+    showPlaybackStats: false,
   },
   playlists: [{ id: "pl-1", name: "News", url: "http://example.com/list.m3u" }],
   activePlaylistId: "pl-1",
@@ -250,7 +250,6 @@ test("matches the player settings menu order", async () => {
   const order = [
     labels.appearance,
     labels.playback,
-    labels.general,
     labels.playlists,
     labels.devices,
     labels.about,

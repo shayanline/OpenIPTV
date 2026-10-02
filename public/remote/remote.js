@@ -37,7 +37,6 @@
     playlists: "Playlists",
     appearance: "Appearance",
     playback: "Playback",
-    general: "General",
     devices: "Devices",
     about: "About",
     aboutVersion: "Version",
@@ -95,7 +94,9 @@
     fit: "Fit",
     stretch: "Stretch",
     compatibility: "Compatibility mode",
+    playbackInfo: "Playback information",
     resumeLast: "Resume last channel",
+    applicationData: "Application data",
     noDevices: "No devices are authorised.",
     thisDevice: "This device",
     rename: "Rename",
@@ -112,7 +113,6 @@
   var navIcons = {
     appearance: '<path d="M5.6 19.4L11.4 4.8h1.2l5.8 14.6"/><path d="M8.1 14.6h7.8"/>',
     playback: '<rect x="2.6" y="5" width="18.8" height="13" rx="2.2"/><path d="M8.6 21h6.8"/>',
-    general: '<path d="M19.4 12c0-.45-.04-.88-.11-1.3l2.06-1.55a.5.5 0 0 0 .12-.64l-1.95-3.38a.5.5 0 0 0-.6-.22l-2.42.97a7.6 7.6 0 0 0-2.25-1.3l-.37-2.58a.5.5 0 0 0-.49-.42h-3.9a.5.5 0 0 0-.49.42l-.37 2.58c-.82.31-1.57.75-2.25 1.3l-2.42-.97a.5.5 0 0 0-.6.22L1.41 8.51a.5.5 0 0 0 .12.64l2.06 1.55a8.1 8.1 0 0 0 0 2.6l-2.06 1.55a.5.5 0 0 0-.12.64l1.95 3.38a.5.5 0 0 0 .6.22l2.42-.97c.68.55 1.43.99 2.25 1.3l.37 2.58a.5.5 0 0 0 .49.42h3.9a.5.5 0 0 0 .49-.42l.37-2.58a7.6 7.6 0 0 0 2.25-1.3l2.42.97a.5.5 0 0 0 .6-.22l1.95-3.38a.5.5 0 0 0-.12-.64l-2.06-1.55c.07-.42.11-.85.11-1.3Zm-7.4 3.65A3.65 3.65 0 1 1 15.65 12 3.65 3.65 0 0 1 12 15.65Z"/>',
     playlists: '<circle cx="4.9" cy="7" r="1.1"/><circle cx="4.9" cy="12" r="1.1"/><circle cx="4.9" cy="17" r="1.1"/><path d="M9.4 7h10.2M9.4 12h10.2M9.4 17h10.2"/>',
     devices: '<rect x="2.7" y="4.4" width="12.8" height="11.2" rx="2"/><path d="M6.7 19.6h4.8M9.1 15.6v4M19.1 8.1c1.2.9 1.9 2.3 1.9 3.9s-.7 3-1.9 3.9M20.5 5.7c1.6 1.5 2.5 3.8 2.5 6.3s-.9 4.8-2.5 6.3"/>',
     about: '<circle cx="12" cy="12" r="9"/><path d="M12 11.2v5.4M12 7.6v.1"/>',
@@ -609,10 +609,8 @@
       settingToggle("showClock", l.showClock) + settingToggle("sortAlphabetically", l.sortAlphabetically) + "</section>";
     var playback = '<section id="playback" data-section="playback"><h2>' + escape(l.playback) + "</h2>" +
       settingSelect("aspectId", l.screenFit, [["fill", l.fill], ["fit", l.fit], ["stretch", l.stretch]]) +
-      settingToggle("compatibility", l.compatibility) + "</section>";
-    var general = '<section id="general" data-section="general"><h2>' + escape(l.general) + "</h2>" +
-      settingToggle("resumeLast", l.resumeLast) + '<button class="secondary danger" type="button" data-action="clear-cache">' +
-      escape(l.cache) + "</button></section>";
+      settingToggle("resumeLast", l.resumeLast) + settingToggle("compatibility", l.compatibility) +
+      settingToggle("showPlaybackStats", l.playbackInfo) + "</section>";
     var playlistToggle = current.playlists.length > 5
       ? '<button type="button" class="list-toggle" data-action="toggle-playlists">' +
         escape(expandedPlaylists ? l.close : l.open + " " + l.playlists + " (" + current.playlists.length + ")") +
@@ -643,14 +641,16 @@
       escape(l.aboutVersion) + '</span></div></div><p>' + escape(l.aboutDescription) +
       '</p><p class="muted">' + escape(l.aboutDisclaimer) + '</p><a class="repository-link" dir="ltr" href="' +
       escape(current.about.repository) + '" target="_blank" rel="noopener noreferrer">' +
-      escape(current.about.repository) + "</a></div></section>";
+      escape(current.about.repository) + '</a></div><div class="about-data"><h3>' + escape(l.applicationData) +
+      '</h3><button class="secondary danger" type="button" data-action="clear-cache">' + escape(l.cache) +
+      "</button></div></section>";
 
     shell(
       '<nav class="tabs" aria-label="' + escape(l.title) + '"><span class="tab-selection" aria-hidden="true"></span><a href="#appearance" aria-current="page">' + navIcon("appearance") + escape(l.appearance) +
-        '</a><a href="#playback">' + navIcon("playback") + escape(l.playback) + '</a><a href="#general">' + navIcon("general") + escape(l.general) +
+        '</a><a href="#playback">' + navIcon("playback") + escape(l.playback) +
         '</a><a href="#playlists">' + navIcon("playlists") + escape(l.playlists) + '</a><a href="#devices">' + navIcon("devices") + escape(l.devices) +
         '</a><a href="#about">' + navIcon("about") + escape(l.about) +
-        "</a></nav>" + appearance + playback + general + playlistSection + deviceSection + aboutSection + itemMenuMarkup(l) + remoteMarkup(l),
+        "</a></nav>" + appearance + playback + playlistSection + deviceSection + aboutSection + itemMenuMarkup(l) + remoteMarkup(l),
       message,
       !!failed,
     );
