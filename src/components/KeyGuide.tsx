@@ -28,7 +28,7 @@ export function SettingsPath({
   return (
     <span className="settings-path">
       {items.map((item, index) => (
-        <span key={`${item}-${index}`}>
+        <span key={item}>
           {index > 0 && <span aria-hidden="true">{direction === "rtl" ? "‹" : "›"}</span>}
           <span>{item}</span>
         </span>
@@ -44,8 +44,8 @@ export function KeyGuide({ items, className = "" }: {
 }) {
   return (
     <div className={`hints ${className}`}>
-      {items.map((item, index) => (
-        <span key={`${item.keys.join()}-${index}`}>
+      {items.map((item) => (
+        <span key={item.keys.join("|")}>
           {item.beforeKeys && <span className="guide-prefix">{item.beforeKeys}</span>}
           {item.keys.map((key) => <kbd key={key}>{key}</kbd>)}
           {item.label}

@@ -97,11 +97,9 @@ test("hiding every category says how to restore the list", async () => {
   await mountApp(PLAYLIST, { hiddenCategories: ["News", "Sport"] });
 
   assert.deepEqual(rail(), []);
-  assert.ok(
-    screen.getByText(
-      "All categories are hidden. Hold Red to show them here, or unhide them in Settings, Playlists, Categories.",
-    ),
-  );
+  const empty = screen.getByText("All categories are hidden.").parentElement;
+  assert.equal(empty?.querySelector("kbd")?.textContent, "Red");
+  assert.equal(empty?.querySelector(".settings-path")?.textContent, "Settings›Playlists›Categories");
 });
 
 test("search mode keeps explicit favourites from hidden categories", async () => {
@@ -232,8 +230,8 @@ test("the on-screen Smart Remote red key toggles category visibility", async () 
   act(() => screen.getByRole("button", { name: "123" }).click());
 
   const red = screen.getByRole("button", { name: "Red" });
-  fireEvent.mouseDown(red);
-  fireEvent.mouseUp(red);
+  fireEvent.pointerDown(red, { pointerId: 1 });
+  fireEvent.pointerUp(red, { pointerId: 1 });
 
   assert.equal(Boolean(railRow("News")?.querySelector(".hidden-state")), true);
 });
@@ -245,9 +243,9 @@ test("holding Red on the on-screen Smart Remote reveals hidden categories", asyn
   act(() => screen.getByRole("button", { name: "123" }).click());
   const red = screen.getByRole("button", { name: "Red" });
 
-  fireEvent.mouseDown(red);
+  fireEvent.pointerDown(red, { pointerId: 1 });
   await settle(600);
-  fireEvent.mouseUp(red);
+  fireEvent.pointerUp(red, { pointerId: 1 });
 
   assert.deepEqual(rail(), ["News", "Sport"]);
   assert.equal(cursorOn(), "Sport");
