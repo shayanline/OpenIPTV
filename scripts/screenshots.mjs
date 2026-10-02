@@ -34,6 +34,18 @@ const PORT = 4600;          // not store-assets' 4599, so both can run at once
 const CHROME_PORT = 9334;
 const WIDTH = 1920;
 const HEIGHT = 1080;
+const TV_REMOTE_SHIM = `(() => {
+  window.webapis = { avplay: {}, network: { getIp: () => "192.168.1.42" } };
+  window.Worker = class {
+    postMessage(message) {
+      if (message.type !== "start") return;
+      setTimeout(() => this.onmessage?.({
+        data: { type: "listening", address: message.address, port: message.port },
+      }), 0);
+    }
+    terminate() {}
+  };
+})()`;
 
 const chrome = findChrome();
 if (!chrome) {
@@ -115,16 +127,19 @@ console.log(`\nTen screenshots, from the built application on port ${PORT}:`);
  */
 try {
 
-// 1. What a viewer sees the very first time, before the seed exists. This is the only shot that
-//    needs the unseeded profile, so it has to come before anything writes to localStorage.
+// 1. What a viewer sees on a television before the seed exists, including local Remote access.
+const { identifier: onboardingShim } = await cdp.send("Page.addScriptToEvaluateOnNewDocument", {
+  source: TV_REMOTE_SHIM,
+});
 await cdp.send("Page.navigate", { url: `http://127.0.0.1:${PORT}/` });
 await sleep(2000);
 await shoot("01-first-run", "playlist");
+await cdp.send("Page.removeScriptToEvaluateOnNewDocument", { identifier: onboardingShim });
 
 // From here on, a playlist exists.
 await app.evaluate(SEED);
 await cdp.send("Page.reload");
-await sleep(2600);
+await sleep(5000);
 
 // 2. The channel list, which is the screen the application opens on and the one used most.
 await shoot("02-channels", "News One");
@@ -167,7 +182,11 @@ await shoot("05-favourites", "Favourites");
 //    screen that raised it and otherwise sits in the middle of this one looking like a caption to
 //    a settings page it has nothing to do with.
 await sleep(4000);
-await app.press("ArrowRight", 39);
+const { identifier: settingsShim } = await cdp.send("Page.addScriptToEvaluateOnNewDocument", {
+  source: TV_REMOTE_SHIM,
+});
+await cdp.send("Page.reload");
+await sleep(2600);
 await keyed("Settings");
 await sleep(500);
 if (!(await app.clickText("Playback"))) {
@@ -187,7 +206,13 @@ const openedCategories = await app.evaluate(`(() => {
   return true;
 })()`);
 if (!openedCategories) throw new Error("No category management action was available in Settings.");
+await app.evaluate(`(() => {
+  const row = document.querySelector(".category-setting-row");
+  row?.focus();
+  row?.dispatchEvent(new FocusEvent("focusin", { bubbles: true }));
+})()`);
 await shoot("07-category-management", "Categories");
+await cdp.send("Page.removeScriptToEvaluateOnNewDocument", { identifier: settingsShim });
 
 // 8. Playback information, enabled before the reload so it appears as soon as a channel is chosen.
 await app.evaluate(`(() => {

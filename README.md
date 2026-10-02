@@ -1,4 +1,4 @@
-# OpenIPTV
+# <img src="public/icon.svg" alt="OpenIPTV icon" width="48" align="absmiddle"> OpenIPTV
 
 [![CI](https://github.com/shayanline/OpenIPTV/actions/workflows/ci.yml/badge.svg)](https://github.com/shayanline/OpenIPTV/actions/workflows/ci.yml)
 
@@ -14,7 +14,7 @@ The [demo playlist](https://shayanline.github.io/OpenIPTV/demo/nasa.m3u) contain
 
 |  |  |
 |:--|:--|
-| [<img src="docs/screenshots/01-first-run.png" alt="The first run screen with playlist address, optional name and language controls">](docs/screenshots/01-first-run.png) | [<img src="docs/screenshots/02-channels.png" alt="The channel panel with categories, channel rows and remote key guides">](docs/screenshots/02-channels.png) |
+| [<img src="docs/screenshots/01-first-run.png" alt="The television first run screen with manual playlist fields, a Remote access QR code, pairing address and code">](docs/screenshots/01-first-run.png) | [<img src="docs/screenshots/02-channels.png" alt="The channel panel with categories, channel rows and remote key guides">](docs/screenshots/02-channels.png) |
 | **Add a playlist** | **Watch channels** |
 | [<img src="docs/screenshots/03-categories.png" alt="The category rail with Sport highlighted and its channels listed">](docs/screenshots/03-categories.png) | [<img src="docs/screenshots/04-search.png" alt="Search with the query news and matching channels">](docs/screenshots/04-search.png) |
 | **Browse categories** | **Search everything** |
