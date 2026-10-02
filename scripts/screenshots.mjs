@@ -75,6 +75,16 @@ await sleep(1500);
 const cdp = await connect(CHROME_PORT);
 await cdp.send("Page.enable");
 await cdp.send("Runtime.enable");
+await cdp.send("Page.addScriptToEvaluateOnNewDocument", {
+  source: `(() => {
+    const RealDate = Date;
+    const fixed = new RealDate("2026-10-02T10:00:00").valueOf();
+    window.Date = class extends RealDate {
+      constructor(...values) { super(...(values.length ? values : [fixed])); }
+      static now() { return fixed; }
+    };
+  })()`,
+});
 await cdp.send("Emulation.setDeviceMetricsOverride", {
   width: WIDTH, height: HEIGHT, deviceScaleFactor: 1, mobile: false,
 });
