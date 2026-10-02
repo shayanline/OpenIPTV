@@ -13,7 +13,7 @@ OpenIPTV includes no channels, accounts, analytics, or hosted backend. Playlist 
 
 **[Try OpenIPTV in your browser](https://shayanline.github.io/OpenIPTV)** using the same application build that runs on the television. Use the arrow keys and Enter as the directional pad and OK button.
 
-[Install on a Samsung TV](#install-on-a-samsung-tv) · [Build from source](#build-and-sign-it-yourself) · [Read the troubleshooting guide](#troubleshooting)
+Go directly to [television installation](#install-on-a-samsung-tv), [building from source](#build-and-sign-it-yourself), [playlist sources](#playlist-sources), [Remote access](#remote-access), [remote controls](#remote-control-reference), or [troubleshooting](#troubleshooting).
 
 OpenIPTV supplies no television channels or other content. You are responsible for the playlists and streams you choose to access.
 
@@ -75,50 +75,30 @@ Building and signing a television widget also requires Node 22.18 or later and t
 
 ## Install on a Samsung TV
 
-Choose the route that matches your television and signing setup.
+[TizenBrew Installer Desktop](#recommended-tizenbrew-installer-desktop) is the easiest installation route. It downloads the latest OpenIPTV release and, on Tizen 7 or later, resigns the widget for the connected television.
 
-| Method | Best for | Important detail |
-|:--|:--|:--|
-| [Browser demo](https://shayanline.github.io/OpenIPTV) | Trying the interface before installing | Browser security rules can block streams that play on the television. |
-| [Released widget](https://github.com/shayanline/OpenIPTV/releases/latest) | Televisions covered by the release certificate | Samsung refuses a widget whose distributor certificate does not include that television. |
-| [TizenBrew Installer Desktop](https://github.com/reisxd/TizenBrewInstaller/releases/latest) | Guided installation from a computer | On Tizen 7 or later, the installer can resign the widget for the connected television. |
-| [Local build](#build-and-sign-it-yourself) | Installing with your own Samsung certificate | This is the reliable route when the released signature does not cover your television. |
-
-Samsung ties widget signing to individual televisions. A valid widget can therefore fail with a certificate error on a different set. Samsung replaces this signature when an application is submitted to its store.
+Televisions running an earlier Tizen version need a widget signed with a distributor certificate that includes that television. Follow [Build and sign it yourself](#build-and-sign-it-yourself) for that route.
 
 ### Prepare the television
 
-The television must be in developer mode before any installation method can connect to it:
+Every installation route requires developer mode:
 
 1. Open Apps and press `12345` on the remote.
 2. Turn Developer mode on and enter the IP address of the computer you will install from.
 3. Restart the television. Port 26101 remains closed until the restart finishes.
 
-### Install the released widget
+### Recommended: TizenBrew Installer Desktop
 
-Download `OpenIPTV.wgt` from the [latest release](https://github.com/shayanline/OpenIPTV/releases/latest), then use the Tizen command line tools:
+[TizenBrew Installer Desktop](https://github.com/reisxd/TizenBrewInstaller/releases/latest) fetches `OpenIPTV.wgt` from the latest GitHub release and installs it on the television.
 
-```bash
-cd <wherever you downloaded the widget>     # -n takes a name, resolved from where you are
-sdb connect <tv-ip>:26101
-sdb devices                                # the third column is the name to install to
-tizen install -n OpenIPTV.wgt -t "<name>"
-```
-
-A certificate error means the released distributor certificate does not include your television. Use a local build with your own certificate when that happens.
-
-### Install with TizenBrew Installer Desktop
-
-[TizenBrew Installer Desktop](https://github.com/reisxd/TizenBrewInstaller/releases/latest) can fetch the latest widget from this repository and install it on a television in developer mode.
-
-1. Connect the television to the installer and enable developer mode.
+1. Connect the television to the installer after enabling developer mode.
 2. Enter `shayanline/OpenIPTV` as the GitHub repository.
-3. Let the installer create or select Samsung certificates when it asks.
-4. Launch OpenIPTV from the television application list.
+3. On Tizen 7 or later, let the installer create or select Samsung certificates so it can resign the widget.
+4. Install OpenIPTV and launch it from the television application list.
 
-The installer selects the first `.wgt` or `.tpk` file in the latest GitHub release. Every tagged OpenIPTV release publishes `OpenIPTV.wgt`.
+Every tagged OpenIPTV release publishes `OpenIPTV.wgt`. The release signature covers only the televisions included in its distributor certificate, so other televisions require the widget to be resigned.
 
-On televisions before Tizen 7, the installer uses the released signature without creating another one. Use a local build if that signature does not cover your television.
+On televisions before Tizen 7, TizenBrew uses the existing release signature. Follow [Build and sign it yourself](#build-and-sign-it-yourself) when that signature does not include your television.
 
 ### Build and sign it yourself
 
