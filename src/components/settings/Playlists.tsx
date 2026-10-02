@@ -3,7 +3,14 @@ import { useLocale } from "../../hooks/useLocale";
 import { KEY, useRemote } from "../../hooks/useRemote";
 import { useSettings, type HiddenCategoryMode, type Playlist } from "../../stores/settings";
 import { useChannels } from "../../stores/channels";
-import { checkPlaylistUrl, nameFromUrl } from "../../services/playlistUrl";
+import {
+  checkPlaylistUrl,
+  nameFromUrl,
+  parseXtreamPlaylistUrl,
+  redactPlaylistUrl,
+  type XtreamOutput,
+  xtreamPlaylistUrl,
+} from "../../services/playlistUrl";
 import type { MessageKey } from "../../services/locale";
 import { Confirm } from "../Confirm";
 import { Icon } from "../Icon";
@@ -325,6 +332,12 @@ export function Playlists({
   const [note, setNote] = useState("");
   const [name, setName] = useState("");
   const [url, setUrl] = useState("");
+  const [m3uUrl, setM3uUrl] = useState("");
+  const [source, setSource] = useState<"m3u" | "xtream">("m3u");
+  const [server, setServer] = useState("");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [output, setOutput] = useState<XtreamOutput>("m3u8");
   const [problem, setProblem] = useState<MessageKey | "">("");
   /** Which playlist has been asked about but not yet confirmed for removal. */
   const [confirming, setConfirming] = useState("");
@@ -345,15 +358,28 @@ export function Playlists({
     });
     setName("");
     setUrl("");
+    setM3uUrl("");
+    setSource("m3u");
+    setServer("");
+    setUsername("");
+    setPassword("");
+    setOutput("m3u8");
     setProblem("");
     navigation.open("playlist-add", t("playlist.addTitle"), "playlist-add", () =>
       setEditing(null),
     );
   };
   const startEdit = (p: Playlist) => {
+    const xtream = parseXtreamPlaylistUrl(p.url);
     setEditing(p);
     setName(p.name);
     setUrl(p.url);
+    setM3uUrl(p.url);
+    setSource(xtream ? "xtream" : "m3u");
+    setServer(xtream?.server ?? "");
+    setUsername(xtream?.username ?? "");
+    setPassword(xtream?.password ?? "");
+    setOutput(xtream?.output ?? "m3u8");
     setProblem("");
     navigation.open(
       `playlist-edit-${p.id}`,
@@ -362,6 +388,13 @@ export function Playlists({
       () => setEditing(null),
     );
   };
+
+  const updateXtreamUrl = (
+    nextServer: string,
+    nextUsername: string,
+    nextPassword: string,
+    nextOutput: XtreamOutput,
+  ) => setUrl(xtreamPlaylistUrl(nextServer, nextUsername, nextPassword, nextOutput));
 
   /**
    * Check first, then load, then say what happened.
@@ -463,21 +496,101 @@ export function Playlists({
             onChange={(event) => setName(event.target.value)}
             placeholder={t("onboarding.optionalAddress")}
           />
-          <label htmlFor="pl-url">{t("onboarding.playlistAddress")}</label>
-          <input
-            id="pl-url"
-            value={url}
-            spellCheck={false}
-            dir="ltr"
-            className={problem ? "wrong" : ""}
-            aria-invalid={problem ? true : undefined}
-            aria-describedby={problem ? "pl-url-problem" : undefined}
-            onChange={(event) => {
-              setUrl(event.target.value);
-              setProblem("");
-            }}
-            placeholder={t("onboarding.urlPlaceholder")}
-          />
+          <div className="playlist-source-options">
+            <button
+              type="button"
+              className="btn tonal"
+              aria-pressed={source === "m3u"}
+              onClick={() => {
+                setSource("m3u");
+                setUrl(m3uUrl);
+                setProblem("");
+              }}
+            >
+              <span>{t("onboarding.m3uPlaylist")}</span>
+            </button>
+            <button
+              type="button"
+              className="btn tonal"
+              aria-pressed={source === "xtream"}
+              onClick={() => {
+                setSource("xtream");
+                updateXtreamUrl(server, username, password, output);
+                setProblem("");
+              }}
+            >
+              <span>{t("onboarding.xtreamLogin")}</span>
+            </button>
+          </div>
+          {source === "m3u" ? (
+            <>
+              <label htmlFor="pl-url">{t("onboarding.playlistAddress")}</label>
+              <input
+                id="pl-url"
+                value={url}
+                spellCheck={false}
+                dir="ltr"
+                className={problem ? "wrong" : ""}
+                aria-invalid={problem ? true : undefined}
+                aria-describedby={problem ? "pl-url-problem" : undefined}
+                onChange={(event) => {
+                  setUrl(event.target.value);
+                  setM3uUrl(event.target.value);
+                  setProblem("");
+                }}
+                placeholder={t("onboarding.urlPlaceholder")}
+              />
+            </>
+          ) : (
+            <div className="xtream-fields">
+              <label htmlFor="pl-server">{t("onboarding.serverAddress")}</label>
+              <input
+                id="pl-server"
+                value={server}
+                spellCheck={false}
+                dir="ltr"
+                onChange={(event) => {
+                  setServer(event.target.value);
+                  updateXtreamUrl(event.target.value, username, password, output);
+                }}
+              />
+              <label htmlFor="pl-username">{t("onboarding.username")}</label>
+              <input
+                id="pl-username"
+                value={username}
+                spellCheck={false}
+                dir="ltr"
+                onChange={(event) => {
+                  setUsername(event.target.value);
+                  updateXtreamUrl(server, event.target.value, password, output);
+                }}
+              />
+              <label htmlFor="pl-password">{t("onboarding.password")}</label>
+              <input
+                id="pl-password"
+                type="password"
+                value={password}
+                dir="ltr"
+                onChange={(event) => {
+                  setPassword(event.target.value);
+                  updateXtreamUrl(server, username, event.target.value, output);
+                }}
+              />
+              <label htmlFor="pl-output">{t("onboarding.streamFormat")}</label>
+              <select
+                id="pl-output"
+                value={output}
+                onChange={(event) => {
+                  const value = event.target.value as XtreamOutput;
+                  setOutput(value);
+                  updateXtreamUrl(server, username, password, value);
+                }}
+              >
+                <option value="m3u8">{t("onboarding.hls")}</option>
+                <option value="ts">{t("onboarding.mpegTs")}</option>
+              </select>
+            </div>
+          )}
           {problem && (
             <p className="field-problem" id="pl-url-problem" role="alert">
               {t(problem)}
@@ -546,7 +659,9 @@ export function Playlists({
               }}
             >
               <span className="pl-title">
-                <span className="pl-name" dir="auto">{p.name}</span>
+                <span className="pl-name" dir="auto">
+                  {p.name}
+                </span>
                 {/* Named, not just tinted. The accessibility guidance asks for a mark
                     alongside colour, since a tint alone says nothing in greyscale. */}
                 {p.id === s.activePlaylistId && (
@@ -554,7 +669,7 @@ export function Playlists({
                 )}
               </span>
               <span className="pl-url" dir="ltr">
-                {p.url}
+                {redactPlaylistUrl(p.url)}
               </span>
             </button>
             {/* Tonal rather than flat. Flat text at three metres reads as a label, not as

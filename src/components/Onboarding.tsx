@@ -4,7 +4,12 @@ import { useSettings } from "../stores/settings";
 import { useSetup } from "../stores/setup";
 import { KEY, useRemote } from "../hooks/useRemote";
 import { useSpatialNav } from "../hooks/useSpatialNav";
-import { checkPlaylistUrl, nameFromUrl } from "../services/playlistUrl";
+import {
+  checkPlaylistUrl,
+  nameFromUrl,
+  type XtreamOutput,
+  xtreamPlaylistUrl,
+} from "../services/playlistUrl";
 import type { MessageKey } from "../services/locale";
 import { LanguagePicker } from "./LanguagePicker";
 import { KeyGuide } from "./KeyGuide";
@@ -51,7 +56,14 @@ export function Onboarding({
   const first = useRef<HTMLInputElement>(null);
   const { move } = useSpatialNav(box, true);
   const { name, url, set: setSetup } = useSetup();
+  const [source, setSource] = useState<"m3u" | "xtream">("m3u");
+  const [server, setServer] = useState("");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [output, setOutput] = useState<XtreamOutput>("m3u8");
   const [problem, setProblem] = useState<MessageKey | "">("");
+  const playlistUrl =
+    source === "m3u" ? url : xtreamPlaylistUrl(server, username, password, output);
 
   useEffect(() => {
     first.current?.focus();
@@ -60,12 +72,12 @@ export function Onboarding({
   const submit = () => {
     // Checked here as well as in Settings, so a typo on the very first screen is answered
     // at once instead of after a twenty second timeout that blames the network.
-    const verdict = checkPlaylistUrl(url);
+    const verdict = checkPlaylistUrl(playlistUrl);
     if (!verdict.ok) {
       setProblem(verdict.problemKey ?? "validation.completeAddress");
       return;
     }
-    onAdd(name.trim() || nameFromUrl(url), url.trim());
+    onAdd(name.trim() || nameFromUrl(playlistUrl), playlistUrl.trim());
     useSetup.getState().clear();
   };
 
@@ -108,22 +120,89 @@ export function Onboarding({
             <p className="lead">{t("onboarding.description")}</p>
 
             <div className="form">
-              <label htmlFor="ob-url">{t("onboarding.playlistAddress")}</label>
-              <input
-                id="ob-url"
-                ref={first}
-                value={url}
-                spellCheck={false}
-                dir="ltr"
-                className={problem ? "wrong" : ""}
-                aria-invalid={problem ? true : undefined}
-                aria-describedby={problem ? "ob-url-problem" : undefined}
-                placeholder={t("onboarding.urlPlaceholder")}
-                onChange={(e) => {
-                  setSetup({ name, url: e.target.value });
-                  setProblem("");
-                }}
-              />
+              <div className="playlist-source-options">
+                <button
+                  type="button"
+                  className="btn tonal"
+                  aria-pressed={source === "m3u"}
+                  onClick={() => {
+                    setSource("m3u");
+                    setProblem("");
+                  }}
+                >
+                  <span>{t("onboarding.m3uPlaylist")}</span>
+                </button>
+                <button
+                  type="button"
+                  className="btn tonal"
+                  aria-pressed={source === "xtream"}
+                  onClick={() => {
+                    setSource("xtream");
+                    setProblem("");
+                  }}
+                >
+                  <span>{t("onboarding.xtreamLogin")}</span>
+                </button>
+              </div>
+              {source === "m3u" ? (
+                <>
+                  <label htmlFor="ob-url">{t("onboarding.playlistAddress")}</label>
+                  <input
+                    id="ob-url"
+                    ref={first}
+                    value={url}
+                    spellCheck={false}
+                    dir="ltr"
+                    className={problem ? "wrong" : ""}
+                    aria-invalid={problem ? true : undefined}
+                    aria-describedby={problem ? "ob-url-problem" : undefined}
+                    placeholder={t("onboarding.urlPlaceholder")}
+                    onChange={(e) => {
+                      setSetup({ name, url: e.target.value });
+                      setProblem("");
+                    }}
+                  />
+                </>
+              ) : (
+                <div className="xtream-fields">
+                  <label htmlFor="ob-server">{t("onboarding.serverAddress")}</label>
+                  <input
+                    id="ob-server"
+                    value={server}
+                    spellCheck={false}
+                    dir="ltr"
+                    onChange={(event) => {
+                      setServer(event.target.value);
+                      setProblem("");
+                    }}
+                  />
+                  <label htmlFor="ob-username">{t("onboarding.username")}</label>
+                  <input
+                    id="ob-username"
+                    value={username}
+                    spellCheck={false}
+                    dir="ltr"
+                    onChange={(event) => setUsername(event.target.value)}
+                  />
+                  <label htmlFor="ob-password">{t("onboarding.password")}</label>
+                  <input
+                    id="ob-password"
+                    type="password"
+                    value={password}
+                    dir="ltr"
+                    onChange={(event) => setPassword(event.target.value)}
+                  />
+                  <label htmlFor="ob-output">{t("onboarding.streamFormat")}</label>
+                  <select
+                    id="ob-output"
+                    value={output}
+                    onChange={(event) => setOutput(event.target.value as XtreamOutput)}
+                  >
+                    <option value="m3u8">{t("onboarding.hls")}</option>
+                    <option value="ts">{t("onboarding.mpegTs")}</option>
+                  </select>
+                </div>
+              )}
               {problem && (
                 <p className="field-problem" id="ob-url-problem" role="alert">
                   {t(problem)}
@@ -153,7 +232,7 @@ export function Onboarding({
               type="button"
               className="btn filled wide"
               onClick={submit}
-              disabled={!url.trim()}
+              disabled={!playlistUrl.trim()}
             >
               {t("common.addPlaylist")}
             </button>

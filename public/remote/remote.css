@@ -122,8 +122,13 @@ section[data-section] .section-title-row h2 { min-width: 0; margin: 0; }
 .playlist-actions, .device-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; touch-action: pan-y; }
 .playlist-actions button, .device-actions button { min-height: 42px; touch-action: pan-y; user-select: none; -webkit-user-select: none; }
 .edit-card { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) auto auto; align-items: end; margin-top: 0; }
+.edit-card.credential-card { grid-template-columns: minmax(0, 1fr); align-items: stretch; }
 .edit-card label { min-width: 0; }
-.add-card { display: grid; grid-template-columns: 1.5fr 0.8fr auto; gap: 10px; margin: 0 0 16px; padding: 14px; border: 1px solid var(--line); border-radius: 18px; background: var(--surface-raised); }
+.add-card { display: grid; gap: 14px; margin: 0 0 16px; padding: 14px; border: 1px solid var(--line); border-radius: 18px; background: var(--surface-raised); }
+.source-options { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.source-options button { min-height: 44px; background: rgba(255, 255, 255, 0.1); color: var(--muted); }
+.source-options button[aria-pressed="true"] { background: white; color: #111114; }
+.add-source-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .setting, .select-setting { display: flex; align-items: center; justify-content: space-between; gap: 20px; min-height: 64px; border-bottom: 1px solid var(--line); color: var(--text); font-size: 16px; }
 .setting:last-child, .select-setting:last-child { border-bottom: 0; }
 .setting input[type="checkbox"] { position: relative; flex: 0 0 62px; width: 62px; height: 34px; min-height: 34px; padding: 3px; appearance: none; border: 0; border-radius: 999px; background: rgba(255, 255, 255, 0.2); transition: background 140ms ease; }
@@ -284,7 +289,7 @@ section[data-section] .section-title-row h2 { min-width: 0; margin: 0; }
   .playlist-actions button, .device-actions button { flex: 0 0 auto; min-height: 42px; padding: 8px 14px; }
   .device { grid-template-columns: minmax(0, 1fr) auto; align-items: center; }
   .device-actions { flex-wrap: nowrap; justify-content: flex-end; }
-  .add-card, .edit-card { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+  .add-card, .edit-card, .add-source-fields { grid-template-columns: minmax(0, 1fr); gap: 12px; }
   .add-card button, .edit-card button { width: 100%; }
   .setting { min-height: 68px; flex-direction: row; align-items: center; gap: 14px; padding: 10px 0; }
   .setting span { flex: 1; line-height: 1.35; }

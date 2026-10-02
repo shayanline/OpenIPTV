@@ -1,9 +1,15 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { act, cleanup, fireEvent, screen } from "@testing-library/react";
 import { KEY } from "../src/hooks/useRemote";
 import { moveWithinPlaylistRow } from "../src/components/Settings";
 import { mountApp, press, settle } from "./support/app";
-import { createPairingSession, listPairedDevices, pairDevice } from "../src/services/deviceAccess";
+import {
+  createPairingSession,
+  listPairedDevices,
+  pairDevice,
+} from "../src/services/deviceAccess";
 
 const PLAYLIST = `#EXTM3U
 #EXTINF:-1 tvg-id="a" group-title="News",Alpha
@@ -90,9 +96,7 @@ test("settings uses clear sections and concise labels", async () => {
   await act(async () => {
     fireEvent.click(screen.getByRole("button", { name: /^Secondhttp:\/\/second\.invalid/ }));
   });
-  expect(screen.getByRole("status").textContent).toBe(
-    "Could not refresh: offline. Showing the last saved copy.",
-  );
+  expect(screen.getByRole("status").textContent).toBe("Could not load the playlist: offline");
   expect(screen.getByText("Playlists are stored on this device only.")).toBeTruthy();
 
   await act(async () => {
@@ -105,6 +109,57 @@ test("settings uses clear sections and concise labels", async () => {
   expect(screen.getByRole("heading", { name: "Device and application" })).toBeTruthy();
   expect(screen.getByRole("heading", { name: "Compatibility" })).toBeTruthy();
   expect(screen.getByRole("button", { name: "Remote keys" })).toBeTruthy();
+});
+
+test("form selects use the same inset chevron spacing as other controls", () => {
+  const css = readFileSync(join(process.cwd(), "src/styles/app.css"), "utf8");
+  const rule = css.match(/\.form select \{([^}]*)\}/)?.[1] ?? "";
+
+  expect(rule).toContain("appearance: none");
+  expect(rule).toContain("background-position: right var(--s3) center");
+  expect(rule).toContain("padding-right: var(--s6)");
+});
+
+test("playlist settings add Xtream credentials while keeping M3U as the default", async () => {
+  await mountApp(PLAYLIST);
+  press(KEY.YELLOW);
+  fireEvent.click(screen.getByRole("button", { name: "Playlists" }));
+  fireEvent.click(screen.getByRole("button", { name: "Add a playlist" }));
+
+  expect(
+    screen.getByRole("button", { name: "M3U playlist" }).getAttribute("aria-pressed"),
+  ).toBe("true");
+  fireEvent.click(screen.getByRole("button", { name: "Xtream login" }));
+  fireEvent.change(screen.getByLabelText("Server address"), {
+    target: { value: "http://provider.example:8080" },
+  });
+  fireEvent.change(screen.getByLabelText("Username"), { target: { value: "viewer" } });
+  fireEvent.change(screen.getByLabelText("Password"), { target: { value: "secret" } });
+  fireEvent.change(screen.getByLabelText("Stream format"), { target: { value: "ts" } });
+  fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+  const { useSettings } = await import("../src/stores/settings");
+  expect(useSettings.getState().playlists[1]).toMatchObject({
+    name: "provider.example",
+    url: "http://provider.example:8080/get.php?username=viewer&password=secret&type=m3u_plus&output=ts",
+  });
+  expect(document.querySelector(".settings-list-body")?.textContent).toContain(
+    "password=••••••••",
+  );
+  expect(document.querySelector(".settings-list-body")?.textContent).not.toContain(
+    "password=secret",
+  );
+
+  fireEvent.click(screen.getByRole("button", { name: "Edit provider.example" }));
+  expect(
+    screen.getByRole("button", { name: "Xtream login" }).getAttribute("aria-pressed"),
+  ).toBe("true");
+  expect((screen.getByLabelText("Server address") as HTMLInputElement).value).toBe(
+    "http://provider.example:8080",
+  );
+  expect((screen.getByLabelText("Username") as HTMLInputElement).value).toBe("viewer");
+  expect((screen.getByLabelText("Password") as HTMLInputElement).value).toBe("secret");
+  expect((screen.getByLabelText("Stream format") as HTMLSelectElement).value).toBe("ts");
 });
 
 test("About groups support and application data beneath concise app information", async () => {

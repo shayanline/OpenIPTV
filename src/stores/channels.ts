@@ -122,6 +122,7 @@ interface State {
  * store because it is machinery rather than state: nothing renders from it.
  */
 let inFlight: AbortController | null = null;
+let channelPlaylistUrl = "";
 
 /**
  * The background refresh that has been scheduled but not started.
@@ -239,6 +240,7 @@ export const useChannels = create<State>((set, get) => {
       const playlist = useSettings.getState().activePlaylist();
       // Nothing configured yet, which is the first run. The onboarding screen is showing.
       if (!playlist) {
+        channelPlaylistUrl = "";
         set({
           channels: [],
           categories: [],
@@ -278,7 +280,15 @@ export const useChannels = create<State>((set, get) => {
        * spinner, it is a false statement, and on a set with a slow main thread and slower
        * flash the window is not a few milliseconds.
        */
-      set({ loading: true, error: "", errorKey: "", errorDetail: "" });
+      const switchingPlaylist = channelPlaylistUrl !== playlist.url;
+      channelPlaylistUrl = playlist.url;
+      set({
+        ...(switchingPlaylist ? { channels: [], categories: [] } : {}),
+        loading: true,
+        error: "",
+        errorKey: "",
+        errorDetail: "",
+      });
 
       /*
        * A read from disk rather than from localStorage, so this is now awaited. The wait is

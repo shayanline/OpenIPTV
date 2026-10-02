@@ -17,6 +17,14 @@ const labels = {
   setupTitle: "Add your first playlist",
   playlistName: "Playlist name",
   playlistAddress: "Playlist address",
+  m3uPlaylist: "M3U playlist",
+  xtreamLogin: "Xtream login",
+  serverAddress: "Server address",
+  username: "Username",
+  password: "Password",
+  streamFormat: "Stream format",
+  hls: "HLS, recommended",
+  mpegTs: "MPEG TS",
   language: "Language",
   finish: "Finish setup",
   setupCompleteTitle: "Your playlist is ready",
@@ -117,7 +125,11 @@ function reply(status: number, body: unknown) {
 }
 
 function choosePlaylistAction(action: string) {
-  (document.querySelector('[data-action="open-item-menu"][data-kind="playlist"]') as HTMLButtonElement).click();
+  (
+    document.querySelector(
+      '[data-action="open-item-menu"][data-kind="playlist"]',
+    ) as HTMLButtonElement
+  ).click();
   (document.querySelector(`[data-menu-action="${action}"]`) as HTMLButtonElement).click();
 }
 
@@ -204,23 +216,31 @@ test("shows progress while pairing", async () => {
 
   (document.querySelector('[name="deviceName"]') as HTMLInputElement).value = "Kitchen device";
   (document.querySelector('[name="code"]') as HTMLInputElement).value = "123456";
-  document.querySelector("form")?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+  document
+    .querySelector("form")
+    ?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
 
   expect(document.querySelector("[role=status]")?.textContent).toBe(labels.connecting);
-  expect((document.querySelector('button[type="submit"]') as HTMLButtonElement).disabled).toBe(true);
+  expect((document.querySelector('button[type="submit"]') as HTMLButtonElement).disabled).toBe(
+    true,
+  );
   finish({
     status: 200,
     ok: true,
     json: async () => ({ ok: true, deviceId: "device-1", credential: "key-1" }),
   });
-  await vi.waitFor(() => expect(document.querySelector("[data-section=playlists]")).toBeTruthy());
+  await vi.waitFor(() =>
+    expect(document.querySelector("[data-section=playlists]")).toBeTruthy(),
+  );
 });
 
 test("pairs with a manual code and remembers the credential", async () => {
   const fetchMock = vi
     .fn()
     .mockImplementationOnce(() => reply(200, publicState))
-    .mockImplementationOnce(() => reply(200, { ok: true, deviceId: "device-1", credential: "key-1" }))
+    .mockImplementationOnce(() =>
+      reply(200, { ok: true, deviceId: "device-1", credential: "key-1" }),
+    )
     .mockImplementationOnce(() => reply(200, snapshot()));
   vi.stubGlobal("fetch", fetchMock);
   const app = loadApp();
@@ -228,8 +248,12 @@ test("pairs with a manual code and remembers the credential", async () => {
 
   (document.querySelector('[name="deviceName"]') as HTMLInputElement).value = "Kitchen device";
   (document.querySelector('[name="code"]') as HTMLInputElement).value = "123456";
-  document.querySelector("form")?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
-  await vi.waitFor(() => expect(document.querySelector("[data-section=playlists]")).toBeTruthy());
+  document
+    .querySelector("form")
+    ?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+  await vi.waitFor(() =>
+    expect(document.querySelector("[data-section=playlists]")).toBeTruthy(),
+  );
 
   expect(JSON.parse(localStorage.getItem("openiptv.remote") ?? "{}")).toEqual({
     deviceId: "device-1",
@@ -243,7 +267,10 @@ test("pairs with a manual code and remembers the credential", async () => {
 
 test("matches the player settings menu order", async () => {
   localStorage.setItem("openiptv.remote", JSON.stringify({ deviceId: "p", credential: "c" }));
-  vi.stubGlobal("fetch", vi.fn(() => reply(200, snapshot())));
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(() => reply(200, snapshot())),
+  );
 
   await loadApp().start();
 
@@ -260,7 +287,9 @@ test("matches the player settings menu order", async () => {
   tabs[3].click();
   expect(tabs[0].hasAttribute("aria-current")).toBe(false);
   expect(tabs[3].getAttribute("aria-current")).toBe("page");
-  expect([...document.querySelectorAll("[data-section] h2")].map((heading) => heading.textContent)).toEqual(order);
+  expect(
+    [...document.querySelectorAll("[data-section] h2")].map((heading) => heading.textContent),
+  ).toEqual(order);
 });
 
 test("labels playlist fields and actions with their context", async () => {
@@ -272,7 +301,12 @@ test("labels playlist fields and actions with their context", async () => {
         200,
         snapshot({
           playlists: [
-            { id: "one", name: "One", url: "http://example.com/one.m3u", active: true },
+            {
+              id: "one",
+              name: "One",
+              url: "http://example.com/get.php?username=one&password=secret&type=m3u_plus",
+              active: true,
+            },
             { id: "two", name: "Two", url: "http://example.com/two.m3u", active: false },
           ],
         }),
@@ -283,14 +317,24 @@ test("labels playlist fields and actions with their context", async () => {
   await loadApp().start();
 
   (document.querySelector('[data-action="open-add-playlist"]') as HTMLButtonElement).click();
-  expect(document.querySelector('[name="newName"]')?.getAttribute("aria-label")).toBe(labels.playlistName);
-  expect(document.querySelector('[name="newUrl"]')?.getAttribute("aria-label")).toBe(labels.playlistAddress);
+  expect(document.querySelector('[name="newName"]')?.getAttribute("aria-label")).toBe(
+    labels.playlistName,
+  );
+  expect(document.querySelector('[name="newUrl"]')?.getAttribute("aria-label")).toBe(
+    labels.playlistAddress,
+  );
   expect(document.querySelector('[name="newUrl"]')?.getAttribute("dir")).toBe("ltr");
-  const menus = [...document.querySelectorAll<HTMLButtonElement>('[data-action="open-item-menu"]')];
+  expect(document.querySelector("#playlists")?.textContent).toContain("password=••••••••");
+  expect(document.querySelector("#playlists")?.textContent).not.toContain("password=secret");
+  const menus = [
+    ...document.querySelectorAll<HTMLButtonElement>('[data-action="open-item-menu"]'),
+  ];
   expect(menus[0].getAttribute("aria-label")).toContain("One");
   menus[1].click();
   expect(document.querySelector("[data-item-menu]")?.parentElement).toBe(document.body);
-  expect(document.querySelector('[data-menu-action="activate"]')?.textContent).toBe(labels.activate);
+  expect(document.querySelector('[data-menu-action="activate"]')?.textContent).toBe(
+    labels.activate,
+  );
 });
 
 test("uses remembered authentication and applies the TV language direction", async () => {
@@ -320,6 +364,38 @@ test("matches the player welcome field order", async () => {
   expect(labelsInOrder[0]).toContain(labels.playlistAddress);
   expect(labelsInOrder[1]).toContain(labels.playlistName);
   expect(labelsInOrder[2]).toContain(labels.language);
+});
+
+test("remote first setup keeps M3U default and submits Xtream credentials as M3U Plus", async () => {
+  localStorage.setItem("openiptv.remote", JSON.stringify({ deviceId: "p", credential: "c" }));
+  const empty = snapshot({ playlists: [], activePlaylistId: "" });
+  const fetchMock = vi.fn(() => reply(200, { ok: true, snapshot: empty }));
+  fetchMock.mockImplementationOnce(() => reply(200, empty));
+  vi.stubGlobal("fetch", fetchMock);
+  await loadApp().start();
+
+  expect(document.querySelector('[data-source="m3u"]')?.getAttribute("aria-pressed")).toBe(
+    "true",
+  );
+  expect(document.querySelector('[name="playlistUrl"]')).toBeTruthy();
+  (document.querySelector('[data-source="xtream"]') as HTMLButtonElement).click();
+  (document.querySelector('[name="xtreamServer"]') as HTMLInputElement).value =
+    "https://provider.example:8443";
+  (document.querySelector('[name="xtreamUsername"]') as HTMLInputElement).value = "viewer";
+  (document.querySelector('[name="xtreamPassword"]') as HTMLInputElement).value = "secret";
+  document
+    .querySelector("form")
+    ?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+
+  await vi.waitFor(() => {
+    const commands = fetchMock.mock.calls
+      .slice(1)
+      .map((call) => JSON.parse(call[1].body).command)
+      .filter((command) => command.type === "setup");
+    expect(commands[0].url).toBe(
+      "https://provider.example:8443/get.php?username=viewer&password=secret&type=m3u_plus&output=m3u8",
+    );
+  });
 });
 
 test("mirrors setup typing and language through a quiet preview command", async () => {
@@ -386,11 +462,16 @@ test("submitting setup does not send a queued language command twice", async () 
   const locale = document.querySelector('[name="locale"]') as HTMLSelectElement;
   locale.value = "fa";
   locale.dispatchEvent(new Event("change", { bubbles: true }));
-  (document.querySelector('[name="playlistUrl"]') as HTMLInputElement).value = "http://example.com/list.m3u";
-  document.querySelector("form")?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+  (document.querySelector('[name="playlistUrl"]') as HTMLInputElement).value =
+    "http://example.com/list.m3u";
+  document
+    .querySelector("form")
+    ?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
   await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
 
-  const commands = fetchMock.mock.calls.slice(1).map((call) => JSON.parse(call[1].body).command.type);
+  const commands = fetchMock.mock.calls
+    .slice(1)
+    .map((call) => JSON.parse(call[1].body).command.type);
   expect(commands).toEqual(["setup.preview", "setup"]);
 });
 
@@ -399,7 +480,9 @@ test("keeps first playlist values when TV validation fails", async () => {
   const fetchMock = vi
     .fn()
     .mockImplementationOnce(() => reply(200, snapshot({ playlists: [], activePlaylistId: "" })))
-    .mockImplementationOnce(() => reply(400, { ok: false, reason: "invalid", snapshot: snapshot({ playlists: [] }) }));
+    .mockImplementationOnce(() =>
+      reply(400, { ok: false, reason: "invalid", snapshot: snapshot({ playlists: [] }) }),
+    );
   vi.stubGlobal("fetch", fetchMock);
   await loadApp().start();
 
@@ -407,11 +490,17 @@ test("keeps first playlist values when TV validation fails", async () => {
   const url = document.querySelector('[name="playlistUrl"]') as HTMLInputElement;
   name.value = "My list";
   url.value = "http://example.com/list.m3u";
-  document.querySelector("form")?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+  document
+    .querySelector("form")
+    ?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
   await vi.waitFor(() =>
-    expect(document.querySelector('[data-setup-result="error"] h1')?.textContent).toBe(labels.setupFailedTitle),
+    expect(document.querySelector('[data-setup-result="error"] h1')?.textContent).toBe(
+      labels.setupFailedTitle,
+    ),
   );
-  expect(document.querySelector(".setup-result-description")?.textContent).toBe(labels.invalidUrl);
+  expect(document.querySelector(".setup-result-description")?.textContent).toBe(
+    labels.invalidUrl,
+  );
   expect(document.querySelector('[data-setup-result="error"]')).toBeTruthy();
   expect(document.querySelector('[name="playlistUrl"]')).toBeNull();
 
@@ -429,16 +518,25 @@ test("shows a dedicated error page after a setup conflict", async () => {
   const fetchMock = vi
     .fn()
     .mockImplementationOnce(() => reply(200, empty))
-    .mockImplementationOnce(() => reply(409, { ok: false, reason: "conflict", snapshot: empty }));
+    .mockImplementationOnce(() =>
+      reply(409, { ok: false, reason: "conflict", snapshot: empty }),
+    );
   vi.stubGlobal("fetch", fetchMock);
   await loadApp().start();
 
-  (document.querySelector('[name="playlistUrl"]') as HTMLInputElement).value = "http://example.com/list.m3u";
-  document.querySelector("form")?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+  (document.querySelector('[name="playlistUrl"]') as HTMLInputElement).value =
+    "http://example.com/list.m3u";
+  document
+    .querySelector("form")
+    ?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
   await vi.waitFor(() =>
-    expect(document.querySelector('[data-setup-result="error"] h1')?.textContent).toBe(labels.setupFailedTitle),
+    expect(document.querySelector('[data-setup-result="error"] h1')?.textContent).toBe(
+      labels.setupFailedTitle,
+    ),
   );
-  expect(document.querySelector(".setup-result-description")?.textContent).toBe(labels.conflict);
+  expect(document.querySelector(".setup-result-description")?.textContent).toBe(
+    labels.conflict,
+  );
 
   expect(document.querySelector('[data-setup-result="error"]')).toBeTruthy();
   expect(document.querySelector('[name="playlistUrl"]')).toBeNull();
@@ -463,26 +561,104 @@ test("shows progress and confirms successful first playlist setup", async () => 
   (document.querySelector('[name="playlistName"]') as HTMLInputElement).value = "NASA demo";
   (document.querySelector('[name="playlistUrl"]') as HTMLInputElement).value =
     "https://example.com/demo.m3u";
-  document.querySelector("form")?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+  document
+    .querySelector("form")
+    ?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
 
   expect(document.querySelector("main")?.getAttribute("aria-busy")).toBe("true");
   expect(document.querySelector("[role=status]")?.textContent).toBe(labels.checkingPlaylist);
-  expect((document.querySelector('button[type="submit"]') as HTMLButtonElement).disabled).toBe(true);
+  expect((document.querySelector('button[type="submit"]') as HTMLButtonElement).disabled).toBe(
+    true,
+  );
   finish({
     status: 200,
     ok: true,
     json: async () => ({ ok: true, snapshot: snapshot({ revision: 1 }) }),
   });
   await vi.waitFor(() =>
-    expect(document.querySelector('[data-setup-result="success"] h1')?.textContent).toBe(labels.setupCompleteTitle),
+    expect(document.querySelector('[data-setup-result="success"] h1')?.textContent).toBe(
+      labels.setupCompleteTitle,
+    ),
   );
   expect(document.querySelector('[data-setup-result="success"]')).toBeTruthy();
-  expect(document.querySelector(".setup-result-description")?.textContent).toBe(labels.setupCompleteBody);
+  expect(document.querySelector(".setup-result-description")?.textContent).toBe(
+    labels.setupCompleteBody,
+  );
   expect(document.querySelector(".tabs")).toBeNull();
   expect(document.querySelector("main")?.hasAttribute("aria-busy")).toBe(false);
 
   (document.querySelector("[data-action=open-settings]") as HTMLButtonElement).click();
   expect(document.querySelector(".tabs")).toBeTruthy();
+});
+
+test("remote settings add an Xtream login through the playlist command", async () => {
+  localStorage.setItem("openiptv.remote", JSON.stringify({ deviceId: "p", credential: "c" }));
+  const fetchMock = vi
+    .fn()
+    .mockImplementationOnce(() => reply(200, snapshot()))
+    .mockImplementationOnce(() =>
+      reply(200, { ok: true, snapshot: snapshot({ revision: 1 }) }),
+    );
+  vi.stubGlobal("fetch", fetchMock);
+  await loadApp().start();
+
+  (document.querySelector('[data-action="open-add-playlist"]') as HTMLButtonElement).click();
+  expect(document.querySelector('[data-source="m3u"]')?.getAttribute("aria-pressed")).toBe(
+    "true",
+  );
+  (document.querySelector('[data-source="xtream"]') as HTMLButtonElement).click();
+  (document.querySelector('[name="newServer"]') as HTMLInputElement).value =
+    "http://provider.example:8080";
+  (document.querySelector('[name="newUsername"]') as HTMLInputElement).value = "viewer";
+  (document.querySelector('[name="newPassword"]') as HTMLInputElement).value = "secret";
+  (document.querySelector('[name="newOutput"]') as HTMLSelectElement).value = "ts";
+  (document.querySelector("[data-action=add-playlist]") as HTMLButtonElement).click();
+
+  await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+  expect(JSON.parse(fetchMock.mock.calls[1][1].body).command).toEqual({
+    type: "playlist.add",
+    name: "",
+    url: "http://provider.example:8080/get.php?username=viewer&password=secret&type=m3u_plus&output=ts",
+  });
+});
+
+test("remote editing restores the Xtream credential form", async () => {
+  localStorage.setItem("openiptv.remote", JSON.stringify({ deviceId: "p", credential: "c" }));
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(() =>
+      reply(
+        200,
+        snapshot({
+          playlists: [
+            {
+              id: "pl-1",
+              name: "Provider",
+              url: "https://provider.example:8443/portal/get.php?username=viewer&password=secret&type=m3u_plus&output=ts",
+            },
+          ],
+        }),
+      ),
+    ),
+  );
+  await loadApp().start();
+
+  choosePlaylistAction("edit");
+
+  expect(document.querySelector('[data-source="xtream"]')?.getAttribute("aria-pressed")).toBe(
+    "true",
+  );
+  expect((document.querySelector('[name="editServer"]') as HTMLInputElement).value).toBe(
+    "https://provider.example:8443/portal",
+  );
+  expect((document.querySelector('[name="editUsername"]') as HTMLInputElement).value).toBe(
+    "viewer",
+  );
+  expect((document.querySelector('[name="editPassword"]') as HTMLInputElement).value).toBe(
+    "secret",
+  );
+  expect((document.querySelector('[name="editOutput"]') as HTMLSelectElement).value).toBe("ts");
+  expect(document.querySelector('[name="editUrl"]')).toBeNull();
 });
 
 test("adds playlists and confirms removal before sending commands", async () => {
@@ -496,7 +672,8 @@ test("adds playlists and confirms removal before sending commands", async () => 
 
   (document.querySelector('[data-action="open-add-playlist"]') as HTMLButtonElement).click();
   (document.querySelector('[name="newName"]') as HTMLInputElement).value = "Sport";
-  (document.querySelector('[name="newUrl"]') as HTMLInputElement).value = "http://example.com/sport.m3u";
+  (document.querySelector('[name="newUrl"]') as HTMLInputElement).value =
+    "http://example.com/sport.m3u";
   (document.querySelector("[data-action=add-playlist]") as HTMLButtonElement).click();
   await vi.waitFor(() =>
     expect(document.querySelector("[role=status]")?.textContent).toBe(labels.saved),
@@ -531,7 +708,9 @@ test("edits and refreshes an existing playlist", async () => {
     .fn()
     .mockImplementationOnce(() => reply(200, snapshot()))
     .mockImplementationOnce(() => reply(200, { ok: true, snapshot: snapshot({ revision: 1 }) }))
-    .mockImplementationOnce(() => reply(200, { ok: true, snapshot: snapshot({ revision: 2 }) }));
+    .mockImplementationOnce(() =>
+      reply(200, { ok: true, snapshot: snapshot({ revision: 2 }) }),
+    );
   vi.stubGlobal("fetch", fetchMock);
   await loadApp().start();
 
@@ -543,9 +722,9 @@ test("edits and refreshes an existing playlist", async () => {
   name.dispatchEvent(new Event("input", { bubbles: true }));
   url.value = "http://example.com/renamed.m3u";
   url.dispatchEvent(new Event("input", { bubbles: true }));
-  document.querySelector("[data-edit-playlist]")?.dispatchEvent(
-    new Event("submit", { bubbles: true, cancelable: true }),
-  );
+  document
+    .querySelector("[data-edit-playlist]")
+    ?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
   await vi.waitFor(() =>
     expect(document.querySelector("[role=status]")?.textContent).toBe(labels.saved),
   );
@@ -582,7 +761,9 @@ test("shows the TV playlist error instead of a saved message", async () => {
 
   choosePlaylistAction("refresh");
   await vi.waitFor(() =>
-    expect(document.querySelector("[role=alert]")?.textContent).toBe("The playlist could not be loaded."),
+    expect(document.querySelector("[role=alert]")?.textContent).toBe(
+      "The playlist could not be loaded.",
+    ),
   );
 });
 
@@ -591,7 +772,9 @@ test("restores focus after a setting is saved", async () => {
   const fetchMock = vi
     .fn()
     .mockImplementationOnce(() => reply(200, snapshot()))
-    .mockImplementationOnce(() => reply(200, { ok: true, snapshot: snapshot({ revision: 1 }) }));
+    .mockImplementationOnce(() =>
+      reply(200, { ok: true, snapshot: snapshot({ revision: 1 }) }),
+    );
   vi.stubGlobal("fetch", fetchMock);
   await loadApp().start();
 
@@ -609,17 +792,24 @@ test("refreshes state after a revision conflict", async () => {
   const fetchMock = vi
     .fn()
     .mockImplementationOnce(() => reply(200, snapshot()))
-    .mockImplementationOnce(() => reply(409, { ok: false, reason: "conflict", snapshot: snapshot({ revision: 4 }) }));
+    .mockImplementationOnce(() =>
+      reply(409, { ok: false, reason: "conflict", snapshot: snapshot({ revision: 4 }) }),
+    );
   vi.stubGlobal("fetch", fetchMock);
   await loadApp().start();
 
   (document.querySelector('[data-setting="showClock"]') as HTMLInputElement).click();
-  await vi.waitFor(() => expect(document.querySelector("[role=alert]")?.textContent).toBe(labels.conflict));
+  await vi.waitFor(() =>
+    expect(document.querySelector("[role=alert]")?.textContent).toBe(labels.conflict),
+  );
 });
 
 test("clears revoked credentials and reports an unavailable TV", async () => {
   localStorage.setItem("openiptv.remote", JSON.stringify({ deviceId: "p", credential: "c" }));
-  vi.stubGlobal("fetch", vi.fn(() => reply(401, { error: "unauthorised" })));
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(() => reply(401, { error: "unauthorised" })),
+  );
   await loadApp().start();
   expect(localStorage.getItem("openiptv.remote")).toBeNull();
   expect(document.body.textContent).toContain(labels.revoked);
@@ -635,7 +825,9 @@ test("confirms cache clearing before sending it", async () => {
   const fetchMock = vi
     .fn()
     .mockImplementationOnce(() => reply(200, snapshot()))
-    .mockImplementationOnce(() => reply(200, { ok: true, snapshot: snapshot({ revision: 1 }) }));
+    .mockImplementationOnce(() =>
+      reply(200, { ok: true, snapshot: snapshot({ revision: 1 }) }),
+    );
   vi.stubGlobal("fetch", fetchMock);
   await loadApp().start();
 

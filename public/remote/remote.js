@@ -6,8 +6,35 @@
   var previewTimer = null;
   var toastTimer = null;
   var previewQueue = Promise.resolve();
-  var setupDraft = { locale: "system", name: "", url: "" };
+  var setupDraft = {
+    locale: "system",
+    name: "",
+    url: "",
+    server: "",
+    username: "",
+    password: "",
+    output: "m3u8",
+  };
+  var setupSource = "m3u";
+  var addPlaylistSource = "m3u";
+  var addPlaylistDraft = {
+    name: "",
+    url: "",
+    server: "",
+    username: "",
+    password: "",
+    output: "m3u8",
+  };
   var editingPlaylist = "";
+  var editingPlaylistSource = "m3u";
+  var editingPlaylistDraft = {
+    name: "",
+    url: "",
+    server: "",
+    username: "",
+    password: "",
+    output: "m3u8",
+  };
   var editingDevice = "";
   var expandedPlaylists = false;
   var expandedDevices = false;
@@ -22,6 +49,14 @@
     setupTitle: "Add your first playlist",
     playlistName: "Playlist name",
     playlistAddress: "Playlist address",
+    m3uPlaylist: "M3U playlist",
+    xtreamLogin: "Xtream login",
+    serverAddress: "Server address",
+    username: "Username",
+    password: "Password",
+    streamFormat: "Stream format",
+    hls: "HLS, recommended",
+    mpegTs: "MPEG TS",
     language: "Language",
     finish: "Finish setup",
     setupCompleteTitle: "Your playlist is ready",
@@ -158,6 +193,130 @@
       .replace(/>/g, "&gt;")
       .replace(/"/g, "&quot;")
       .replace(/'/g, "&#39;");
+  }
+
+  function xtreamPlaylistUrl(server, username, password, output) {
+    if (!server.trim() || !username.trim() || !password) return "";
+    try {
+      var url = new URL(server.trim());
+      if ((url.protocol !== "http:" && url.protocol !== "https:") || !url.hostname.includes(".")) {
+        return "";
+      }
+      if (!/\/get\.php$/i.test(url.pathname)) {
+        url.pathname = url.pathname.replace(/\/+$/, "") + "/get.php";
+      }
+      url.search = "";
+      url.hash = "";
+      url.searchParams.set("username", username.trim());
+      url.searchParams.set("password", password);
+      url.searchParams.set("type", "m3u_plus");
+      url.searchParams.set("output", output);
+      return url.toString();
+    } catch (_error) {
+      return "";
+    }
+  }
+
+  function parseXtreamPlaylistUrl(value) {
+    try {
+      var url = new URL(value);
+      var username = url.searchParams.get("username") || "";
+      var password = url.searchParams.get("password") || "";
+      var output = url.searchParams.get("output");
+      if (
+        !/\/get\.php$/i.test(url.pathname) ||
+        !username ||
+        !password ||
+        url.searchParams.get("type") !== "m3u_plus" ||
+        (output !== "m3u8" && output !== "ts")
+      ) {
+        return null;
+      }
+      var path = url.pathname.replace(/\/get\.php$/i, "");
+      return {
+        server: path ? url.origin + path : url.origin,
+        username: username,
+        password: password,
+        output: output,
+      };
+    } catch (_error) {
+      return null;
+    }
+  }
+
+  function redactPlaylistUrl(value) {
+    try {
+      var url = new URL(value);
+      if (!url.searchParams.has("password")) return value;
+      url.searchParams.set("password", "••••••••");
+      return url.toString().replace(encodeURIComponent("••••••••"), "••••••••");
+    } catch (_error) {
+      return value;
+    }
+  }
+
+  function sourceOptions(source, l) {
+    return (
+      '<div class="source-options"><button type="button" data-source="m3u" aria-pressed="' +
+      (source === "m3u") + '">' + escape(l.m3uPlaylist) +
+      '</button><button type="button" data-source="xtream" aria-pressed="' +
+      (source === "xtream") + '">' + escape(l.xtreamLogin) + "</button></div>"
+    );
+  }
+
+  function xtreamFields(prefix, draft, l) {
+    return (
+      '<label>' + escape(l.serverAddress) + '<input name="' + prefix + 'Server" type="url" inputmode="url" dir="ltr" value="' + escape(draft.server) + '" required></label>' +
+      '<label>' + escape(l.username) + '<input name="' + prefix + 'Username" dir="ltr" value="' + escape(draft.username) + '" required></label>' +
+      '<label>' + escape(l.password) + '<input name="' + prefix + 'Password" type="password" dir="ltr" value="' + escape(draft.password) + '" required></label>' +
+      '<label>' + escape(l.streamFormat) + '<select name="' + prefix + 'Output"><option value="m3u8"' +
+      (draft.output === "m3u8" ? " selected" : "") + '>' + escape(l.hls) + '</option><option value="ts"' +
+      (draft.output === "ts" ? " selected" : "") + '>' + escape(l.mpegTs) + "</option></select></label>"
+    );
+  }
+
+  function readAddPlaylistDraft() {
+    var draft = Object.assign({}, addPlaylistDraft);
+    var name = root.querySelector('[name="newName"]');
+    if (name) draft.name = name.value;
+    if (addPlaylistSource === "m3u") {
+      var url = root.querySelector('[name="newUrl"]');
+      if (url) draft.url = url.value;
+    } else {
+      draft.server = root.querySelector('[name="newServer"]').value;
+      draft.username = root.querySelector('[name="newUsername"]').value;
+      draft.password = root.querySelector('[name="newPassword"]').value;
+      draft.output = root.querySelector('[name="newOutput"]').value;
+    }
+    return draft;
+  }
+
+  function beginPlaylistEdit(playlist) {
+    var xtream = parseXtreamPlaylistUrl(playlist.url);
+    editingPlaylist = playlist.id;
+    editingPlaylistSource = xtream ? "xtream" : "m3u";
+    editingPlaylistDraft = {
+      name: playlist.name,
+      url: playlist.url,
+      server: xtream ? xtream.server : "",
+      username: xtream ? xtream.username : "",
+      password: xtream ? xtream.password : "",
+      output: xtream ? xtream.output : "m3u8",
+    };
+  }
+
+  function readEditPlaylistDraft() {
+    var draft = Object.assign({}, editingPlaylistDraft);
+    draft.name = root.querySelector('[name="editName"]').value;
+    if (editingPlaylistSource === "m3u") {
+      draft.url = root.querySelector('[name="editUrl"]').value;
+    } else {
+      draft.server = root.querySelector('[name="editServer"]').value;
+      draft.username = root.querySelector('[name="editUsername"]').value;
+      draft.password = root.querySelector('[name="editPassword"]').value;
+      draft.output = root.querySelector('[name="editOutput"]').value;
+    }
+    return draft;
   }
 
   function readAuth() {
@@ -353,10 +512,21 @@
   }
 
   function setupValues(form) {
+    var xtream = setupSource === "xtream";
+    var server = xtream ? form.elements.xtreamServer.value : setupDraft.server;
+    var username = xtream ? form.elements.xtreamUsername.value : setupDraft.username;
+    var password = xtream ? form.elements.xtreamPassword.value : setupDraft.password;
+    var output = xtream ? form.elements.xtreamOutput.value : setupDraft.output;
     return {
       locale: form.elements.locale.value,
       name: form.elements.playlistName.value,
-      url: form.elements.playlistUrl.value,
+      url: xtream
+        ? xtreamPlaylistUrl(server, username, password, output)
+        : form.elements.playlistUrl.value,
+      server: server,
+      username: username,
+      password: password,
+      output: output,
     };
   }
 
@@ -408,14 +578,13 @@
 
   function renderSetup(error, success) {
     var l = labels();
+    var sourceFields = setupSource === "m3u"
+      ? '<label>' + escape(l.playlistAddress) + '<input name="playlistUrl" type="url" inputmode="url" dir="ltr" value="' + escape(setupDraft.url) + '" required></label>'
+      : xtreamFields("xtream", setupDraft, l);
     shell(
       '<section class="setup"><h1>' +
         escape(l.setupTitle) +
-        '</h1><form><label>' +
-        escape(l.playlistAddress) +
-        '<input name="playlistUrl" type="url" inputmode="url" dir="ltr" value="' +
-        escape(setupDraft.url) +
-        '" required></label><label>' +
+        '</h1><form>' + sourceOptions(setupSource, l) + sourceFields + '<label>' +
         escape(l.playlistName) +
         '<input name="playlistName" value="' +
         escape(setupDraft.name) +
@@ -430,11 +599,19 @@
       !!error && !success,
     );
     var form = root.querySelector("form");
-    form.elements.playlistName.addEventListener("input", function () {
-      queueSetupPreview(form, false);
+    root.querySelectorAll("[data-source]").forEach(function (button) {
+      button.addEventListener("click", function () {
+        setupDraft = setupValues(form);
+        setupSource = button.dataset.source;
+        renderSetup();
+        root.querySelector(setupSource === "m3u" ? '[name="playlistUrl"]' : '[name="xtreamServer"]')?.focus();
+      });
     });
-    form.elements.playlistUrl.addEventListener("input", function () {
-      queueSetupPreview(form, false);
+    form.querySelectorAll('[name="playlistName"], [name="playlistUrl"], [name^="xtream"]').forEach(function (control) {
+      control.addEventListener("input", function () { queueSetupPreview(form, false); });
+      if (control.tagName === "SELECT") {
+        control.addEventListener("change", function () { queueSetupPreview(form, false); });
+      }
     });
     form.elements.locale.addEventListener("change", function () {
       queueSetupPreview(form, true);
@@ -541,29 +718,24 @@
     var playlists = visiblePlaylists
       .map(function (playlist) {
         if (editingPlaylist === playlist.id) {
+          var editSourceFields = editingPlaylistSource === "m3u"
+            ? '<label>' + escape(l.playlistAddress) + '<input name="editUrl" type="url" inputmode="url" dir="ltr" value="' + escape(editingPlaylistDraft.url) + '" required></label>'
+            : xtreamFields("edit", editingPlaylistDraft, l);
           return (
-            '<form class="playlist edit-card" data-edit-playlist data-return-action="edit-playlist" data-id="' +
-            escape(playlist.id) +
-            '"><label>' +
-            escape(l.playlistAddress) +
-            '<input name="editUrl" type="url" inputmode="url" dir="ltr" value="' +
-            escape(playlist.url) +
-            '" required></label><label>' +
-            escape(l.playlistName) +
-            '<input name="editName" value="' +
-            escape(playlist.name) +
-            '"></label><button type="submit">' +
-            escape(l.save) +
+            '<form class="playlist edit-card credential-card" data-edit-playlist data-return-action="edit-playlist" data-id="' +
+            escape(playlist.id) + '">' + sourceOptions(editingPlaylistSource, l) +
+            '<div class="add-source-fields">' + editSourceFields + '<label>' + escape(l.playlistName) +
+            '<input name="editName" value="' + escape(editingPlaylistDraft.name) + '"></label></div>' +
+            '<div class="add-actions"><button type="submit">' + escape(l.save) +
             '</button><button class="quiet" type="button" data-action="cancel-edit-playlist">' +
-            escape(l.cancel) +
-            "</button></form>"
+            escape(l.cancel) + "</button></div></form>"
           );
         }
         return (
           '<article class="playlist compact-row"><div><strong>' +
           escape(playlist.name) +
           '</strong><span dir="ltr">' +
-          escape(playlist.url) +
+          escape(redactPlaylistUrl(playlist.url)) +
           "</span></div>" +
           (playlist.id === current.activePlaylistId
             ? '<em>' + escape(l.active) + "</em>"
@@ -621,11 +793,13 @@
         escape(expandedDevices ? l.close : l.open + " " + l.devices + " (" + current.devices.length + ")") +
         '<i class="' + (expandedDevices ? "up" : "") + '"></i></button>'
       : "";
+    var addSourceFields = addPlaylistSource === "m3u"
+      ? '<label>' + escape(l.playlistAddress) + '<input name="newUrl" type="url" inputmode="url" dir="ltr" aria-label="' + escape(l.playlistAddress) + '" value="' + escape(addPlaylistDraft.url) + '"></label>'
+      : xtreamFields("new", addPlaylistDraft, l);
     var addPlaylist = addPlaylistOpen
-      ? '<div class="add-card"><input name="newUrl" type="url" inputmode="url" dir="ltr" aria-label="' +
-        escape(l.playlistAddress) + '" placeholder="' + escape(l.playlistAddress) +
-        '"><input name="newName" aria-label="' + escape(l.playlistName) + '" placeholder="' + escape(l.playlistName) +
-        '"><div class="add-actions"><button type="button" data-action="add-playlist">' + escape(l.addPlaylist) +
+      ? '<div class="add-card">' + sourceOptions(addPlaylistSource, l) + '<div class="add-source-fields">' +
+        addSourceFields + '<label>' + escape(l.playlistName) + '<input name="newName" aria-label="' + escape(l.playlistName) + '" value="' +
+        escape(addPlaylistDraft.name) + '"></label></div><div class="add-actions"><button type="button" data-action="add-playlist">' + escape(l.addPlaylist) +
         '</button><button class="quiet" type="button" data-action="close-add-playlist">' + escape(l.cancel) + "</button></div></div>"
       : "";
     var playlistSection = '<section id="playlists" data-section="playlists"><div class="section-title-row"><h2>' +
@@ -737,11 +911,11 @@
       return;
     }
     if (!current.playlists.length) {
-      setupDraft = {
+      setupDraft = Object.assign({}, setupDraft, {
         locale: current.settings.locale,
         name: current.setup?.name ?? "",
         url: current.setup?.url ?? "",
-      };
+      });
       if (setup) {
         renderSetupResult(
           false,
@@ -999,10 +1173,10 @@
       var playlist = current.playlists.find(function (entry) { return entry.id === id; });
       var device = current.devices.find(function (entry) { return entry.id === id; });
       if (action === "edit" && playlist) {
-        editingPlaylist = id;
+        beginPlaylistEdit(playlist);
         closeItemMenu(false);
         renderManage();
-        root.querySelector('[name="editUrl"]')?.focus();
+        root.querySelector(editingPlaylistSource === "m3u" ? '[name="editUrl"]' : '[name="editServer"]')?.focus();
       } else if (action === "rename" && device) {
         editingDevice = id;
         closeItemMenu(false);
@@ -1037,8 +1211,25 @@
     });
     root.querySelector("[data-action=open-add-playlist]")?.addEventListener("click", function () {
       addPlaylistOpen = true;
+      addPlaylistSource = "m3u";
+      addPlaylistDraft = {
+        name: "",
+        url: "",
+        server: "",
+        username: "",
+        password: "",
+        output: "m3u8",
+      };
       renderManage();
       root.querySelector('[name="newUrl"]')?.focus();
+    });
+    root.querySelectorAll(".add-card [data-source]").forEach(function (button) {
+      button.addEventListener("click", function () {
+        addPlaylistDraft = readAddPlaylistDraft();
+        addPlaylistSource = button.dataset.source;
+        renderManage();
+        root.querySelector(addPlaylistSource === "m3u" ? '[name="newUrl"]' : '[name="newServer"]')?.focus();
+      });
     });
     root.querySelectorAll("[data-action=close-add-playlist]").forEach(function (button) {
       button.addEventListener("click", function () {
@@ -1049,8 +1240,16 @@
     });
     var add = root.querySelector("[data-action=add-playlist]");
     if (add) add.addEventListener("click", function () {
-      var name = root.querySelector('[name="newName"]').value.trim();
-      var url = root.querySelector('[name="newUrl"]').value.trim();
+      addPlaylistDraft = readAddPlaylistDraft();
+      var name = addPlaylistDraft.name.trim();
+      var url = addPlaylistSource === "m3u"
+        ? addPlaylistDraft.url.trim()
+        : xtreamPlaylistUrl(
+            addPlaylistDraft.server,
+            addPlaylistDraft.username,
+            addPlaylistDraft.password,
+            addPlaylistDraft.output,
+          );
       if (!url) {
         operationStatus(labels().invalidUrl, true);
         return;
@@ -1060,9 +1259,19 @@
     });
     root.querySelectorAll("[data-action=edit-playlist]").forEach(function (button) {
       button.addEventListener("click", function () {
-        editingPlaylist = button.dataset.id;
+        var playlist = current.playlists.find(function (entry) { return entry.id === button.dataset.id; });
+        if (!playlist) return;
+        beginPlaylistEdit(playlist);
         renderManage();
-        root.querySelector('[name="editUrl"]')?.focus();
+        root.querySelector(editingPlaylistSource === "m3u" ? '[name="editUrl"]' : '[name="editServer"]')?.focus();
+      });
+    });
+    root.querySelectorAll(".credential-card [data-source]").forEach(function (button) {
+      button.addEventListener("click", function () {
+        editingPlaylistDraft = readEditPlaylistDraft();
+        editingPlaylistSource = button.dataset.source;
+        renderManage();
+        root.querySelector(editingPlaylistSource === "m3u" ? '[name="editUrl"]' : '[name="editServer"]')?.focus();
       });
     });
     var editPlaylist = root.querySelector("[data-edit-playlist]");
@@ -1070,8 +1279,16 @@
       editPlaylist.addEventListener("submit", function (event) {
         event.preventDefault();
         var id = editPlaylist.dataset.id;
-        var name = editPlaylist.elements.editName.value.trim();
-        var url = editPlaylist.elements.editUrl.value.trim();
+        editingPlaylistDraft = readEditPlaylistDraft();
+        var name = editingPlaylistDraft.name.trim();
+        var url = editingPlaylistSource === "m3u"
+          ? editingPlaylistDraft.url.trim()
+          : xtreamPlaylistUrl(
+              editingPlaylistDraft.server,
+              editingPlaylistDraft.username,
+              editingPlaylistDraft.password,
+              editingPlaylistDraft.output,
+            );
         if (!url) {
           operationStatus(labels().invalidUrl, true);
           return;
@@ -1178,11 +1395,11 @@
     }
     current = loaded.body;
     applyLocale();
-    setupDraft = {
+    setupDraft = Object.assign({}, setupDraft, {
       locale: current.settings.locale,
       name: current.setup?.name ?? "",
       url: current.setup?.url ?? "",
-    };
+    });
     if (current.playlists.length) renderManage();
     else renderSetup();
   }
