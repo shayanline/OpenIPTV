@@ -2,6 +2,31 @@
 
 Notable changes, newest first, in the format of [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## 1.6.0
+
+### Added
+
+- **Playlist category visibility.** Each playlist can hide individual categories or every category, while optionally keeping hidden channels available in Search and Favourites.
+- **Category remote shortcuts.** Red hides or restores the focused category, while holding Red temporarily reveals or conceals hidden categories without losing category focus.
+- **Category management.** Settings includes category search, category counts, immediate persistence, compact bulk actions and safe handling for empty or fully hidden playlists.
+- **Playback information shortcut.** Holding OK at the clear picture toggles Playback information without opening the channel panel.
+
+### Changed
+
+- **Settings design.** Settings uses consistent page headers, list headers, detail navigation, contextual OK guides, action popups, icons, spacing and focus restoration designed for Samsung television remotes.
+- **Settings organisation.** Resume and Playback information are under Playback, while Diagnostics and application data are grouped under About.
+- **Diagnostics.** Device facts and compatibility information use grouped information surfaces, with an isolated remote button tester that does not move Settings focus.
+- **Playlist actions.** Playlist rows show known category counts and retain the active state clearly while focused.
+- **About.** About uses the application icon, concise privacy and source information, a visible repository address and separated Support and Application data sections.
+- **Complete translations.** Category controls, Settings guidance, counts, shortcuts and updated About content are represented across all 17 supported locale catalogs.
+
+### Fixed
+
+- **Category focus.** Revealing, concealing and hiding categories preserve category identity, then move to the nearest visible category only when required.
+- **Favourites identity.** Provider categories named Favourites remain distinct from the generated Favourites list.
+- **Settings navigation.** RETURN follows the screen hierarchy, directional keys remain spatial, playlist actions are remote reachable and focus returns to the control that opened a detail or popup.
+- **Focused control contrast.** Hidden categories, inactive switches, destructive actions and active playlist badges remain readable on the white focus surface.
+
 ## 1.5.0
 
 ### Added
