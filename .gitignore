@@ -30,4 +30,5 @@ signature*.xml
 # Coding agent scratch directories.
 .claude/
 .cursor/
+.superpowers/
 .windsurf/
