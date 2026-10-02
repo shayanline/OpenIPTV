@@ -150,7 +150,8 @@ test("playlist settings add Xtream credentials while keeping M3U as the default"
   });
   fireEvent.change(screen.getByLabelText("Username"), { target: { value: "viewer" } });
   fireEvent.change(screen.getByLabelText("Password"), { target: { value: "secret" } });
-  fireEvent.change(screen.getByLabelText("Stream format"), { target: { value: "ts" } });
+  fireEvent.click(screen.getByLabelText("Stream format"));
+  fireEvent.click(screen.getByRole("option", { name: "MPEG TS" }));
   fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
   const { useSettings } = await import("../src/stores/settings");
@@ -173,7 +174,9 @@ test("playlist settings add Xtream credentials while keeping M3U as the default"
   );
   expect((screen.getByLabelText("Username") as HTMLInputElement).value).toBe("viewer");
   expect((screen.getByLabelText("Password") as HTMLInputElement).value).toBe("secret");
-  expect((screen.getByLabelText("Stream format") as HTMLSelectElement).value).toBe("ts");
+  expect(screen.getByLabelText("Stream format").getAttribute("aria-label")).toBe(
+    "Stream format, MPEG TS",
+  );
 });
 
 test("About groups support and application data beneath concise app information", async () => {

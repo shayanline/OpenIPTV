@@ -131,6 +131,76 @@ test("an HTTPS browser upgrades an HTTP playlist before fetching", async () => {
   );
 });
 
+test("an Xtream API fallback loads live and VOD categories on demand", async () => {
+  const s = await load();
+  configure(
+    s,
+    "https://provider.example/get.php?username=viewer&password=secret&type=m3u_plus&output=m3u8",
+  );
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (input: string | URL) => {
+      const url = new URL(String(input));
+      if (url.pathname.endsWith("/get.php")) throw new Error("Failed to fetch");
+      const action = url.searchParams.get("action");
+      const body =
+        action === "get_live_categories"
+          ? [{ category_id: "10", category_name: "News" }]
+          : action === "get_vod_categories"
+            ? [{ category_id: "20", category_name: "Films" }]
+            : action === "get_live_streams"
+              ? [
+                  {
+                    stream_id: 101,
+                    name: "Live News",
+                    category_id: "10",
+                    stream_icon: "https://images.example/live.png",
+                    epg_channel_id: "news.example",
+                    num: 7,
+                  },
+                ]
+              : action === "get_vod_streams"
+                ? [
+                    {
+                      stream_id: 202,
+                      name: "Fixture Film",
+                      category_id: "20",
+                      stream_icon: "https://images.example/film.png",
+                      container_extension: "mp4",
+                      num: 12,
+                    },
+                  ]
+                : {
+                    user_info: { auth: 1, status: "Active" },
+                    server_info: {
+                      server_protocol: "https",
+                      url: "provider.example",
+                      https_port: "443",
+                    },
+                  };
+      return { ok: true, status: 200, json: async () => body };
+    }),
+  );
+
+  const result = await s.useChannels.getState().load(true);
+
+  expect(result).toEqual({ count: 1, error: "" });
+  expect(s.useChannels.getState().categories.map((category) => category.name)).toEqual([
+    "Live · News",
+    "VOD · Films",
+  ]);
+  expect(s.useChannels.getState().channels.map((channel) => channel.url)).toEqual([
+    "https://provider.example/live/viewer/secret/101.m3u8",
+  ]);
+
+  await s.useChannels.getState().loadCategory("VOD · Films");
+
+  expect(s.useChannels.getState().channels.map((channel) => channel.url)).toEqual([
+    "https://provider.example/live/viewer/secret/101.m3u8",
+    "https://provider.example/movie/viewer/secret/202.mp4",
+  ]);
+});
+
 test("the saved copy is shown before the network answers", async () => {
   const s = await load();
   configure(s);

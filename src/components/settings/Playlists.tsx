@@ -15,6 +15,7 @@ import type { MessageKey } from "../../services/locale";
 import { Confirm } from "../Confirm";
 import { Icon } from "../Icon";
 import { Text } from "../Text";
+import { OptionPicker } from "../OptionPicker";
 import type { SettingsDetailNavigation } from "../Settings";
 import { PageHeader, Row, SettingsListHeader } from "./Field";
 
@@ -577,18 +578,19 @@ export function Playlists({
                 }}
               />
               <label htmlFor="pl-output">{t("onboarding.streamFormat")}</label>
-              <select
+              <OptionPicker
                 id="pl-output"
+                label={t("onboarding.streamFormat")}
                 value={output}
-                onChange={(event) => {
-                  const value = event.target.value as XtreamOutput;
+                options={[
+                  { value: "m3u8", label: t("onboarding.hls") },
+                  { value: "ts", label: t("onboarding.mpegTs") },
+                ]}
+                onChange={(value) => {
                   setOutput(value);
                   updateXtreamUrl(server, username, password, value);
                 }}
-              >
-                <option value="m3u8">{t("onboarding.hls")}</option>
-                <option value="ts">{t("onboarding.mpegTs")}</option>
-              </select>
+              />
             </div>
           )}
           {problem && (

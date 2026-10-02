@@ -102,8 +102,16 @@ test("remote navigation reaches the Xtream stream format", () => {
   password.focus();
 
   press(KEY.DOWN);
-
   expect(document.activeElement).toBe(output);
+
+  press(KEY.ENTER);
+  expect(screen.getByRole("listbox", { name: "Stream format" })).toBeTruthy();
+  const mpegTs = screen.getByRole("option", { name: "MPEG TS" });
+  mpegTs.focus();
+  press(KEY.ENTER);
+
+  expect(screen.queryByRole("listbox", { name: "Stream format" })).toBeNull();
+  expect(output.getAttribute("aria-label")).toBe("Stream format, MPEG TS");
 });
 
 test("the welcome screen keeps manual setup beside device setup", () => {

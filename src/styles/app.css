@@ -1384,11 +1384,11 @@ html[dir="rtl"] .playback-info {
   gap: var(--s1);
   max-width: 820px;
 }
-.language-picker {
+.option-picker {
   position: relative;
   min-width: 320px;
 }
-.language-picker-current {
+.option-picker-current {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1403,24 +1403,24 @@ html[dir="rtl"] .playback-info {
   font-size: var(--t-label);
   text-align: start;
 }
-.language-picker-current:focus {
+.option-picker-current:focus {
   outline: none;
   background: var(--focus);
   color: var(--on-focus);
 }
-.language-picker-chevron {
+.option-picker-chevron {
   margin-left: var(--s2);
   color: var(--text-2);
 }
-.language-picker-current:focus .language-picker-chevron {
+.option-picker-current:focus .option-picker-chevron {
   color: var(--on-focus);
 }
-.language-picker-current > span:first-child,
-.language-picker-option > span {
+.option-picker-current > span:first-child,
+.option-picker-option > span {
   position: relative;
   top: 2px;
 }
-.language-picker-list {
+.option-picker-list {
   position: absolute;
   z-index: var(--z-popup);
   top: calc(100% + var(--s1));
@@ -1433,7 +1433,7 @@ html[dir="rtl"] .playback-info {
   background: var(--surface-2);
   box-shadow: var(--lift);
 }
-.language-picker-option {
+.option-picker-option {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1448,22 +1448,22 @@ html[dir="rtl"] .playback-info {
   font-size: var(--t-label);
   text-align: start;
 }
-.language-picker-option.selected {
+.option-picker-option.selected {
   background: var(--accent-dim);
 }
-.language-picker-option:focus {
+.option-picker-option:focus {
   outline: none;
   background: var(--focus);
   color: var(--on-focus);
 }
-.language-picker-secondary {
+.option-picker-secondary {
   color: var(--text-2);
   font-size: var(--t-caption);
 }
-.language-picker-option:focus .language-picker-secondary {
+.option-picker-option:focus .option-picker-secondary {
   color: rgba(0, 0, 0, 0.55);
 }
-html[dir="rtl"] .language-picker-list {
+html[dir="rtl"] .option-picker-list {
   right: auto;
   left: 0;
 }
@@ -3820,14 +3820,14 @@ html[dir="rtl"] .no-flex-gap .onboard-language-options > * + * {
   margin-left: 0;
   margin-right: var(--s1);
 }
-html[dir="rtl"] .language-picker-chevron {
+html[dir="rtl"] .option-picker-chevron {
   margin-left: 0;
   margin-right: var(--s2);
 }
-.no-flex-gap .language-picker-option > * + * {
+.no-flex-gap .option-picker-option > * + * {
   margin-left: var(--s2);
 }
-html[dir="rtl"] .no-flex-gap .language-picker-option > * + * {
+html[dir="rtl"] .no-flex-gap .option-picker-option > * + * {
   margin-left: 0;
   margin-right: var(--s2);
 }

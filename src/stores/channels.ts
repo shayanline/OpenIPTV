@@ -6,6 +6,8 @@ import { keys, read, readJSON, remove, write } from "../services/store";
 import * as disk from "../services/disk";
 import { whenIdle } from "../services/idle";
 import { resolveLocale, type MessageKey } from "../services/locale";
+import { loadXtreamCatalog, loadXtreamCategory, type XtreamCategory } from "../services/xtream";
+import { parseXtreamPlaylistUrl } from "../services/playlistUrl";
 
 const FAVOURITES_KEY = "openiptv.favourites";
 const LAST_KEY = "openiptv.last";
@@ -90,9 +92,11 @@ export interface LoadResult {
   errorDetail?: string;
 }
 
+type ChannelCategory = { name: string; channels: Channel[] } | XtreamCategory;
+
 interface State {
   channels: Channel[];
-  categories: { name: string; channels: Channel[] }[];
+  categories: ChannelCategory[];
   favourites: string[];
   loading: boolean;
   error: string;
@@ -104,6 +108,7 @@ interface State {
    * afterwards races the state it is trying to read.
    */
   load: (force?: boolean) => Promise<LoadResult>;
+  loadCategory: (name: string) => Promise<LoadResult>;
   validatePlaylist: (name: string, url: string) => Promise<LoadResult>;
   /** Drop cached playlists nothing is configured to watch. Run once, at launch. */
   sweep: () => Promise<void>;
@@ -143,15 +148,24 @@ const requestUrl = (url: string) => {
 let cancelPending: (() => void) | null = null;
 
 export const useChannels = create<State>((set, get) => {
+  const sorted = (channels: Channel[]) =>
+    useSettings.getState().sortAlphabetically ? [...channels].sort(byName) : channels;
   const parse = (text: string) => {
-    let channels = parseM3U(text);
-    if (useSettings.getState().sortAlphabetically) channels = [...channels].sort(byName);
+    const channels = sorted(parseM3U(text));
     return { channels, categories: groupByCategory(channels) };
   };
   const rememberCategoryCount = (url: string, count: number) => {
     const settings = useSettings.getState();
     const playlist = settings.playlists.find((item) => item.url === url);
     if (playlist) settings.setPlaylistCategoryCount(playlist.id, count);
+  };
+  const xtream = async (url: string, signal: AbortSignal) => {
+    const categories = await loadXtreamCatalog(url, signal);
+    const channels = sorted(await loadXtreamCategory(categories[0], signal));
+    categories[0] = { ...categories[0], channels };
+    rememberCategoryCount(url, categories.length);
+    set({ channels, categories, loading: false, error: "", errorKey: "", errorDetail: "" });
+    return { count: channels.length, error: "" };
   };
 
   /**
@@ -200,7 +214,15 @@ export const useChannels = create<State>((set, get) => {
       // Called off because something newer was asked for. The newer one owns the state now,
       // so this must not touch it, and in particular must not report a failure.
       if (attempt.signal.aborted) return { count: get().channels.length, error: "" };
-      const message = e instanceof Error ? e.message : String(e);
+      let failure = e;
+      if (parseXtreamPlaylistUrl(url)) {
+        try {
+          return await xtream(url, attempt.signal);
+        } catch (apiError) {
+          if (!(apiError instanceof Error && apiError.message === "HTTP 404")) failure = apiError;
+        }
+      }
+      const message = failure instanceof Error ? failure.message : String(failure);
       // Keep whatever the cache gave us rather than emptying the screen.
       const hasChannels = get().channels.length > 0;
       const errorKey: MessageKey = hasChannels
@@ -223,6 +245,37 @@ export const useChannels = create<State>((set, get) => {
     errorKey: "",
     errorDetail: "",
 
+    async loadCategory(name): Promise<LoadResult> {
+      const category = get().categories.find((item) => item.name === name);
+      if (!category || !("categoryId" in category) || category.channels.length) {
+        return { count: category?.channels.length ?? 0, error: "" };
+      }
+      inFlight?.abort();
+      const attempt = new AbortController();
+      inFlight = attempt;
+      try {
+        const loaded = sorted(await loadXtreamCategory(category, attempt.signal));
+        const categories = get().categories.map((item) =>
+          item === category ? { ...category, channels: loaded } : item,
+        );
+        const channels: Channel[] = [];
+        for (const item of categories) channels.push(...item.channels);
+        set({ channels, categories, error: "", errorKey: "", errorDetail: "" });
+        return { count: loaded.length, error: "" };
+      } catch (error) {
+        if (attempt.signal.aborted) return { count: 0, error: "" };
+        const detail = error instanceof Error ? error.message : String(error);
+        const message = `Could not load the category: ${detail}`;
+        set({ error: message, errorKey: "playlist.loadFailed", errorDetail: detail });
+        return {
+          count: 0,
+          error: message,
+          errorKey: "playlist.loadFailed",
+          errorDetail: detail,
+        };
+      }
+    },
+
     async validatePlaylist(_name, url): Promise<LoadResult> {
       try {
         const response = await fetch(requestUrl(url), { cache: "no-cache" });
@@ -231,6 +284,15 @@ export const useChannels = create<State>((set, get) => {
         if (!count) throw new Error("no channels in that playlist");
         return { count, error: "" };
       } catch (error) {
+        if (parseXtreamPlaylistUrl(url)) {
+          try {
+            const categories = await loadXtreamCatalog(url);
+            const channels = await loadXtreamCategory(categories[0]);
+            if (channels.length) return { count: channels.length, error: "" };
+          } catch (apiError) {
+            if (!(apiError instanceof Error && apiError.message === "HTTP 404")) error = apiError;
+          }
+        }
         const detail = error instanceof Error ? error.message : String(error);
         return {
           count: 0,

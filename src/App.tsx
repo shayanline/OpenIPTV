@@ -294,6 +294,8 @@ export default function App() {
         );
     return favouriteList ? [favouriteList, ...categoryLists] : categoryLists;
   }, [browsableLists, categories, revealHidden, savedHidden, softHiddenSet]);
+  const listsRef = useRef(lists);
+  listsRef.current = lists;
   useEffect(() => {
     setRevealHidden(false);
     setSoftHidden([]);
@@ -567,6 +569,8 @@ export default function App() {
       }
       setCategory(to);
       setIndex(at);
+      const list = listsRef.current[to];
+      if (list && !isFavouritesList(list)) void useChannels.getState().loadCategory(list.name);
     };
     if (now) apply();
     else railTimer.current = window.setTimeout(apply, RAIL_SETTLE_MS);

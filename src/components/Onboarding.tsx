@@ -12,6 +12,7 @@ import {
 } from "../services/playlistUrl";
 import type { MessageKey } from "../services/locale";
 import { LanguagePicker } from "./LanguagePicker";
+import { OptionPicker } from "./OptionPicker";
 import { KeyGuide } from "./KeyGuide";
 import { RemoteSetup } from "./RemoteSetup";
 import type { PairingSessionView } from "../services/deviceAccess";
@@ -193,14 +194,16 @@ export function Onboarding({
                     onChange={(event) => setPassword(event.target.value)}
                   />
                   <label htmlFor="ob-output">{t("onboarding.streamFormat")}</label>
-                  <select
+                  <OptionPicker
                     id="ob-output"
+                    label={t("onboarding.streamFormat")}
                     value={output}
-                    onChange={(event) => setOutput(event.target.value as XtreamOutput)}
-                  >
-                    <option value="m3u8">{t("onboarding.hls")}</option>
-                    <option value="ts">{t("onboarding.mpegTs")}</option>
-                  </select>
+                    options={[
+                      { value: "m3u8", label: t("onboarding.hls") },
+                      { value: "ts", label: t("onboarding.mpegTs") },
+                    ]}
+                    onChange={setOutput}
+                  />
                 </div>
               )}
               {problem && (
