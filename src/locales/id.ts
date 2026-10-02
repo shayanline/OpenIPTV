@@ -272,6 +272,8 @@ export default {
   "playlist.editTitle": "Edit daftar putar",
   "playlist.hideCategory": ({ name }) => `Sembunyikan ${name}`,
   "playlist.unhideCategory": ({ name }) => `Batalkan sembunyikan ${name}`,
+  "playlist.hideCategoryGuide": "Sembunyikan kategori",
+  "playlist.unhideCategoryGuide": "Tampilkan kategori",
   "playlist.categorySearch": "Cari kategori",
   "playlist.noCategoryMatches": "Tidak ada kategori yang cocok dengan pencarian ini.",
   "playlist.noCategories": "Daftar putar ini tidak memiliki kategori.",

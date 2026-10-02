@@ -253,6 +253,9 @@ test("each playlist manages its own category visibility", async () => {
     screen.getByText("Choose whether hidden channels also appear in Search and Favourites"),
   ).toBeTruthy();
   const news = screen.getByRole("button", { name: "Hide News" });
+  await act(async () => news.focus());
+  expect(document.querySelector(".sheet-hints")?.textContent).toContain("Hide category");
+  expect(document.querySelector(".sheet-hints")?.textContent).not.toContain("Hide News");
   await act(async () => {
     fireEvent.click(news);
     fireEvent.click(
@@ -267,6 +270,8 @@ test("each playlist manages its own category visibility", async () => {
   expect(playlist.hiddenCategories).toEqual(["News"]);
   expect(playlist.hiddenCategoryMode).toBe("search");
   expect(screen.getByRole("button", { name: "Unhide News" })).toBeTruthy();
+  expect(document.querySelector(".sheet-hints")?.textContent).toContain("Unhide category");
+  expect(document.querySelector(".sheet-hints")?.textContent).not.toContain("Unhide News");
 });
 
 test("playlist settings can hide and show every category", async () => {

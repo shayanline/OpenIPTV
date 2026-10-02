@@ -262,6 +262,8 @@ export default {
   "playlist.editTitle": "재생목록 편집",
   "playlist.hideCategory": ({ name }) => `${name} 숨기기`,
   "playlist.unhideCategory": ({ name }) => `${name} 숨김 해제`,
+  "playlist.hideCategoryGuide": "카테고리 숨기기",
+  "playlist.unhideCategoryGuide": "카테고리 표시",
   "playlist.categorySearch": "카테고리 검색",
   "playlist.noCategoryMatches": "이 검색과 일치하는 카테고리가 없습니다.",
   "playlist.noCategories": "이 재생목록에는 카테고리가 없습니다.",

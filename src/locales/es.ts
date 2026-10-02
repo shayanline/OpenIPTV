@@ -275,6 +275,8 @@ export default {
   "playlist.editTitle": "Editar lista",
   "playlist.hideCategory": ({ name }) => `Ocultar ${name}`,
   "playlist.unhideCategory": ({ name }) => `Dejar de ocultar ${name}`,
+  "playlist.hideCategoryGuide": "Ocultar categoría",
+  "playlist.unhideCategoryGuide": "Mostrar categoría",
   "playlist.categorySearch": "Buscar categorías",
   "playlist.noCategoryMatches": "Ninguna categoría coincide con esta búsqueda.",
   "playlist.noCategories": "Esta lista no tiene categorías.",

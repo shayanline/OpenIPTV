@@ -256,6 +256,8 @@ export default {
   "playlist.editTitle": "编辑播放列表",
   "playlist.hideCategory": ({ name }) => `隐藏 ${name}`,
   "playlist.unhideCategory": ({ name }) => `取消隐藏 ${name}`,
+  "playlist.hideCategoryGuide": "隐藏类别",
+  "playlist.unhideCategoryGuide": "显示类别",
   "playlist.categorySearch": "搜索类别",
   "playlist.noCategoryMatches": "没有类别与此搜索匹配。",
   "playlist.noCategories": "此播放列表没有类别。",

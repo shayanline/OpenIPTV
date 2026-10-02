@@ -274,6 +274,8 @@ export default {
   "playlist.editTitle": "Afspeellijst bewerken",
   "playlist.hideCategory": ({ name }) => `${name} verbergen`,
   "playlist.unhideCategory": ({ name }) => `${name} zichtbaar maken`,
+  "playlist.hideCategoryGuide": "Categorie verbergen",
+  "playlist.unhideCategoryGuide": "Categorie tonen",
   "playlist.categorySearch": "Categorieën zoeken",
   "playlist.noCategoryMatches": "Geen categorieën komen overeen met deze zoekopdracht.",
   "playlist.noCategories": "Deze afspeellijst heeft geen categorieën.",

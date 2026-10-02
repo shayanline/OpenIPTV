@@ -281,6 +281,8 @@ export default {
   "playlist.editTitle": "Wiedergabeliste bearbeiten",
   "playlist.hideCategory": ({ name }) => `${name} ausblenden`,
   "playlist.unhideCategory": ({ name }) => `${name} wieder einblenden`,
+  "playlist.hideCategoryGuide": "Kategorie ausblenden",
+  "playlist.unhideCategoryGuide": "Kategorie einblenden",
   "playlist.categorySearch": "Kategorien suchen",
   "playlist.noCategoryMatches": "Keine Kategorie entspricht dieser Suche.",
   "playlist.noCategories": "Diese Wiedergabeliste hat keine Kategorien.",

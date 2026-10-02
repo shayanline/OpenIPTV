@@ -259,6 +259,8 @@ export default {
   "playlist.editTitle": "প্লেলিস্ট সম্পাদনা করুন",
   "playlist.hideCategory": ({ name }) => `${name} লুকান`,
   "playlist.unhideCategory": ({ name }) => `${name} আনহাইড করুন`,
+  "playlist.hideCategoryGuide": "বিভাগ লুকান",
+  "playlist.unhideCategoryGuide": "বিভাগ দেখান",
   "playlist.categorySearch": "বিভাগ অনুসন্ধান করুন",
   "playlist.noCategoryMatches": "এই অনুসন্ধানের সঙ্গে কোনো বিভাগ মেলে না।",
   "playlist.noCategories": "এই প্লেলিস্টে কোনো বিভাগ নেই।",

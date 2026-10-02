@@ -269,6 +269,8 @@ export default {
   "playlist.editTitle": "プレイリストを編集",
   "playlist.hideCategory": ({ name }) => `${name}を非表示`,
   "playlist.unhideCategory": ({ name }) => `${name}の非表示を解除`,
+  "playlist.hideCategoryGuide": "カテゴリーを非表示",
+  "playlist.unhideCategoryGuide": "カテゴリーを表示",
   "playlist.categorySearch": "カテゴリーを検索",
   "playlist.noCategoryMatches": "この検索に一致するカテゴリーはありません。",
   "playlist.noCategories": "このプレイリストにはカテゴリーがありません。",

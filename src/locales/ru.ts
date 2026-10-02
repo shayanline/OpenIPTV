@@ -268,6 +268,8 @@ export default {
   "playlist.editTitle": "Изменить плейлист",
   "playlist.hideCategory": ({ name }) => `Скрыть ${name}`,
   "playlist.unhideCategory": ({ name }) => `Вернуть ${name}`,
+  "playlist.hideCategoryGuide": "Скрыть категорию",
+  "playlist.unhideCategoryGuide": "Показать категорию",
   "playlist.categorySearch": "Искать категории",
   "playlist.noCategoryMatches": "Нет категорий, соответствующих этому поиску.",
   "playlist.noCategories": "В этом плейлисте нет категорий.",

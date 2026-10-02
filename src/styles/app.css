@@ -986,16 +986,20 @@ html[dir="rtl"] .playback-info {
   padding-top: var(--s2);
   border-top: 1px solid var(--line);
   color: var(--text-3);
-  font-size: var(--t-caption);
+  font-size: calc(16px * var(--scale));
 }
 .playback-info-guide > span {
   flex: 1;
   min-width: 0;
 }
 .playback-info-action {
-  display: inline-grid !important;
+  display: inline-flex !important;
   min-width: 0;
-  gap: 8px;
+  flex-wrap: wrap;
+  gap: 6px 8px;
+}
+.playback-info-action > span:first-child {
+  white-space: nowrap;
 }
 .settings-path {
   justify-self: start;
@@ -1756,7 +1760,9 @@ html[dir="rtl"] .language-picker-list {
   top: 2px;
   flex: 1;
   min-width: 0;
-  overflow-wrap: break-word;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .category-setting-row .switch {
   flex: 0 0 auto;
@@ -1967,8 +1973,18 @@ html[dir="rtl"] .language-picker-list {
 }
 .pl-title {
   display: flex;
+  min-width: 0;
   align-items: center;
   font-size: var(--t-label);
+}
+.pl-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pl-title .tag {
+  flex: 0 0 auto;
 }
 .pl-main:focus .tag {
   background: var(--accent);
@@ -2031,6 +2047,13 @@ html[dir="rtl"] .language-picker-list {
   flex: 1;
   min-width: 0;
   flex-direction: column;
+}
+.device-row-main strong,
+.device-row-main span {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .device-row-main strong {
   font-size: var(--t-label);
@@ -2140,10 +2163,13 @@ input.wrong {
   display: inline-flex;
   margin-bottom: var(--s2);
   border-radius: var(--r-pill);
+  max-width: 100%;
+  overflow: hidden;
   color: var(--accent);
   font-size: var(--t-label);
   text-decoration: none;
-  word-break: break-all;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .about-repository:focus {
   outline: none;

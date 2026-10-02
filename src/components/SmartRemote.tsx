@@ -65,6 +65,9 @@ export function SmartRemote() {
   const [last, setLast] = useState("");
   const [pos, setPos] = useState({ x: 0, y: 0 });
   const drag = useRef<{ x: number; y: number } | null>(null);
+  const activeKey = useRef<number | null>(null);
+  const repeatDelay = useRef<number | undefined>(undefined);
+  const repeatTimer = useRef<number | undefined>(undefined);
 
   const send = useCallback((code: number, label?: string) => {
     setLast(label ?? NAMES[code] ?? String(code));
@@ -87,23 +90,40 @@ export function SmartRemote() {
     };
   }, []);
 
+  const releaseKey = useCallback((code?: number) => {
+    window.clearTimeout(repeatDelay.current);
+    window.clearInterval(repeatTimer.current);
+    repeatDelay.current = undefined;
+    repeatTimer.current = undefined;
+    const releasing = code ?? activeKey.current;
+    if (releasing !== null) sendKeyUp(releasing);
+    activeKey.current = null;
+  }, []);
+
+  useEffect(() => () => releaseKey(), [releaseKey]);
+
   // A press must not move the browser's focus, or the app loses the element the remote is
-  // meant to be steering.
+  // meant to be steering. Pointer capture keeps a held key alive when the pointer drifts.
   const key = (code: number, label?: string) => ({
-    onMouseDown: (e: React.MouseEvent) => e.preventDefault(),
-    onClick: () => send(code, label),
-  });
-  const heldKey = (code: number, label: string) => ({
-    onMouseDown: (e: React.MouseEvent) => {
-      e.preventDefault();
-      setLast(label);
+    onPointerDown: (event: React.PointerEvent<HTMLButtonElement>) => {
+      event.preventDefault();
+      event.currentTarget.setPointerCapture?.(event.pointerId);
+      releaseKey();
+      setLast(label ?? NAMES[code] ?? String(code));
+      activeKey.current = code;
       sendKeyDown(code);
+      repeatDelay.current = window.setTimeout(() => {
+        repeatTimer.current = window.setInterval(() => sendKeyDown(code), 120);
+      }, 400);
     },
-    onMouseUp: () => sendKeyUp(code),
-    onMouseLeave: () => sendKeyUp(code),
+    onPointerUp: () => releaseKey(code),
+    onPointerCancel: () => releaseKey(code),
+    onClick: (event: React.MouseEvent) => {
+      if (event.detail === 0) send(code, label);
+    },
   });
-  const redKey = heldKey(KEY.RED, "Red");
-  const okKey = heldKey(KEY.ENTER, "Select");
+  const redKey = key(KEY.RED, "Red");
+  const okKey = key(KEY.ENTER, "Select");
 
   const startDrag = (e: React.PointerEvent) => {
     if ((e.target as HTMLElement).closest("button")) return;

@@ -259,6 +259,8 @@ export default {
   "playlist.editTitle": "प्लेलिस्ट संपादित करें",
   "playlist.hideCategory": ({ name }) => `${name} छिपाएँ`,
   "playlist.unhideCategory": ({ name }) => `${name} फिर दिखाएँ`,
+  "playlist.hideCategoryGuide": "श्रेणी छिपाएँ",
+  "playlist.unhideCategoryGuide": "श्रेणी दिखाएँ",
   "playlist.categorySearch": "श्रेणियाँ खोजें",
   "playlist.noCategoryMatches": "इस खोज से कोई श्रेणी मेल नहीं खाती।",
   "playlist.noCategories": "इस प्लेलिस्ट में कोई श्रेणी नहीं है।",

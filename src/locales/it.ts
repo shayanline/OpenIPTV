@@ -274,6 +274,8 @@ export default {
   "playlist.editTitle": "Modifica playlist",
   "playlist.hideCategory": ({ name }) => `Nascondi ${name}`,
   "playlist.unhideCategory": ({ name }) => `Rendi visibile ${name}`,
+  "playlist.hideCategoryGuide": "Nascondi categoria",
+  "playlist.unhideCategoryGuide": "Mostra categoria",
   "playlist.categorySearch": "Cerca categorie",
   "playlist.noCategoryMatches": "Nessuna categoria corrisponde a questa ricerca.",
   "playlist.noCategories": "Questa playlist non contiene categorie.",

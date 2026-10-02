@@ -260,6 +260,8 @@ export default {
   "playlist.editTitle": "تعديل قائمة التشغيل",
   "playlist.hideCategory": ({ name }) => `إخفاء ${name}`,
   "playlist.unhideCategory": ({ name }) => `إلغاء إخفاء ${name}`,
+  "playlist.hideCategoryGuide": "إخفاء الفئة",
+  "playlist.unhideCategoryGuide": "إظهار الفئة",
   "playlist.categorySearch": "البحث في الفئات",
   "playlist.noCategoryMatches": "لا توجد فئات تطابق هذا البحث.",
   "playlist.noCategories": "لا توجد فئات في قائمة التشغيل هذه.",

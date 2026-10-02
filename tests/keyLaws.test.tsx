@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import assert from "node:assert/strict";
-import { act, cleanup, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, screen } from "@testing-library/react";
 import { KEY } from "../src/hooks/useRemote";
 import {
   hold,
@@ -279,6 +279,24 @@ test("the debug Smart Remote starts closed and wires volume controls", async () 
   screen.getByRole("button", { name: "Volume down" }).click();
 
   assert.deepEqual(volumeChanges, [0.1, -0.1]);
+});
+
+test("holding OK on the debug Smart Remote toggles playback information", async () => {
+  await mount();
+  press(KEY.ENTER);
+  press(KEY.BACK);
+  fireEvent.click(screen.getByRole("button", { name: "Show Smart Remote" }));
+  const ok = screen.getByRole("button", { name: "Select" });
+
+  fireEvent.pointerDown(ok, { pointerId: 1 });
+  await settle(600);
+  fireEvent.pointerUp(ok, { pointerId: 1 });
+
+  assert.equal(panelOpen(), false);
+  assert.equal(
+    JSON.parse(localStorage.getItem("openiptv.settings") ?? "{}").showPlaybackStats,
+    true,
+  );
 });
 
 test("double clicking the browser video toggles application fullscreen", async () => {

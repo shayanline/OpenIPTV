@@ -235,7 +235,17 @@ function CategoryManager({
               aria-label={t(hidden ? "playlist.unhideCategory" : "playlist.hideCategory", {
                 name: category.name,
               })}
-              onClick={() => settings.setCategoryHidden(playlist.id, category.name, !hidden)}
+              data-ok-guide={t(
+                hidden ? "playlist.unhideCategoryGuide" : "playlist.hideCategoryGuide",
+              )}
+              onClick={(event) => {
+                const nextHidden = !hidden;
+                settings.setCategoryHidden(playlist.id, category.name, nextHidden);
+                event.currentTarget.dataset.okGuide = t(
+                  nextHidden ? "playlist.unhideCategoryGuide" : "playlist.hideCategoryGuide",
+                );
+                event.currentTarget.dispatchEvent(new FocusEvent("focusin", { bubbles: true }));
+              }}
               onKeyDown={(event) => {
                 if (event.keyCode === 40 && row === shown.length - 1 && pageFromRow(1)) {
                   event.preventDefault();
@@ -267,7 +277,7 @@ function CategoryManager({
           </p>
         )
       )}
-      {!!matches.length && (
+      {matches.length > CATEGORY_PAGE_SIZE && (
         <p className="category-position">
           {t("playlist.categoryPosition", {
             from: currentPage * CATEGORY_PAGE_SIZE + 1,
@@ -535,8 +545,8 @@ export function Playlists({
                 await load();
               }}
             >
-              <span className="pl-title" dir="auto">
-                {p.name}
+              <span className="pl-title">
+                <span className="pl-name" dir="auto">{p.name}</span>
                 {/* Named, not just tinted. The accessibility guidance asks for a mark
                     alongside colour, since a tint alone says nothing in greyscale. */}
                 {p.id === s.activePlaylistId && (

@@ -268,6 +268,8 @@ export default {
   "playlist.editTitle": "Oynatma listesini düzenle",
   "playlist.hideCategory": ({ name }) => `${name} gizle`,
   "playlist.unhideCategory": ({ name }) => `${name} görünür yap`,
+  "playlist.hideCategoryGuide": "Kategoriyi gizle",
+  "playlist.unhideCategoryGuide": "Kategoriyi göster",
   "playlist.categorySearch": "Kategori ara",
   "playlist.noCategoryMatches": "Bu aramayla eşleşen kategori yok.",
   "playlist.noCategories": "Bu oynatma listesinde kategori yok.",
