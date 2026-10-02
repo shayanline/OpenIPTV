@@ -304,7 +304,7 @@ test("labels playlist fields and actions with their context", async () => {
             {
               id: "one",
               name: "One",
-              url: "http://example.com/get.php?username=one&password=secret&type=m3u_plus",
+              url: "http://example.com/get.php?username=one&password=secret&type=m3u_plus&output=m3u8",
               active: true,
             },
             { id: "two", name: "Two", url: "http://example.com/two.m3u", active: false },
@@ -324,8 +324,9 @@ test("labels playlist fields and actions with their context", async () => {
     labels.playlistAddress,
   );
   expect(document.querySelector('[name="newUrl"]')?.getAttribute("dir")).toBe("ltr");
-  expect(document.querySelector("#playlists")?.textContent).toContain("password=••••••••");
-  expect(document.querySelector("#playlists")?.textContent).not.toContain("password=secret");
+  expect(document.querySelector("#playlists")?.textContent).toContain("http://example.com");
+  expect(document.querySelector("#playlists")?.textContent).not.toContain("get.php");
+  expect(document.querySelector("#playlists")?.textContent).not.toContain("secret");
   const menus = [
     ...document.querySelectorAll<HTMLButtonElement>('[data-action="open-item-menu"]'),
   ];

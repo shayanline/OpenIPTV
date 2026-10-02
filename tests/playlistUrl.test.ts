@@ -82,6 +82,13 @@ test("Xtream credentials become an encoded M3U Plus address", () => {
   );
 });
 
+test("Xtream usernames are trimmed while password whitespace and plus signs are preserved", () => {
+  assert.equal(
+    xtreamPlaylistUrl("https://provider.example", "  viewer  ", " secret+ pass ", "m3u8"),
+    "https://provider.example/get.php?username=viewer&password=+secret%2B+pass+&type=m3u_plus&output=m3u8",
+  );
+});
+
 test("an existing Xtream endpoint is reused and MPEG TS remains available", () => {
   assert.equal(
     xtreamPlaylistUrl("http://provider.example/get.php?old=1", "user", "pass", "ts"),

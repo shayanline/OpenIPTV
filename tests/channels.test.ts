@@ -114,6 +114,23 @@ test("a good playlist is parsed, grouped and reported", async () => {
   assert.equal(s.useChannels.getState().categories[0].name, "News");
 });
 
+test("an HTTPS browser upgrades an HTTP playlist before fetching", async () => {
+  const s = await load();
+  configure(
+    s,
+    "http://provider.example:80/get.php?username=viewer&password=secret&type=m3u_plus&output=m3u8",
+  );
+  vi.stubGlobal("location", { protocol: "https:" });
+  const fetchMock = vi.fn().mockResolvedValue({ ok: true, text: async () => PLAYLIST });
+  vi.stubGlobal("fetch", fetchMock);
+
+  await s.useChannels.getState().load();
+
+  expect(fetchMock.mock.calls[0][0]).toBe(
+    "https://provider.example/get.php?username=viewer&password=secret&type=m3u_plus&output=m3u8",
+  );
+});
+
 test("the saved copy is shown before the network answers", async () => {
   const s = await load();
   configure(s);

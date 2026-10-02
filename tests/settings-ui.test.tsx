@@ -120,6 +120,21 @@ test("form selects use the same inset chevron spacing as other controls", () => 
   expect(rule).toContain("padding-right: var(--s6)");
 });
 
+test("playlist source selection stays distinct from remote focus", () => {
+  const css = readFileSync(join(process.cwd(), "src/styles/app.css"), "utf8");
+  const selected =
+    css.match(/\.playlist-source-options \.btn\[aria-pressed="true"\] \{([^}]*)\}/)?.[1] ?? "";
+  const focused =
+    css.match(
+      /\.playlist-source-options \.btn\[aria-pressed="true"\]:focus \{([^}]*)\}/,
+    )?.[1] ?? "";
+
+  expect(selected).toContain("background: var(--control-on)");
+  expect(selected).toContain("color: var(--on-accent)");
+  expect(focused).toContain("background: var(--focus)");
+  expect(focused).toContain("color: var(--on-focus)");
+});
+
 test("playlist settings add Xtream credentials while keeping M3U as the default", async () => {
   await mountApp(PLAYLIST);
   press(KEY.YELLOW);
@@ -144,11 +159,10 @@ test("playlist settings add Xtream credentials while keeping M3U as the default"
     url: "http://provider.example:8080/get.php?username=viewer&password=secret&type=m3u_plus&output=ts",
   });
   expect(document.querySelector(".settings-list-body")?.textContent).toContain(
-    "password=••••••••",
+    "http://provider.example:8080",
   );
-  expect(document.querySelector(".settings-list-body")?.textContent).not.toContain(
-    "password=secret",
-  );
+  expect(document.querySelector(".settings-list-body")?.textContent).not.toContain("get.php");
+  expect(document.querySelector(".settings-list-body")?.textContent).not.toContain("secret");
 
   fireEvent.click(screen.getByRole("button", { name: "Edit provider.example" }));
   expect(

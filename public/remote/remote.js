@@ -731,11 +731,12 @@
             escape(l.cancel) + "</button></div></form>"
           );
         }
+        var xtream = parseXtreamPlaylistUrl(playlist.url);
         return (
           '<article class="playlist compact-row"><div><strong>' +
           escape(playlist.name) +
           '</strong><span dir="ltr">' +
-          escape(redactPlaylistUrl(playlist.url)) +
+          escape(xtream ? xtream.server : redactPlaylistUrl(playlist.url)) +
           "</span></div>" +
           (playlist.id === current.activePlaylistId
             ? '<em>' + escape(l.active) + "</em>"

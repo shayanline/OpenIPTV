@@ -124,6 +124,14 @@ interface State {
 let inFlight: AbortController | null = null;
 let channelPlaylistUrl = "";
 
+const requestUrl = (url: string) => {
+  if (globalThis.location?.protocol !== "https:") return url;
+  const request = new URL(url);
+  if (request.protocol !== "http:") return url;
+  request.protocol = "https:";
+  return request.toString();
+};
+
 /**
  * The background refresh that has been scheduled but not started.
  *
@@ -160,7 +168,7 @@ export const useChannels = create<State>((set, get) => {
     inFlight = attempt;
 
     try {
-      const res = await fetch(url, { cache: "no-cache", signal: attempt.signal });
+      const res = await fetch(requestUrl(url), { cache: "no-cache", signal: attempt.signal });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const text = await res.text();
 
@@ -217,7 +225,7 @@ export const useChannels = create<State>((set, get) => {
 
     async validatePlaylist(_name, url): Promise<LoadResult> {
       try {
-        const response = await fetch(url, { cache: "no-cache" });
+        const response = await fetch(requestUrl(url), { cache: "no-cache" });
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const count = parseM3U(await response.text()).length;
         if (!count) throw new Error("no channels in that playlist");

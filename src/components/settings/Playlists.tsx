@@ -669,7 +669,7 @@ export function Playlists({
                 )}
               </span>
               <span className="pl-url" dir="ltr">
-                {redactPlaylistUrl(p.url)}
+                {parseXtreamPlaylistUrl(p.url)?.server ?? redactPlaylistUrl(p.url)}
               </span>
             </button>
             {/* Tonal rather than flat. Flat text at three metres reads as a label, not as

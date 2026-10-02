@@ -2155,6 +2155,10 @@ html[dir="rtl"] .form select {
   margin-top: 0;
 }
 .playlist-source-options .btn[aria-pressed="true"] {
+  background: var(--control-on);
+  color: var(--on-accent);
+}
+.playlist-source-options .btn[aria-pressed="true"]:focus {
   background: var(--focus);
   color: var(--on-focus);
 }

@@ -1,6 +1,8 @@
-import { afterEach, beforeEach, expect, test } from "vitest";
+import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { act, fireEvent, render, screen, cleanup } from "@testing-library/react";
 import { Onboarding } from "../src/components/Onboarding";
+import { KEY } from "../src/hooks/useRemote";
+import { press } from "./support/app";
 import { useSettings } from "../src/stores/settings";
 import { useSetup } from "../src/stores/setup";
 import type { RemoteAccessState } from "../src/services/remoteServer";
@@ -50,9 +52,9 @@ test("M3U stays the default and Xtream login builds a playlist address", () => {
   const added: { name: string; url: string }[] = [];
   render(<Onboarding onAdd={(name, url) => added.push({ name, url })} onExit={() => {}} />);
 
-  expect(screen.getByRole("button", { name: "M3U playlist" }).getAttribute("aria-pressed")).toBe(
-    "true",
-  );
+  expect(
+    screen.getByRole("button", { name: "M3U playlist" }).getAttribute("aria-pressed"),
+  ).toBe("true");
   expect(screen.getByLabelText("Playlist address")).toBeTruthy();
   expect(screen.queryByLabelText("Server address")).toBeNull();
 
@@ -70,6 +72,38 @@ test("M3U stays the default and Xtream login builds a playlist address", () => {
       url: "https://provider.example:8443/get.php?username=viewer&password=secret&type=m3u_plus&output=m3u8",
     },
   ]);
+});
+
+test("remote navigation reaches the Xtream stream format", () => {
+  vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function () {
+    const top =
+      {
+        "ob-server": 100,
+        "ob-username": 200,
+        "ob-password": 300,
+        "ob-output": 400,
+        "ob-name": 500,
+      }[this.id] ?? 0;
+    return {
+      left: 0,
+      right: 100,
+      top,
+      bottom: top + 40,
+      width: 100,
+      height: 40,
+      x: 0,
+      y: top,
+    } as DOMRect;
+  });
+  render(<Onboarding onAdd={() => {}} onExit={() => {}} />);
+  fireEvent.click(screen.getByRole("button", { name: "Xtream login" }));
+  const password = screen.getByLabelText("Password");
+  const output = screen.getByLabelText("Stream format");
+  password.focus();
+
+  press(KEY.DOWN);
+
+  expect(document.activeElement).toBe(output);
 });
 
 test("the welcome screen keeps manual setup beside device setup", () => {
