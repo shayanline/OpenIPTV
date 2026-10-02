@@ -15,6 +15,12 @@ test("the debug remote starts on the left in RTL", () => {
   );
 });
 
+test("the category count keeps its inset from the RTL divider", () => {
+  expect(styles).toMatch(
+    /html\[dir="rtl"\] \.pane-head \{[^}]*padding-left: var\(--s2\);[^}]*padding-right: 0;/,
+  );
+});
+
 test("playback information follows the reading edge", () => {
   expect(styles).toMatch(
     /\.playback-info \{[\s\S]*right: var\(--safe-x\);[\s\S]*left: auto;/,

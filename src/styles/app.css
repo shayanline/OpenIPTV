@@ -994,7 +994,7 @@ html[dir="rtl"] .playback-info {
   min-width: 0;
   grid-template-columns: auto auto minmax(0, 1fr);
   align-items: center;
-  gap: var(--s1);
+  gap: 5px;
 }
 .playback-info-guide .guide-prefix,
 .playback-info-guide kbd:last-of-type {
@@ -3584,8 +3584,8 @@ html[dir="rtl"] .pane:not(.focused) .row.showing::before {
   right: 0;
 }
 html[dir="rtl"] .pane-head {
-  padding-left: 0;
-  padding-right: var(--s2);
+  padding-left: var(--s2);
+  padding-right: 0;
 }
 html[dir="rtl"] .panel-title,
 html[dir="rtl"] .row,
