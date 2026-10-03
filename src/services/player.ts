@@ -916,12 +916,19 @@ export class Player {
       stats.bitrate = finite(video.bitrate);
 
       try {
-        stats.bitrate = finite(av.getStreamingProperty?.("CURRENT_BANDWIDTH")) ?? stats.bitrate;
+        stats.bandwidth = finite(av.getStreamingProperty?.("CURRENT_BANDWIDTH"));
         const available = av.getStreamingProperty?.("AVAILABLE_BITRATE") ?? "";
         const levels = available
           .split(/[|,]/)
           .filter((value) => finite(value) !== undefined).length;
         if (levels) stats.levels = levels;
+        stats.level = finite(av.getStreamingProperty?.("CURRENT_LEVEL"));
+        stats.bufferSeconds = finite(av.getStreamingProperty?.("BUFFER_AHEAD"));
+        stats.frameRate = finite(av.getStreamingProperty?.("FRAME_RATE")) ?? stats.frameRate;
+        const totalFrames = av.getStreamingProperty?.("TOTAL_FRAMES");
+        const droppedFrames = av.getStreamingProperty?.("DROPPED_FRAMES");
+        if (totalFrames) stats.totalFrames = nonNegative(totalFrames);
+        if (droppedFrames) stats.droppedFrames = nonNegative(droppedFrames);
       } catch {}
       try {
         const scan = av.getVideoSeamlessInfo?.().scan_type;

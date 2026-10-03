@@ -140,11 +140,17 @@ function fakeAVPlay() {
       },
     ],
     getStreamingProperty: (key: string) =>
-      key === "CURRENT_BANDWIDTH"
-        ? "4500000"
-        : key === "AVAILABLE_BITRATE"
-          ? "1500000|3000000|4500000"
-          : "",
+      (
+        ({
+          CURRENT_BANDWIDTH: "6200000",
+          AVAILABLE_BITRATE: "1500000|3000000|4500000",
+          CURRENT_LEVEL: "3",
+          BUFFER_AHEAD: "5.5",
+          FRAME_RATE: "49.9",
+          TOTAL_FRAMES: "100",
+          DROPPED_FRAMES: "2",
+        }) as Record<string, string>
+      )[key] ?? "",
     getVideoSeamlessInfo: () => ({ scan_type: 1, rotation_degree: 0 }),
     setDisplayRect: () => calls.push("setDisplayRect"),
     setDisplayMethod: (m: string) => calls.push(`setDisplayMethod:${m}`),
@@ -289,7 +295,12 @@ test("AVPlay statistics normalize current engine values without using playlist l
     videoCodec: "H264",
     audioCodec: "AAC",
     bitrate: 4_500_000,
-    frameRate: 50,
+    bandwidth: 6_200_000,
+    bufferSeconds: 5.5,
+    frameRate: 49.9,
+    droppedFrames: 2,
+    totalFrames: 100,
+    level: 3,
     levels: 3,
     switches: 0,
   });

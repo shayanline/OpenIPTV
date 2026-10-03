@@ -128,9 +128,11 @@
   let listener = {};
   let source = "";
   let hls = null;
+  let frameSample = null;
 
   /** Give back the decoder, whichever engine happens to be driving it. */
   const release = () => {
+    frameSample = null;
     if (hls) {
       try {
         hls.destroy();
@@ -267,6 +269,13 @@
         if (window.Hls && window.Hls.isSupported()) {
           hls = new window.Hls({ backBufferLength: 0, maxMaxBufferLength: 30 });
           hls.on(window.Hls.Events.MANIFEST_PARSED, ready);
+          hls.on(window.Hls.Events.LEVEL_SWITCHED, (_event, data) => {
+            const level = hls.levels[data.level];
+            listener.onevent?.(
+              "PLAYER_MSG_BITRATE_CHANGE",
+              String(level?.bitrate ?? data.level),
+            );
+          });
           hls.on(window.Hls.Events.ERROR, (_e, d) => {
             // Only a fatal error is a failure. Live playlists produce plenty that are not.
             if (d.fatal) failed(String(d.details));
@@ -304,6 +313,47 @@
       getDuration() {
         return Math.round((video()?.duration ?? 0) * 1000);
       },
+      getCurrentStreamInfo() {
+        const v = video();
+        const levelIndex = hls ? Math.max(0, hls.currentLevel, hls.loadLevel) : -1;
+        const level = levelIndex >= 0 ? hls?.levels[levelIndex] : null;
+        const codecs = String(level?.attrs?.CODECS ?? "")
+          .split(",")
+          .map((codec) => codec.trim());
+        const videoCodec =
+          level?.videoCodec ??
+          codecs.find((codec) => /^(avc|hvc|hev|vp0|av01)/i.test(codec)) ??
+          "";
+        const audioCodec =
+          level?.audioCodec ??
+          codecs.find((codec) => /^(mp4a|ac-3|ec-3|opus)/i.test(codec)) ??
+          "";
+        const tracks = [];
+        if (v?.videoWidth || level?.width) {
+          tracks.push({
+            index: 0,
+            type: "VIDEO",
+            extra_info: JSON.stringify({
+              Width: v?.videoWidth || level?.width,
+              Height: v?.videoHeight || level?.height,
+              FourCC: videoCodec,
+              Bit_rate: level?.bitrate,
+              Frame_rate: level?.frameRate,
+            }),
+          });
+        }
+        if (audioCodec) {
+          tracks.push({
+            index: 1,
+            type: "AUDIO",
+            extra_info: JSON.stringify({ FourCC: audioCodec }),
+          });
+        }
+        return tracks;
+      },
+      getVideoSeamlessInfo() {
+        return { scan_type: 1, rotation_degree: 0 };
+      },
       seekTo(ms) {
         const v = video();
         if (v) v.currentTime = ms / 1000;
@@ -329,6 +379,41 @@
           return `${Math.round(seekable.start(0) * 1000)}|${Math.round(seekable.end(seekable.length - 1) * 1000)}`;
         }
         if (key === "CURRENT_BANDWIDTH") return String(hls?.bandwidthEstimate ?? 0);
+        if (key === "AVAILABLE_BITRATE")
+          return (hls?.levels ?? [])
+            .map((level) => level.bitrate)
+            .filter(Boolean)
+            .join("|");
+        if (key === "CURRENT_LEVEL")
+          return hls?.currentLevel >= 0 ? String(hls.currentLevel + 1) : "";
+        if (key === "BUFFER_AHEAD") {
+          if (!v) return "";
+          for (let index = 0; index < v.buffered.length; index += 1) {
+            if (
+              v.buffered.start(index) <= v.currentTime &&
+              v.buffered.end(index) >= v.currentTime
+            )
+              return String(Math.max(0, v.buffered.end(index) - v.currentTime));
+          }
+          return "";
+        }
+        if (key === "FRAME_RATE") {
+          const quality = v?.getVideoPlaybackQuality?.();
+          const total = quality?.totalVideoFrames ?? v?.webkitDecodedFrameCount;
+          const now = performance.now();
+          const rate =
+            frameSample && total >= frameSample.total && now > frameSample.at
+              ? ((total - frameSample.total) * 1000) / (now - frameSample.at)
+              : 0;
+          if (Number.isFinite(total)) frameSample = { total, at: now };
+          return rate > 0 ? rate.toFixed(1) : "";
+        }
+        if (key === "TOTAL_FRAMES" || key === "DROPPED_FRAMES") {
+          const quality = v?.getVideoPlaybackQuality?.();
+          if (key === "TOTAL_FRAMES")
+            return String(quality?.totalVideoFrames ?? v?.webkitDecodedFrameCount ?? "");
+          return String(quality?.droppedVideoFrames ?? v?.webkitDroppedFrameCount ?? "");
+        }
         return "";
       },
     },
