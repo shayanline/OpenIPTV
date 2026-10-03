@@ -40,14 +40,7 @@ export const GuideList = memo(function GuideList({
   const { t, time } = useLocale();
   const viewport = useRef<HTMLDivElement>(null);
   const height = useViewport(viewport);
-  const win = useWindowed(
-    guide.items.length,
-    Math.max(0, index),
-    height,
-    scale,
-    undefined,
-    true,
-  );
+  const win = useWindowed(guide.items.length, Math.max(0, index), height, scale);
   const now = Math.floor(Date.now() / 1000);
   const currentId =
     guide.items.find(
@@ -63,10 +56,9 @@ export const GuideList = memo(function GuideList({
     const current = programme.id === currentId;
     rows.push(
       <div
-        className={`row guide-row ${current ? "current" : ""} ${focused && i === index ? "cursor" : ""} ${programme.target && focused && i === index ? "selected" : ""}`}
+        className={`row guide-row ${current ? "current" : ""} ${focused && i === index ? "cursor selected" : ""}`}
         style={{ top: i * win.row, height: win.row }}
         key={i % win.slots}
-        onMouseEnter={() => onMove(i)}
         onClick={() => onMove(i)}
       >
         <div className="guide-programme">

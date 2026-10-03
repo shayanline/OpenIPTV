@@ -731,7 +731,11 @@ export default function App() {
   useEffect(() => {
     if (!guideChannelId) return;
     const currentIndex = currentGuideIndex(guide.items);
-    if (currentIndex >= 0) setGuideIndex(currentIndex);
+    setGuideIndex((selected) =>
+      currentIndex >= 0
+        ? currentIndex
+        : Math.min(selected, Math.max(0, guide.items.length - 1)),
+    );
   }, [guide.items, guideChannelId]);
 
   useEffect(() => {
@@ -1080,11 +1084,15 @@ export default function App() {
   const commitRailCursor = useCallback(() => {
     const nextCategory = cursorRef.current - 1;
     if (nextCategory < 0) return;
+    if (nextCategory === category && !searchingRef.current) {
+      window.clearTimeout(railTimer.current);
+      return;
+    }
     if (libraryKind) {
       setCategory(nextCategory);
       setIndex(0);
     } else showCategory(nextCategory, 0, true);
-  }, [libraryKind, showCategory]);
+  }, [category, libraryKind, showCategory]);
 
   const nudgeCursor = useCallback(
     (delta: number) => {

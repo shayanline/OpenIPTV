@@ -291,6 +291,21 @@ test("left and right switch between lists without losing either cursor", async (
   assert.equal(channelUnderCursor(), wasOn, "right did not restore the channel cursor");
 });
 
+test("selecting the displayed category restores its channel cursor", async () => {
+  await mountApp(PLAYLIST);
+  press(KEY.DOWN);
+  await settle();
+  expect(channelUnderCursor()).toBe("Second Channel");
+
+  press(KEY.LEFT);
+  await settle();
+  expect(categoryUnderCursor()).toBe("News");
+  press(KEY.ENTER);
+  await settle();
+
+  expect(channelUnderCursor()).toBe("Second Channel");
+});
+
 test("left on the category list keeps the category list selected", async () => {
   await mountApp(PLAYLIST);
   press(KEY.LEFT);

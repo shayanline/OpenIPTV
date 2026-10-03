@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { GuideList } from "../src/components/GuideList";
 import { KEY } from "../src/hooks/useRemote";
@@ -119,6 +119,68 @@ test("GuideList keeps every programme readable and only offers valid catchup", (
   expect(onSelect).toHaveBeenCalledWith(0);
 });
 
+test("GuideList visibly selects programmes without catchup", () => {
+  render(
+    <GuideList
+      channel="Provider One"
+      guide={loadedGuide}
+      index={1}
+      focused
+      scale={1}
+      onMove={() => {}}
+      onSelect={() => {}}
+      onRetry={() => {}}
+    />,
+  );
+
+  expect(document.querySelector(".guide-row.selected .row-label")?.textContent).toBe(
+    "Evening News",
+  );
+});
+
+test("GuideList moves focus to the viewport edge before scrolling", () => {
+  const height = vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(304);
+  const guide: ChannelGuide = {
+    state: "loaded",
+    items: Array.from({ length: 8 }, (_, index) => ({
+      id: `programme-${index}`,
+      title: `Programme ${index}`,
+      description: "",
+      start: "",
+      end: "",
+      archived: false,
+    })),
+  };
+  const props = {
+    channel: "Provider One",
+    guide,
+    focused: true,
+    scale: 1,
+    onMove: () => {},
+    onSelect: () => {},
+    onRetry: () => {},
+  };
+
+  try {
+    const { rerender } = render(<GuideList {...props} index={0} />);
+    expect((document.querySelector(".guide-list .window") as HTMLElement).style.transform).toBe(
+      "translateY(0px)",
+    );
+
+    rerender(<GuideList {...props} index={3} />);
+    expect((document.querySelector(".guide-list .window") as HTMLElement).style.transform).toBe(
+      "translateY(0px)",
+    );
+
+    rerender(<GuideList {...props} index={4} />);
+    expect((document.querySelector(".guide-list .window") as HTMLElement).style.transform).toBe(
+      "translateY(-76px)",
+    );
+  } finally {
+    height.mockRestore();
+  }
+});
+
 test.each([
   ["loading", "Loading…"],
   ["empty", "No programme information is available."],
@@ -223,8 +285,14 @@ test("Guide opens from live playback and starts archived playback", async () => 
     "News at Noon",
   );
   fireEvent.mouseEnter(document.querySelectorAll(".guide-row")[2]);
+  expect(document.querySelector(".guide-row.cursor .row-label")?.textContent).toBe(
+    "News at Noon",
+  );
+  fireEvent.click(document.querySelectorAll(".guide-row")[2]);
   expect(document.querySelector(".guide-row.cursor .row-label")?.textContent).toBe("Weather");
   fireEvent.mouseEnter(document.querySelectorAll(".guide-row")[0]);
+  expect(document.querySelector(".guide-row.cursor .row-label")?.textContent).toBe("Weather");
+  fireEvent.click(document.querySelectorAll(".guide-row")[0]);
   expect(document.querySelector(".guide-row.selected .row-label")?.textContent).toBe(
     "Morning News",
   );
@@ -240,6 +308,53 @@ test("Guide opens from live playback and starts archived playback", async () => 
   finishPlayback();
   await settle(0);
   expect(screen.getByText("Morning News")).toBeTruthy();
+});
+
+test("mouse wheel moves the programme guide selection in both directions", async () => {
+  await mountApp("", { source: XTREAM_SOURCE, fetchImplementation: xtreamFetch });
+  press(KEY.ENTER);
+  await settle(0);
+  press(KEY.RIGHT);
+  await settle(0);
+  const viewport = document.querySelector(".guide-list .viewport");
+  assert.ok(viewport);
+
+  fireEvent.wheel(viewport, { deltaY: 100 });
+  expect(document.querySelector(".guide-row.selected .row-label")?.textContent).toBe("Weather");
+
+  fireEvent.wheel(viewport, { deltaY: -100 });
+  expect(document.querySelector(".guide-row.selected .row-label")?.textContent).toBe(
+    "News at Noon",
+  );
+});
+
+test("Guide clamps its cursor when refreshed programmes become shorter", async () => {
+  await mountApp("", { source: XTREAM_SOURCE, fetchImplementation: xtreamFetch });
+  press(KEY.ENTER);
+  await settle(0);
+  press(KEY.RIGHT);
+  await settle(0);
+  press(KEY.DOWN);
+  expect(document.querySelector(".guide-row.cursor .row-label")?.textContent).toBe("Weather");
+
+  const { useLibrary } = await import("../src/stores/library");
+  act(() => {
+    const state = useLibrary.getState();
+    const entry = Object.entries(state.guides).find(([, guide]) => guide.items.length);
+    assert.ok(entry);
+    const [channelId, held] = entry;
+    useLibrary.setState({
+      guides: {
+        ...state.guides,
+        [channelId]: { ...held, items: held.items.slice(0, 1) },
+      },
+    });
+  });
+  await settle(0);
+
+  expect(document.querySelector(".guide-row.selected .row-label")?.textContent).toBe(
+    "Morning News",
+  );
 });
 
 test("GREEN in Guide favourites its guide channel instead of the programme row index", async () => {
