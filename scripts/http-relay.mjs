@@ -59,13 +59,19 @@ const copyHeaders = (headers) => {
   return copied;
 };
 
+export const resolveHttpRelayTarget = async (target, resolve = lookup) => {
+  const addresses = await resolve(target.hostname, { all: true });
+  if (!addresses.length || addresses.some(({ address }) => blockedHttpRelayHost(address)))
+    return null;
+  return addresses[0];
+};
+
 const relay = async (request, response, target, redirects = 0) => {
-  const addresses = await lookup(target.hostname, { all: true });
-  if (!addresses.length || addresses.some(({ address }) => blockedHttpRelayHost(address))) {
+  const selected = await resolveHttpRelayTarget(target);
+  if (!selected) {
     response.writeHead(403).end("The HTTP stream resolved to a private address.");
     return;
   }
-  const selected = addresses[0];
   const headers = {};
   for (const name of ["accept", "if-modified-since", "if-none-match", "if-range", "range"]) {
     if (request.headers[name]) headers[name] = request.headers[name];

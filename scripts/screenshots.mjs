@@ -310,7 +310,7 @@ try {
     revision: 4,
     locale: "en",
     direction: "ltr",
-    labels: { aboutVersion: "Version 1.8.0" },
+    labels: { aboutVersion: "Version 1.9.0" },
     localeOptions: [{ id: "en", label: "English" }],
     settings: {
       locale: "en",
@@ -343,7 +343,7 @@ try {
     devices: [
       { id: "readme-device", name: "Living room phone", createdAt: 1, lastUsedAt: Date.now() },
     ],
-    about: { version: "1.8.0", repository: "https://github.com/shayanline/OpenIPTV" },
+    about: { version: "1.9.0", repository: "https://github.com/shayanline/OpenIPTV" },
     operation: { loading: false, error: "", errorKey: "", errorDetail: "" },
   };
   cdp.on("Fetch.requestPaused", ({ requestId }) => {
