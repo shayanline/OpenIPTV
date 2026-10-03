@@ -96,6 +96,13 @@ export function Onboarding({
     return true;
   };
 
+  const captureWelcomeVertical = (event: ReactKeyboardEvent<HTMLElement>) => {
+    if (event.keyCode !== KEY.UP && event.keyCode !== KEY.DOWN) return;
+    event.preventDefault();
+    event.stopPropagation();
+    moveWelcomeVertical(event.keyCode);
+  };
+
   const moveFromSource = (event: ReactKeyboardEvent<HTMLButtonElement>) => {
     const inlineStart = direction === "rtl" ? KEY.RIGHT : KEY.LEFT;
     const inlineEnd = direction === "rtl" ? KEY.LEFT : KEY.RIGHT;
@@ -185,7 +192,11 @@ export function Onboarding({
     <div className="onboard">
       <div className="onboard-box" ref={box}>
         <div className={showRemoteSetup ? "onboard-split" : "onboard-single"}>
-          <section className="onboard-manual" ref={manual}>
+          <section
+            className="onboard-manual"
+            ref={manual}
+            onKeyDownCapture={captureWelcomeVertical}
+          >
             <h1>OpenIPTV</h1>
             <p className="lead">{t("onboarding.description")}</p>
 
