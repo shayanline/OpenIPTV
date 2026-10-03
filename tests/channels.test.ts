@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import assert from "node:assert/strict";
+import { parseXtreamPlaylistUrl, type XtreamSource } from "../src/services/playlistUrl";
 
 /**
  * Loading a playlist, which is the one thing here that talks to the network.
@@ -63,12 +64,59 @@ const load = async () => {
   }));
   const settings = await import("../src/stores/settings");
   const channels = await import("../src/stores/channels");
-  return { ...settings, ...channels };
+  const personal = await import("../src/stores/personal");
+  return { ...settings, ...channels, ...personal };
 };
 
 const configure = (s: Awaited<ReturnType<typeof load>>, url = "http://list.invalid/a.m3u") => {
-  s.useSettings.getState().addPlaylist("Test", url);
+  s.useSettings
+    .getState()
+    .addPlaylist("Test", parseXtreamPlaylistUrl(url) ?? { kind: "m3u", url });
 };
+
+const XTREAM_SOURCE: XtreamSource = {
+  kind: "xtream",
+  server: "http://provider.example",
+  username: "viewer",
+  password: "secret",
+  output: "m3u8",
+};
+
+const configureXtream = (s: Awaited<ReturnType<typeof load>>, source = XTREAM_SOURCE) => {
+  s.useSettings.getState().addPlaylist("Provider", source);
+  return s.useSettings.getState().playlists[0];
+};
+
+const xtreamResponse = (body: unknown, status = 200) => ({
+  ok: status >= 200 && status < 300,
+  status,
+  json: async () => body,
+});
+
+const xtreamFetch = (overrides: Record<string, unknown> = {}) =>
+  vi.fn(async (input: string | URL) => {
+    const url = new URL(String(input));
+    assert.notEqual(url.pathname.endsWith("/get.php"), true, "Xtream requested get.php");
+    const action = url.searchParams.get("action") ?? "authenticate";
+    const defaults: Record<string, unknown> = {
+      authenticate: {
+        user_info: { auth: 1, status: "Active" },
+        server_info: { server_protocol: "http", url: "provider.example" },
+      },
+      get_live_categories: [
+        { category_id: "empty", category_name: "Empty" },
+        { category_id: "news-a", category_name: "News" },
+        { category_id: "news-b", category_name: "News" },
+      ],
+      get_vod_categories: [],
+      get_series_categories: [],
+      get_live_streams: [
+        { stream_id: 1, name: "Alpha", category_id: "news-a", num: 11 },
+        { stream_id: 2, name: "Beta", category_id: "news-b", num: 22 },
+      ],
+    };
+    return xtreamResponse(action in overrides ? overrides[action] : defaults[action]);
+  });
 
 /**
  * Let the background refresh happen.
@@ -87,10 +135,49 @@ const afterIdle = () => vi.advanceTimersByTimeAsync(600);
  * served as though current.
  */
 const seedCache = (s: Awaited<ReturnType<typeof load>>, text: string, ageMs: number) => {
-  const url = s.useSettings.getState().playlists[0].url;
+  const source = s.useSettings.getState().playlists[0].source;
+  assert.equal(source.kind, "m3u");
+  const url = source.url;
   disk.set(`playlist:${url}`, text);
   localStorage.setItem(`openiptv.at.${url}`, String(Date.now() - ageMs));
   return url;
+};
+
+const seedXtreamCache = (playlist: { id: string; sourceVersion: number }, ageMs: number) => {
+  const prefix = `xtream:${playlist.id}:v${playlist.sourceVersion}`;
+  disk.set(`${prefix}:account`, JSON.stringify({ status: "Active", isTrial: false }));
+  disk.set(
+    `${prefix}:categories`,
+    JSON.stringify([
+      { key: "live:news", id: "news", kind: "live", name: "News" },
+      { key: "live:sport", id: "sport", kind: "live", name: "Sport" },
+    ]),
+  );
+  disk.set(
+    `${prefix}:live`,
+    JSON.stringify([
+      {
+        id: `xtream:${playlist.id}:live:1`,
+        name: "Cached News",
+        logo: "",
+        group: "News",
+        url: "http://provider.example/live/viewer/secret/1.m3u8",
+        quality: "",
+        number: 1,
+        xtream: {
+          playlistId: playlist.id,
+          streamId: "1",
+          categoryKey: "live:news",
+          archiveDays: 0,
+          directSource: "",
+        },
+      },
+    ]),
+  );
+  for (const scope of ["account", "categories", "live"]) {
+    localStorage.setItem(`openiptv.at.${prefix}:${scope}`, String(Date.now() - ageMs));
+  }
+  return prefix;
 };
 
 const HOUR = 60 * 60 * 1000;
@@ -114,98 +201,197 @@ test("a good playlist is parsed, grouped and reported", async () => {
   assert.equal(s.useChannels.getState().categories[0].name, "News");
 });
 
-test("an HTTPS browser upgrades an HTTP playlist before fetching", async () => {
+test("an HTTPS browser upgrades an HTTP M3U playlist before fetching", async () => {
   const s = await load();
-  configure(
-    s,
-    "http://provider.example:80/get.php?username=viewer&password=secret&type=m3u_plus&output=m3u8",
-  );
+  configure(s, "http://provider.example:80/list.m3u");
   vi.stubGlobal("window", { location: { protocol: "https:" } });
   const fetchMock = vi.fn().mockResolvedValue({ ok: true, text: async () => PLAYLIST });
   vi.stubGlobal("fetch", fetchMock);
 
   await s.useChannels.getState().load();
 
-  expect(fetchMock.mock.calls[0][0]).toBe(
-    "https://provider.example/get.php?username=viewer&password=secret&type=m3u_plus&output=m3u8",
-  );
+  expect(fetchMock.mock.calls[0][0]).toBe("https://provider.example/list.m3u");
 });
 
-test("an Xtream API fallback loads live and VOD categories on demand", async () => {
+test("Xtream validation authenticates directly without requesting get.php", async () => {
   const s = await load();
-  configure(
-    s,
-    "https://provider.example/get.php?username=viewer&password=secret&type=m3u_plus&output=m3u8",
+  const fetchMock = xtreamFetch();
+  vi.stubGlobal("fetch", fetchMock);
+
+  const result = await s.useChannels.getState().validatePlaylist("Provider", XTREAM_SOURCE);
+
+  expect(result).toEqual({ count: 1, error: "" });
+  expect(fetchMock).toHaveBeenCalledTimes(1);
+  expect(String(fetchMock.mock.calls[0][0])).toContain("/player_api.php?");
+});
+
+test("Xtream loading is API first and builds the complete live catalogue", async () => {
+  const s = await load();
+  const playlist = configureXtream(s);
+  const fetchMock = xtreamFetch({
+    get_vod_categories: [{ category_id: "movies", category_name: "Movies" }],
+    get_series_categories: [{ category_id: "series", category_name: "Series" }],
+  });
+  vi.stubGlobal("fetch", fetchMock);
+
+  const result = await s.useChannels.getState().load(true);
+
+  expect(result).toEqual({ count: 2, error: "" });
+  expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/get.php"))).toBe(
+    false,
   );
+  expect(s.useChannels.getState().channels.map((channel) => channel.id)).toEqual([
+    `xtream:${playlist.id}:live:1`,
+    `xtream:${playlist.id}:live:2`,
+  ]);
+  expect(s.useChannels.getState().channels.map((channel) => channel.group)).toEqual([
+    "News",
+    "News",
+  ]);
+  expect(s.useChannels.getState().categories).toMatchObject([
+    { key: "live:empty", name: "Empty", channels: [] },
+    { key: "live:news-a", name: "News", channels: [{ name: "Alpha" }] },
+    { key: "live:news-b", name: "News", channels: [{ name: "Beta" }] },
+  ]);
+  expect(s.useChannels.getState().managedCategories).toEqual([
+    { key: "live:empty", name: "Empty" },
+    { key: "live:news-a", name: "News" },
+    { key: "live:news-b", name: "News" },
+    { key: "movie:movies", name: "Movies" },
+    { key: "series:series", name: "Series" },
+  ]);
+});
+
+test("a VOD only Xtream account loads and caches its account status and categories", async () => {
+  const s = await load();
+  const playlist = configureXtream(s);
+  const fetchMock = xtreamFetch({
+    get_live_categories: [],
+    get_vod_categories: [{ category_id: "10", category_name: "Movies" }],
+    get_live_streams: [],
+  });
+  vi.stubGlobal("fetch", fetchMock);
+
+  const result = await s.useChannels.getState().load(true);
+
+  expect(result).toEqual({ count: 0, error: "" });
+  expect(s.useChannels.getState().accounts[playlist.id]).toMatchObject({ status: "Active" });
+  expect(disk.has(`xtream:${playlist.id}:v1:account`)).toBe(true);
+  expect(disk.has(`xtream:${playlist.id}:v1:categories`)).toBe(true);
+  expect(disk.get(`xtream:${playlist.id}:v1:live`)).toBe("[]");
+});
+
+test("an Xtream account fails only when every supported content kind is empty", async () => {
+  const s = await load();
+  configureXtream(s);
   vi.stubGlobal(
     "fetch",
-    vi.fn(async (input: string | URL) => {
-      const url = new URL(String(input));
-      if (url.pathname.endsWith("/get.php")) throw new Error("Failed to fetch");
-      const action = url.searchParams.get("action");
-      const body =
-        action === "get_live_categories"
-          ? [{ category_id: "10", category_name: "News" }]
-          : action === "get_vod_categories"
-            ? [{ category_id: "20", category_name: "Films" }]
-            : action === "get_live_streams"
-              ? [
-                  {
-                    stream_id: 101,
-                    name: "Live News",
-                    category_id: "10",
-                    stream_icon: "https://images.example/live.png",
-                    epg_channel_id: "news.example",
-                    num: 7,
-                  },
-                ]
-              : action === "get_vod_streams"
-                ? [
-                    {
-                      stream_id: 202,
-                      name: "Fixture Film",
-                      category_id: "20",
-                      stream_icon: "https://images.example/film.png",
-                      container_extension: "mp4",
-                      num: 12,
-                    },
-                  ]
-                : {
-                    user_info: { auth: 1, status: "Active" },
-                    server_info: {
-                      server_protocol: "https",
-                      url: "provider.example",
-                      https_port: "443",
-                    },
-                  };
-      return { ok: true, status: 200, json: async () => body };
+    xtreamFetch({
+      get_live_categories: [],
+      get_vod_categories: [],
+      get_series_categories: [],
+      get_live_streams: [],
     }),
   );
 
   const result = await s.useChannels.getState().load(true);
 
-  expect(result).toEqual({ count: 1, error: "" });
-  expect(s.useChannels.getState().categories.map((category) => category.name)).toEqual([
-    "Live · News",
-    "VOD · Films",
-  ]);
-  expect(s.useChannels.getState().channels.map((channel) => channel.url)).toEqual([
-    "https://provider.example/live/viewer/secret/101.m3u8",
-  ]);
+  expect(result.error).toMatch(/no playable content/i);
+});
 
-  await s.useChannels.getState().loadCategory("VOD · Films");
+test("a fresh cached VOD only account launches without network work", async () => {
+  const s = await load();
+  const playlist = configureXtream(s);
+  const prefix = `xtream:${playlist.id}:v${playlist.sourceVersion}`;
+  disk.set(`${prefix}:account`, JSON.stringify({ status: "Active", isTrial: false }));
+  disk.set(
+    `${prefix}:categories`,
+    JSON.stringify([{ key: "movie:10", id: "10", kind: "movie", name: "Movies" }]),
+  );
+  disk.set(`${prefix}:live`, "[]");
+  for (const scope of ["account", "categories", "live"]) {
+    localStorage.setItem(`openiptv.at.${prefix}:${scope}`, String(Date.now()));
+  }
+  const fetchMock = vi.fn();
+  vi.stubGlobal("fetch", fetchMock);
 
-  expect(s.useChannels.getState().channels.map((channel) => channel.url)).toEqual([
-    "https://provider.example/live/viewer/secret/101.m3u8",
-    "https://provider.example/movie/viewer/secret/202.mp4",
-  ]);
+  const result = await s.useChannels.getState().load();
+
+  expect(result).toEqual({ count: 0, error: "" });
+  expect(s.useChannels.getState().accounts[playlist.id]).toMatchObject({ status: "Active" });
+  await afterIdle();
+  expect(fetchMock).not.toHaveBeenCalled();
+});
+
+test("the same provider stream identifier remains scoped to its playlist", async () => {
+  const first = await load();
+  const firstPlaylist = configureXtream(first);
+  vi.stubGlobal(
+    "fetch",
+    xtreamFetch({
+      get_live_categories: [{ category_id: "one", category_name: "One" }],
+      get_live_streams: [{ stream_id: 1, name: "One", category_id: "one" }],
+    }),
+  );
+  await first.useChannels.getState().load(true);
+  const firstId = first.useChannels.getState().channels[0].id;
+
+  const secondSource = { ...XTREAM_SOURCE, username: "other" };
+  first.useSettings.getState().addPlaylist("Other", secondSource);
+  const secondPlaylist = first.useSettings.getState().playlists[1];
+  first.useSettings.getState().set("activePlaylistId", secondPlaylist.id);
+  await first.useChannels.getState().load(true);
+
+  expect(firstId).toBe(`xtream:${firstPlaylist.id}:live:1`);
+  expect(first.useChannels.getState().channels[0].id).toBe(
+    `xtream:${secondPlaylist.id}:live:1`,
+  );
+});
+
+test("HTTPS browser transport applies to API requests and generated streams", async () => {
+  const s = await load();
+  configureXtream(s);
+  vi.stubGlobal("window", { location: { protocol: "https:" } });
+  const fetchMock = xtreamFetch();
+  vi.stubGlobal("fetch", fetchMock);
+
+  await s.useChannels.getState().load(true);
+
+  expect(fetchMock.mock.calls.every(([input]) => String(input).startsWith("https://"))).toBe(
+    true,
+  );
+  expect(s.useChannels.getState().channels[0].url).toBe(
+    "https://provider.example/live/viewer/secret/1.m3u8",
+  );
+});
+
+test("an HTTPS browser explains an HTTP Xtream transport failure", async () => {
+  const s = await load();
+  vi.stubGlobal("window", { location: { protocol: "https:" } });
+  vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("Failed to fetch")));
+
+  const result = await s.useChannels.getState().validatePlaylist("Provider", XTREAM_SOURCE);
+
+  expect(result.errorDetail).toMatch(/HTTPS/i);
+  expect(result.errorDetail).toMatch(/CORS|Cross Origin/i);
+  expect(result.errorDetail).not.toContain("Failed to fetch");
+});
+
+test("a missing Player API explains the M3U alternative", async () => {
+  const s = await load();
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(xtreamResponse({}, 404)));
+
+  const result = await s.useChannels.getState().validatePlaylist("Provider", XTREAM_SOURCE);
+
+  expect(result.error).toMatch(/get\.php.*M3U/i);
 });
 
 test("the saved copy is shown before the network answers", async () => {
   const s = await load();
   configure(s);
-  const url = s.useSettings.getState().playlists[0].url;
-  disk.set(`playlist:${url}`, PLAYLIST);
+  const source = s.useSettings.getState().playlists[0].source;
+  assert.equal(source.kind, "m3u");
+  disk.set(`playlist:${source.url}`, PLAYLIST);
 
   // A fetch that never settles, so the only thing on screen can be the cached copy.
   vi.stubGlobal(
@@ -294,7 +480,9 @@ test("switching playlist calls off a refresh queued for the old one", async () =
   vi.stubGlobal("fetch", fetchMock);
 
   await s.useChannels.getState().load(); // queues a refresh for the old playlist
-  s.useSettings.getState().addPlaylist("Second", "http://list.invalid/b.m3u");
+  s.useSettings
+    .getState()
+    .addPlaylist("Second", { kind: "m3u", url: "http://list.invalid/b.m3u" });
   s.useSettings.getState().set("activePlaylistId", s.useSettings.getState().playlists[1].id);
   await s.useChannels.getState().load(true); // which this must cancel
 
@@ -313,7 +501,9 @@ test("a failed playlist switch cannot inherit channels or categories from the pr
   vi.stubGlobal("fetch", fetchMock);
   await s.useChannels.getState().load();
 
-  s.useSettings.getState().addPlaylist("Wrong credentials", "http://list.invalid/wrong.m3u");
+  s.useSettings
+    .getState()
+    .addPlaylist("Wrong credentials", { kind: "m3u", url: "http://list.invalid/wrong.m3u" });
   const next = s.useSettings.getState().playlists[1];
   s.useSettings.getState().set("activePlaylistId", next.id);
   const result = await s.useChannels.getState().load(true);
@@ -361,7 +551,7 @@ test("validating first setup does not change the channel store", async () => {
 
   const result = await s.useChannels
     .getState()
-    .validatePlaylist("News", "http://list.invalid/setup.m3u");
+    .validatePlaylist("News", { kind: "m3u", url: "http://list.invalid/setup.m3u" });
 
   assert.deepEqual(result, { count: 2, error: "" });
   assert.equal(s.useChannels.getState().channels.length, 0);
@@ -400,6 +590,130 @@ test("the slower of two overlapping loads does not overwrite the newer one", asy
   assert.equal(s.useChannels.getState().error, "", "the abandoned request reported a failure");
 });
 
+test("an aborted Xtream authentication cannot change state owned by a newer load", async () => {
+  const s = await load();
+  configureXtream(s);
+  let releaseNewer: (value: unknown) => void = () => {};
+  const fetchMock = vi
+    .fn()
+    .mockImplementationOnce(
+      (_input: string, init: { signal: AbortSignal }) =>
+        new Promise((_resolve, reject) => {
+          init.signal.addEventListener("abort", () => reject(new Error("old authentication")));
+        }),
+    )
+    .mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          releaseNewer = resolve;
+        }),
+    );
+  vi.stubGlobal("fetch", fetchMock);
+
+  const abandoned = s.useChannels.getState().load(true);
+  s.useSettings.getState().addPlaylist("New", { kind: "m3u", url: "http://new.invalid/list" });
+  s.useSettings.getState().set("activePlaylistId", s.useSettings.getState().playlists[1].id);
+  const newer = s.useChannels.getState().load(true);
+  await abandoned;
+
+  expect(s.useChannels.getState().loading).toBe(true);
+  expect(s.useChannels.getState().error).toBe("");
+  releaseNewer({ ok: true, text: async () => OTHER });
+  await newer;
+});
+
+test("an aborted Xtream live request cannot change state owned by a newer load", async () => {
+  const s = await load();
+  configureXtream(s);
+  let rejectLive: ((reason: Error) => void) | undefined;
+  let markLiveStarted: () => void = () => {};
+  const liveStarted = new Promise<void>((resolve) => {
+    markLiveStarted = resolve;
+  });
+  const fetchMock = xtreamFetch();
+  fetchMock.mockImplementation(async (input: string | URL, init?: RequestInit) => {
+    const url = new URL(String(input));
+    if (url.searchParams.get("action") === "get_live_streams") {
+      markLiveStarted();
+      return new Promise((_resolve, reject) => {
+        rejectLive = reject;
+        init?.signal?.addEventListener("abort", () => reject(new Error("old live")));
+      });
+    }
+    const action = url.searchParams.get("action") ?? "authenticate";
+    return xtreamResponse(
+      action === "authenticate"
+        ? {
+            user_info: { auth: 1, status: "Active" },
+            server_info: { server_protocol: "http", url: "provider.example" },
+          }
+        : [],
+    );
+  });
+  vi.stubGlobal("fetch", fetchMock);
+
+  const abandoned = s.useChannels.getState().load(true);
+  await liveStarted;
+  s.useSettings.getState().addPlaylist("New", { kind: "m3u", url: "http://new.invalid/list" });
+  s.useSettings.getState().set("activePlaylistId", s.useSettings.getState().playlists[1].id);
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(() => new Promise(() => {})),
+  );
+  void s.useChannels.getState().load(true);
+  await abandoned;
+
+  expect(rejectLive).toBeDefined();
+  expect(s.useChannels.getState().loading).toBe(true);
+  expect(s.useChannels.getState().error).toBe("");
+});
+
+test("a fresh Xtream cache answers launch without network work", async () => {
+  const s = await load();
+  const playlist = configureXtream(s);
+  seedXtreamCache(playlist, HOUR);
+  const fetchMock = vi.fn();
+  vi.stubGlobal("fetch", fetchMock);
+
+  const result = await s.useChannels.getState().load();
+
+  expect(result).toEqual({ count: 1, error: "" });
+  expect(s.useChannels.getState().channels[0].name).toBe("Cached News");
+  await afterIdle();
+  expect(fetchMock).not.toHaveBeenCalled();
+});
+
+test("a stale Xtream cache stays visible when its refresh fails", async () => {
+  const s = await load();
+  const playlist = configureXtream(s);
+  seedXtreamCache(playlist, 12 * HOUR);
+  vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("offline")));
+
+  expect(await s.useChannels.getState().load()).toEqual({ count: 1, error: "" });
+  await afterIdle();
+
+  expect(s.useChannels.getState().channels[0].name).toBe("Cached News");
+  expect(s.useChannels.getState().error).toMatch(/Showing the last saved copy/);
+});
+
+test("a source version change cannot read an older Xtream cache", async () => {
+  const s = await load();
+  const playlist = configureXtream(s);
+  seedXtreamCache(playlist, HOUR);
+  s.useSettings.getState().updatePlaylist(playlist.id, playlist.name, {
+    ...XTREAM_SOURCE,
+    password: "new-secret",
+  });
+  vi.stubGlobal("fetch", xtreamFetch());
+
+  await s.useChannels.getState().load();
+
+  expect(s.useChannels.getState().channels.map((channel) => channel.name)).toEqual([
+    "Alpha",
+    "Beta",
+  ]);
+});
+
 test("nothing configured is not an error, it is the first run", async () => {
   const s = await load();
   const result = await s.useChannels.getState().load();
@@ -409,18 +723,37 @@ test("nothing configured is not an error, it is the first run", async () => {
 
 test("favourites survive a reload and clear on request", async () => {
   const s = await load();
-  s.useChannels.getState().toggleFavourite("alpha");
-  s.useChannels.getState().toggleFavourite("beta");
-  assert.deepEqual(s.useChannels.getState().favourites, ["alpha", "beta"]);
+  const favourite = (itemKey: string) => ({
+    itemKey,
+    playlistId: "playlist",
+    kind: "live" as const,
+    providerId: itemKey,
+    categoryKey: "News",
+    name: itemKey,
+    logo: "",
+  });
+  s.usePersonal.getState().toggleFavourite(favourite("alpha"));
+  s.usePersonal.getState().toggleFavourite(favourite("beta"));
+  assert.deepEqual(
+    s.usePersonal.getState().favourites.map((item) => item.itemKey),
+    ["alpha", "beta"],
+  );
 
-  s.useChannels.getState().toggleFavourite("alpha");
-  assert.deepEqual(s.useChannels.getState().favourites, ["beta"]);
+  s.usePersonal.getState().toggleFavourite(favourite("alpha"));
+  assert.deepEqual(
+    s.usePersonal.getState().favourites.map((item) => item.itemKey),
+    ["beta"],
+  );
 
   const reloaded = await load();
-  assert.deepEqual(reloaded.useChannels.getState().favourites, ["beta"], "not written through");
+  assert.deepEqual(
+    reloaded.usePersonal.getState().favourites.map((item) => item.itemKey),
+    ["beta"],
+    "not written through",
+  );
 
-  reloaded.useChannels.getState().clearPersonal();
-  assert.deepEqual(reloaded.useChannels.getState().favourites, []);
+  reloaded.usePersonal.getState().clearPersonal();
+  assert.deepEqual(reloaded.usePersonal.getState().favourites, []);
 });
 
 test("sorting A to Z is applied to what was fetched", async () => {
@@ -480,6 +813,39 @@ test("the sweep clears the playlists older versions kept in localStorage", async
   assert.equal(localStorage.getItem("openiptv.favourites"), '["keep-me"]', "took too much");
 });
 
+test("the sweep removes obsolete Xtream source versions and removed playlists", async () => {
+  const s = await load();
+  const current = configureXtream(s);
+  const currentPrefix = seedXtreamCache(current, HOUR);
+  disk.set(`xtream:${current.id}:v0:live`, "old version");
+  disk.set("xtream:removed:v1:live", "removed playlist");
+  localStorage.setItem(`openiptv.at.${currentPrefix}:movie-category:10`, "1");
+  localStorage.setItem(`openiptv.at.xtream:${current.id}:v0:movie:100`, "1");
+  localStorage.setItem("openiptv.at.xtream:removed:v1:live", "1");
+
+  await s.useChannels.getState().sweep();
+
+  expect(disk.has(`${currentPrefix}:live`)).toBe(true);
+  expect(disk.has(`xtream:${current.id}:v0:live`)).toBe(false);
+  expect(disk.has("xtream:removed:v1:live")).toBe(false);
+  expect(localStorage.getItem(`openiptv.at.${currentPrefix}:movie-category:10`)).toBe("1");
+  expect(localStorage.getItem(`openiptv.at.xtream:${current.id}:v0:movie:100`)).toBeNull();
+  expect(localStorage.getItem("openiptv.at.xtream:removed:v1:live")).toBeNull();
+});
+
+test("clearing cache removes Xtream values and freshness stamps", async () => {
+  const s = await load();
+  const playlist = configureXtream(s);
+  const prefix = seedXtreamCache(playlist, HOUR);
+  localStorage.setItem(`openiptv.at.${prefix}:series:200`, "1");
+
+  await s.clearCache();
+
+  expect([...disk.keys()].some((key) => key.startsWith("xtream:"))).toBe(false);
+  expect(localStorage.getItem(`openiptv.at.${prefix}:live`)).toBeNull();
+  expect(localStorage.getItem(`openiptv.at.${prefix}:series:200`)).toBeNull();
+});
+
 test("editing a playlist's address does not serve the old one from cache", async () => {
   const s = await load();
   configure(s, "http://list.invalid/before.m3u");
@@ -489,7 +855,9 @@ test("editing a playlist's address does not serve the old one from cache", async
   // The id is unchanged, which is exactly the case that used to go wrong: the cache was
   // keyed on it, so a corrected address was answered with the previous playlist's channels
   // and a timestamp saying they were current.
-  s.useSettings.getState().updatePlaylist(id, "After", "http://list.invalid/after.m3u");
+  s.useSettings
+    .getState()
+    .updatePlaylist(id, "After", { kind: "m3u", url: "http://list.invalid/after.m3u" });
   vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, text: async () => OTHER }));
 
   await s.useChannels.getState().load();

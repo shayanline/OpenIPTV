@@ -1,7 +1,11 @@
 import { test } from "vitest";
 import assert from "node:assert/strict";
 import {
-  SEQUENCE_CEILING, needsRepair, readPlaylist, renderPlaylist, windowOf,
+  SEQUENCE_CEILING,
+  needsRepair,
+  readPlaylist,
+  renderPlaylist,
+  windowOf,
 } from "../src/services/manifest";
 
 /** What the service does with a window: render it, numbered from where the caller has counted to. */
@@ -19,8 +23,12 @@ const repaired = (text: string, from: string, sequence = 0) =>
  */
 
 const playlist = (sequence: string, segments = 3) => {
-  const lines = ["#EXTM3U", "#EXT-X-VERSION:3", "#EXT-X-TARGETDURATION:2",
-    `#EXT-X-MEDIA-SEQUENCE:${sequence}`];
+  const lines = [
+    "#EXTM3U",
+    "#EXT-X-VERSION:3",
+    "#EXT-X-TARGETDURATION:2",
+    `#EXT-X-MEDIA-SEQUENCE:${sequence}`,
+  ];
   for (let i = 0; i < segments; i += 1) {
     lines.push("#EXTINF:2.000000,");
     lines.push(`segment-${i}.ts`);
@@ -77,7 +85,10 @@ test("the number written out is the one the caller counted, not one derived from
    * Counting segments is the only thing that keeps the promise HLS makes, one per segment.
    */
   const clock = 1786136377905810;
-  assert.equal(readPlaylist(repaired(playlist(String(clock)), "https://h/x.m3u8", 0)).sequence, 0);
+  assert.equal(
+    readPlaylist(repaired(playlist(String(clock)), "https://h/x.m3u8", 0)).sequence,
+    0,
+  );
   // Six seconds later the clock has moved six million, and the number served has moved by three.
   const later = repaired(playlist(String(clock + 6_000_000)), "https://h/x.m3u8", 3);
   assert.equal(readPlaylist(later).sequence, 3);
@@ -89,8 +100,13 @@ test("segment addresses are made absolute against where the playlist came from",
 });
 
 test("addresses that are already absolute, or on another host, are untouched", () => {
-  const text = ["#EXTM3U", "#EXT-X-MEDIA-SEQUENCE:1786136377905810", "#EXTINF:2.0,",
-    "https://elsewhere.example/a.ts", ""].join("\n");
+  const text = [
+    "#EXTM3U",
+    "#EXT-X-MEDIA-SEQUENCE:1786136377905810",
+    "#EXTINF:2.0,",
+    "https://elsewhere.example/a.ts",
+    "",
+  ].join("\n");
   const fixed = repaired(text, "https://host.example/live/index.m3u8");
   assert.match(fixed, /https:\/\/elsewhere\.example\/a\.ts/);
 });
@@ -118,8 +134,10 @@ test("the declared target duration is inflated, because it chooses where the pla
    * the picture frozen before it began. Twenty starts it a minute back, inside content the window
    * already holds.
    */
-  assert.match(repaired(playlist("1786136377905810"), "https://h/x.m3u8"),
-    /#EXT-X-TARGETDURATION:20/);
+  assert.match(
+    repaired(playlist("1786136377905810"), "https://h/x.m3u8"),
+    /#EXT-X-TARGETDURATION:20/,
+  );
 });
 
 test("the declared target is never lower than the longest segment", () => {
@@ -132,7 +150,10 @@ test("the declared target is never lower than the longest segment", () => {
 test("the sixteen digit titles the packager writes into EXTINF are dropped", () => {
   // Another oversized integer per segment, read by nothing, and one more thing for a parser that
   // has already been defeated by one number to trip over.
-  const text = playlist("1786136377905810").replace(/#EXTINF:2.000000,/g, "#EXTINF:2.000000,1786136377905810");
+  const text = playlist("1786136377905810").replace(
+    /#EXTINF:2.000000,/g,
+    "#EXTINF:2.000000,1786136377905810",
+  );
   const fixed = repaired(text, "https://h/x.m3u8");
   assert.ok(!fixed.includes("2.000000,1786136377905810"), "a segment title survived");
 });

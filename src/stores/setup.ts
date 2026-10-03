@@ -1,15 +1,18 @@
 import { create } from "zustand";
+import type { PlaylistSource } from "../services/playlistUrl";
 
 interface SetupState {
   name: string;
-  url: string;
-  set: (values: { name: string; url: string }) => void;
+  source: PlaylistSource;
+  set: (values: { name: string; source: PlaylistSource }) => void;
   clear: () => void;
 }
 
+const EMPTY_SOURCE: PlaylistSource = { kind: "m3u", url: "" };
+
 export const useSetup = create<SetupState>((set) => ({
   name: "",
-  url: "",
-  set: ({ name, url }) => set({ name, url }),
-  clear: () => set({ name: "", url: "" }),
+  source: EMPTY_SOURCE,
+  set: ({ name, source }) => set({ name, source }),
+  clear: () => set({ name: "", source: EMPTY_SOURCE }),
 }));

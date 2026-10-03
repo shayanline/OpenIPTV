@@ -42,7 +42,12 @@
       "chromiumFull": "76.0.3809.146",
       "userAgent": "Mozilla/5.0 (SMART-TV; LINUX; Tizen 6.0) AppleWebKit/537.36 (KHTML, like Gecko) 76.0.3809.146/6.0 TV Safari/537.36",
       "snapshotNear": 681094,
-      "arrives": ["String.matchAll", "Object.fromEntries", "queueMicrotask", "Promise.allSettled"]
+      "arrives": [
+        "String.matchAll",
+        "Object.fromEntries",
+        "queueMicrotask",
+        "Promise.allSettled"
+      ]
     },
     {
       "tizen": "6.5",

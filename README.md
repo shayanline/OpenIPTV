@@ -50,11 +50,12 @@ Your playlists, preferences, and favourites stay on your device. OpenIPTV has no
 ## What you can do
 
 - Browse original playlist categories, manage their visibility, and keep Favourites.
-- Search every channel or tune directly with channel numbers.
-- Resume the last channel and inspect live playback information.
+- Search every live channel or tune directly with channel numbers.
+- Watch Xtream live television, movies, series, episodes, programme information, and provider catchup.
+- Resume the last channel or finite video, then pause or seek movies, episodes, and catchup in ten second steps.
 - Use 17 translated interfaces, including complete right to left layouts for Arabic and Persian.
 
-OpenIPTV focuses on live viewing, without a programme guide or recording features.
+OpenIPTV does not provide recording management or provider administration.
 
 ## Install on a Samsung TV
 
@@ -104,9 +105,9 @@ Run `npm run package` when you only need `build/OpenIPTV.wgt`.
 | Source | What to enter |
 |:--|:--|
 | **Extended M3U** | A complete HTTP or HTTPS playlist address. |
-| **Xtream login** | The server address, username, password, and HLS or MPEG TS stream format. |
+| **Xtream login** | The server address, username, password, and HLS or MPEG TS live stream format. Live television, movies, series, episodes, programme information, and provider catchup are supported. |
 
-Save several playlists and activate one at a time. Each playlist keeps its own category visibility, and password values stay concealed in the interface.
+Save several playlists and activate one at a time. Each playlist keeps its own category visibility, and password values stay concealed in the interface. For Xtream sources, choose Live, Movies, or Series from the content switcher. Movie and series summary indexes provide complete search and category counts without opening every category.
 
 ## Remote access
 
@@ -141,7 +142,7 @@ A paired device can manage playlists, ordinary settings, application data, autho
 ## Help
 
 > [!NOTE]
-> Browser security can prevent some providers from playing through the hosted demo even when the same stream works on the television.
+> The hosted HTTPS demo can use only provider API, artwork, and stream addresses that support HTTPS and permit browser access through Cross Origin Resource Sharing. A provider that lacks either can still work in the packaged television app. Browser codec and container support can also be narrower than Samsung AVPlay support, especially for movie and episode files.
 
 <details>
 <summary>Common issues</summary>
@@ -149,7 +150,7 @@ A paired device can manage playlists, ordinary settings, application data, autho
 - **TizenBrew cannot connect.** Repeat [Prepare the television](#prepare-the-television), including the restart, and avoid guest networks that isolate devices.
 - **Installation reports certificate error 118 or -12.** Follow [Build and sign manually](#build-and-sign-manually).
 - **A playlist address is refused.** Review the supported details under [Add playlists](#add-playlists).
-- **An Xtream channel will not play.** Try the other stream format under [Add playlists](#add-playlists).
+- **An Xtream stream will not play.** Try the other live stream format under [Add playlists](#add-playlists). The packaged television app retries eligible HTTPS connection failures once over HTTP. Local development and the TV simulator route that retry through a same origin relay so Chromium cannot upgrade it through HSTS, while the hosted HTTPS demo cannot downgrade because browsers block mixed content.
 - **A channel shows one frame and stops.** Turn on Compatibility mode under Settings, then Playback.
 - **A remote key does nothing.** Open Settings, About, Support, Diagnostics, then Remote buttons, then compare it with the [remote button reference](#remote-button-reference).
 - **Logos are slow to appear.** Turn Show channel logos off under Settings, then Appearance.

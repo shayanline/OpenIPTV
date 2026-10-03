@@ -30,7 +30,7 @@ import { driver } from "./tv/harness.mjs";
 import { SEED, host } from "./present.mjs";
 
 const OUT = "docs/screenshots";
-const PORT = 4600;          // not store-assets' 4599, so both can run at once
+const PORT = 4600; // not store-assets' 4599, so both can run at once
 const CHROME_PORT = 9334;
 const WIDTH = 1920;
 const HEIGHT = 1080;
@@ -96,18 +96,22 @@ if (!chrome) {
 mkdirSync(OUT, { recursive: true });
 const server = await host("dist", PORT);
 
-const browser = spawn(chrome, [
-  `--remote-debugging-port=${CHROME_PORT}`,
-  `--window-size=${WIDTH},${HEIGHT}`,
-  "--headless=new",
-  "--hide-scrollbars",
-  "--no-first-run",
-  "--no-sandbox",
-  // A fresh profile every run, so nothing is photographed out of last run's disk cache and the
-  // first shot really is a first run.
-  `--user-data-dir=${mkdtempSync(join(tmpdir(), "openiptv-shots-"))}`,
-  "about:blank",
-], { stdio: "ignore" });
+const browser = spawn(
+  chrome,
+  [
+    `--remote-debugging-port=${CHROME_PORT}`,
+    `--window-size=${WIDTH},${HEIGHT}`,
+    "--headless=new",
+    "--hide-scrollbars",
+    "--no-first-run",
+    "--no-sandbox",
+    // A fresh profile every run, so nothing is photographed out of last run's disk cache and the
+    // first shot really is a first run.
+    `--user-data-dir=${mkdtempSync(join(tmpdir(), "openiptv-shots-"))}`,
+    "about:blank",
+  ],
+  { stdio: "ignore" },
+);
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 await sleep(1500);
@@ -131,7 +135,10 @@ await cdp.send("Page.addScriptToEvaluateOnNewDocument", {
   })()`,
 });
 await cdp.send("Emulation.setDeviceMetricsOverride", {
-  width: WIDTH, height: HEIGHT, deviceScaleFactor: 1, mobile: false,
+  width: WIDTH,
+  height: HEIGHT,
+  deviceScaleFactor: 1,
+  mobile: false,
 });
 
 const app = driver(cdp, PORT);
@@ -146,10 +153,13 @@ const app = driver(cdp, PORT);
 async function shoot(name, expect, width = WIDTH, height = HEIGHT) {
   await sleep(600);
   const showing = await app.evaluate(
-    `document.body.innerText.includes(${JSON.stringify(expect)})`);
+    `document.body.innerText.includes(${JSON.stringify(expect)})`,
+  );
   if (!showing) {
-    throw new Error(`Expected "${expect}" on screen for ${name} and it is not there, so this `
-      + "would have photographed whatever was open instead.");
+    throw new Error(
+      `Expected "${expect}" on screen for ${name} and it is not there, so this ` +
+        "would have photographed whatever was open instead.",
+    );
   }
   const { data } = await cdp.send("Page.captureScreenshot", { format: "png" });
   const bytes = Buffer.from(data, "base64");
@@ -181,174 +191,200 @@ console.log(`\nTen screenshots, from the built application on port ${PORT}:`);
  * was missing, which was true and had nothing to do with the code that had just been changed.
  */
 try {
+  // 1. What a viewer sees on a television before the seed exists, including local Remote access.
+  const { identifier: onboardingShim } = await cdp.send(
+    "Page.addScriptToEvaluateOnNewDocument",
+    {
+      source: TV_REMOTE_SHIM,
+    },
+  );
+  await cdp.send("Page.navigate", { url: `http://127.0.0.1:${PORT}/` });
+  await sleep(2000);
+  await shoot("01-first-run", "playlist");
+  await cdp.send("Page.removeScriptToEvaluateOnNewDocument", { identifier: onboardingShim });
 
-// 1. What a viewer sees on a television before the seed exists, including local Remote access.
-const { identifier: onboardingShim } = await cdp.send("Page.addScriptToEvaluateOnNewDocument", {
-  source: TV_REMOTE_SHIM,
-});
-await cdp.send("Page.navigate", { url: `http://127.0.0.1:${PORT}/` });
-await sleep(2000);
-await shoot("01-first-run", "playlist");
-await cdp.send("Page.removeScriptToEvaluateOnNewDocument", { identifier: onboardingShim });
+  // From here on, a playlist exists.
+  await app.evaluate(SEED);
+  await cdp.send("Page.reload");
+  await sleep(5000);
 
-// From here on, a playlist exists.
-await app.evaluate(SEED);
-await cdp.send("Page.reload");
-await sleep(5000);
+  // 2. The channel list, which is the screen the application opens on and the one used most.
+  await shoot("02-channels", "News One");
 
-// 2. The channel list, which is the screen the application opens on and the one used most.
-await shoot("02-channels", "News One");
+  // 3. The categories the playlist declared, which is the rail rather than a claim in the README.
+  await app.press("ArrowLeft", 37);
+  await app.press("ArrowDown", 40);
+  await shoot("03-categories", "Sport");
 
-// 3. The categories the playlist declared, which is the rail rather than a claim in the README.
-await app.press("ArrowLeft", 37);
-await app.press("ArrowDown", 40);
-await shoot("03-categories", "Sport");
+  /*
+   * 4. Search, the feature least likely to be found on its own.
+   *
+   * The query goes in as character events rather than by setting the field's value, because React
+   * tracks the value it last wrote and an assignment leaves its tracker thinking nothing changed, so
+   * no results ever appear. The store script learnt this the same way.
+   */
+  await app.press("ArrowRight", 39);
+  await keyed("Search");
+  for (const character of "news") {
+    await cdp.send("Input.dispatchKeyEvent", { type: "char", text: character });
+  }
+  await sleep(600);
+  await shoot("04-search", "News");
 
-/*
- * 4. Search, the feature least likely to be found on its own.
- *
- * The query goes in as character events rather than by setting the field's value, because React
- * tracks the value it last wrote and an assignment leaves its tracker thinking nothing changed, so
- * no results ever appear. The store script learnt this the same way.
- */
-await app.press("ArrowRight", 39);
-await keyed("Search");
-for (const character of "news") {
-  await cdp.send("Input.dispatchKeyEvent", { type: "char", text: character });
-}
-await sleep(600);
-await shoot("04-search", "News");
+  // 5. Favourites, which only exists as a category once something is in it, so the green key has to
+  //    be pressed on a channel before there is anything to photograph.
+  await app.press("Escape", 27);
+  await app.press("Escape", 27);
+  await sleep(400);
+  await app.press("Green", 404);
+  await sleep(400);
+  await app.press("ArrowLeft", 37);
+  await sleep(400);
+  await shoot("05-favourites", "Favourites");
 
-// 5. Favourites, which only exists as a category once something is in it, so the green key has to
-//    be pressed on a channel before there is anything to photograph.
-await app.press("Escape", 27);
-await app.press("Escape", 27);
-await sleep(400);
-await app.press("Green", 404);
-await sleep(400);
-await app.press("ArrowLeft", 37);
-await sleep(400);
-await shoot("05-favourites", "Favourites");
+  // 6. Settings, on the section carrying compatibility mode. Asserted on the label the interface
+  //    actually shows, so the screenshot follows the same visible wording as the TV walk.
+  //
+  //    The wait is for the "Added to favourites" message from the shot above, which outlives the
+  //    screen that raised it and otherwise sits in the middle of this one looking like a caption to
+  //    a settings page it has nothing to do with.
+  await sleep(4000);
+  const { identifier: settingsShim } = await cdp.send("Page.addScriptToEvaluateOnNewDocument", {
+    source: TV_REMOTE_SHIM,
+  });
+  await cdp.send("Page.reload");
+  await sleep(2600);
+  await keyed("Settings");
+  await sleep(500);
+  if (!(await app.clickText("Playback"))) {
+    throw new Error("No Playback section in Settings, so the section it moved to is unknown.");
+  }
+  await shoot("06-settings", "Compatibility mode");
 
-// 6. Settings, on the section carrying compatibility mode. Asserted on the label the interface
-//    actually shows, so the screenshot follows the same visible wording as the TV walk.
-//
-//    The wait is for the "Added to favourites" message from the shot above, which outlives the
-//    screen that raised it and otherwise sits in the middle of this one looking like a caption to
-//    a settings page it has nothing to do with.
-await sleep(4000);
-const { identifier: settingsShim } = await cdp.send("Page.addScriptToEvaluateOnNewDocument", {
-  source: TV_REMOTE_SHIM,
-});
-await cdp.send("Page.reload");
-await sleep(2600);
-await keyed("Settings");
-await sleep(500);
-if (!(await app.clickText("Playback"))) {
-  throw new Error("No Playback section in Settings, so the section it moved to is unknown.");
-}
-await shoot("06-settings", "Compatibility mode");
-
-// 7. Category management, where every playlist owns its own visibility and search controls.
-if (!(await app.clickText("Playlists"))) {
-  throw new Error("No Playlists section in Settings, so category management cannot be shown.");
-}
-await sleep(400);
-const openedCategories = await app.evaluate(`(() => {
+  // 7. Category management, where every playlist owns its own visibility and search controls.
+  if (!(await app.clickText("Playlists"))) {
+    throw new Error(
+      "No Playlists section in Settings, so category management cannot be shown.",
+    );
+  }
+  await sleep(400);
+  const openedCategories = await app.evaluate(`(() => {
   const button = document.querySelector('[data-settings-focus^="playlist-categories-"]');
   if (!button) return false;
   button.click();
   return true;
 })()`);
-if (!openedCategories) throw new Error("No category management action was available in Settings.");
-await app.evaluate(`(() => {
+  if (!openedCategories)
+    throw new Error("No category management action was available in Settings.");
+  await app.evaluate(`(() => {
   const row = document.querySelector(".category-setting-row");
   row?.focus();
   row?.dispatchEvent(new FocusEvent("focusin", { bubbles: true }));
 })()`);
-await shoot("07-category-management", "Categories");
-await cdp.send("Page.removeScriptToEvaluateOnNewDocument", { identifier: settingsShim });
+  await shoot("07-category-management", "Categories");
+  await cdp.send("Page.removeScriptToEvaluateOnNewDocument", { identifier: settingsShim });
 
-// 8. Playback information, enabled before the reload so it appears as soon as a channel is chosen.
-await app.evaluate(`(() => {
+  // 8. Playback information, enabled before the reload so it appears as soon as a channel is chosen.
+  await app.evaluate(`(() => {
   const key = "openiptv.settings";
   const settings = JSON.parse(localStorage.getItem(key) || "{}");
   settings.showPlaybackStats = true;
   localStorage.setItem(key, JSON.stringify(settings));
 })()`);
-const { identifier: playbackShim } = await cdp.send("Page.addScriptToEvaluateOnNewDocument", {
-  source: PLAYBACK_SHIM,
-});
-await cdp.send("Page.reload");
-await sleep(2600);
-const playbackReports = await app.evaluate(
-  `window.webapis?.avplay?.getCurrentStreamInfo?.()[0]?.extra_info || ""`);
-if (!playbackReports) throw new Error("The playback screenshot has no engine reports.");
-await app.press("Enter", 13);
-await sleep(1800);
-await shoot("08-playback-information", "1920 × 1080");
-await cdp.send("Page.removeScriptToEvaluateOnNewDocument", { identifier: playbackShim });
-
-// 9 and 10. The phone sized Remote access page, with its management view and Smart Remote.
-const remoteState = {
-  revision: 4,
-  locale: "en",
-  direction: "ltr",
-  labels: { aboutVersion: "Version 1.8.0" },
-  localeOptions: [{ id: "en", label: "English" }],
-  settings: {
-    locale: "en",
-    fontSizeId: "m",
-    showNumbers: true,
-    showLogos: true,
-    aspectId: "fill",
-    showClock: true,
-    resumeLast: true,
-    sortAlphabetically: false,
-    compatibility: false,
-    showPlaybackStats: false,
-  },
-  playlists: [
-    { id: "example", name: "Example", url: "https://example.com/playlist.m3u" },
-    { id: "family", name: "Family channels", url: "https://example.com/family.m3u" },
-  ],
-  activePlaylistId: "example",
-  setup: { name: "", url: "" },
-  devices: [{ id: "readme-device", name: "Living room phone", createdAt: 1, lastUsedAt: Date.now() }],
-  about: { version: "1.8.0", repository: "https://github.com/shayanline/OpenIPTV" },
-  operation: { loading: false, error: "", errorKey: "", errorDetail: "" },
-};
-cdp.on("Fetch.requestPaused", ({ requestId }) => {
-  void cdp.send("Fetch.fulfillRequest", {
-    requestId,
-    responseCode: 200,
-    responseHeaders: [{ name: "Content-Type", value: "application/json" }],
-    body: Buffer.from(JSON.stringify(remoteState)).toString("base64"),
+  const { identifier: playbackShim } = await cdp.send("Page.addScriptToEvaluateOnNewDocument", {
+    source: PLAYBACK_SHIM,
   });
-});
-await cdp.send("Fetch.enable", { patterns: [{ urlPattern: "*/api/v1/state" }] });
-await cdp.send("Emulation.setDeviceMetricsOverride", {
-  width: 430, height: 900, deviceScaleFactor: 1, mobile: true,
-});
-await cdp.send("Page.navigate", { url: `http://127.0.0.1:${PORT}/remote/index.html` });
-await sleep(800);
-await app.evaluate(`localStorage.setItem("openiptv.remote", JSON.stringify({ deviceId: "readme-device", credential: "readme" }))`);
-await cdp.send("Page.reload");
-await sleep(1200);
-await app.evaluate(`(() => {
+  await cdp.send("Page.reload");
+  await sleep(2600);
+  const playbackReports = await app.evaluate(
+    `window.webapis?.avplay?.getCurrentStreamInfo?.()[0]?.extra_info || ""`,
+  );
+  if (!playbackReports) throw new Error("The playback screenshot has no engine reports.");
+  await app.press("Enter", 13);
+  await sleep(1800);
+  await shoot("08-playback-information", "1920 × 1080");
+  await cdp.send("Page.removeScriptToEvaluateOnNewDocument", { identifier: playbackShim });
+
+  // 9 and 10. The phone sized Remote access page, with its management view and Smart Remote.
+  const remoteState = {
+    revision: 4,
+    locale: "en",
+    direction: "ltr",
+    labels: { aboutVersion: "Version 1.8.0" },
+    localeOptions: [{ id: "en", label: "English" }],
+    settings: {
+      locale: "en",
+      fontSizeId: "m",
+      showNumbers: true,
+      showLogos: true,
+      aspectId: "fill",
+      showClock: true,
+      resumeLast: true,
+      sortAlphabetically: false,
+      compatibility: false,
+      showPlaybackStats: false,
+    },
+    playlists: [
+      {
+        id: "example",
+        name: "Example",
+        source: { kind: "m3u", url: "https://example.com/playlist.m3u" },
+        sourceVersion: 1,
+      },
+      {
+        id: "family",
+        name: "Family channels",
+        source: { kind: "m3u", url: "https://example.com/family.m3u" },
+        sourceVersion: 1,
+      },
+    ],
+    activePlaylistId: "example",
+    setup: { name: "", source: { kind: "m3u", url: "" } },
+    devices: [
+      { id: "readme-device", name: "Living room phone", createdAt: 1, lastUsedAt: Date.now() },
+    ],
+    about: { version: "1.8.0", repository: "https://github.com/shayanline/OpenIPTV" },
+    operation: { loading: false, error: "", errorKey: "", errorDetail: "" },
+  };
+  cdp.on("Fetch.requestPaused", ({ requestId }) => {
+    void cdp.send("Fetch.fulfillRequest", {
+      requestId,
+      responseCode: 200,
+      responseHeaders: [{ name: "Content-Type", value: "application/json" }],
+      body: Buffer.from(JSON.stringify(remoteState)).toString("base64"),
+    });
+  });
+  await cdp.send("Fetch.enable", { patterns: [{ urlPattern: "*/api/v1/state" }] });
+  await cdp.send("Emulation.setDeviceMetricsOverride", {
+    width: 430,
+    height: 900,
+    deviceScaleFactor: 1,
+    mobile: true,
+  });
+  await cdp.send("Page.navigate", { url: `http://127.0.0.1:${PORT}/remote/index.html` });
+  await sleep(800);
+  await app.evaluate(
+    `localStorage.setItem("openiptv.remote", JSON.stringify({ deviceId: "readme-device", credential: "readme" }))`,
+  );
+  await cdp.send("Page.reload");
+  await sleep(1200);
+  await app.evaluate(`(() => {
   document.documentElement.style.scrollBehavior = "auto";
   document.querySelector(".tabs").style.scrollBehavior = "auto";
   document.querySelector("#appearance").hidden = true;
   document.querySelector("#playback").hidden = true;
   document.querySelector('.tabs a[href="#playlists"]').click();
 })()`);
-await shoot("09-remote-access", "Family channels", 430, 900);
-await app.evaluate(`document.querySelector(".remote-fab")?.click()`);
-await sleep(400);
-await cdp.send("Emulation.setDeviceMetricsOverride", {
-  width: 820, height: 900, deviceScaleFactor: 1, mobile: true,
-});
-const remoteCatalogueReady = await app.evaluate(`(() => {
+  await shoot("09-remote-access", "Family channels", 430, 900);
+  await app.evaluate(`document.querySelector(".remote-fab")?.click()`);
+  await sleep(400);
+  await cdp.send("Emulation.setDeviceMetricsOverride", {
+    width: 820,
+    height: 900,
+    deviceScaleFactor: 1,
+    mobile: true,
+  });
+  const remoteCatalogueReady = await app.evaluate(`(() => {
   const sheet = document.querySelector(".remote-sheet");
   const carousel = document.querySelector(".remote-carousel");
   const track = document.querySelector(".remote-track");
@@ -373,11 +409,11 @@ const remoteCatalogueReady = await app.evaluate(`(() => {
     return bounds.width === 340 && bounds.left >= 0 && bounds.right <= innerWidth;
   });
 })()`);
-if (!remoteCatalogueReady) throw new Error("Both Smart Remote pages did not fit the catalogue.");
-await shoot("10-smart-remote", "Smart Remote", 820, 900);
+  if (!remoteCatalogueReady)
+    throw new Error("Both Smart Remote pages did not fit the catalogue.");
+  await shoot("10-smart-remote", "Smart Remote", 820, 900);
 
-console.log(`\nAll ten are in ${OUT}/, and the README shows them.\n`);
-
+  console.log(`\nAll ten are in ${OUT}/, and the README shows them.\n`);
 } finally {
   cdp.close();
   browser.kill();

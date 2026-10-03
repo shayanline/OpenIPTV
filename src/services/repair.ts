@@ -1,6 +1,10 @@
 import type HlsType from "hls.js";
 import {
-  initialBufferSeconds, needsRepair, readPlaylist, renderPlaylist, windowOf,
+  initialBufferSeconds,
+  needsRepair,
+  readPlaylist,
+  renderPlaylist,
+  windowOf,
 } from "./manifest";
 import { readJSON, write } from "./store";
 
@@ -72,22 +76,26 @@ type State = "idle" | "starting" | "serving" | "listening" | "unavailable";
 let worker: Worker | null = null;
 let state: State = "idle";
 let port = 0;
-let serving = "";                       // the upstream currently being repaired
-let published: string[] = [];           // the addresses in the window last served, in order
-let sequence = 0;                       // the number given to the first of them
+let serving = ""; // the upstream currently being repaired
+let published: string[] = []; // the addresses in the window last served, in order
+let sequence = 0; // the number given to the first of them
 let servingBufferSeconds = initialBufferSeconds(0);
 let refresh: number | undefined;
 let waiting: ((port: number) => void)[] = [];
-let why = "";                           // why it is unavailable, for Diagnostics
-let generation = 0;                     // which tune the answer in flight belongs to
+let why = ""; // why it is unavailable, for Diagnostics
+let generation = 0; // which tune the answer in flight belongs to
 const browserRepairs = new Set<string>();
 const revalidating = new Map<string, Promise<boolean>>();
 
-const onTizen = (): boolean =>
-  typeof window !== "undefined" && !!window.webapis?.avplay;
+const onTizen = (): boolean => typeof window !== "undefined" && !!window.webapis?.avplay;
 
 /** Whether this television can do it at all, once it has been asked. */
-export const repairState = () => ({ state, port, why, upstream: serving, hosts: [...hosts] });
+export const repairState = () => ({
+  state,
+  port,
+  why: why ? "compatibility repair unavailable" : "",
+  hosts: [...hosts].map((entry) => entry.host),
+});
 
 /**
  * The hosts already known to defeat this television, kept across launches.
@@ -106,7 +114,7 @@ const DIAGNOSES_KEY = "openiptv.repair.diagnoses";
 const DIAGNOSES_MAX = 128;
 
 interface Diagnosis {
-  url: string;
+  key: string;
   repaired: boolean;
   bufferSeconds: number;
   etag: string;
@@ -117,7 +125,7 @@ const isDiagnosis = (value: unknown): value is Diagnosis => {
   if (!value || typeof value !== "object") return false;
   const diagnosis = value as Partial<Diagnosis>;
   return (
-    typeof diagnosis.url === "string" &&
+    typeof diagnosis.key === "string" &&
     typeof diagnosis.repaired === "boolean" &&
     typeof diagnosis.bufferSeconds === "number" &&
     Number.isFinite(diagnosis.bufferSeconds) &&
@@ -126,30 +134,43 @@ const isDiagnosis = (value: unknown): value is Diagnosis => {
   );
 };
 
+const hashAddress = (value: string): string => {
+  let hash = 2166136261;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(36);
+};
+
+const diagnosisKey = (sourceId: string, url: string) => `${sourceId}:${hashAddress(url)}`;
 const storedDiagnoses = readJSON<unknown>(DIAGNOSES_KEY, []);
 let diagnoses = Array.isArray(storedDiagnoses)
   ? storedDiagnoses.filter(isDiagnosis).slice(0, DIAGNOSES_MAX)
   : [];
+if (!Array.isArray(storedDiagnoses) || diagnoses.length !== storedDiagnoses.length) {
+  write(DIAGNOSES_KEY, JSON.stringify(diagnoses));
+}
 
-function diagnosisFor(url: string): Diagnosis | undefined {
-  return diagnoses.find((candidate) => candidate.url === url);
+function diagnosisFor(key: string): Diagnosis | undefined {
+  return diagnoses.find((candidate) => candidate.key === key);
 }
 
 function rememberDiagnosis(
-  url: string,
+  key: string,
   repaired: boolean,
   bufferSeconds: number,
   source: PlaylistSource,
 ): void {
   diagnoses = [
     {
-      url,
+      key,
       repaired,
       bufferSeconds,
       etag: source.etag,
       lastModified: source.lastModified,
     },
-    ...diagnoses.filter((diagnosis) => diagnosis.url !== url),
+    ...diagnoses.filter((diagnosis) => diagnosis.key !== key),
   ].slice(0, DIAGNOSES_MAX);
   write(DIAGNOSES_KEY, JSON.stringify(diagnoses));
 }
@@ -162,24 +183,47 @@ const hostOf = (url: string): string => {
   }
 };
 
-let hosts = new Set<string>(readJSON<string[]>(HOSTS_KEY, []));
-
-export function knownToNeedRepair(url: string): boolean {
-  const host = hostOf(url);
-  return !!host && hosts.has(host);
+interface RepairHost {
+  sourceId: string;
+  host: string;
 }
 
-export function rememberNeedsRepair(url: string): void {
+const isRepairHost = (value: unknown): value is RepairHost =>
+  !!value &&
+  typeof value === "object" &&
+  typeof (value as Partial<RepairHost>).sourceId === "string" &&
+  typeof (value as Partial<RepairHost>).host === "string";
+
+const storedHosts = readJSON<unknown[]>(HOSTS_KEY, []);
+let hosts = storedHosts.filter(isRepairHost).slice(-HOSTS_MAX);
+if (hosts.length !== storedHosts.length) write(HOSTS_KEY, JSON.stringify(hosts));
+
+export function knownToNeedRepair(url: string, sourceId = "shared"): boolean {
   const host = hostOf(url);
-  if (!host || hosts.has(host)) return;
-  const kept = [...hosts, host].slice(-HOSTS_MAX);
-  hosts = new Set(kept);
-  write(HOSTS_KEY, JSON.stringify(kept));
+  return !!host && hosts.some((entry) => entry.sourceId === sourceId && entry.host === host);
+}
+
+export function rememberNeedsRepair(url: string, sourceId = "shared"): void {
+  const host = hostOf(url);
+  if (!host || hosts.some((entry) => entry.sourceId === sourceId && entry.host === host))
+    return;
+  hosts = [...hosts, { sourceId, host }].slice(-HOSTS_MAX);
+  write(HOSTS_KEY, JSON.stringify(hosts));
+}
+
+export function forgetRepairSource(sourceId: string): void {
+  hosts = hosts.filter((entry) => entry.sourceId !== sourceId);
+  diagnoses = diagnoses.filter((diagnosis) => !diagnosis.key.startsWith(`${sourceId}:`));
+  for (const key of revalidating.keys()) {
+    if (key.startsWith(`${sourceId}:`)) revalidating.delete(key);
+  }
+  write(HOSTS_KEY, JSON.stringify(hosts));
+  write(DIAGNOSES_KEY, JSON.stringify(diagnoses));
 }
 
 /** Part of resetting everything to defaults: a diagnosis is personal to one television. */
 export function forgetRepairHosts(): void {
-  hosts = new Set();
+  hosts = [];
   diagnoses = [];
   revalidating.clear();
   browserRepairs.clear();
@@ -209,9 +253,14 @@ async function read(url: string, validators?: Diagnosis): Promise<PlaylistSource
   if (validators?.etag) headers["If-None-Match"] = validators.etag;
   if (validators?.lastModified) headers["If-Modified-Since"] = validators.lastModified;
   try {
-    const response = await fetch(url, { cache: "no-store", signal: controller.signal, headers });
+    const response = await fetch(url, {
+      cache: "no-store",
+      signal: controller.signal,
+      headers,
+    });
     const etag = response.headers?.get("etag") ?? validators?.etag ?? "";
-    const lastModified = response.headers?.get("last-modified") ?? validators?.lastModified ?? "";
+    const lastModified =
+      response.headers?.get("last-modified") ?? validators?.lastModified ?? "";
     if (response.status === 304) {
       return {
         text: "",
@@ -258,7 +307,10 @@ function variantUrls(text: string, from: string): string[] {
  * A master playlist does not carry segment durations itself. Reading its children lets a stream
  * such as Iran Press keep adaptive playback while still receiving enough initial AVPlay buffer.
  */
-async function longestSegment(source: PlaylistSource, seen = new Set<string>()): Promise<number> {
+async function longestSegment(
+  source: PlaylistSource,
+  seen = new Set<string>(),
+): Promise<number> {
   if (seen.has(source.url)) return 0;
   seen.add(source.url);
 
@@ -266,9 +318,12 @@ async function longestSegment(source: PlaylistSource, seen = new Set<string>()):
   if (!playlist.variants) return playlist.longest;
 
   let longest = playlist.longest;
-  const children = await Promise.all(variantUrls(source.text, source.url).map((url) => read(url)));
+  const children = await Promise.all(
+    variantUrls(source.text, source.url).map((url) => read(url)),
+  );
   for (const child of children) {
-    if (child && !child.notModified) longest = Math.max(longest, await longestSegment(child, seen));
+    if (child && !child.notModified)
+      longest = Math.max(longest, await longestSegment(child, seen));
   }
   return longest;
 }
@@ -392,7 +447,19 @@ function begin(): Promise<number> {
  * Healthy streams keep their original address, while the diagnosed segment duration still informs
  * the initial buffer. A stream with the known sequence defect is returned with its repaired address.
  */
-export async function prepare(upstream: string, force = false): Promise<PlaybackTarget | null> {
+export async function prepare(
+  upstream: string,
+  sourceId = "shared",
+  force = false,
+): Promise<PlaybackTarget | null> {
+  let path = "";
+  try {
+    path = new URL(upstream).pathname;
+  } catch {
+    return null;
+  }
+  if (!/\.m3u8?$/i.test(path)) return null;
+
   /*
    * A television that cannot do this is asked once, and the answer is kept for the session.
    *
@@ -414,7 +481,8 @@ export async function prepare(upstream: string, force = false): Promise<Playback
   generation += 1;
   const mine = generation;
   const stale = () => mine !== generation;
-  const cached = force ? undefined : diagnosisFor(upstream);
+  const key = diagnosisKey(sourceId, upstream);
+  const cached = force ? undefined : diagnosisFor(key);
   if (cached && !cached.repaired) {
     return {
       url: upstream,
@@ -442,7 +510,7 @@ export async function prepare(upstream: string, force = false): Promise<Playback
   if (stale()) return null;
   const bufferSeconds = initialBufferSeconds(longest);
   if (!needsRepair(source.text)) {
-    rememberDiagnosis(upstream, false, bufferSeconds, source);
+    rememberDiagnosis(key, false, bufferSeconds, source);
     return {
       url: upstream,
       upstream,
@@ -452,13 +520,13 @@ export async function prepare(upstream: string, force = false): Promise<Playback
     };
   }
 
-  rememberDiagnosis(upstream, true, bufferSeconds, source);
-  rememberNeedsRepair(upstream);
+  rememberDiagnosis(key, true, bufferSeconds, source);
+  rememberNeedsRepair(upstream, sourceId);
 
   if (!onTizen()) {
     if (!browserRepairs.has(upstream)) {
       try {
-        const { default: Hls } = await import("hls.js") as { default: typeof HlsType };
+        const { default: Hls } = (await import("hls.js")) as { default: typeof HlsType };
         if (stale() || !Hls.isSupported()) return null;
       } catch {
         return null;
@@ -495,11 +563,12 @@ export async function prepare(upstream: string, force = false): Promise<Playback
  * Conditional requests use the server's validator when it supplies one. If the playlist changed,
  * the small diagnosis is repeated and the caller can retune through the normal compatibility path.
  */
-export function revalidate(upstream: string): Promise<boolean> {
-  const existing = revalidating.get(upstream);
+export function revalidate(upstream: string, sourceId = "shared"): Promise<boolean> {
+  const key = diagnosisKey(sourceId, upstream);
+  const existing = revalidating.get(key);
   if (existing) return existing;
 
-  const cached = diagnosisFor(upstream);
+  const cached = diagnosisFor(key);
   if (!cached) return Promise.resolve(false);
 
   const run = (async () => {
@@ -510,26 +579,26 @@ export function revalidate(upstream: string): Promise<boolean> {
       repaired: needsRepair(source.text),
       bufferSeconds: initialBufferSeconds(longest),
     };
-    if (diagnoses.find((diagnosis) => diagnosis.url === upstream) !== cached) return false;
+    if (diagnoses.find((diagnosis) => diagnosis.key === key) !== cached) return false;
 
     const changed =
       cached.repaired !== next.repaired || cached.bufferSeconds !== next.bufferSeconds;
-    rememberDiagnosis(upstream, next.repaired, next.bufferSeconds, source);
-    if (next.repaired) rememberNeedsRepair(upstream);
+    rememberDiagnosis(key, next.repaired, next.bufferSeconds, source);
+    if (next.repaired) rememberNeedsRepair(upstream, sourceId);
     return changed;
   })().finally(() => {
-    revalidating.delete(upstream);
+    revalidating.delete(key);
   });
 
-  revalidating.set(upstream, run);
+  revalidating.set(key, run);
   return run;
 }
 
 /**
  * Repair a stream after a playback fault, returning null when the known manifest defect is absent.
  */
-export async function repair(upstream: string): Promise<Repair | null> {
-  const target = await prepare(upstream, true);
+export async function repair(upstream: string, sourceId = "shared"): Promise<Repair | null> {
+  const target = await prepare(upstream, sourceId, true);
   if (!target?.repaired) return null;
   return {
     url: target.url,
@@ -614,6 +683,7 @@ export function resumeRepair(): void {
  * connections when this is called, and there is no timer left running on either side.
  */
 export function idleRepair(): void {
+  generation += 1;
   if (state !== "serving") return;
   window.clearInterval(refresh);
   refresh = undefined;
@@ -622,8 +692,6 @@ export function idleRepair(): void {
   published = [];
   sequence = 0;
   servingBufferSeconds = initialBufferSeconds(0);
-  // Any answer still in flight now belongs to nobody.
-  generation += 1;
   state = "listening";
 }
 
@@ -636,6 +704,6 @@ export function idleRepair(): void {
  * reports a connection failure against a server that appears healthy.
  */
 export function stopRepair() {
-  if (state === "unavailable") return;      // remember the verdict, drop everything else
+  if (state === "unavailable") return; // remember the verdict, drop everything else
   teardown("");
 }

@@ -12,7 +12,11 @@ import { useEffect, useRef, useState } from "react";
  * they render a slice and slide it. That also means no scroll listener, which on a TV is a
  * saving worth having, since the events fire far more often than the viewer moves.
  */
-export function ScrollIndicator({ count, first, visible }: {
+export function ScrollIndicator({
+  count,
+  first,
+  visible,
+}: {
   count: number;
   first: number;
   visible: number;
@@ -36,13 +40,17 @@ export function ScrollIndicator({ count, first, visible }: {
   if (count <= visible) return null;
 
   const ratio = visible / count;
-  const travel = first / count;
+  const progress = first / Math.max(1, count - visible);
 
   return (
     <div className={`scrollbar ${show ? "show" : ""}`} aria-hidden="true">
       <div
         className="scrollbar-thumb"
-        style={{ height: `${ratio * 100}%`, transform: `translateY(${(travel * 100) / ratio}%)` }}
+        style={{
+          height: `${ratio * 100}%`,
+          top: `${progress * 100}%`,
+          transform: `translateY(${-progress * 100}%)`,
+        }}
       />
     </div>
   );

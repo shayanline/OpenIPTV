@@ -2,7 +2,19 @@ import type { MessageKey, MessageValues } from "../services/locale";
 
 export default {
   "common.search": "Zoeken",
+  "common.guide": "Gids",
   "common.settings": "Instellingen",
+  "content.live": "Live",
+  "content.movies": "Films",
+  "content.series": "Series",
+  "library.loading": "Laden…",
+  "library.failed": "Deze inhoud kon niet worden geladen.",
+  "library.retry": "Opnieuw proberen",
+  "library.details": "Details",
+  "library.resume": "Hervatten",
+  "library.season": ({ number }) => `Seizoen ${number}`,
+  "library.episode": ({ number }) => `Aflevering ${number}`,
+  "library.searchScope": ({ kind }) => `Zoeken omvat geladen ${kind}-categorieën.`,
   "common.move": "Verplaatsen",
   "common.open": "Openen",
   "common.closeSettings": "Instellingen sluiten",
@@ -167,6 +179,13 @@ export default {
   "app.hiddenFavouriteUnavailable":
     "Maak deze categorie zichtbaar voordat u favorieten toevoegt.",
   "banner.position": ({ at, of, list }) => `${at} van ${of} in ${list}`,
+  "banner.finiteTime": ({ elapsed, duration }) => `${elapsed} / ${duration}`,
+  "banner.now": ({ title }) => `Nu: ${title}`,
+  "banner.next": ({ title }) => `Hierna: ${title}`,
+  "guide.title": ({ category }) => `Programmagids: ${category}`,
+  "guide.playFromStart": "Vanaf het begin afspelen",
+  "guide.empty": "Er is geen programma informatie beschikbaar.",
+  "guide.failed": "De programma informatie kon niet worden geladen.",
   "guide.addIt": "Toevoegen",
   "guide.showMatches": "Overeenkomsten tonen",
   "guide.clear": "Wissen",
@@ -186,8 +205,7 @@ export default {
   "channel.unnamed": "Naamloos",
   "channel.hidden": "Verborgen",
   "channel.noCategories": "Nog geen categorieën.",
-  "channel.allCategoriesHidden":
-    "Alle categorieën zijn verborgen.",
+  "channel.allCategoriesHidden": "Alle categorieën zijn verborgen.",
   "channel.nothingInCategory": "Niets in deze categorie.",
   "channel.noMatches": ({ query }) => `Geen kanaal komt overeen met “${query}”.`,
   "channel.typeName": "Typ een kanaalnaam.",
@@ -254,6 +272,8 @@ export default {
   "playlist.refreshFailed": ({ detail }) =>
     `Vernieuwen mislukt: ${detail}. De laatst opgeslagen kopie wordt getoond.`,
   "playlist.loadFailed": ({ detail }) => `De afspeellijst kon niet worden geladen: ${detail}`,
+  "playlist.browserTransportFailed":
+    "Deze browser kon de provider niet via HTTPS bereiken. De provider moet HTTPS en CORS ondersteunen.",
   "playlist.loadingActive": "Actieve afspeellijst laden…",
   "playlist.loadedActive": ({ count }) =>
     `${count} kana${count === 1 ? "al" : "len"} geladen uit de actieve afspeellijst.`,
@@ -350,7 +370,8 @@ export default {
   "about.qrAlt": ({ url }) => `QR-code die naar ${url} verwijst`,
   "settings.remoteAccess": "Toegang op afstand",
   "remote.setupTitle": "Instellen met uw apparaat",
-  "remote.setupBody": "Scan de QR-code om eenvoudiger afspeellijsten toe te voegen en instellingen te kiezen.",
+  "remote.setupBody":
+    "Scan de QR-code om eenvoudiger afspeellijsten toe te voegen en instellingen te kiezen.",
   "remote.addressHint": "Kunt u niet scannen, open dan dit adres",
   "remote.codeHint": "Voer daarna deze code in",
   "remote.waiting": "Wachten op verbinding met een apparaat",
@@ -358,7 +379,8 @@ export default {
   "remote.connected": ({ name }) => `${name} verbonden`,
   "remote.unavailable": "Instellen via de apparaat is niet beschikbaar op dit netwerk.",
   "remote.manualFallback": "U kunt de afspeellijst nog steeds links invoeren.",
-  "remote.pairedHint": "Telefoons kunnen afspeellijsten en instellingen beheren terwijl OpenIPTV actief is.",
+  "remote.pairedHint":
+    "Telefoons kunnen afspeellijsten en instellingen beheren terwijl OpenIPTV actief is.",
   "remote.noDevices": "Er zijn geen apparaten gekoppeld.",
   "remote.thisDevice": "Deze apparaat",
   "remote.lastUsed": ({ when }) => `Laatst gebruikt ${when}`,
@@ -373,19 +395,43 @@ export default {
   "remote.setupCompleteBody": ({ count }) =>
     `${count} zenders gevonden en toegevoegd aan OpenIPTV. Ga verder op de tv of open hier Instellingen om je afspeellijsten en voorkeuren te beheren.`,
   "remote.setupFailedTitle": "Deze afspeellijst kon niet worden toegevoegd",
-  "remote.setupLoadFailed": "Op dit adres zijn geen zenders gevonden. Controleer het adres en probeer het opnieuw.",
+  "remote.setupLoadFailed":
+    "Op dit adres zijn geen zenders gevonden. Controleer het adres en probeer het opnieuw.",
   "remote.deviceName": "Naam van apparaat",
   "remote.renameAria": ({ name }) => `${name} hernoemen`,
   "remote.revokeAria": ({ name }) => `Toegang van ${name} intrekken`,
   "remote.revokeQuestion": ({ name }) => `Toegang van ${name} intrekken?`,
-  "remote.revokeBody": "Deze apparaat moet een nieuwe QR-code scannen voordat deze opnieuw verbinding kan maken.",
-  "remote.revokeSelfBody": "Dit is de apparaat die je nu gebruikt. Als je de toegang intrekt, wordt de verbinding verbroken en moet je opnieuw koppelen.",
+  "remote.revokeBody":
+    "Deze apparaat moet een nieuwe QR-code scannen voordat deze opnieuw verbinding kan maken.",
+  "remote.revokeSelfBody":
+    "Dit is de apparaat die je nu gebruikt. Als je de toegang intrekt, wordt de verbinding verbroken en moet je opnieuw koppelen.",
   "remote.remotePlayPause": "Afspelen/Pauze",
   "remote.revoke": "Toegang intrekken",
   "remote.qrAlt": "QR-code voor lokale apparaatinstelling",
-  "remote.conflict": "Instellingen zijn op een andere apparaat gewijzigd. Controleer ze en probeer het opnieuw.",
-  "remote.tvUnavailable": "De tv is niet beschikbaar. Houd OpenIPTV geopend en probeer het opnieuw.",
+  "remote.conflict":
+    "Instellingen zijn op een andere apparaat gewijzigd. Controleer ze en probeer het opnieuw.",
+  "remote.tvUnavailable":
+    "De tv is niet beschikbaar. Houd OpenIPTV geopend en probeer het opnieuw.",
   "remote.revoked": "Deze apparaat heeft geen toegang meer.",
+  "remote.trustedNetwork":
+    "Deze lokale HTTP-verbinding is alleen bedoeld voor een vertrouwd privénetwerk. Accountgegevens en streamadressen worden nooit getoond.",
+  "playlist.accountActive": "Actief",
+  "playlist.accountInactive": "Inactief",
+  "playlist.accountExpired": "Verlopen",
+  "playlist.accountTrial": "proefperiode",
+  "playlist.accountExpiryUnknown": "Vervaldatum onbekend",
+  "playlist.accountExpires": ({ date }) => `Verloopt op ${date}`,
+  "playlist.accountConnections": ({ active, maximum }) =>
+    `${active} van ${maximum} verbindingen actief`,
+  "guide.seek": "Tien seconden springen",
+  "search.mediaName": "Naam van film of serie",
+  "search.mediaAria": "Films of series op naam zoeken",
+  "error.seekUnavailable": "Deze video kan op dit apparaat niet worden doorgespoeld.",
+  "error.continueOrTryFormat":
+    "Ga verder vanaf de huidige positie of probeer een andere indeling.",
+  "error.finiteFormatUnsupported":
+    "Deze video gebruikt een indeling die de speler niet kan decoderen.",
+  "error.tryTelevisionOrVideo": "Probeer het op de televisie of kies een andere video.",
   "exit.question": "OpenIPTV sluiten?",
   "exit.body": "Je kunt het opnieuw openen vanuit de rij met apps.",
 } satisfies Partial<Record<MessageKey, string | ((values: MessageValues) => string)>>;

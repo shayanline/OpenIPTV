@@ -350,7 +350,7 @@ export async function write(key: string, value: Blob | string): Promise<boolean>
   // claim the cache holds something it does not, and a quota failure is the likeliest way in.
   if (!ok) return false;
   (await loadIndex()).set(key, meta);
-  unflushed.delete(key);   // just written through, so nothing outstanding for it
+  unflushed.delete(key); // just written through, so nothing outstanding for it
   return true;
 }
 

@@ -114,7 +114,10 @@ const takeTurn = (eager: boolean): Promise<boolean> => {
   }
   return new Promise<boolean>((settle) => {
     (eager ? urgent : background).push({
-      start: () => { active += 1; settle(true); },
+      start: () => {
+        active += 1;
+        settle(true);
+      },
       cancel: () => settle(false),
     });
   });
@@ -326,7 +329,11 @@ async function fromDisk(key: string): Promise<ImageBitmap | null> {
  */
 async function decodeToSize(url: string, width: number, height: number) {
   let host: string;
-  try { host = new URL(url, location.href).host; } catch { return null; }
+  try {
+    host = new URL(url, location.href).host;
+  } catch {
+    return null;
+  }
   if (noFetch.has(host)) return null;
 
   try {
@@ -336,12 +343,18 @@ async function decodeToSize(url: string, width: number, height: number) {
 
     // One dimension only. Given both, the decoder stretches to fill them; given one it
     // keeps the proportions, which is what the box wants.
-    const byWidth = await createImageBitmap(blob, { resizeWidth: width, resizeQuality: "high" });
+    const byWidth = await createImageBitmap(blob, {
+      resizeWidth: width,
+      resizeQuality: "high",
+    });
     if (byWidth.height <= height) return byWidth;
 
     // Taller than the box, so constrain the other way instead. Cheap, because it is
     // rescaling something already small rather than going back to the original.
-    const byHeight = await createImageBitmap(byWidth, { resizeHeight: height, resizeQuality: "high" });
+    const byHeight = await createImageBitmap(byWidth, {
+      resizeHeight: height,
+      resizeQuality: "high",
+    });
     byWidth.close();
     return byHeight;
   } catch {
@@ -382,15 +395,22 @@ export function shrink(
       // The list may have moved on while this waited its turn.
       const arrived = cache.get(key);
       if (arrived) return arrived;
-      if (eager && !onScreen.has(key)) return null;   // its row is long gone
+      if (eager && !onScreen.has(key)) return null; // its row is long gone
 
       // Disk before network. An earlier run already paid for the download and, more to the
       // point, for reducing it, so this is a small decode of a few kilobytes.
       const saved = await fromDisk(key);
-      if (saved) { remember(key, saved); return saved; }
+      if (saved) {
+        remember(key, saved);
+        return saved;
+      }
 
       const scaled = await decodeToSize(url, width, height);
-      if (scaled) { remember(key, scaled); keep(key, scaled); return scaled; }
+      if (scaled) {
+        remember(key, scaled);
+        keep(key, scaled);
+        return scaled;
+      }
 
       // Nothing scaled arrived, so fall back to letting the browser load it as an image and
       // shrinking afterwards. Costs a full size decode, which is the thing worth avoiding,
@@ -498,7 +518,9 @@ export function warmChain(urls: string[], { delay = 0, timeout = 600 }: WarmOpti
     if (!live || !src) return;
     // The next one is queued only once this has finished, so the work stays behind whatever
     // the viewer is doing rather than beside it.
-    void warmLogo(src).then(() => { if (live) schedule(); });
+    void warmLogo(src).then(() => {
+      if (live) schedule();
+    });
   };
 
   const schedule = () => {

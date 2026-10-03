@@ -138,7 +138,7 @@ window.__bench = {
     // No frames at all means the browser never animated: an occluded or minimised window
     // stops requestAnimationFrame entirely, and silently reporting zeros for that would be
     // a benchmark that passes because nothing was measured.
-    const frames = this.frames.slice(1);   // the first gap is the handshake, not a frame
+    const frames = this.frames.slice(1); // the first gap is the handshake, not a frame
     if (!frames.length) return { median: 0, p95: 0, worst: 0, stalls: 0, of: 0 };
     /*
      * Did the frames account for the time the phase took?
@@ -193,7 +193,9 @@ window.__bench = {
     return {
       nodes: document.querySelectorAll("*").length,
       rows: document.querySelectorAll(".row").length,
-      heapMB: performance.memory ? Math.round(performance.memory.usedJSHeapSize / 1048576) : null,
+      heapMB: performance.memory
+        ? Math.round(performance.memory.usedJSHeapSize / 1048576)
+        : null,
       /*
        * What the set would allow, rather than what this laptop allows.
        *
@@ -210,8 +212,12 @@ window.__bench = {
   },
 };
 // The permanent one, which outlives each phase and is what quietFor reads.
-window.addEventListener("keydown", () => {
-  window.__bench.lastKeyAt = performance.now();
-  window.__bench.delivered += 1;
-}, true);
-"installed"
+window.addEventListener(
+  "keydown",
+  () => {
+    window.__bench.lastKeyAt = performance.now();
+    window.__bench.delivered += 1;
+  },
+  true,
+);
+("installed");

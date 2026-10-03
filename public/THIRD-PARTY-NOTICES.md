@@ -19,6 +19,8 @@ videojs-contrib-hls, Copyright 2013 to 2015 Brightcove, under the same licence, 
 in [licenses/hls.js.txt](licenses/hls.js.txt) exactly as the project publishes them. The full
 licence text is in [licenses/Apache-2.0.txt](licenses/Apache-2.0.txt).
 
+**Lucide Icons**, SVG icon geometry from the Lucide project, ISC License, Copyright 2026 Lucide Icons and Contributors. Some icons derive from Feather Icons under the MIT License, Copyright 2013-present Cole Bemis. The application embeds the selected SVG paths directly without the Lucide runtime package. The licence texts and attribution are in [licenses/lucide.txt](licenses/lucide.txt).
+
 **React** and **React DOM**, version 19.2.8, MIT, Copyright Meta Platforms, Inc. and affiliates.
 Text in [licenses/react.txt](licenses/react.txt), which covers both packages.
 

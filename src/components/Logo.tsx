@@ -17,7 +17,14 @@ import { Icon } from "./Icon";
  * the initials stand in until there is something better.
  */
 export const Logo = memo(function Logo({
-  src, alt, label, width, height, className = "ch-logo", intrinsic = false, fetchable = true,
+  src,
+  alt,
+  label,
+  width,
+  height,
+  className = "ch-logo",
+  intrinsic = false,
+  fetchable = true,
 }: {
   src?: string;
   alt: string;
@@ -57,7 +64,9 @@ export const Logo = memo(function Logo({
     // drop the job if the viewer has moved on before its turn comes.
     let live = true;
     claimLogo(src, width, height);
-    void shrink(src, width, height).then(() => { if (live) redraw((n) => n + 1); });
+    void shrink(src, width, height).then(() => {
+      if (live) redraw((n) => n + 1);
+    });
     return () => {
       live = false;
       releaseLogo(src, width, height);

@@ -24,7 +24,14 @@
  * same bytes rather than whatever the search lands on that day.
  */
 import { spawn } from "node:child_process";
-import { createWriteStream, existsSync, mkdirSync, readFileSync, writeFileSync, rmSync } from "node:fs";
+import {
+  createWriteStream,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  writeFileSync,
+  rmSync,
+} from "node:fs";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { homedir, platform, arch } from "node:os";
@@ -51,7 +58,10 @@ const LINUX = { zip: "chrome-linux.zip", bin: "chrome-linux/chrome" };
  * difference between this being a CI-only gate and something anyone can run before pushing.
  */
 const FLAVOURS = {
-  "darwin-arm64": [{ dir: "Mac_Arm", ...MAC }, { dir: "Mac", ...MAC }],
+  "darwin-arm64": [
+    { dir: "Mac_Arm", ...MAC },
+    { dir: "Mac", ...MAC },
+  ],
   "darwin-x64": [{ dir: "Mac", ...MAC }],
   "linux-x64": [{ dir: "Linux_x64", ...LINUX }],
 };
@@ -59,7 +69,9 @@ const FLAVOURS = {
 const flavours = () => {
   const found = FLAVOURS[`${platform()}-${arch()}`];
   if (!found) {
-    throw new Error(`No Chromium snapshots for ${platform()}-${arch()}. Use Linux x64 or macOS.`);
+    throw new Error(
+      `No Chromium snapshots for ${platform()}-${arch()}. Use Linux x64 or macOS.`,
+    );
   }
   return found;
 };
@@ -107,11 +119,14 @@ async function nearestSnapshot(dir, zip, target, reach = 80) {
   return null;
 }
 
-const run = (command, args) => new Promise((resolve, reject) => {
-  const child = spawn(command, args, { stdio: "inherit" });
-  child.on("error", reject);
-  child.on("exit", (code) => (code === 0 ? resolve() : reject(new Error(`${command} exited ${code}`))));
-});
+const run = (command, args) =>
+  new Promise((resolve, reject) => {
+    const child = spawn(command, args, { stdio: "inherit" });
+    child.on("error", reject);
+    child.on("exit", (code) =>
+      code === 0 ? resolve() : reject(new Error(`${command} exited ${code}`)),
+    );
+  });
 
 /**
  * The path to a runnable Chromium for one platform, downloading it if it is not already had.
@@ -134,8 +149,8 @@ export async function ensureEngine(tv, { quiet = false } = {}) {
   let chosen = null;
   for (const flavour of flavours()) {
     const key = lockKey(flavour.dir, tv);
-    const position = lock[key]
-      ?? await nearestSnapshot(flavour.dir, flavour.zip, tv.snapshotNear);
+    const position =
+      lock[key] ?? (await nearestSnapshot(flavour.dir, flavour.zip, tv.snapshotNear));
     if (position) {
       chosen = { ...flavour, position, key };
       break;
@@ -144,8 +159,10 @@ export async function ensureEngine(tv, { quiet = false } = {}) {
   if (!chosen) {
     throw new Error(
       `No snapshot near ${tv.snapshotNear} for Chromium M${tv.chromium} on this machine.\n` +
-      `Tried ${flavours().map((f) => f.dir).join(", ")}. Check snapshotNear for Tizen ` +
-      `${tv.tizen} in platforms.json.`,
+        `Tried ${flavours()
+          .map((f) => f.dir)
+          .join(", ")}. Check snapshotNear for Tizen ` +
+        `${tv.tizen} in platforms.json.`,
     );
   }
 
@@ -178,7 +195,10 @@ export async function ensureEngine(tv, { quiet = false } = {}) {
    * by accident, because the binary check fails and `unzip -o` overwrites. Recording a fact
    * about a download that did not happen is not something to rely on being harmless.
    */
-  writeFileSync(LOCK, `${JSON.stringify({ ...readLock(), [chosen.key]: position }, null, 2)}\n`);
+  writeFileSync(
+    LOCK,
+    `${JSON.stringify({ ...readLock(), [chosen.key]: position }, null, 2)}\n`,
+  );
   return binary;
 }
 
@@ -197,8 +217,9 @@ export async function ensureEngine(tv, { quiet = false } = {}) {
  */
 export async function lockAll() {
   const lock = readLock();
-  const wanted = [...new Set([{ dir: "Linux_x64", ...LINUX }, ...flavours()].map((f) => JSON.stringify(f)))]
-    .map((f) => JSON.parse(f));
+  const wanted = [
+    ...new Set([{ dir: "Linux_x64", ...LINUX }, ...flavours()].map((f) => JSON.stringify(f))),
+  ].map((f) => JSON.parse(f));
 
   for (const tv of supported) {
     for (const { dir, zip } of wanted) {
@@ -207,11 +228,15 @@ export async function lockAll() {
       const position = await nearestSnapshot(dir, zip, tv.snapshotNear);
       if (position) {
         lock[key] = position;
-        console.log(`  ${key.padEnd(18)} M${String(tv.chromium).padEnd(4)} ${position}`
-          + `${position === tv.snapshotNear ? "" : ` (${position - tv.snapshotNear >= 0 ? "+" : ""}${position - tv.snapshotNear})`}`);
+        console.log(
+          `  ${key.padEnd(18)} M${String(tv.chromium).padEnd(4)} ${position}` +
+            `${position === tv.snapshotNear ? "" : ` (${position - tv.snapshotNear >= 0 ? "+" : ""}${position - tv.snapshotNear})`}`,
+        );
       } else {
-        console.log(`  ${key.padEnd(18)} M${String(tv.chromium).padEnd(4)} no build, `
-          + "which is expected for an arm64 Mac before they existed");
+        console.log(
+          `  ${key.padEnd(18)} M${String(tv.chromium).padEnd(4)} no build, ` +
+            "which is expected for an arm64 Mac before they existed",
+        );
       }
     }
   }

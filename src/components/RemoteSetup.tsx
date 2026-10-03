@@ -41,9 +41,10 @@ export function RemoteSetup({
   const address = remoteAccess.address
     ? `http://${remoteAccess.address}:${remoteAccess.port}${remoteAccess.remotePath}`
     : "";
-  const setupUrl = remoteAccess.pairing && address
-    ? `${address}#pair=${encodeURIComponent(remoteAccess.pairing.secret)}`
-    : "";
+  const setupUrl =
+    remoteAccess.pairing && address
+      ? `${address}#pair=${encodeURIComponent(remoteAccess.pairing.secret)}`
+      : "";
   const qr = useMemo(() => {
     if (!setupUrl) return null;
     const encoded = encode(setupUrl, { ecc: "M" });

@@ -50,15 +50,19 @@ const WORK = `(() => {
   return { ms: performance.now() - t0, acc };
 })()`;
 
-const sdb = () => [
-  join(process.env.HOME, "tizen-studio/tools/sdb"),
-  join(process.env.HOME, ".tizen-extension-platform/server/sdktools/data/tools/sdb"),
-].find(existsSync);
+const sdb = () =>
+  [
+    join(process.env.HOME, "tizen-studio/tools/sdb"),
+    join(process.env.HOME, ".tizen-extension-platform/server/sdktools/data/tools/sdb"),
+  ].find(existsSync);
 
 async function measure(cdp, label) {
   const runs = [];
   for (let i = 0; i < 7; i++) {
-    const { result } = await cdp.send("Runtime.evaluate", { expression: WORK, returnByValue: true });
+    const { result } = await cdp.send("Runtime.evaluate", {
+      expression: WORK,
+      returnByValue: true,
+    });
     runs.push(result.value.ms);
   }
   runs.sort((a, b) => a - b);
@@ -66,8 +70,10 @@ async function measure(cdp, label) {
   // Spread matters as much as the middle. A wide one means something else was competing
   // for the machine, or it was thermally throttling, and the ratio is not worth keeping.
   const spread = (runs[runs.length - 1] - runs[0]) / median;
-  console.log(`  ${label.padEnd(8)} ${median.toFixed(0)} ms   spread ${(spread * 100).toFixed(0)}%`
-    + `   (${runs.map((r) => r.toFixed(0)).join(", ")})`);
+  console.log(
+    `  ${label.padEnd(8)} ${median.toFixed(0)} ms   spread ${(spread * 100).toFixed(0)}%` +
+      `   (${runs.map((r) => r.toFixed(0)).join(", ")})`,
+  );
   return { median, spread };
 }
 
@@ -76,13 +82,23 @@ const machine = `${cpus()[0]?.model ?? "unknown"} (${arch()})`;
 
 // ---- the TV -----------------------------------------------------------------------
 const SDB = arg("sdb") ?? sdb();
-if (!SDB) { console.error("No sdb found. Pass --sdb=/path/to/sdb."); process.exit(1); }
+if (!SDB) {
+  console.error("No sdb found. Pass --sdb=/path/to/sdb.");
+  process.exit(1);
+}
 
 console.log("Measuring the TV...");
 const launched = execFileSync(SDB, ["shell", "0", "debug", APP], { encoding: "utf8" });
 const port = launched.match(/port:\s*(\d+)/)?.[1];
-if (!port) { console.error("Could not start the app in debug mode:\n" + launched); process.exit(1); }
-try { execFileSync(SDB, ["forward", "--remove", `tcp:${port}`]); } catch { /* none yet */ }
+if (!port) {
+  console.error("Could not start the app in debug mode:\n" + launched);
+  process.exit(1);
+}
+try {
+  execFileSync(SDB, ["forward", "--remove", `tcp:${port}`]);
+} catch {
+  /* none yet */
+}
 execFileSync(SDB, ["forward", `tcp:${port}`, `tcp:${port}`]);
 await new Promise((r) => setTimeout(r, 2500));
 
@@ -116,17 +132,30 @@ if (!chrome) {
   console.error("No Chrome, Chromium or Edge found in the usual places. Pass --chrome=/path.");
   process.exit(2);
 }
-const child = spawn(chrome, [
-  "--remote-debugging-port=9334",
-  `--user-data-dir=${mkdtempSync(join(tmpdir(), "tv-cal-"))}`,
-  "--no-first-run", "--no-default-browser-check", "--headless=new", "--no-sandbox",
-  "about:blank",
-], { stdio: "ignore" });
+const child = spawn(
+  chrome,
+  [
+    "--remote-debugging-port=9334",
+    `--user-data-dir=${mkdtempSync(join(tmpdir(), "tv-cal-"))}`,
+    "--no-first-run",
+    "--no-default-browser-check",
+    "--headless=new",
+    "--no-sandbox",
+    "about:blank",
+  ],
+  { stdio: "ignore" },
+);
 /* Registered before anything can throw. Nothing killed this browser on a failure path, and a
    POSIX child outlives the parent that exited, so an interrupted calibration left a headless
    Chrome holding port 9334 and its profile behind: the next attempt then attached to that one
    and measured it instead. */
-process.on("exit", () => { try { child.kill(); } catch { /* already gone */ } });
+process.on("exit", () => {
+  try {
+    child.kill();
+  } catch {
+    /* already gone */
+  }
+});
 
 const local = await connect(9334);
 await local.send("Runtime.enable");
@@ -153,5 +182,7 @@ if (shaky) {
   console.log("one of the machines. Worth running again on a quiet system.");
 }
 console.log(`\nWritten to scripts/tv/profile.json, along with what the set says about`);
-console.log(`itself: ${device.cores} cores, ${device.deviceMemoryGB}GB, ${device.jsHeapLimitMB}MB heap.`);
+console.log(
+  `itself: ${device.cores} cores, ${device.deviceMemoryGB}GB, ${device.jsHeapLimitMB}MB heap.`,
+);
 console.log(`Only true for ${machine}, and the simulator will say so if that changes.`);

@@ -63,6 +63,9 @@
 
   "overrides": [
     // The build and device scripts are command line tools whose whole output is console.
-    { "includes": ["scripts/**"], "linter": { "rules": { "suspicious": { "noConsole": "off" } } } }
+    {
+      "includes": ["scripts/**"],
+      "linter": { "rules": { "suspicious": { "noConsole": "off" } } }
+    }
   ]
 }

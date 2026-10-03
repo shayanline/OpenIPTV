@@ -2,10 +2,11 @@ import { test } from "vitest";
 import assert from "node:assert/strict";
 import {
   checkPlaylistUrl,
+  m3uSource,
   nameFromUrl,
   parseXtreamPlaylistUrl,
-  redactPlaylistUrl,
-  xtreamPlaylistUrl,
+  sourceDisplay,
+  xtreamSource,
 } from "../src/services/playlistUrl";
 
 /**
@@ -75,51 +76,22 @@ test("a name is taken from the file, then the host", () => {
   assert.equal(nameFromUrl("nonsense"), "Untitled");
 });
 
-test("Xtream credentials become an encoded M3U Plus address", () => {
-  assert.equal(
-    xtreamPlaylistUrl(" https://provider.example:8443/portal/ ", "user name", "p&ss", "m3u8"),
-    "https://provider.example:8443/portal/get.php?username=user+name&password=p%26ss&type=m3u_plus&output=m3u8",
-  );
-});
-
-test("Xtream usernames are trimmed while password whitespace and plus signs are preserved", () => {
-  assert.equal(
-    xtreamPlaylistUrl("https://provider.example", "  viewer  ", " secret+ pass ", "m3u8"),
-    "https://provider.example/get.php?username=viewer&password=+secret%2B+pass+&type=m3u_plus&output=m3u8",
-  );
-});
-
-test("an existing Xtream endpoint is reused and MPEG TS remains available", () => {
-  assert.equal(
-    xtreamPlaylistUrl("http://provider.example/get.php?old=1", "user", "pass", "ts"),
-    "http://provider.example/get.php?username=user&password=pass&type=m3u_plus&output=ts",
-  );
-});
-
-test("incomplete Xtream credentials do not produce a playlist address", () => {
-  assert.equal(xtreamPlaylistUrl("https://provider.example", "", "pass", "m3u8"), "");
-  assert.equal(xtreamPlaylistUrl("not a server", "user", "pass", "m3u8"), "");
-});
-
-test("saved Xtream addresses are parsed back into editable credentials", () => {
+test("saved Xtream addresses are parsed into typed credentials with defaults", () => {
   assert.deepEqual(
     parseXtreamPlaylistUrl(
-      "https://provider.example:8443/portal/get.php?username=user+name&password=p%26ss&type=m3u_plus&output=ts",
+      "https://provider.example:8443/portal/get.php?username=user+name&password=p%26ss",
     ),
     {
+      kind: "xtream",
       server: "https://provider.example:8443/portal",
       username: "user name",
       password: "p&ss",
       output: "ts",
     },
   );
-});
-
-test("nonstandard and incomplete addresses stay in the M3U editor", () => {
-  assert.equal(parseXtreamPlaylistUrl("https://example.com/list.m3u"), null);
   assert.equal(
     parseXtreamPlaylistUrl(
-      "https://provider.example/get.php?username=user&type=m3u_plus&output=m3u8",
+      "https://provider.example/get.php?username=user&password=pass&type=m3u&output=ts",
     ),
     null,
   );
@@ -131,15 +103,48 @@ test("nonstandard and incomplete addresses stay in the M3U editor", () => {
   );
 });
 
-test("saved playlist summaries hide Xtream passwords", () => {
+test("typed source builders reject malformed input", () => {
+  assert.deepEqual(m3uSource(" https://example.com/list.m3u "), {
+    kind: "m3u",
+    url: "https://example.com/list.m3u",
+  });
+  assert.equal(m3uSource("not an address"), null);
+  assert.deepEqual(xtreamSource("https://provider.example", " viewer ", "p& ss+", "m3u8"), {
+    kind: "xtream",
+    server: "https://provider.example",
+    username: "viewer",
+    password: "p& ss+",
+    output: "m3u8",
+  });
+  assert.equal(xtreamSource("not a server", "viewer", "secret", "m3u8"), null);
+  assert.equal(xtreamSource("https://provider.example", "", "secret", "m3u8"), null);
   assert.equal(
-    redactPlaylistUrl(
-      "https://provider.example/get.php?username=user&password=secret&type=m3u_plus&output=m3u8",
-    ),
-    "https://provider.example/get.php?username=user&password=••••••••&type=m3u_plus&output=m3u8",
+    xtreamSource("https://embedded:credential@provider.example", "viewer", "secret", "m3u8"),
+    null,
   );
+});
+
+test("typed sources display without exposing credentials", () => {
+  const source = xtreamSource(
+    "https://provider.example/portal",
+    "viewer+name",
+    "p& ss+",
+    "m3u8",
+  );
+  assert.ok(source);
+  assert.equal(sourceDisplay(source), "https://provider.example/portal");
   assert.equal(
-    redactPlaylistUrl("https://example.com/list.m3u"),
+    sourceDisplay({ kind: "m3u", url: "https://example.com/list.m3u" }),
     "https://example.com/list.m3u",
+  );
+});
+
+test("nonstandard and incomplete addresses stay in the M3U editor", () => {
+  assert.equal(parseXtreamPlaylistUrl("https://example.com/list.m3u"), null);
+  assert.equal(
+    parseXtreamPlaylistUrl(
+      "https://provider.example/get.php?username=user&type=m3u_plus&output=m3u8",
+    ),
+    null,
   );
 });

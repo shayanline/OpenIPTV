@@ -23,10 +23,11 @@ const channel = (id: string, name = id, group = ""): Channel => ({
 });
 
 const news = {
+  key: "News",
   name: "News",
   channels: [channel("a", "a", "News"), channel("b", "b", "News"), channel("c", "c", "News")],
 };
-const sport = { name: "Sport", channels: [channel("d", "d", "Sport")] };
+const sport = { key: "Sport", name: "Sport", channels: [channel("d", "d", "Sport")] };
 const visible = { hiddenCategories: [], hiddenCategoryMode: "exclude" as const };
 const listsOf = (channels: Channel[], categories: (typeof news)[], favourites: string[]) =>
   lineupOf(channels, categories, favourites, visible).lists;
@@ -63,7 +64,11 @@ test("the first favourite puts Favourites at the top", () => {
 });
 
 test("a playlist category named Favourites remains distinct from the generated row", () => {
-  const real = { name: FAVOURITES, channels: [channel("real", "real", FAVOURITES)] };
+  const real = {
+    key: FAVOURITES,
+    name: FAVOURITES,
+    channels: [channel("real", "real", FAVOURITES)],
+  };
   const lists = listsOf([...real.channels, ...sport.channels], [real, sport], ["d"]);
 
   assert.equal(lists.length, 3);
@@ -146,7 +151,11 @@ test("search mode keeps hidden channels in search and explicit favourites only",
 });
 
 test("category visibility uses the playlist's exact category text", () => {
-  const upper = { name: "NEWS", channels: [channel("upper", "upper", "NEWS")] };
+  const upper = {
+    key: "NEWS",
+    name: "NEWS",
+    channels: [channel("upper", "upper", "NEWS")],
+  };
   const lineup = lineupOf([...news.channels, ...upper.channels], [news, upper], [], {
     hiddenCategories: ["News"],
     hiddenCategoryMode: "exclude",

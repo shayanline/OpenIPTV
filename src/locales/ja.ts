@@ -2,7 +2,19 @@ import type { MessageKey, MessageValues } from "../services/locale";
 
 export default {
   "common.search": "検索",
+  "common.guide": "番組表",
   "common.settings": "設定",
+  "content.live": "ライブ",
+  "content.movies": "映画",
+  "content.series": "シリーズ",
+  "library.loading": "読み込み中…",
+  "library.failed": "このコンテンツを読み込めませんでした。",
+  "library.retry": "再試行",
+  "library.details": "詳細",
+  "library.resume": "再開",
+  "library.season": ({ number }) => `シーズン${number}`,
+  "library.episode": ({ number }) => `エピソード${number}`,
+  "library.searchScope": ({ kind }) => `検索対象は読み込み済みの${kind}カテゴリです。`,
   "common.move": "移動",
   "common.open": "開く",
   "common.closeSettings": "設定を閉じる",
@@ -166,6 +178,13 @@ export default {
   "app.hiddenFavouriteUnavailable":
     "お気に入りに追加する前に、このカテゴリーの非表示を解除してください。",
   "banner.position": ({ at, of, list }) => `${list}の${of}件中${at}件目`,
+  "banner.finiteTime": ({ elapsed, duration }) => `${elapsed} / ${duration}`,
+  "banner.now": ({ title }) => `現在: ${title}`,
+  "banner.next": ({ title }) => `次: ${title}`,
+  "guide.title": ({ category }) => `番組ガイド: ${category}`,
+  "guide.playFromStart": "最初から再生",
+  "guide.empty": "番組情報はありません。",
+  "guide.failed": "番組情報を読み込めませんでした。",
   "guide.addIt": "追加",
   "guide.showMatches": "一致する項目を表示",
   "guide.clear": "クリア",
@@ -185,8 +204,7 @@ export default {
   "channel.unnamed": "名前なし",
   "channel.hidden": "非表示",
   "channel.noCategories": "カテゴリはまだありません。",
-  "channel.allCategoriesHidden":
-    "すべてのカテゴリーが非表示です。",
+  "channel.allCategoriesHidden": "すべてのカテゴリーが非表示です。",
   "channel.nothingInCategory": "このカテゴリには何もありません。",
   "channel.noMatches": ({ query }) => `「${query}」に一致するチャンネルはありません。`,
   "channel.typeName": "チャンネル名を入力してください。",
@@ -251,6 +269,8 @@ export default {
   "playlist.refreshFailed": ({ detail }) =>
     `更新できませんでした：${detail}。最後に保存したコピーを表示しています。`,
   "playlist.loadFailed": ({ detail }) => `プレイリストを読み込めませんでした：${detail}`,
+  "playlist.browserTransportFailed":
+    "このブラウザーは HTTPS 経由でプロバイダーに接続できませんでした。プロバイダーが HTTPS と CORS に対応している必要があります。",
   "playlist.loadingActive": "アクティブなプレイリストを読み込み中…",
   "playlist.loadedActive": ({ count }) =>
     `アクティブなプレイリストから${count}チャンネルを読み込みました。`,
@@ -368,19 +388,39 @@ export default {
   "remote.setupCompleteBody": ({ count }) =>
     `${count} チャンネルが見つかり、OpenIPTV に追加されました。テレビで続けるか、ここで設定を開いてプレイリストと環境設定を管理してください。`,
   "remote.setupFailedTitle": "このプレイリストを追加できませんでした",
-  "remote.setupLoadFailed": "このアドレスではチャンネルが見つかりませんでした。アドレスを確認して、もう一度お試しください。",
+  "remote.setupLoadFailed":
+    "このアドレスではチャンネルが見つかりませんでした。アドレスを確認して、もう一度お試しください。",
   "remote.deviceName": "デバイス名",
   "remote.renameAria": ({ name }) => `${name} の名前を変更`,
   "remote.revokeAria": ({ name }) => `${name} のアクセスを取り消す`,
   "remote.revokeQuestion": ({ name }) => `${name} のアクセスを取り消しますか？`,
   "remote.revokeBody": "再接続するには、このデバイスで新しいQRコードを読み取る必要があります。",
-  "remote.revokeSelfBody": "これは現在使用中のデバイスです。アクセスを取り消すと切断され、もう一度ペアリングする必要があります。",
+  "remote.revokeSelfBody":
+    "これは現在使用中のデバイスです。アクセスを取り消すと切断され、もう一度ペアリングする必要があります。",
   "remote.remotePlayPause": "再生/一時停止",
   "remote.revoke": "アクセスを取り消す",
   "remote.qrAlt": "ローカルデバイス設定用QRコード",
   "remote.conflict": "別のデバイスで設定が変更されました。確認してもう一度お試しください。",
-  "remote.tvUnavailable": "テレビを利用できません。OpenIPTVを開いたまま、もう一度お試しください。",
+  "remote.tvUnavailable":
+    "テレビを利用できません。OpenIPTVを開いたまま、もう一度お試しください。",
   "remote.revoked": "このデバイスにはアクセス権がありません。",
+  "remote.trustedNetwork":
+    "このローカルHTTP接続は、信頼できるプライベートネットワーク専用です。アカウント情報やストリームアドレスは表示されません。",
+  "playlist.accountActive": "有効",
+  "playlist.accountInactive": "無効",
+  "playlist.accountExpired": "期限切れ",
+  "playlist.accountTrial": "試用",
+  "playlist.accountExpiryUnknown": "有効期限不明",
+  "playlist.accountExpires": ({ date }) => `${date}に期限切れ`,
+  "playlist.accountConnections": ({ active, maximum }) =>
+    `${maximum}件中${active}件の接続が有効`,
+  "guide.seek": "10秒移動",
+  "search.mediaName": "映画またはシリーズ名",
+  "search.mediaAria": "映画またはシリーズを名前で検索",
+  "error.seekUnavailable": "このデバイスでは動画をシークできません。",
+  "error.continueOrTryFormat": "現在位置から続けるか、別の形式を試してください。",
+  "error.finiteFormatUnsupported": "この動画はプレーヤーがデコードできない形式です。",
+  "error.tryTelevisionOrVideo": "テレビで試すか、別の動画を選んでください。",
   "exit.question": "OpenIPTVを閉じますか？",
   "exit.body": "アプリの列からもう一度開けます。",
 } satisfies Partial<Record<MessageKey, string | ((values: MessageValues) => string)>>;

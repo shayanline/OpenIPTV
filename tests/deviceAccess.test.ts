@@ -56,7 +56,10 @@ describe("device pairing", () => {
     const session = createPairingSession(NOW);
     let release: (value: ArrayBuffer) => void = () => {};
     vi.spyOn(crypto.subtle, "digest").mockImplementation(
-      () => new Promise((resolve) => { release = resolve; }),
+      () =>
+        new Promise((resolve) => {
+          release = resolve;
+        }),
     );
 
     const first = pairDevice({ secret: session.secret, name: "First" }, NOW + 1);
@@ -72,7 +75,10 @@ describe("device pairing", () => {
     const session = createPairingSession(NOW);
     let release: (value: ArrayBuffer) => void = () => {};
     vi.spyOn(crypto.subtle, "digest").mockImplementation(
-      () => new Promise((resolve) => { release = resolve; }),
+      () =>
+        new Promise((resolve) => {
+          release = resolve;
+        }),
     );
 
     const pairing = pairDevice({ secret: session.secret, name: "Cancelled" }, NOW + 1);
@@ -120,9 +126,15 @@ describe("device pairing", () => {
 
   test("remembers, renames, and independently revokes multiple devices", async () => {
     const firstSession = createPairingSession(NOW);
-    const first = await pairDevice({ secret: firstSession.secret, name: "Device one" }, NOW + 1);
+    const first = await pairDevice(
+      { secret: firstSession.secret, name: "Device one" },
+      NOW + 1,
+    );
     const secondSession = createPairingSession(NOW + 2);
-    const second = await pairDevice({ secret: secondSession.secret, name: "Device two" }, NOW + 3);
+    const second = await pairDevice(
+      { secret: secondSession.secret, name: "Device two" },
+      NOW + 3,
+    );
     if (!first.ok || !second.ok) throw new Error("pairing failed");
 
     expect(renamePairedDevice(first.deviceId, "Kitchen device")).toBe(true);

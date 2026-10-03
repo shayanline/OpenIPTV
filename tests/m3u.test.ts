@@ -77,29 +77,38 @@ test("carriage returns and blank lines are tolerated", () => {
 });
 
 test("an ungrouped channel lands in one named bucket rather than an empty one", () => {
-  const groups = groupByCategory(parseM3U(`#EXTINF:-1,A
-http://e.com/a.m3u8`));
+  const groups = groupByCategory(
+    parseM3U(`#EXTINF:-1,A
+http://e.com/a.m3u8`),
+  );
   assert.equal(groups[0].name, UNCATEGORISED);
 });
 
 test("groups keep the order the playlist introduces them in", () => {
-  const groups = groupByCategory(parseM3U(`#EXTINF:-1 group-title="B",1
+  const groups = groupByCategory(
+    parseM3U(`#EXTINF:-1 group-title="B",1
 http://e.com/1
 #EXTINF:-1 group-title="A",2
 http://e.com/2
 #EXTINF:-1 group-title="B",3
-http://e.com/3`));
-  assert.deepEqual(groups.map((g) => g.name), ["B", "A"]);
+http://e.com/3`),
+  );
+  assert.deepEqual(
+    groups.map((g) => g.name),
+    ["B", "A"],
+  );
   assert.equal(groups[0].channels.length, 2);
 });
 
 test("two spellings of a group stay two groups", () => {
   // Deciding they mean the same thing would mean guessing at a naming convention, and
   // every playlist has a different one.
-  const groups = groupByCategory(parseM3U(`#EXTINF:-1 group-title="News",1
+  const groups = groupByCategory(
+    parseM3U(`#EXTINF:-1 group-title="News",1
 http://e.com/1
 #EXTINF:-1 group-title="News | Sport",2
-http://e.com/2`));
+http://e.com/2`),
+  );
   assert.equal(groups.length, 2);
 });
 

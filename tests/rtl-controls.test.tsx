@@ -22,9 +22,7 @@ test("the category count keeps its inset from the RTL divider", () => {
 });
 
 test("playback information follows the reading edge", () => {
-  expect(styles).toMatch(
-    /\.playback-info \{[\s\S]*right: var\(--safe-x\);[\s\S]*left: auto;/,
-  );
+  expect(styles).toMatch(/\.playback-info \{[\s\S]*right: var\(--safe-x\);[\s\S]*left: auto;/);
   expect(styles).toMatch(
     /html\[dir="rtl"\] \.playback-info \{[\s\S]*left: var\(--safe-x\);[\s\S]*right: auto;/,
   );

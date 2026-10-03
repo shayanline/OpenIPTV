@@ -6,9 +6,11 @@ import { KEY, useRemote } from "../hooks/useRemote";
 import { useSpatialNav } from "../hooks/useSpatialNav";
 import {
   checkPlaylistUrl,
+  m3uSource,
   nameFromUrl,
-  type XtreamOutput,
-  xtreamPlaylistUrl,
+  type PlaylistSource,
+  sourceDisplay,
+  xtreamSource,
 } from "../services/playlistUrl";
 import type { MessageKey } from "../services/locale";
 import { LanguagePicker } from "./LanguagePicker";
@@ -44,7 +46,7 @@ export function Onboarding({
   onOpenPairing,
   showRemoteSetup = false,
 }: {
-  onAdd: (name: string, url: string) => void;
+  onAdd: (name: string, source: PlaylistSource) => void;
   /** RETURN here closes the application, because this screen is the application's home. */
   onExit: () => void;
   remoteAccess?: RemoteAccessState;
@@ -56,29 +58,38 @@ export function Onboarding({
   const box = useRef<HTMLDivElement>(null);
   const first = useRef<HTMLInputElement>(null);
   const { move } = useSpatialNav(box, true);
-  const { name, url, set: setSetup } = useSetup();
-  const [source, setSource] = useState<"m3u" | "xtream">("m3u");
-  const [server, setServer] = useState("");
-  const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
-  const [output, setOutput] = useState<XtreamOutput>("m3u8");
+  const { name, source, set: setSetup } = useSetup();
   const [problem, setProblem] = useState<MessageKey | "">("");
-  const playlistUrl =
-    source === "m3u" ? url : xtreamPlaylistUrl(server, username, password, output);
+  const url = source.kind === "m3u" ? source.url : "";
+  const server = source.kind === "xtream" ? source.server : "";
+  const username = source.kind === "xtream" ? source.username : "";
+  const password = source.kind === "xtream" ? source.password : "";
+  const output = source.kind === "xtream" ? source.output : "m3u8";
 
   useEffect(() => {
     first.current?.focus();
   }, []);
 
   const submit = () => {
-    // Checked here as well as in Settings, so a typo on the very first screen is answered
-    // at once instead of after a twenty second timeout that blames the network.
-    const verdict = checkPlaylistUrl(playlistUrl);
-    if (!verdict.ok) {
-      setProblem(verdict.problemKey ?? "validation.completeAddress");
+    if (source.kind === "m3u") {
+      const verdict = checkPlaylistUrl(source.url);
+      if (!verdict.ok) {
+        setProblem(verdict.problemKey ?? "validation.completeAddress");
+        return;
+      }
+      const valid = m3uSource(source.url);
+      if (!valid) return;
+      onAdd(name.trim() || nameFromUrl(sourceDisplay(valid)), valid);
+      useSetup.getState().clear();
       return;
     }
-    onAdd(name.trim() || nameFromUrl(playlistUrl), playlistUrl.trim());
+
+    const valid = xtreamSource(source.server, source.username, source.password, source.output);
+    if (!valid) {
+      setProblem("validation.completeAddress");
+      return;
+    }
+    onAdd(name.trim() || nameFromUrl(sourceDisplay(valid)), valid);
     useSetup.getState().clear();
   };
 
@@ -97,7 +108,13 @@ export function Onboarding({
       else onExit();
       return;
     }
-    const typing = document.activeElement instanceof HTMLInputElement;
+    const active = document.activeElement;
+    const typing = active instanceof HTMLInputElement;
+    if (!typing && code === KEY.ENTER && active instanceof HTMLButtonElement) {
+      event.preventDefault();
+      active.click();
+      return;
+    }
     // Enter in the address field is the same as pressing the button, so the viewer never
     // has to work out that there is one further down.
     if (typing && code === KEY.ENTER) {
@@ -125,9 +142,9 @@ export function Onboarding({
                 <button
                   type="button"
                   className="btn tonal"
-                  aria-pressed={source === "m3u"}
+                  aria-pressed={source.kind === "m3u"}
                   onClick={() => {
-                    setSource("m3u");
+                    setSetup({ name, source: { kind: "m3u", url: "" } });
                     setProblem("");
                   }}
                 >
@@ -136,16 +153,25 @@ export function Onboarding({
                 <button
                   type="button"
                   className="btn tonal"
-                  aria-pressed={source === "xtream"}
+                  aria-pressed={source.kind === "xtream"}
                   onClick={() => {
-                    setSource("xtream");
+                    setSetup({
+                      name,
+                      source: {
+                        kind: "xtream",
+                        server: "",
+                        username: "",
+                        password: "",
+                        output: "m3u8",
+                      },
+                    });
                     setProblem("");
                   }}
                 >
                   <span>{t("onboarding.xtreamLogin")}</span>
                 </button>
               </div>
-              {source === "m3u" ? (
+              {source.kind === "m3u" ? (
                 <>
                   <label htmlFor="ob-url">{t("onboarding.playlistAddress")}</label>
                   <input
@@ -159,7 +185,7 @@ export function Onboarding({
                     aria-describedby={problem ? "ob-url-problem" : undefined}
                     placeholder={t("onboarding.urlPlaceholder")}
                     onChange={(e) => {
-                      setSetup({ name, url: e.target.value });
+                      setSetup({ name, source: { kind: "m3u", url: e.target.value } });
                       setProblem("");
                     }}
                   />
@@ -173,7 +199,7 @@ export function Onboarding({
                     spellCheck={false}
                     dir="ltr"
                     onChange={(event) => {
-                      setServer(event.target.value);
+                      setSetup({ name, source: { ...source, server: event.target.value } });
                       setProblem("");
                     }}
                   />
@@ -183,7 +209,9 @@ export function Onboarding({
                     value={username}
                     spellCheck={false}
                     dir="ltr"
-                    onChange={(event) => setUsername(event.target.value)}
+                    onChange={(event) =>
+                      setSetup({ name, source: { ...source, username: event.target.value } })
+                    }
                   />
                   <label htmlFor="ob-password">{t("onboarding.password")}</label>
                   <input
@@ -191,7 +219,9 @@ export function Onboarding({
                     type="password"
                     value={password}
                     dir="ltr"
-                    onChange={(event) => setPassword(event.target.value)}
+                    onChange={(event) =>
+                      setSetup({ name, source: { ...source, password: event.target.value } })
+                    }
                   />
                   <label htmlFor="ob-output">{t("onboarding.streamFormat")}</label>
                   <OptionPicker
@@ -202,7 +232,9 @@ export function Onboarding({
                       { value: "m3u8", label: t("onboarding.hls") },
                       { value: "ts", label: t("onboarding.mpegTs") },
                     ]}
-                    onChange={setOutput}
+                    onChange={(value) =>
+                      setSetup({ name, source: { ...source, output: value } })
+                    }
                   />
                 </div>
               )}
@@ -217,7 +249,7 @@ export function Onboarding({
                 value={name}
                 dir="auto"
                 placeholder={t("onboarding.takenFromAddress")}
-                onChange={(e) => setSetup({ name: e.target.value, url })}
+                onChange={(e) => setSetup({ name: e.target.value, source })}
               />
             </div>
 
@@ -235,7 +267,7 @@ export function Onboarding({
               type="button"
               className="btn filled wide"
               onClick={submit}
-              disabled={!playlistUrl.trim()}
+              disabled={!sourceDisplay(source).trim()}
             >
               {t("common.addPlaylist")}
             </button>

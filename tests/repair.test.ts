@@ -13,8 +13,13 @@ vi.mock("hls.js", () => ({ default: { isSupported: () => true } }));
 
 const UPSTREAM = "https://host.example/live/index.m3u8";
 const BROKEN = [
-  "#EXTM3U", "#EXT-X-VERSION:3", "#EXT-X-TARGETDURATION:2",
-  "#EXT-X-MEDIA-SEQUENCE:1786136377905810", "#EXTINF:2.0,", "a.ts", "",
+  "#EXTM3U",
+  "#EXT-X-VERSION:3",
+  "#EXT-X-TARGETDURATION:2",
+  "#EXT-X-MEDIA-SEQUENCE:1786136377905810",
+  "#EXTINF:2.0,",
+  "a.ts",
+  "",
 ].join("\n");
 const HEALTHY = BROKEN.replace("1786136377905810", "42");
 
@@ -32,7 +37,9 @@ function fakeWorker(behaviour: "listens" | "refuses" | "silent" | "deaf") {
     onmessage: ((e: { data: unknown }) => void) | null = null;
     onerror: ((e: { message: string }) => void) | null = null;
     terminated = false;
-    constructor() { built.push(this); }
+    constructor() {
+      built.push(this);
+    }
     postMessage(message: unknown) {
       sent.push(message);
       const type = (message as { type?: string })?.type;
@@ -49,12 +56,18 @@ function fakeWorker(behaviour: "listens" | "refuses" | "silent" | "deaf") {
       if (behaviour === "listens" || behaviour === "deaf") {
         setTimeout(() => this.onmessage?.({ data: { type: "listening", port: 45678 } }), 0);
       } else if (behaviour === "refuses") {
-        setTimeout(() => this.onmessage?.({
-          data: { type: "error", reason: "no socket bindings on this television" },
-        }), 0);
+        setTimeout(
+          () =>
+            this.onmessage?.({
+              data: { type: "error", reason: "no socket bindings on this television" },
+            }),
+          0,
+        );
       }
     }
-    terminate() { this.terminated = true; }
+    terminate() {
+      this.terminated = true;
+    }
   }
   vi.stubGlobal("Worker", Fake as unknown as typeof Worker);
   return { sent, built };
@@ -73,15 +86,51 @@ const load = async () => {
 
 beforeEach(() => {
   localStorage.clear();
-  vi.stubGlobal("fetch", vi.fn(async (url: string) => ({
-    ok: true,
-    text: async () => (String(url).includes("healthy") ? HEALTHY : BROKEN),
-  })));
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (url: string) => ({
+      ok: true,
+      text: async () => (String(url).includes("healthy") ? HEALTHY : BROKEN),
+    })),
+  );
 });
 
 afterEach(() => {
   vi.unstubAllGlobals();
   vi.useRealTimers();
+});
+
+test("compatibility preparation skips a nonmanifest transport stream", async () => {
+  const fetchMock = vi.fn();
+  vi.stubGlobal("fetch", fetchMock);
+  const { prepare } = await load();
+
+  expect(await prepare("https://host.example/live/viewer/secret/7.ts")).toBeNull();
+  expect(fetchMock).not.toHaveBeenCalled();
+});
+
+test("idling cancels a prepare before repair serving begins", async () => {
+  let resolveFetch: ((value: unknown) => void) | undefined;
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(
+      () =>
+        new Promise((resolve) => {
+          resolveFetch = resolve;
+        }),
+    ),
+  );
+  const { built } = fakeWorker("listens");
+  const { idleRepair, prepare, repairState } = await load();
+
+  const pending = prepare(UPSTREAM);
+  await Promise.resolve();
+  idleRepair();
+  resolveFetch?.({ ok: true, text: async () => BROKEN });
+
+  expect(await pending).toBeNull();
+  expect(built).toHaveLength(0);
+  expect(repairState().state).toBe("idle");
 });
 
 test("a playlist the set can read is not repaired, and no socket is opened", async () => {
@@ -95,12 +144,7 @@ test("a playlist the set can read is not repaired, and no socket is opened", asy
 
 test("preflight keeps a healthy master on its source and measures its child segments", async () => {
   const { sent } = fakeWorker("listens");
-  const master = [
-    "#EXTM3U",
-    "#EXT-X-STREAM-INF:BANDWIDTH=1",
-    "high.m3u8",
-    "",
-  ].join("\n");
+  const master = ["#EXTM3U", "#EXT-X-STREAM-INF:BANDWIDTH=1", "high.m3u8", ""].join("\n");
   const child = [
     "#EXTM3U",
     "#EXT-X-TARGETDURATION:10",
@@ -109,11 +153,14 @@ test("preflight keeps a healthy master on its source and measures its child segm
     "segment.ts",
     "",
   ].join("\n");
-  vi.stubGlobal("fetch", vi.fn(async (url: string) => ({
-    ok: true,
-    url,
-    text: async () => url.endsWith("high.m3u8") ? child : master,
-  })));
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (url: string) => ({
+      ok: true,
+      url,
+      text: async () => (url.endsWith("high.m3u8") ? child : master),
+    })),
+  );
 
   const { prepare } = await load();
   const target = await prepare(UPSTREAM);
@@ -155,8 +202,8 @@ test("revalidation uses HTTP validators and rediagnoses changed playlists", asyn
       ok: true,
       status: 200,
       url: UPSTREAM,
-      headers: { get: (name: string) => name === "etag" ? `"v${version}"` : "" },
-      text: async () => version === 1 ? HEALTHY : BROKEN,
+      headers: { get: (name: string) => (name === "etag" ? `"v${version}"` : "") },
+      text: async () => (version === 1 ? HEALTHY : BROKEN),
     };
   });
   vi.stubGlobal("fetch", fetchMock);
@@ -173,10 +220,13 @@ test("revalidation uses HTTP validators and rediagnoses changed playlists", asyn
 
 test("a failure forces a fresh diagnosis when a cached healthy playlist changes", async () => {
   let playlist = HEALTHY;
-  vi.stubGlobal("fetch", vi.fn(async () => ({
-    ok: true,
-    text: async () => playlist,
-  })));
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => ({
+      ok: true,
+      text: async () => playlist,
+    })),
+  );
 
   const { prepare, repair } = await load();
   await prepare("https://host.example/healthy/index.m3u8");
@@ -205,7 +255,7 @@ test("a playlist the set cannot read is served from a loopback address", async (
   assert.ok(repaired, "nothing was repaired");
   assert.match(repaired.url, /^http:\/\/127\.0\.0\.1:45678\//);
   assert.equal(repairState().state, "serving");
-  assert.equal(repairState().upstream, UPSTREAM);
+  assert.equal("upstream" in repairState(), false);
 });
 
 test("the same stream asked for twice does not start a second server", async () => {
@@ -238,11 +288,14 @@ test("as the window slides, the number served advances by the segments that drop
   };
 
   let slid = 0;
-  vi.stubGlobal("fetch", vi.fn(async () => ({
-    ok: true,
-    // Each fetch has moved on by two segments, and the clock by four million.
-    text: async () => window(slid, clock + slid * 2_000_000),
-  })));
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => ({
+      ok: true,
+      // Each fetch has moved on by two segments, and the clock by four million.
+      text: async () => window(slid, clock + slid * 2_000_000),
+    })),
+  );
 
   const { sent: fakes } = fakeWorker("listens");
   vi.useFakeTimers({ shouldAdvanceTime: true });
@@ -250,9 +303,9 @@ test("as the window slides, the number served advances by the segments that drop
 
   await repair(UPSTREAM);
   slid = 2;
-  await vi.advanceTimersByTimeAsync(6000);                 // one refresh
+  await vi.advanceTimersByTimeAsync(6000); // one refresh
   slid = 4;
-  await vi.advanceTimersByTimeAsync(6000);                 // and another
+  await vi.advanceTimersByTimeAsync(6000); // and another
 
   const served = fakes
     .filter((m) => (m as { type: string }).type === "manifest")
@@ -267,7 +320,7 @@ test("a television without the bindings is asked once and then left alone", asyn
 
   assert.equal(await repair(UPSTREAM), null, "it claimed to have repaired something");
   assert.equal(repairState().state, "unavailable");
-  assert.match(repairState().why, /no socket bindings/);
+  assert.equal(repairState().why, "compatibility repair unavailable");
 
   // The second attempt must not construct another worker or fetch again: a set that cannot do
   // this must not pay for the discovery on every channel.
@@ -306,9 +359,12 @@ test("the socket is closed before the worker is killed", async () => {
   stopRepair();
 
   assert.equal(built[0].terminated, false, "it was killed before the socket could be closed");
-  assert.ok(sent.some((m) => (m as { type: string }).type === "stop"), "it was never asked to stop");
+  assert.ok(
+    sent.some((m) => (m as { type: string }).type === "stop"),
+    "it was never asked to stop",
+  );
 
-  await new Promise((r) => setTimeout(r, 5));          // the worker's acknowledgement
+  await new Promise((r) => setTimeout(r, 5)); // the worker's acknowledgement
   assert.equal(built[0].terminated, true, "it was not killed once the socket was closed");
 });
 
@@ -321,7 +377,7 @@ test("a worker that stops answering is killed anyway, rather than left running",
   stopRepair();
   assert.equal(built[0].terminated, false);
 
-  await vi.advanceTimersByTimeAsync(1600);            // past the acknowledgement timeout
+  await vi.advanceTimersByTimeAsync(1600); // past the acknowledgement timeout
   assert.equal(built[0].terminated, true, "a silent worker was left running for ever");
 });
 
@@ -340,14 +396,22 @@ test("a channel needing no repair leaves the socket listening rather than closin
   const idled = repairState();
   assert.equal(idled.state, "listening");
   assert.equal(idled.port, 45678, "the port was given up");
-  assert.equal(idled.upstream, "", "it still claims to be serving something");
+  assert.equal("upstream" in idled, false, "diagnostics expose the upstream address");
   assert.equal(built.length, 1);
-  assert.equal(built[0].terminated, false, "the worker was killed for a channel that just did not need it");
+  assert.equal(
+    built[0].terminated,
+    false,
+    "the worker was killed for a channel that just did not need it",
+  );
 
   // And coming back is free: the same worker, the same port, no second module compiled.
   const again = await repair(UPSTREAM);
   assert.equal(again?.url, "http://127.0.0.1:45678/live.m3u8");
-  assert.equal(built.length, 1, "a second worker was created for a socket that was already open");
+  assert.equal(
+    built.length,
+    1,
+    "a second worker was created for a socket that was already open",
+  );
 });
 
 test("walking up and down a list of channels creates one worker, not one per press", async () => {
@@ -355,8 +419,8 @@ test("walking up and down a list of channels creates one worker, not one per pre
   const { repair, idleRepair } = await load();
 
   for (let press = 0; press < 6; press += 1) {
-    await repair(UPSTREAM);                            // a channel that needs the repair
-    idleRepair();                                      // and one that does not
+    await repair(UPSTREAM); // a channel that needs the repair
+    idleRepair(); // and one that does not
   }
   assert.equal(built.length, 1, `${built.length} workers for six round trips`);
 });
@@ -369,19 +433,29 @@ test("a slow answer for a channel nobody is watching cannot take over the socket
    */
   fakeWorker("listens");
   const second = "https://host.example/live/second.m3u8";
-  const slow = new Map([[UPSTREAM, 40], [second, 5]]);  // the first channel answers late
-  vi.stubGlobal("fetch", vi.fn(async (url: string) => {
-    await new Promise((r) => setTimeout(r, slow.get(String(url)) ?? 0));
-    return { ok: true, text: async () => BROKEN };
-  }));
+  const slow = new Map([
+    [UPSTREAM, 40],
+    [second, 5],
+  ]); // the first channel answers late
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (url: string) => {
+      await new Promise((r) => setTimeout(r, slow.get(String(url)) ?? 0));
+      return { ok: true, text: async () => BROKEN };
+    }),
+  );
 
   const { repair, repairState } = await load();
   const first = repair(UPSTREAM);
   const latest = repair(second);
 
-  assert.equal(await latest !== null, true, "the channel actually being watched was not repaired");
+  assert.equal(
+    (await latest) !== null,
+    true,
+    "the channel actually being watched was not repaired",
+  );
   assert.equal(await first, null, "the abandoned channel was still allowed to publish");
-  assert.equal(repairState().upstream, second, "the socket is serving the wrong channel");
+  assert.equal(repairState().state, "serving", "the latest channel did not own the socket");
 });
 
 test("a verdict about a host survives a relaunch", async () => {
@@ -396,6 +470,17 @@ test("a verdict about a host survives a relaunch", async () => {
   assert.equal(next.knownToNeedRepair("https://elsewhere.example/x.m3u8"), false);
 });
 
+test("remembered repair hosts are source scoped and clear with their source", async () => {
+  const { rememberNeedsRepair, knownToNeedRepair, forgetRepairSource } = await load();
+
+  rememberNeedsRepair(UPSTREAM, "playlist-one");
+  assert.equal(knownToNeedRepair(UPSTREAM, "playlist-one"), true);
+  assert.equal(knownToNeedRepair(UPSTREAM, "playlist-two"), false);
+
+  forgetRepairSource("playlist-one");
+  assert.equal(knownToNeedRepair(UPSTREAM, "playlist-one"), false);
+});
+
 test("resetting everything forgets which hosts were diagnosed", async () => {
   fakeWorker("listens");
   const { rememberNeedsRepair, knownToNeedRepair, forgetRepairHosts } = await load();
@@ -405,9 +490,42 @@ test("resetting everything forgets which hosts were diagnosed", async () => {
   assert.equal(knownToNeedRepair(UPSTREAM), false);
 });
 
+test("persisted diagnoses use source scoped opaque keys and can be cleared", async () => {
+  const password = "repair-boundary-secret";
+  const upstream = `https://provider.example/live/viewer/${password}/7.m3u8`;
+  const { prepare, forgetRepairSource } = await load();
+
+  await prepare(upstream, "playlist-one");
+
+  const stored = localStorage.getItem("openiptv.repair.diagnoses") ?? "";
+  expect(stored).not.toContain(password);
+  expect(stored).not.toContain("/live/viewer/");
+  expect(stored).toContain("playlist-one:");
+
+  forgetRepairSource("playlist-one");
+  expect(localStorage.getItem("openiptv.repair.diagnoses")).toBe("[]");
+});
+
+test("repair diagnostics never expose the current upstream address", async () => {
+  fakeWorker("listens");
+  const password = "diagnostic-secret";
+  const upstream = `https://provider.example/live/viewer/${password}/7.m3u8`;
+  const { repair, repairState } = await load();
+
+  await repair(upstream, "playlist-one");
+
+  expect(JSON.stringify(repairState())).not.toContain(password);
+  expect(JSON.stringify(repairState())).not.toContain("/live/viewer/");
+});
+
 test("an unreachable playlist is not treated as a repairable one", async () => {
   fakeWorker("listens");
-  vi.stubGlobal("fetch", vi.fn(async () => { throw new TypeError("Failed to fetch"); }));
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => {
+      throw new TypeError("Failed to fetch");
+    }),
+  );
   const { repair } = await load();
 
   assert.equal(await repair(UPSTREAM), null);

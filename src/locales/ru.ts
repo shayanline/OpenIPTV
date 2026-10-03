@@ -2,7 +2,19 @@ import type { MessageKey, MessageValues } from "../services/locale";
 
 export default {
   "common.search": "Поиск",
+  "common.guide": "Программа",
   "common.settings": "Настройки",
+  "content.live": "Эфир",
+  "content.movies": "Фильмы",
+  "content.series": "Сериалы",
+  "library.loading": "Загрузка…",
+  "library.failed": "Не удалось загрузить этот контент.",
+  "library.retry": "Повторить",
+  "library.details": "Подробнее",
+  "library.resume": "Продолжить",
+  "library.season": ({ number }) => `Сезон ${number}`,
+  "library.episode": ({ number }) => `Серия ${number}`,
+  "library.searchScope": ({ kind }) => `Поиск охватывает загруженные категории ${kind}.`,
   "common.move": "Переместить",
   "common.open": "Открыть",
   "common.closeSettings": "Закрыть настройки",
@@ -166,6 +178,13 @@ export default {
   "app.addedFavourite": "Добавлено в избранное",
   "app.hiddenFavouriteUnavailable": "Верните эту категорию перед добавлением в избранное.",
   "banner.position": ({ at, of, list }) => `${at} из ${of} в ${list}`,
+  "banner.finiteTime": ({ elapsed, duration }) => `${elapsed} / ${duration}`,
+  "banner.now": ({ title }) => `Сейчас: ${title}`,
+  "banner.next": ({ title }) => `Далее: ${title}`,
+  "guide.title": ({ category }) => `Телепрограмма: ${category}`,
+  "guide.playFromStart": "Смотреть с начала",
+  "guide.empty": "Информация о программах недоступна.",
+  "guide.failed": "Не удалось загрузить информацию о программах.",
   "guide.addIt": "Добавить",
   "guide.showMatches": "Показать совпадения",
   "guide.clear": "Очистить",
@@ -185,8 +204,7 @@ export default {
   "channel.unnamed": "Без названия",
   "channel.hidden": "Скрыта",
   "channel.noCategories": "Категорий пока нет.",
-  "channel.allCategoriesHidden":
-    "Все категории скрыты.",
+  "channel.allCategoriesHidden": "Все категории скрыты.",
   "channel.nothingInCategory": "В этой категории ничего нет.",
   "channel.noMatches": ({ query }) => `Каналов, соответствующих запросу «${query}», нет.`,
   "channel.typeName": "Введите название канала.",
@@ -250,6 +268,8 @@ export default {
   "playlist.refreshFailed": ({ detail }) =>
     `Не удалось обновить: ${detail}. Показывается последняя сохранённая копия.`,
   "playlist.loadFailed": ({ detail }) => `Не удалось загрузить плейлист: ${detail}`,
+  "playlist.browserTransportFailed":
+    "Браузер не смог подключиться к провайдеру по HTTPS. Провайдер должен поддерживать HTTPS и CORS.",
   "playlist.loadingActive": "Загрузка активного плейлиста…",
   "playlist.loadedActive": ({ count }) => `Из активного плейлиста загружено каналов: ${count}.`,
   "playlist.addToStart": "Добавьте адрес плейлиста M3U, чтобы начать просмотр.",
@@ -345,7 +365,8 @@ export default {
   "about.qrAlt": ({ url }) => `QR-код со ссылкой на ${url}`,
   "settings.remoteAccess": "Удалённый доступ",
   "remote.setupTitle": "Настройка с другого устройства",
-  "remote.setupBody": "Отсканируйте QR-код, чтобы проще добавлять плейлисты и выбирать настройки.",
+  "remote.setupBody":
+    "Отсканируйте QR-код, чтобы проще добавлять плейлисты и выбирать настройки.",
   "remote.addressHint": "Если сканирование недоступно, откройте этот адрес",
   "remote.codeHint": "Затем введите этот код",
   "remote.waiting": "Ожидание подключения устройства",
@@ -353,7 +374,8 @@ export default {
   "remote.connected": ({ name }) => `${name} подключён`,
   "remote.unavailable": "Удалённая настройка недоступна в этой сети.",
   "remote.manualFallback": "Плейлист по-прежнему можно ввести слева.",
-  "remote.pairedHint": "Авторизованные устройства могут управлять плейлистами, настройками и воспроизведением, пока OpenIPTV запущен.",
+  "remote.pairedHint":
+    "Авторизованные устройства могут управлять плейлистами, настройками и воспроизведением, пока OpenIPTV запущен.",
   "remote.noDevices": "Нет авторизованных устройств.",
   "remote.thisDevice": "Это устройство",
   "remote.lastUsed": ({ when }) => `Последнее использование: ${when}`,
@@ -368,19 +390,41 @@ export default {
   "remote.setupCompleteBody": ({ count }) =>
     `Найдено ${count} каналов и добавлено в OpenIPTV. Продолжите на телевизоре или откройте здесь настройки, чтобы управлять плейлистами и параметрами.`,
   "remote.setupFailedTitle": "Не удалось добавить этот плейлист",
-  "remote.setupLoadFailed": "По этому адресу каналы не найдены. Проверьте адрес и повторите попытку.",
+  "remote.setupLoadFailed":
+    "По этому адресу каналы не найдены. Проверьте адрес и повторите попытку.",
   "remote.deviceName": "Название телефона",
   "remote.renameAria": ({ name }) => `Переименовать ${name}`,
   "remote.revokeAria": ({ name }) => `Отозвать доступ для ${name}`,
   "remote.revokeQuestion": ({ name }) => `Отозвать доступ для ${name}?`,
-  "remote.revokeBody": "Для повторного подключения на этом телефоне потребуется отсканировать новый QR-код.",
-  "remote.revokeSelfBody": "Это телефон, которым вы сейчас пользуетесь. Отзыв доступа отключит его, после чего потребуется повторное подключение.",
+  "remote.revokeBody":
+    "Для повторного подключения на этом телефоне потребуется отсканировать новый QR-код.",
+  "remote.revokeSelfBody":
+    "Это телефон, которым вы сейчас пользуетесь. Отзыв доступа отключит его, после чего потребуется повторное подключение.",
   "remote.remotePlayPause": "Воспроизведение/Пауза",
   "remote.revoke": "Отозвать доступ",
   "remote.qrAlt": "QR-код для локальной настройки телефона",
   "remote.conflict": "Настройки изменены на другом телефоне. Проверьте их и повторите попытку.",
-  "remote.tvUnavailable": "Телевизор недоступен. Оставьте OpenIPTV открытым и повторите попытку.",
+  "remote.tvUnavailable":
+    "Телевизор недоступен. Оставьте OpenIPTV открытым и повторите попытку.",
   "remote.revoked": "У этого телефона больше нет доступа.",
+  "remote.trustedNetwork":
+    "Это локальное HTTP-соединение предназначено только для доверенной частной сети. Данные учётной записи и адреса потоков не отображаются.",
+  "playlist.accountActive": "Активна",
+  "playlist.accountInactive": "Неактивна",
+  "playlist.accountExpired": "Истекла",
+  "playlist.accountTrial": "пробная",
+  "playlist.accountExpiryUnknown": "Срок действия неизвестен",
+  "playlist.accountExpires": ({ date }) => `Истекает ${date}`,
+  "playlist.accountConnections": ({ active, maximum }) =>
+    `${active} из ${maximum} подключений активно`,
+  "guide.seek": "Перемотать на десять секунд",
+  "search.mediaName": "Название фильма или сериала",
+  "search.mediaAria": "Искать фильмы или сериалы по названию",
+  "error.seekUnavailable": "На этом устройстве нельзя перематывать это видео.",
+  "error.continueOrTryFormat": "Продолжите с текущей позиции или попробуйте другой формат.",
+  "error.finiteFormatUnsupported":
+    "Видео использует формат, который проигрыватель не может декодировать.",
+  "error.tryTelevisionOrVideo": "Попробуйте на телевизоре или выберите другое видео.",
   "exit.question": "Закрыть OpenIPTV?",
   "exit.body": "Его можно снова открыть из строки приложений.",
 } satisfies Partial<Record<MessageKey, string | ((values: MessageValues) => string)>>;

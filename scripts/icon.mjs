@@ -39,16 +39,20 @@ if (!chrome) {
 
 const userDir = join(tmpdir(), "openiptv-icon");
 mkdirSync(userDir, { recursive: true });
-const child = spawn(chrome, [
-  "--headless=new",
-  `--remote-debugging-port=${PORT}`,
-  `--user-data-dir=${userDir}`,
-  "--force-device-scale-factor=1",
-  "--hide-scrollbars",
-  "--no-first-run",
-  "--no-default-browser-check",
-  "about:blank",
-], { stdio: "ignore" });
+const child = spawn(
+  chrome,
+  [
+    "--headless=new",
+    `--remote-debugging-port=${PORT}`,
+    `--user-data-dir=${userDir}`,
+    "--force-device-scale-factor=1",
+    "--hide-scrollbars",
+    "--no-first-run",
+    "--no-default-browser-check",
+    "about:blank",
+  ],
+  { stdio: "ignore" },
+);
 
 const cdp = await connect(PORT);
 await cdp.send("Page.enable");
@@ -59,7 +63,10 @@ await cdp.send("Page.enable");
  * came back 512x391, fitted to what the host would allow.
  */
 await cdp.send("Emulation.setDeviceMetricsOverride", {
-  width: SIZE, height: SIZE, deviceScaleFactor: 1, mobile: false,
+  width: SIZE,
+  height: SIZE,
+  deviceScaleFactor: 1,
+  mobile: false,
 });
 // Nothing behind the page, so the corners the squircle clips away stay transparent.
 await cdp.send("Emulation.setDefaultBackgroundColorOverride", {
@@ -92,8 +99,10 @@ writeFileSync(out, png);
 cdp.close();
 child.kill();
 
-console.log(`public/icon.png  ${SIZE}x${SIZE}, ${Math.round(png.length / 1024)}kB`
-  + ` (${Math.round(shot.length / 1024)}kB as Chrome wrote it)`);
+console.log(
+  `public/icon.png  ${SIZE}x${SIZE}, ${Math.round(png.length / 1024)}kB` +
+    ` (${Math.round(shot.length / 1024)}kB as Chrome wrote it)`,
+);
 
 /**
  * The same pixels, deflated properly.
@@ -110,14 +119,14 @@ console.log(`public/icon.png  ${SIZE}x${SIZE}, ${Math.round(png.length / 1024)}k
  */
 function smaller(original) {
   const chunks = [];
-  let at = 8;                                  // past the signature
+  let at = 8; // past the signature
   while (at < original.length) {
     const length = original.readUInt32BE(at);
     chunks.push({
       type: original.toString("ascii", at + 4, at + 8),
       data: original.subarray(at + 8, at + 8 + length),
     });
-    at += 12 + length;                         // length, type, data, CRC
+    at += 12 + length; // length, type, data, CRC
   }
 
   const image = Buffer.concat(chunks.filter((c) => c.type === "IDAT").map((c) => c.data));

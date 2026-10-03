@@ -24,9 +24,7 @@ const state = (change: Partial<RemoteAccessState> = {}): RemoteAccessState => ({
   ...change,
 });
 
-const control = (
-  change: Partial<RemoteAccessControl> = {},
-): RemoteAccessControl => ({
+const control = (change: Partial<RemoteAccessControl> = {}): RemoteAccessControl => ({
   ...state(),
   openPairing: vi.fn(),
   cancelPairing: vi.fn(),
@@ -52,7 +50,9 @@ test("device setup shows a local QR code, address, code, and waiting state", () 
   expect(screen.getByText(`${code.slice(0, 3)} ${code.slice(3)}`)).toBeTruthy();
   expect(screen.getByText("This code expires in five minutes.")).toBeTruthy();
   expect(screen.getByRole("status").textContent).toContain("Waiting for a device");
-  expect(document.querySelectorAll(".remote-setup button, .remote-setup input")).toHaveLength(0);
+  expect(document.querySelectorAll(".remote-setup button, .remote-setup input")).toHaveLength(
+    0,
+  );
 });
 
 test("development setup points the device at Vite device interface", () => {
@@ -106,7 +106,9 @@ test("device setup reports connected and unavailable states", () => {
     />,
   );
   expect(screen.getByRole("heading", { name: "Shayan's device connected" })).toBeTruthy();
-  expect(screen.queryByText("Scan the QR code to add playlists and choose settings more easily.")).toBeNull();
+  expect(
+    screen.queryByText("Scan the QR code to add playlists and choose settings more easily."),
+  ).toBeNull();
   expect(document.querySelector(".remote-qr")).toBeNull();
   expect(screen.queryByText("http://192.168.1.8:8976")).toBeNull();
   expect(openPairing).not.toHaveBeenCalled();
@@ -172,10 +174,14 @@ test("paired devices can be renamed and revoked with confirmation", async () => 
   fireEvent.change(nameInput, { target: { value: "Kitchen device" } });
   fireEvent.click(screen.getByRole("button", { name: "Save" }));
   expect(listPairedDevices()[0].name).toBe("Kitchen device");
-  expect(document.activeElement).toBe(screen.getByRole("button", { name: "Rename Kitchen device" }));
+  expect(document.activeElement).toBe(
+    screen.getByRole("button", { name: "Rename Kitchen device" }),
+  );
 
   fireEvent.click(screen.getByRole("button", { name: "Remove access for Kitchen device" }));
-  expect(screen.getByRole("heading", { name: "Remove access for Kitchen device?" })).toBeTruthy();
+  expect(
+    screen.getByRole("heading", { name: "Remove access for Kitchen device?" }),
+  ).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Remove access" }));
   expect(listPairedDevices()).toEqual([]);
   expect(screen.getByText("No devices are authorised.")).toBeTruthy();

@@ -220,6 +220,18 @@ This is local HTTP on a trusted home network. There is no account, hosted relay,
 
 The management socket and compatibility socket are separate artifacts with separate owners. The management worker binds only to the reported private address and serves three fixed phone assets plus versioned API routes. The compatibility worker remains loopback only and cannot serve management data.
 
+## Xtream catalogues and playback
+
+An Xtream source stores the server, username, password, and preferred live output as typed fields. `services/xtream` is the only boundary that constructs Player API and media addresses. Credentials remain in local settings because the protocol requires them for every request, but cache keys, item identities, diagnostics, errors, remote state snapshots, and fixture responses never include them. Provider `direct_source` values are used as complete stream addresses without appending credentials.
+
+Launch authentication loads the account, all category lists, and every live summary because resume, favourites, number entry, channel changing, and global live search require the complete live lineup. Movie and series lists load only after their category is selected. Movie details, seasons, episodes, and programme information load only when opened or focused. An empty category is a completed load, so revisiting it does not repeat the request. Category lists and details use the same six hour freshness policy and versioned IndexedDB keys as the live catalogue, while programme information remains briefly in memory because it changes with time.
+
+The panel header cycles through Live, Movies, and Series for an Xtream source. Left moves from an item list to its category rail, while Right returns to the items. OK plays live television, opens a movie detail, opens a series, opens a season, or plays an episode according to the focused row. RETURN removes one movie, season, episode, guide, or search frame before it closes the panel. Live search covers every loaded live summary. Movie and series search covers only categories already opened, which avoids downloading a provider's complete on demand catalogue for one query.
+
+Movies, episodes, and catchup use finite playback. Pause retains the current position, Play resumes it, Rewind and Fast Forward seek ten seconds, Previous and Next stay within the current movie or episode list, and STOP returns to the frame that launched playback. Completion removes saved progress and returns to that frame. Finite targets bypass live compatibility probing and retry behavior because a completed file is not a stalled broadcast.
+
+Guide reads short programme data for the focused or playing live channel. A past archived programme inside the channel's advertised archive duration exposes Play from start, which creates a finite timeshift target from the provider start time and duration. Missing, future, or invalid archive data remains readable without offering an action.
+
 ## Two stores, for two different jobs
 
 | | Holds | Why |
@@ -238,11 +250,7 @@ hold a Blob, which a logo is.
 IndexedDB has been on these televisions since Tizen 2.4, five years before the oldest set this
 supports, so none of it is a new dependency on a new engine.
 
-The budget stays at **5MB**, deliberately. Moving to a store with a far larger quota is not a
-reason to use one: everything in there is refetchable, so a bigger number buys fewer refetches
-and costs somebody else their space. Over budget, the least recently used entry goes first, and
-something larger than the whole budget is refused outright rather than emptying the cache in a
-doomed attempt to fit it. Diagnostics reports what is held.
+The budget stays at **24 MB**, deliberately. It holds the 2.7 MB reference playlist, which occupies about 5.4 MB when counted as JavaScript text, plus several thousand reduced logos and lazy Xtream catalogue entries. Everything is refetchable, so a larger number would buy fewer refetches by taking more shared flash. Over budget, the least recently used entry goes first, and something larger than the whole budget is refused outright rather than emptying the cache in a doomed attempt to fit it. Diagnostics reports what is held.
 
 Three things keep it from growing without bound:
 
@@ -412,4 +420,4 @@ source and takes about four seconds from that screen.
 
 ## Not there yet
 
-EPG and recordings. Playlists carry `tvg-id`, so an XMLTV guide is the natural next addition.
+External XMLTV guides for M3U sources and recording management. Xtream short programme information and provider catchup are supported through the Player API.

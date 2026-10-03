@@ -66,8 +66,10 @@ test("something larger than the whole budget is refused rather than cached", () 
 });
 
 test("an empty cache accepts anything that fits", () => {
-  assert.deepEqual(evictionPlan([], { key: "a", bytes: 1000 }, 1000),
-    { evict: [], refused: false });
+  assert.deepEqual(evictionPlan([], { key: "a", bytes: 1000 }, 1000), {
+    evict: [],
+    refused: false,
+  });
 });
 
 test("the budget holds the largest playlist anybody actually uses", () => {
@@ -82,7 +84,10 @@ test("the budget holds the largest playlist anybody actually uses", () => {
    * Asserted as the playlist rather than as the constant, because it is the requirement. If the
    * budget ever has to come down again, this is the test that should have to be argued with.
    */
-  const playlist = { key: "playlist:https://iptv-org.github.io/iptv/index.m3u", bytes: 2.7 * MB * 2 };
+  const playlist = {
+    key: "playlist:https://iptv-org.github.io/iptv/index.m3u",
+    bytes: 2.7 * MB * 2,
+  };
   assert.deepEqual(evictionPlan([], playlist), { evict: [], refused: false });
   assert.ok(BUDGET_BYTES >= playlist.bytes * 2, "and with room for logos beside it");
 });

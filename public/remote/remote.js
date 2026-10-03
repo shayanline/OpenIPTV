@@ -139,25 +139,51 @@
     revokeConfirm: "This device will need to scan a new QR code before it can connect again.",
     revokeSelfConfirm:
       "This is the device you are using. Removing access will disconnect it, and you will need to add it again.",
+    trustedNetwork:
+      "This local HTTP connection is intended only for a trusted private network. Account credentials and stream addresses are never shown.",
+    accountActive: "Active",
+    accountInactive: "Inactive",
+    accountExpired: "Expired",
+    accountTrial: "trial",
+    accountExpiryUnknown: "Expiry unknown",
+    accountExpires: "Expires {date}",
+    accountConnections: "{active} of {maximum} connections active",
     save: "Save",
     open: "Open",
     close: "Close",
     cancel: "Cancel",
   };
 
-  var navIcons = {
-    appearance: '<path d="M5.6 19.4L11.4 4.8h1.2l5.8 14.6"/><path d="M8.1 14.6h7.8"/>',
-    playback: '<rect x="2.6" y="5" width="18.8" height="13" rx="2.2"/><path d="M8.6 21h6.8"/>',
-    playlists: '<circle cx="4.9" cy="7" r="1.1"/><circle cx="4.9" cy="12" r="1.1"/><circle cx="4.9" cy="17" r="1.1"/><path d="M9.4 7h10.2M9.4 12h10.2M9.4 17h10.2"/>',
-    devices: '<rect x="2.7" y="4.4" width="12.8" height="11.2" rx="2"/><path d="M6.7 19.6h4.8M9.1 15.6v4M19.1 8.1c1.2.9 1.9 2.3 1.9 3.9s-.7 3-1.9 3.9M20.5 5.7c1.6 1.5 2.5 3.8 2.5 6.3s-.9 4.8-2.5 6.3"/>',
-    about: '<circle cx="12" cy="12" r="9"/><path d="M12 11.2v5.4M12 7.6v.1"/>',
+  var icons = {
+    appearance: '<path d="M12 4v16"/><path d="M4 7V5a1 1 0 0 1 1-1h14a1 1 0 0 1 1 1v2"/><path d="M9 20h6"/>',
+    playback: '<path d="m17 2-5 5-5-5"/><rect width="20" height="15" x="2" y="7" rx="2"/>',
+    playlists: '<path d="M21 5H3M10 12H3M10 19H3"/><path d="M15 12.003a1 1 0 0 1 1.517-.859l4.997 2.997a1 1 0 0 1 0 1.718l-4.997 2.997a1 1 0 0 1-1.517-.86z"/>',
+    devices: '<rect width="14" height="20" x="5" y="2" rx="2"/><path d="M12 18h.01"/>',
+    about: '<circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/>',
+    remote: '<rect width="14" height="20" x="5" y="2" rx="2"/><path d="M12 18h.01"/>',
+    close: '<path d="M18 6 6 18M6 6l12 12"/>',
+    more: '<circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/>',
+    up: '<path d="m18 15-6-6-6 6"/>',
+    right: '<path d="m9 18 6-6-6-6"/>',
+    down: '<path d="m6 9 6 6 6-6"/>',
+    left: '<path d="m15 18-6-6 6-6"/>',
+    return: '<path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5a5.5 5.5 0 0 1-5.5 5.5H11"/>',
+    play: '<path d="M5 5a2 2 0 0 1 3.008-1.728l11.997 6.998a2 2 0 0 1 .003 3.458l-12 7A2 2 0 0 1 5 19z"/>',
+    previous: '<path d="M17.971 4.285A2 2 0 0 1 21 6v12a2 2 0 0 1-3.029 1.715l-9.997-5.998a2 2 0 0 1-.003-3.432z"/><path d="M3 20V4"/>',
+    rewind: '<path d="M12 6a2 2 0 0 0-3.414-1.414l-6 6a2 2 0 0 0 0 2.828l6 6A2 2 0 0 0 12 18z"/><path d="M22 6a2 2 0 0 0-3.414-1.414l-6 6a2 2 0 0 0 0 2.828l6 6A2 2 0 0 0 22 18z"/>',
+    stop: '<rect width="18" height="18" x="3" y="3" rx="2"/>',
+    forward: '<path d="M12 6a2 2 0 0 1 3.414-1.414l6 6a2 2 0 0 1 0 2.828l-6 6A2 2 0 0 1 12 18z"/><path d="M2 6a2 2 0 0 1 3.414-1.414l6 6a2 2 0 0 1 0 2.828l-6 6A2 2 0 0 1 2 18z"/>',
+    next: '<path d="M21 4v16"/><path d="M6.029 4.285A2 2 0 0 0 3 6v12a2 2 0 0 0 3.029 1.715l9.997-5.998a2 2 0 0 0 .003-3.432z"/>',
+    plus: '<path d="M5 12h14M12 5v14"/>',
+    minus: '<path d="M5 12h14"/>',
   };
 
+  function icon(name, className) {
+    return '<svg class="' + (className || "remote-icon") + '" viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + icons[name] + "</svg>";
+  }
+
   function navIcon(name) {
-    var solid = name === "general";
-    return '<svg class="tab-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="' +
-      (solid ? "currentColor" : "none") + '" stroke="' + (solid ? "none" : "currentColor") +
-      '" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">' + navIcons[name] + "</svg>";
+    return icon(name, "tab-icon");
   }
 
   function remoteMarkup(l) {
@@ -167,10 +193,10 @@
     }
     digits += '<span></span><button type="button" data-remote-key="48">0</button><span></span>';
     return (
-      '<button type="button" class="remote-fab" data-action="open-remote" aria-label="Smart Remote" aria-expanded="false"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="2.5" width="10" height="19" rx="4"/><circle cx="12" cy="9" r="2.5"/><path d="M9.5 15h5M10.5 18h3"/></svg></button>' +
-      '<div class="remote-overlay" data-remote-overlay hidden><button type="button" class="remote-backdrop" data-action="close-remote" aria-label="' + escape(l.remoteClose) + '"></button><section class="remote-sheet" role="dialog" aria-modal="true" aria-labelledby="remote-title"><header><h2 id="remote-title">Smart Remote</h2><button type="button" class="remote-close" data-action="close-remote" aria-label="' + escape(l.remoteClose) + '">×</button></header><div class="remote-carousel" data-remote-carousel><div class="remote-track" data-remote-track>' +
-      '<div class="remote-page"><div class="mobile-remote"><div class="touch-dpad"><button type="button" class="touch-key up" data-remote-key="38" aria-label="' + escape(l.remoteUp) + '"><i></i></button><button type="button" class="touch-key right" data-remote-key="39" aria-label="' + escape(l.remoteRight) + '"><i></i></button><button type="button" class="touch-key down" data-remote-key="40" aria-label="' + escape(l.remoteDown) + '"><i></i></button><button type="button" class="touch-key left" data-remote-key="37" aria-label="' + escape(l.remoteLeft) + '"><i></i></button><button type="button" class="touch-key ok" data-remote-key="13" aria-label="' + escape(l.remoteSelect) + '">OK</button></div><div class="touch-primary"><button type="button" data-remote-key="10009" aria-label="' + escape(l.remoteReturn) + '"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6.5L4.5 11 9 15.5"/><path d="M4.5 11h9a6 6 0 0 1 0 12h-2"/></svg><span>' + escape(l.remoteReturn) + '</span></button><button type="button" data-remote-key="10252" aria-label="' + escape(l.remotePlayPause) + '"><svg viewBox="0 0 24 24" aria-hidden="true" class="filled"><path d="M4 4.5l9 7.5-9 7.5z"/><rect x="15" y="4.5" width="2.4" height="15" rx="1"/><rect x="19.2" y="4.5" width="2.4" height="15" rx="1"/></svg><span>Play/Pause</span></button></div><div class="touch-rockers"><div class="touch-rocker"><span>VOL</span><div><button type="button" data-remote-key="448" aria-label="' + escape(l.remoteVolumeUp) + '">+</button><button type="button" data-remote-key="449" aria-label="' + escape(l.remoteVolumeDown) + '">−</button></div></div><div class="touch-rocker"><span>CH</span><div><button type="button" data-remote-key="427" aria-label="' + escape(l.remoteChannelUp) + '">+</button><button type="button" data-remote-key="428" aria-label="' + escape(l.remoteChannelDown) + '">−</button></div></div></div></div></div>' +
-      '<div class="remote-page"><div class="remote-keypad"><div class="keypad-digits">' + digits + '</div><div class="keypad-transport"><button type="button" data-remote-key="10232" aria-label="' + escape(l.remotePrevious) + '">|◀</button><button type="button" data-remote-key="412" aria-label="' + escape(l.remoteRewind) + '"><svg class="transport-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M11 5.5v13L3 12z"/><path d="M21 5.5v13l-8-6.5z"/></svg></button><button type="button" data-remote-key="413" aria-label="' + escape(l.remoteStop) + '">■</button><button type="button" data-remote-key="417" aria-label="' + escape(l.remoteFastForward) + '"><svg class="transport-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M13 5.5v13l8-6.5z"/><path d="M3 5.5v13l8-6.5z"/></svg></button><button type="button" data-remote-key="10233" aria-label="' + escape(l.remoteNext) + '">▶|</button></div><div class="keypad-colours"><button type="button" class="red" data-remote-key="403" aria-label="' + escape(l.remoteRed) + '"></button><button type="button" class="green" data-remote-key="404" aria-label="' + escape(l.remoteGreen) + '"></button><button type="button" class="yellow" data-remote-key="405" aria-label="' + escape(l.remoteYellow) + '"></button><button type="button" class="blue" data-remote-key="406" aria-label="' + escape(l.remoteBlue) + '"></button></div></div></div></div></div><div class="remote-pages" role="tablist" aria-label="Remote pages"><button type="button" data-remote-page="0" aria-label="Main controls" aria-selected="true"></button><button type="button" data-remote-page="1" aria-label="Keypad controls" aria-selected="false"></button></div></section></div>'
+      '<button type="button" class="remote-fab" data-action="open-remote" aria-label="Smart Remote" aria-expanded="false">' + icon("remote") + '</button>' +
+      '<div class="remote-overlay" data-remote-overlay hidden><button type="button" class="remote-backdrop" data-action="close-remote" aria-label="' + escape(l.remoteClose) + '"></button><section class="remote-sheet" role="dialog" aria-modal="true" aria-labelledby="remote-title"><header><h2 id="remote-title">Smart Remote</h2><button type="button" class="remote-close" data-action="close-remote" aria-label="' + escape(l.remoteClose) + '">' + icon("close") + '</button></header><div class="remote-carousel" data-remote-carousel><div class="remote-track" data-remote-track>' +
+      '<div class="remote-page"><div class="mobile-remote"><div class="touch-dpad"><button type="button" class="touch-key up" data-remote-key="38" aria-label="' + escape(l.remoteUp) + '">' + icon("up") + '</button><button type="button" class="touch-key right" data-remote-key="39" aria-label="' + escape(l.remoteRight) + '">' + icon("right") + '</button><button type="button" class="touch-key down" data-remote-key="40" aria-label="' + escape(l.remoteDown) + '">' + icon("down") + '</button><button type="button" class="touch-key left" data-remote-key="37" aria-label="' + escape(l.remoteLeft) + '">' + icon("left") + '</button><button type="button" class="touch-key ok" data-remote-key="13" aria-label="' + escape(l.remoteSelect) + '">OK</button></div><div class="touch-primary"><button type="button" data-remote-key="10009" aria-label="' + escape(l.remoteReturn) + '">' + icon("return") + '<span>' + escape(l.remoteReturn) + '</span></button><button type="button" data-remote-key="10252" aria-label="' + escape(l.remotePlayPause) + '">' + icon("play") + '<span>Play/Pause</span></button></div><div class="touch-rockers"><div class="touch-rocker"><span>VOL</span><div><button type="button" data-remote-key="448" aria-label="' + escape(l.remoteVolumeUp) + '">' + icon("plus") + '</button><button type="button" data-remote-key="449" aria-label="' + escape(l.remoteVolumeDown) + '">' + icon("minus") + '</button></div></div><div class="touch-rocker"><span>CH</span><div><button type="button" data-remote-key="427" aria-label="' + escape(l.remoteChannelUp) + '">' + icon("plus") + '</button><button type="button" data-remote-key="428" aria-label="' + escape(l.remoteChannelDown) + '">' + icon("minus") + '</button></div></div></div></div></div>' +
+      '<div class="remote-page"><div class="remote-keypad"><div class="keypad-digits">' + digits + '</div><div class="keypad-transport"><button type="button" data-remote-key="10232" aria-label="' + escape(l.remotePrevious) + '">' + icon("previous", "transport-icon") + '</button><button type="button" data-remote-key="412" aria-label="' + escape(l.remoteRewind) + '">' + icon("rewind", "transport-icon") + '</button><button type="button" data-remote-key="413" aria-label="' + escape(l.remoteStop) + '">' + icon("stop", "transport-icon") + '</button><button type="button" data-remote-key="417" aria-label="' + escape(l.remoteFastForward) + '">' + icon("forward", "transport-icon") + '</button><button type="button" data-remote-key="10233" aria-label="' + escape(l.remoteNext) + '">' + icon("next", "transport-icon") + '</button></div><div class="keypad-colours"><button type="button" class="red" data-remote-key="403" aria-label="' + escape(l.remoteRed) + '"></button><button type="button" class="green" data-remote-key="404" aria-label="' + escape(l.remoteGreen) + '"></button><button type="button" class="yellow" data-remote-key="405" aria-label="' + escape(l.remoteYellow) + '"></button><button type="button" class="blue" data-remote-key="406" aria-label="' + escape(l.remoteBlue) + '"></button></div></div></div></div></div><div class="remote-pages" role="tablist" aria-label="Remote pages"><button type="button" data-remote-page="0" aria-label="Main controls" aria-selected="true"></button><button type="button" data-remote-page="1" aria-label="Keypad controls" aria-selected="false"></button></div></section></div>'
     );
   }
 
@@ -178,7 +204,7 @@
     return (
       '<div class="item-menu-overlay" data-item-menu hidden><button type="button" class="item-menu-backdrop" data-action="close-item-menu" aria-label="' +
       escape(l.close) + '"></button><section class="item-menu-sheet" role="dialog" aria-modal="true" aria-labelledby="item-menu-title"><header><strong id="item-menu-title" data-item-menu-title></strong><button type="button" class="item-menu-close" data-action="close-item-menu" aria-label="' +
-      escape(l.close) + '">×</button></header><div class="item-menu-actions" data-item-menu-actions></div></section></div>'
+      escape(l.close) + '">' + icon("close") + '</button></header><div class="item-menu-actions" data-item-menu-actions></div></section></div>'
     );
   }
 
@@ -195,64 +221,49 @@
       .replace(/'/g, "&#39;");
   }
 
-  function xtreamPlaylistUrl(server, username, password, output) {
-    if (!server.trim() || !username.trim() || !password) return "";
-    try {
-      var url = new URL(server.trim());
-      if ((url.protocol !== "http:" && url.protocol !== "https:") || !url.hostname.includes(".")) {
-        return "";
-      }
-      if (!/\/get\.php$/i.test(url.pathname)) {
-        url.pathname = url.pathname.replace(/\/+$/, "") + "/get.php";
-      }
-      url.search = "";
-      url.hash = "";
-      url.searchParams.set("username", username.trim());
-      url.searchParams.set("password", password);
-      url.searchParams.set("type", "m3u_plus");
-      url.searchParams.set("output", output);
-      return url.toString();
-    } catch (_error) {
-      return "";
-    }
+  function sourceFromDraft(kind, draft) {
+    return kind === "m3u"
+      ? { kind: "m3u", url: draft.url.trim() }
+      : {
+          kind: "xtream",
+          server: draft.server.trim(),
+          username: draft.username.trim(),
+          password: draft.password,
+          output: draft.output,
+        };
   }
 
-  function parseXtreamPlaylistUrl(value) {
-    try {
-      var url = new URL(value);
-      var username = url.searchParams.get("username") || "";
-      var password = url.searchParams.get("password") || "";
-      var output = url.searchParams.get("output");
-      if (
-        !/\/get\.php$/i.test(url.pathname) ||
-        !username ||
-        !password ||
-        url.searchParams.get("type") !== "m3u_plus" ||
-        (output !== "m3u8" && output !== "ts")
-      ) {
-        return null;
-      }
-      var path = url.pathname.replace(/\/get\.php$/i, "");
-      return {
-        server: path ? url.origin + path : url.origin,
-        username: username,
-        password: password,
-        output: output,
-      };
-    } catch (_error) {
-      return null;
-    }
+  function sourceAddress(source) {
+    return source.kind === "m3u" ? source.url : source.server;
   }
 
-  function redactPlaylistUrl(value) {
-    try {
-      var url = new URL(value);
-      if (!url.searchParams.has("password")) return value;
-      url.searchParams.set("password", "••••••••");
-      return url.toString().replace(encodeURIComponent("••••••••"), "••••••••");
-    } catch (_error) {
-      return value;
-    }
+  function accountStatus(account, l) {
+    if (!account) return "";
+    var status = String(account.status || "").toLowerCase();
+    var expired = account.expiresAt && account.expiresAt <= Math.floor(Date.now() / 1000);
+    var state = status === "expired" || expired
+      ? l.accountExpired
+      : status === "active"
+        ? l.accountActive
+        : l.accountInactive;
+    var expiry = account.expiresAt
+      ? l.accountExpires.replace(
+          "{date}",
+          new Date(account.expiresAt * 1000).toLocaleDateString(current.locale),
+        )
+      : l.accountExpiryUnknown;
+    var connections = account.activeConnections == null
+      ? ""
+      : l.accountConnections
+          .replace("{active}", account.activeConnections)
+          .replace("{maximum}", account.maxConnections == null ? "?" : account.maxConnections);
+    return (
+      '<span class="account-status"><span>' + escape(state) +
+      (account.isTrial ? " " + escape(l.accountTrial) : "") +
+      "</span><span>" + escape(expiry) + "</span>" +
+      (connections ? "<span>" + escape(connections) + "</span>" : "") +
+      "</span>"
+    );
   }
 
   function sourceOptions(source, l) {
@@ -268,7 +279,7 @@
     return (
       '<label>' + escape(l.serverAddress) + '<input name="' + prefix + 'Server" type="url" inputmode="url" dir="ltr" value="' + escape(draft.server) + '" required></label>' +
       '<label>' + escape(l.username) + '<input name="' + prefix + 'Username" dir="ltr" value="' + escape(draft.username) + '" required></label>' +
-      '<label>' + escape(l.password) + '<input name="' + prefix + 'Password" type="password" dir="ltr" value="' + escape(draft.password) + '" required></label>' +
+      '<label>' + escape(l.password) + '<input name="' + prefix + 'Password" type="password" dir="ltr" value="' + escape(draft.password) + '"' + (prefix === "edit" ? "" : " required") + "></label>" +
       '<label>' + escape(l.streamFormat) + '<select name="' + prefix + 'Output"><option value="m3u8"' +
       (draft.output === "m3u8" ? " selected" : "") + '>' + escape(l.hls) + '</option><option value="ts"' +
       (draft.output === "ts" ? " selected" : "") + '>' + escape(l.mpegTs) + "</option></select></label>"
@@ -292,16 +303,16 @@
   }
 
   function beginPlaylistEdit(playlist) {
-    var xtream = parseXtreamPlaylistUrl(playlist.url);
+    var source = playlist.source;
     editingPlaylist = playlist.id;
-    editingPlaylistSource = xtream ? "xtream" : "m3u";
+    editingPlaylistSource = source.kind;
     editingPlaylistDraft = {
       name: playlist.name,
-      url: playlist.url,
-      server: xtream ? xtream.server : "",
-      username: xtream ? xtream.username : "",
-      password: xtream ? xtream.password : "",
-      output: xtream ? xtream.output : "m3u8",
+      url: source.kind === "m3u" ? source.url : "",
+      server: source.kind === "xtream" ? source.server : "",
+      username: source.kind === "xtream" ? source.username : "",
+      password: "",
+      output: source.kind === "xtream" ? source.output : "m3u8",
     };
   }
 
@@ -517,16 +528,22 @@
     var username = xtream ? form.elements.xtreamUsername.value : setupDraft.username;
     var password = xtream ? form.elements.xtreamPassword.value : setupDraft.password;
     var output = xtream ? form.elements.xtreamOutput.value : setupDraft.output;
+    var url = xtream ? setupDraft.url : form.elements.playlistUrl.value;
     return {
       locale: form.elements.locale.value,
       name: form.elements.playlistName.value,
-      url: xtream
-        ? xtreamPlaylistUrl(server, username, password, output)
-        : form.elements.playlistUrl.value,
+      url: url,
       server: server,
       username: username,
       password: password,
       output: output,
+      source: sourceFromDraft(xtream ? "xtream" : "m3u", {
+        url: url,
+        server: server,
+        username: username,
+        password: password,
+        output: output,
+      }),
     };
   }
 
@@ -540,7 +557,7 @@
         command: {
           type: "setup.preview",
           name: draft.name,
-          url: draft.url,
+          source: draft.source,
         },
       }),
     });
@@ -633,7 +650,7 @@
           type: "setup",
           locale: setupDraft.locale,
           name: setupDraft.name,
-          url: setupDraft.url,
+          source: setupDraft.source,
         },
         true,
         submit,
@@ -731,19 +748,18 @@
             escape(l.cancel) + "</button></div></form>"
           );
         }
-        var xtream = parseXtreamPlaylistUrl(playlist.url);
         return (
           '<article class="playlist compact-row"><div><strong>' +
           escape(playlist.name) +
           '</strong><span dir="ltr">' +
-          escape(xtream ? xtream.server : redactPlaylistUrl(playlist.url)) +
-          "</span></div>" +
+          escape(sourceAddress(playlist.source)) +
+          "</span>" + accountStatus(playlist.account, l) + "</div>" +
           (playlist.id === current.activePlaylistId
             ? '<em>' + escape(l.active) + "</em>"
             : "") +
           '<button class="row-menu" type="button" data-action="open-item-menu" data-kind="playlist" data-id="' +
           escape(playlist.id) +
-          '" aria-label="' + escape(l.edit + " " + playlist.name) + '"><i></i><i></i><i></i></button></article>'
+          '" aria-label="' + escape(l.edit + " " + playlist.name) + '">' + icon("more") + '</button></article>'
         );
       })
       .join("");
@@ -769,7 +785,7 @@
               (auth && device.id === auth.deviceId ? '<em class="self-badge">' + escape(l.thisDevice) + "</em>" : "") +
               '<button class="row-menu" type="button" data-action="open-item-menu" data-kind="device" data-id="' +
               escape(device.id) +
-              '" aria-label="' + escape(l.rename + " " + device.name) + '"><i></i><i></i><i></i></button></article>'
+              '" aria-label="' + escape(l.rename + " " + device.name) + '">' + icon("more") + '</button></article>'
             );
           })
           .join("")
@@ -787,12 +803,12 @@
     var playlistToggle = current.playlists.length > 5
       ? '<button type="button" class="list-toggle" data-action="toggle-playlists">' +
         escape(expandedPlaylists ? l.close : l.open + " " + l.playlists + " (" + current.playlists.length + ")") +
-        '<i class="' + (expandedPlaylists ? "up" : "") + '"></i></button>'
+        icon(expandedPlaylists ? "up" : "down") + '</button>'
       : "";
     var deviceToggle = current.devices.length > 5
       ? '<button type="button" class="list-toggle" data-action="toggle-devices">' +
         escape(expandedDevices ? l.close : l.open + " " + l.devices + " (" + current.devices.length + ")") +
-        '<i class="' + (expandedDevices ? "up" : "") + '"></i></button>'
+        icon(expandedDevices ? "up" : "down") + '</button>'
       : "";
     var addSourceFields = addPlaylistSource === "m3u"
       ? '<label>' + escape(l.playlistAddress) + '<input name="newUrl" type="url" inputmode="url" dir="ltr" aria-label="' + escape(l.playlistAddress) + '" value="' + escape(addPlaylistDraft.url) + '"></label>'
@@ -807,10 +823,11 @@
       escape(l.playlists) + '</h2><button class="section-add' + (addPlaylistOpen ? " open" : "") +
       '" type="button" data-action="' + (addPlaylistOpen ? "close-add-playlist" : "open-add-playlist") +
       '" aria-label="' + escape(addPlaylistOpen ? l.cancel : l.addPlaylist) +
-      '"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button></div>' +
+      '">' + icon("plus") + '</button></div>' +
       addPlaylist + '<div class="stack">' + playlists + "</div>" + playlistToggle + "</section>";
     var deviceSection = '<section id="devices" data-section="devices"><h2>' + escape(l.devices) +
-      '</h2><div class="stack">' + devices + "</div>" + deviceToggle + "</section>";
+      '</h2><p class="trusted-network">' + escape(l.trustedNetwork) + '</p><div class="stack">' +
+      devices + "</div>" + deviceToggle + "</section>";
     var aboutSection = '<section id="about" data-section="about"><h2>' + escape(l.about) +
       '</h2><div class="about-card"><div class="about-brand"><img src="/icon.svg" alt=""><div><strong>OpenIPTV</strong><span>' +
       escape(l.aboutVersion) + '</span></div></div><p>' + escape(l.aboutDescription) +
@@ -877,7 +894,7 @@
       (command.type === "playlist.update" &&
         command.id === current.activePlaylistId &&
         previousPlaylist &&
-        previousPlaylist.url !== command.url.trim());
+        JSON.stringify(previousPlaylist.source) !== JSON.stringify(command.source));
     if (!started && (busy || !beginOperation(setup ? labels().checkingPlaylist : labels().saving, source))) {
       return;
     }
@@ -912,10 +929,15 @@
       return;
     }
     if (!current.playlists.length) {
+      var setupSource = current.setup && current.setup.source;
       setupDraft = Object.assign({}, setupDraft, {
         locale: current.settings.locale,
         name: current.setup?.name ?? "",
-        url: current.setup?.url ?? "",
+        url: setupSource && setupSource.kind === "m3u" ? setupSource.url : "",
+        server: setupSource && setupSource.kind === "xtream" ? setupSource.server : "",
+        username: setupSource && setupSource.kind === "xtream" ? setupSource.username : "",
+        password: "",
+        output: setupSource && setupSource.kind === "xtream" ? setupSource.output : "m3u8",
       });
       if (setup) {
         renderSetupResult(
@@ -1243,20 +1265,13 @@
     if (add) add.addEventListener("click", function () {
       addPlaylistDraft = readAddPlaylistDraft();
       var name = addPlaylistDraft.name.trim();
-      var url = addPlaylistSource === "m3u"
-        ? addPlaylistDraft.url.trim()
-        : xtreamPlaylistUrl(
-            addPlaylistDraft.server,
-            addPlaylistDraft.username,
-            addPlaylistDraft.password,
-            addPlaylistDraft.output,
-          );
-      if (!url) {
+      var source = sourceFromDraft(addPlaylistSource, addPlaylistDraft);
+      if (!sourceAddress(source)) {
         operationStatus(labels().invalidUrl, true);
         return;
       }
       addPlaylistOpen = false;
-      void sendCommand({ type: "playlist.add", name: name, url: url }, false, add);
+      void sendCommand({ type: "playlist.add", name: name, source: source }, false, add);
     });
     root.querySelectorAll("[data-action=edit-playlist]").forEach(function (button) {
       button.addEventListener("click", function () {
@@ -1282,20 +1297,17 @@
         var id = editPlaylist.dataset.id;
         editingPlaylistDraft = readEditPlaylistDraft();
         var name = editingPlaylistDraft.name.trim();
-        var url = editingPlaylistSource === "m3u"
-          ? editingPlaylistDraft.url.trim()
-          : xtreamPlaylistUrl(
-              editingPlaylistDraft.server,
-              editingPlaylistDraft.username,
-              editingPlaylistDraft.password,
-              editingPlaylistDraft.output,
-            );
-        if (!url) {
+        var source = sourceFromDraft(editingPlaylistSource, editingPlaylistDraft);
+        if (!sourceAddress(source)) {
           operationStatus(labels().invalidUrl, true);
           return;
         }
         editingPlaylist = "";
-        void sendCommand({ type: "playlist.update", id: id, name: name, url: url }, false, editPlaylist);
+        void sendCommand(
+          { type: "playlist.update", id: id, name: name, source: source },
+          false,
+          editPlaylist,
+        );
       });
       editPlaylist.querySelector("[data-action=cancel-edit-playlist]").addEventListener("click", function () {
         var id = editingPlaylist;
@@ -1396,10 +1408,16 @@
     }
     current = loaded.body;
     applyLocale();
+    var source = current.setup && current.setup.source;
+    setupSource = source ? source.kind : "m3u";
     setupDraft = Object.assign({}, setupDraft, {
       locale: current.settings.locale,
       name: current.setup?.name ?? "",
-      url: current.setup?.url ?? "",
+      url: source && source.kind === "m3u" ? source.url : "",
+      server: source && source.kind === "xtream" ? source.server : "",
+      username: source && source.kind === "xtream" ? source.username : "",
+      password: "",
+      output: source && source.kind === "xtream" ? source.output : "m3u8",
     });
     if (current.playlists.length) renderManage();
     else renderSetup();

@@ -24,7 +24,9 @@ test("profile cleanup cannot override completed browser work", () => {
   const warnings: string[] = [];
   const removed = browserTools.removeProfile(
     "/tmp/busy-profile",
-    () => { throw Object.assign(new Error("directory busy"), { code: "ENOTEMPTY" }); },
+    () => {
+      throw Object.assign(new Error("directory busy"), { code: "ENOTEMPTY" });
+    },
     (message: string) => warnings.push(message),
   );
   assert.equal(removed, false);
@@ -40,7 +42,9 @@ test("closes Chrome through CDP before ending the process", async () => {
       calls.push(method);
       process.exitCode = 0;
     },
-    close() { calls.push("socket"); },
+    close() {
+      calls.push("socket");
+    },
   };
   await browserTools.closeBrowser(cdp, process);
   assert.deepEqual(calls, ["Browser.close", "socket"]);
@@ -89,7 +93,9 @@ test("waits for Chrome to exit after asking it to stop", async () => {
   });
   assert.equal(typeof browserTools.stopBrowser, "function");
   let stopped = false;
-  const stopping = browserTools.stopBrowser(browser).then(() => { stopped = true; });
+  const stopping = browserTools.stopBrowser(browser).then(() => {
+    stopped = true;
+  });
   await Promise.resolve();
   assert.equal(stopped, false);
   await stopping;
@@ -116,7 +122,9 @@ test("does not wait for a browser process that never started", async () => {
   Object.assign(browser, {
     exitCode: null,
     pid: undefined,
-    kill() { assert.fail("an unstarted process cannot be killed"); },
+    kill() {
+      assert.fail("an unstarted process cannot be killed");
+    },
   });
   await browserTools.stopBrowser(browser);
 });

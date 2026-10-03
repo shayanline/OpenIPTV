@@ -1,13 +1,26 @@
 /// <reference types="vitest/config" />
-import { defineConfig } from "vite";
-import react from "@vitejs/plugin-react";
+
 import { readFileSync } from "node:fs";
+import react from "@vitejs/plugin-react";
+import { defineConfig } from "vite";
 import { devRemoteBridge } from "./scripts/dev-remote-bridge.mjs";
+import { handleHttpRelay } from "./scripts/http-relay.mjs";
 
 const pkg = JSON.parse(readFileSync("./package.json", "utf8"));
 
 export default defineConfig({
-  plugins: [react(), devRemoteBridge()],
+  plugins: [
+    react(),
+    devRemoteBridge(),
+    {
+      name: "openiptv-http-relay",
+      configureServer(server) {
+        server.middlewares.use((request, response, next) => {
+          if (!handleHttpRelay(request, response)) next();
+        });
+      },
+    },
+  ],
   define: { __APP_VERSION__: JSON.stringify(pkg.version) },
   // The TV loads the app from the filesystem inside the widget, so every asset
   // reference has to be relative. An absolute /assets/... path resolves to the

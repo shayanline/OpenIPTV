@@ -20,6 +20,9 @@ const cases: [string, RegExp][] = [
   ["TIMEOUT", /could not reach/i],
   ["STREAM_ENDED", /stopped broadcasting/i],
   ["NOT_SUPPORTED", /nothing playable/i],
+  ["FINITE_FORMAT_UNSUPPORTED", /video uses a format/i],
+  ["SEEK_UNSUPPORTED", /cannot seek/i],
+  ["SEEK_FAILED InvalidStateError", /cannot seek/i],
   /*
    * The status the server sent, which the TV reports separately from the fault and the player
    * joins onto it. These have to beat the engine's own name for the failure, because a refusal
@@ -61,5 +64,8 @@ test("a refusal is blamed on the broadcaster rather than on the viewer's network
    */
   const { why, fix } = explain("403");
   assert.match(why, /broadcaster/i);
-  assert.ok(!/network|could not reach/i.test(`${why} ${fix}`), `blamed the network: ${why} ${fix}`);
+  assert.ok(
+    !/network|could not reach/i.test(`${why} ${fix}`),
+    `blamed the network: ${why} ${fix}`,
+  );
 });

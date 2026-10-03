@@ -69,7 +69,10 @@
      * top of the screen, and a 24px black strip along the bottom that looked like the player
      * failing to fill the height.
      */
-    v.setAttribute("style", "position:absolute;top:0;left:0;width:100%;height:100%;object-fit:contain;background:#000;");
+    v.setAttribute(
+      "style",
+      "position:absolute;top:0;left:0;width:100%;height:100%;object-fit:contain;background:#000;",
+    );
     host.appendChild(v);
     return v;
   };
@@ -128,9 +131,20 @@
 
   /** Give back the decoder, whichever engine happens to be driving it. */
   const release = () => {
-    if (hls) { try { hls.destroy(); } catch { /* already gone */ } hls = null; }
+    if (hls) {
+      try {
+        hls.destroy();
+      } catch {
+        /* already gone */
+      }
+      hls = null;
+    }
     const v = document.getElementById("tv-video-el");
-    if (v) { v.pause(); v.removeAttribute("src"); v.load(); }
+    if (v) {
+      v.pause();
+      v.removeAttribute("src");
+      v.load();
+    }
   };
 
   const guard = (name) => {
@@ -150,11 +164,21 @@
         release();
         source = url;
         state = "IDLE";
-        hidePlugin();   // the surface is created just before this, on the first channel
+        hidePlugin(); // the surface is created just before this, on the first channel
         log("open", url);
       },
-      close() { guard("close"); release(); state = "NONE"; log("close"); },
-      stop() { guard("stop"); release(); state = "IDLE"; log("stop"); },
+      close() {
+        guard("close");
+        release();
+        state = "NONE";
+        log("close");
+      },
+      stop() {
+        guard("stop");
+        release();
+        state = "IDLE";
+        log("stop");
+      },
       setDisplayRect(x, y, w, h) {
         guard("setDisplayRect");
         /*
@@ -173,17 +197,34 @@
         const el = plane();
         if (el) {
           Object.assign(el.style, {
-            left: `${x * sx}px`, top: `${y * sy}px`,
-            width: `${w * sx}px`, height: `${h * sy}px`,
+            left: `${x * sx}px`,
+            top: `${y * sy}px`,
+            width: `${w * sx}px`,
+            height: `${h * sy}px`,
           });
         }
         log("setDisplayRect", x, y, w, h);
       },
-      setDisplayMethod(m) { guard("setDisplayMethod"); log("setDisplayMethod", m); },
-      setStreamingProperty(k, v) { guard("setStreamingProperty"); log("setStreamingProperty", k, v); },
-      setListener(l) { listener = l || {}; log("setListener"); },
-      suspend() { guard("suspend"); log("suspend"); },
-      restore() { guard("restore"); log("restore"); },
+      setDisplayMethod(m) {
+        guard("setDisplayMethod");
+        log("setDisplayMethod", m);
+      },
+      setStreamingProperty(k, v) {
+        guard("setStreamingProperty");
+        log("setStreamingProperty", k, v);
+      },
+      setListener(l) {
+        listener = l || {};
+        log("setListener");
+      },
+      suspend() {
+        guard("suspend");
+        log("suspend");
+      },
+      restore() {
+        guard("restore");
+        log("restore");
+      },
       /**
        * Join the stream for real, and report it the way the set would.
        *
@@ -193,7 +234,10 @@
       prepareAsync(ok, fail) {
         guard("prepareAsync");
         const v = video();
-        if (!v) { fail?.("PLAYER_ERROR_INVALID_STATE"); return; }
+        if (!v) {
+          fail?.("PLAYER_ERROR_INVALID_STATE");
+          return;
+        }
 
         listener.onbufferingstart?.();
         let settled = false;
@@ -202,14 +246,22 @@
           settled = true;
           state = "READY";
           listener.onbufferingcomplete?.();
-          try { ok?.(); } catch (e) { console.error(e); }
+          try {
+            ok?.();
+          } catch (e) {
+            console.error(e);
+          }
         };
         const failed = (why) => {
           if (settled) return;
           settled = true;
           log("prepare failed", why);
           listener.onerror?.(why);
-          try { fail?.(why); } catch { /* the app reports it */ }
+          try {
+            fail?.(why);
+          } catch {
+            /* the app reports it */
+          }
         };
 
         if (window.Hls && window.Hls.isSupported()) {
@@ -224,7 +276,9 @@
         } else {
           v.src = source;
           v.addEventListener("loadedmetadata", ready, { once: true });
-          v.addEventListener("error", () => failed("PLAYER_ERROR_NOT_SUPPORTED_FILE"), { once: true });
+          v.addEventListener("error", () => failed("PLAYER_ERROR_NOT_SUPPORTED_FILE"), {
+            once: true,
+          });
         }
         v.addEventListener("waiting", () => listener.onbufferingstart?.());
         v.addEventListener("playing", () => listener.onbufferingcomplete?.());
@@ -233,16 +287,38 @@
       play() {
         guard("play");
         state = "PLAYING";
-        void video()?.play().catch((e) => log("play refused", e && e.name));
+        void video()
+          ?.play()
+          .catch((e) => log("play refused", e && e.name));
         log("play");
       },
-      pause() { guard("pause"); video()?.pause(); state = "PAUSED"; log("pause"); },
-      getCurrentTime() { return Math.round((video()?.currentTime ?? 0) * 1000); },
-      getDuration() { return Math.round((video()?.duration ?? 0) * 1000); },
-      seekTo(ms) { const v = video(); if (v) v.currentTime = ms / 1000; },
-      jumpForward(ms) { const v = video(); if (v) v.currentTime += ms / 1000; },
-      jumpBackward(ms) { const v = video(); if (v) v.currentTime -= ms / 1000; },
-      setTimeoutForBuffering(s) { log("setTimeoutForBuffering", s); },
+      pause() {
+        guard("pause");
+        video()?.pause();
+        state = "PAUSED";
+        log("pause");
+      },
+      getCurrentTime() {
+        return Math.round((video()?.currentTime ?? 0) * 1000);
+      },
+      getDuration() {
+        return Math.round((video()?.duration ?? 0) * 1000);
+      },
+      seekTo(ms) {
+        const v = video();
+        if (v) v.currentTime = ms / 1000;
+      },
+      jumpForward(ms) {
+        const v = video();
+        if (v) v.currentTime += ms / 1000;
+      },
+      jumpBackward(ms) {
+        const v = video();
+        if (v) v.currentTime -= ms / 1000;
+      },
+      setTimeoutForBuffering(s) {
+        log("setTimeoutForBuffering", s);
+      },
       /** Enough of the read only properties for the app's live timeline to work. */
       getStreamingProperty(key) {
         const v = video();
@@ -270,7 +346,9 @@
       isMute: () => audioMuted,
     },
     tvinputdevice: {
-      registerKey: (name) => { registered.add(name); },
+      registerKey: (name) => {
+        registered.add(name);
+      },
       getKey: (name) => ({ name }),
     },
     application: {
@@ -282,6 +360,9 @@
     hidePlugin();
     plane();
     // After the app has mounted and asked for its keys, not before.
-    setTimeout(() => log(`ready. ${registered.size} remote keys:`, [...registered].join(", ")), 1500);
+    setTimeout(
+      () => log(`ready. ${registered.size} remote keys:`, [...registered].join(", ")),
+      1500,
+    );
   });
 })();

@@ -1,77 +1,34 @@
 import { create } from "zustand";
 import type { Channel } from "../types";
-import { groupByCategory, parseM3U } from "../services/m3u";
-import { useSettings } from "./settings";
-import { keys, read, readJSON, remove, write } from "../services/store";
+import { groupByCategory, parseM3U, UNCATEGORISED } from "../services/m3u";
+import { useSettings, type Playlist } from "./settings";
+import { usePersonal } from "./personal";
+import { keys, read, remove, write } from "../services/store";
 import * as disk from "../services/disk";
 import { whenIdle } from "../services/idle";
-import { resolveLocale, type MessageKey } from "../services/locale";
-import { loadXtreamCatalog, loadXtreamCategory, type XtreamCategory } from "../services/xtream";
-import { parseXtreamPlaylistUrl } from "../services/playlistUrl";
+import { resolveLocale, translate, type MessageKey } from "../services/locale";
+import {
+  authenticateXtream,
+  loadXtreamCategories,
+  loadXtreamLive,
+  type XtreamAccount,
+  type XtreamCategory,
+} from "../services/xtream";
+import type { PlaylistSource } from "../services/playlistUrl";
 
-const FAVOURITES_KEY = "openiptv.favourites";
-const LAST_KEY = "openiptv.last";
-
-/**
- * The cached playlist, keyed by the address it came from.
- *
- * By URL, not by playlist id, and that is a fix rather than a preference. The id belongs to
- * the row in Settings and survives the address being edited, so a viewer who corrected a
- * typo in a URL had the previous playlist's channels served to them from a cache that
- * believed it was current. Nothing said so, because from the cache's point of view nothing
- * had changed.
- *
- * Keying on the address means an edit is a different entry, so the old one is never asked
- * for again and the sweep collects it. Two playlists pointing at the same address now share
- * one cached copy, which is correct and was not true before.
- *
- * The text is on disk and the timestamp stays in localStorage. They are different sizes and
- * want different things: the stamp is eight characters that decide whether to go to the
- * network at all, so having it synchronously is worth more than having it beside the text.
- */
-const cacheKey = (url: string) => `playlist:${url}`;
-const stampKey = (url: string) => `openiptv.at.${url}`;
-
-/**
- * Where the playlist text used to live.
- *
- * localStorage, which Samsung caps at 5MB for the whole application, cannot hold a Blob and
- * writes synchronously on the main thread. See services/disk for why each of those matters.
- * The prefix survives only so the sweep can clear what older versions of the app wrote.
- */
 const LEGACY_PREFIX = "openiptv.cache.";
-
-/**
- * How old a cached playlist may be before it is worth going back to the network.
- *
- * A playlist is a file somebody edits occasionally, not a feed. Refetching it on every
- * launch cost the launch: a megabyte or two over the air, a second parse of the same text,
- * and a synchronous localStorage write of the whole thing, all of it between the viewer
- * pressing the button and the picture arriving, and almost always to arrive at exactly the
- * bytes already on disk.
- *
- * Six hours means a set switched on morning and evening refreshes twice a day, which is
- * more than a hand edited file needs, and every launch in between goes straight to a
- * picture. Nothing waits on this in any case: a stale cache is still shown first and the
- * refresh happens behind it. Settings has a Refresh that ignores it entirely.
- */
 const CACHE_TTL_MS = 6 * 60 * 60 * 1000;
 
-/**
- * Sorting by name, when the viewer asks for it.
- *
- * Through one Intl.Collator rather than String.prototype.localeCompare. They give the same
- * answer and they do not cost the same: localeCompare has to find or build a collator on
- * every single comparison, and a sort makes tens of thousands of them. Measured over 12,000
- * channel names, 19.3ms against 1.4ms, so about 115ms against 8ms once the floor set's
- * slower core is accounted for. It is the same one line either way.
- *
- * Numeric ordering, because these are channel names. Without it "Sport 10" sorts before
- * "Sport 2", which is the sort being alphabetical at the viewer rather than for them.
- *
- * Built on first use and then kept, since a viewer who never turns the setting on should
- * not pay for the collator at launch.
- */
+const cacheKey = (url: string) => `playlist:${url}`;
+const stampKey = (url: string) => `openiptv.at.${url}`;
+const xtreamPrefix = (playlist: Pick<Playlist, "id" | "sourceVersion">) =>
+  `xtream:${playlist.id}:v${playlist.sourceVersion}`;
+const xtreamCacheKey = (playlist: Pick<Playlist, "id" | "sourceVersion">, scope: string) =>
+  `${xtreamPrefix(playlist)}:${scope}`;
+const xtreamStampKey = (playlist: Pick<Playlist, "id" | "sourceVersion">, scope: string) =>
+  `openiptv.at.${xtreamCacheKey(playlist, scope)}`;
+const XTREAM_SCOPES = ["account", "categories", "live"] as const;
+
 let collator: Intl.Collator | null = null;
 let collatorLocale = "";
 const byName = (a: Channel, b: Channel) => {
@@ -83,217 +40,338 @@ const byName = (a: Channel, b: Channel) => {
   return collator.compare(a.name, b.name);
 };
 
-/** What a load attempt produced, so the caller can say so without re-reading the store. */
 export interface LoadResult {
   count: number;
-  /** Empty when it worked. */
   error: string;
   errorKey?: MessageKey;
   errorDetail?: string;
 }
 
-type ChannelCategory = { name: string; channels: Channel[] } | XtreamCategory;
+export interface ChannelCategory {
+  key: string;
+  name: string;
+  channels: Channel[];
+}
+
+export interface ManagedCategory {
+  key: string;
+  name: string;
+}
 
 interface State {
   channels: Channel[];
   categories: ChannelCategory[];
-  favourites: string[];
+  managedCategories: ManagedCategory[];
   loading: boolean;
   error: string;
   errorKey: MessageKey | "";
   errorDetail: string;
-  /**
-   * Fetch the active playlist. Reports what happened, because a caller that has just asked
-   * for a refresh has to be able to say whether it worked, and reading the store back
-   * afterwards races the state it is trying to read.
-   */
+  accounts: Record<string, XtreamAccount>;
   load: (force?: boolean) => Promise<LoadResult>;
-  loadCategory: (name: string) => Promise<LoadResult>;
-  validatePlaylist: (name: string, url: string) => Promise<LoadResult>;
-  /** Drop cached playlists nothing is configured to watch. Run once, at launch. */
+  validatePlaylist: (name: string, source: PlaylistSource) => Promise<LoadResult>;
   sweep: () => Promise<void>;
-  toggleFavourite: (id: string) => void;
-  rememberLast: (id: string) => void;
-  lastPlayed: () => string;
-  /** Forget the favourites and the last played channel, for "reset everything". */
-  clearPersonal: () => void;
 }
 
-/**
- * The fetch in flight, so a later request can call off an earlier one.
- *
- * Switching playlist twice quickly used to leave two requests running and let whichever
- * answered last win, which on a slow connection is the one you asked for first. Outside the
- * store because it is machinery rather than state: nothing renders from it.
- */
 let inFlight: AbortController | null = null;
-let channelPlaylistUrl = "";
+let requestToken = 0;
+let channelSource = "";
+let cancelPending: (() => void) | null = null;
 
 const requestUrl = (url: string) => {
   if (window.location.protocol !== "https:") return url;
   const request = new URL(url);
-  if (request.protocol !== "http:") return url;
-  request.protocol = "https:";
+  if (request.protocol === "http:") request.protocol = "https:";
   return request.toString();
 };
 
-/**
- * The background refresh that has been scheduled but not started.
- *
- * Called off whenever a load is asked for, because it belongs to the playlist that was
- * active when it was queued. Switching playlist and then having the old one quietly arrive
- * a few seconds later and overwrite the screen is exactly the race inFlight exists to
- * prevent, moved to a place inFlight cannot see.
- */
-let cancelPending: (() => void) | null = null;
+const failureDetail = (error: unknown, source: PlaylistSource) => {
+  const detail = error instanceof Error ? error.message : String(error);
+  if (source.kind === "xtream" && detail === "HTTP 404") {
+    return "The Xtream Player API returned HTTP 404. If the provider gave you a working get.php address, add it as an M3U source.";
+  }
+  if (
+    source.kind === "xtream" &&
+    window.location.protocol === "https:" &&
+    new URL(source.server).protocol === "http:" &&
+    !/^HTTP \d+$/.test(detail)
+  ) {
+    return translate(
+      resolveLocale(useSettings.getState().locale),
+      "playlist.browserTransportFailed",
+    );
+  }
+  return detail;
+};
+
+const parseJSON = <T>(value: Blob | string | null): T | null => {
+  if (typeof value !== "string" || !value) return null;
+  try {
+    return JSON.parse(value) as T;
+  } catch {
+    return null;
+  }
+};
+
+const accountSummary = (value: unknown): XtreamAccount | null => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const saved = value as Record<string, unknown>;
+  const optionalNumber = (key: string) => {
+    const candidate = saved[key];
+    return typeof candidate === "number" && Number.isFinite(candidate) && candidate >= 0
+      ? Math.floor(candidate)
+      : undefined;
+  };
+  const expiresAt = optionalNumber("expiresAt");
+  const activeConnections = optionalNumber("activeConnections");
+  const createdAt = optionalNumber("createdAt");
+  const maxConnections = optionalNumber("maxConnections");
+  return {
+    status: typeof saved.status === "string" ? saved.status : "",
+    isTrial: saved.isTrial === true,
+    ...(expiresAt ? { expiresAt } : {}),
+    ...(activeConnections !== undefined ? { activeConnections } : {}),
+    ...(createdAt !== undefined ? { createdAt } : {}),
+    ...(maxConnections !== undefined ? { maxConnections } : {}),
+  };
+};
 
 export const useChannels = create<State>((set, get) => {
   const sorted = (channels: Channel[]) =>
     useSettings.getState().sortAlphabetically ? [...channels].sort(byName) : channels;
-  const parse = (text: string) => {
+
+  const m3uCatalogue = (text: string) => {
     const channels = sorted(parseM3U(text));
-    return { channels, categories: groupByCategory(channels) };
-  };
-  const rememberCategoryCount = (url: string, count: number) => {
-    const settings = useSettings.getState();
-    const playlist = settings.playlists.find((item) => item.url === url);
-    if (playlist) settings.setPlaylistCategoryCount(playlist.id, count);
-  };
-  const xtream = async (url: string, signal: AbortSignal) => {
-    const categories = await loadXtreamCatalog(url, signal);
-    const channels = sorted(await loadXtreamCategory(categories[0], signal));
-    categories[0] = { ...categories[0], channels };
-    rememberCategoryCount(url, categories.length);
-    set({ channels, categories, loading: false, error: "", errorKey: "", errorDetail: "" });
-    return { count: channels.length, error: "" };
+    const categories = groupByCategory(channels).map((category) => ({
+      key: category.name,
+      ...category,
+    }));
+    return {
+      channels,
+      categories,
+      managedCategories: categories.map(({ key, name }) => ({ key, name })),
+    };
   };
 
-  /**
-   * Go and get the playlist.
-   *
-   * `known` is the text already on screen, when there is one, and it earns its place twice.
-   * A playlist that has not changed since it was cached is the ordinary case, and comparing
-   * the two strings is far cheaper than what it avoids: parsing a second copy of the same
-   * megabyte, and writing that megabyte back to the set's flash.
-   */
-  const refresh = async (url: string, known: string): Promise<LoadResult> => {
+  const adoptPersonal = (playlist: Playlist, channels: Channel[]) => {
+    usePersonal
+      .getState()
+      .adoptLegacyPersonal(useSettings.getState().playlists, playlist.id, channels);
+  };
+
+  const owns = (attempt: AbortController, token: number) =>
+    inFlight === attempt && requestToken === token && !attempt.signal.aborted;
+
+  const commit = (
+    attempt: AbortController,
+    token: number,
+    state: Partial<
+      Pick<
+        State,
+        | "channels"
+        | "categories"
+        | "managedCategories"
+        | "loading"
+        | "error"
+        | "errorKey"
+        | "errorDetail"
+        | "accounts"
+      >
+    >,
+  ) => {
+    if (owns(attempt, token)) set(state);
+  };
+
+  const begin = () => {
     inFlight?.abort();
     const attempt = new AbortController();
     inFlight = attempt;
+    requestToken += 1;
+    return { attempt, token: requestToken };
+  };
 
+  const rememberCategoryCount = (playlistId: string, count: number) => {
+    useSettings.getState().setPlaylistCategoryCount(playlistId, count);
+  };
+
+  const reportFailure = (
+    error: unknown,
+    playlist: Playlist,
+    attempt: AbortController,
+    token: number,
+  ): LoadResult => {
+    if (!owns(attempt, token)) return { count: get().channels.length, error: "" };
+    const detail = failureDetail(error, playlist.source);
+    const hasChannels = get().channels.length > 0;
+    const errorKey: MessageKey = hasChannels ? "playlist.refreshFailed" : "playlist.loadFailed";
+    const message = hasChannels
+      ? `Could not refresh: ${detail}. Showing the last saved copy.`
+      : `Could not load the playlist: ${detail}`;
+    commit(attempt, token, { loading: false, error: message, errorKey, errorDetail: detail });
+    return { count: get().channels.length, error: message, errorKey, errorDetail: detail };
+  };
+
+  const refreshM3U = async (
+    playlist: Playlist,
+    known: string,
+    attempt: AbortController,
+    token: number,
+  ): Promise<LoadResult> => {
+    if (playlist.source.kind !== "m3u") return { count: 0, error: "" };
+    const url = playlist.source.url;
     try {
-      const res = await fetch(requestUrl(url), { cache: "no-cache", signal: attempt.signal });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const text = await res.text();
-
+      const response = await fetch(requestUrl(url), {
+        cache: "no-cache",
+        signal: attempt.signal,
+      });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const text = await response.text();
+      if (!owns(attempt, token)) return { count: get().channels.length, error: "" };
       if (known && text === known) {
-        // Byte for byte what is already on screen. Stamped so the next launch trusts the
-        // cache for another six hours rather than asking again immediately.
         write(stampKey(url), String(Date.now()));
-        rememberCategoryCount(url, get().categories.length);
-        set({ loading: false, error: "", errorKey: "", errorDetail: "" });
+        rememberCategoryCount(playlist.id, get().categories.length);
+        commit(attempt, token, { loading: false, error: "", errorKey: "", errorDetail: "" });
         return { count: get().channels.length, error: "" };
       }
-
-      const parsed = parse(text);
-      if (!parsed.channels.length) throw new Error("no channels in that playlist");
-      /*
-       * Kept if it fits, and the launch does not wait to find out.
-       *
-       * The channels are already on screen by the time this resolves. A playlist too large
-       * for the whole budget is refused rather than allowed to evict everything else for a
-       * copy of itself, and the only consequence is that the next launch waits for the
-       * network, which is what happened before any of this existed.
-       */
+      const catalogue = m3uCatalogue(text);
+      if (!catalogue.channels.length) throw new Error("no channels in that playlist");
+      adoptPersonal(playlist, catalogue.channels);
       void disk.write(cacheKey(url), text);
       write(stampKey(url), String(Date.now()));
-      rememberCategoryCount(url, parsed.categories.length);
-      set({ ...parsed, loading: false, error: "", errorKey: "", errorDetail: "" });
-      return { count: parsed.channels.length, error: "" };
-    } catch (e) {
-      // Called off because something newer was asked for. The newer one owns the state now,
-      // so this must not touch it, and in particular must not report a failure.
-      if (attempt.signal.aborted) return { count: get().channels.length, error: "" };
-      let failure = e;
-      if (parseXtreamPlaylistUrl(url)) {
-        try {
-          return await xtream(url, attempt.signal);
-        } catch (apiError) {
-          if (!(apiError instanceof Error && apiError.message === "HTTP 404")) failure = apiError;
-        }
+      rememberCategoryCount(playlist.id, catalogue.categories.length);
+      commit(attempt, token, {
+        ...catalogue,
+        loading: false,
+        error: "",
+        errorKey: "",
+        errorDetail: "",
+      });
+      return { count: catalogue.channels.length, error: "" };
+    } catch (error) {
+      return reportFailure(error, playlist, attempt, token);
+    }
+  };
+
+  const liveCatalogue = (categories: XtreamCategory[], loaded: Channel[]) => {
+    const live = categories.filter((category) => category.kind === "live");
+    const names = new Map(live.map((category) => [category.key, category.name]));
+    const channels = sorted(
+      loaded.map((channel) => ({
+        ...channel,
+        group: names.get(channel.xtream?.categoryKey ?? "") ?? UNCATEGORISED,
+      })),
+    );
+    const grouped = new Map<string, Channel[]>();
+    for (const channel of channels) {
+      const key = channel.xtream?.categoryKey ?? "live:";
+      const members = grouped.get(key);
+      if (members) members.push(channel);
+      else grouped.set(key, [channel]);
+    }
+    const result: ChannelCategory[] = live.map((category) => ({
+      key: category.key,
+      name: category.name,
+      channels: grouped.get(category.key) ?? [],
+    }));
+    for (const [key, members] of grouped) {
+      if (!names.has(key)) result.push({ key, name: UNCATEGORISED, channels: members });
+    }
+    return { channels, categories: result };
+  };
+
+  const migrateHiddenCategories = (
+    playlist: Playlist,
+    categories: ChannelCategory[],
+    attempt: AbortController,
+    token: number,
+  ) => {
+    const keys = new Set(categories.map((category) => category.key));
+    const migrated: string[] = [];
+    for (const saved of playlist.hiddenCategories) {
+      if (keys.has(saved) || saved.startsWith("movie:") || saved.startsWith("series:")) {
+        migrated.push(saved);
+        continue;
       }
-      const message = failure instanceof Error ? failure.message : String(failure);
-      // Keep whatever the cache gave us rather than emptying the screen.
-      const hasChannels = get().channels.length > 0;
-      const errorKey: MessageKey = hasChannels
-        ? "playlist.refreshFailed"
-        : "playlist.loadFailed";
-      const error = hasChannels
-        ? `Could not refresh: ${message}. Showing the last saved copy.`
-        : `Could not load the playlist: ${message}`;
-      set({ loading: false, error, errorKey, errorDetail: message });
-      return { count: get().channels.length, error, errorKey, errorDetail: message };
+      const name = saved.startsWith("Live · ") ? saved.slice(7) : "";
+      if (!name) continue;
+      const matches = categories.filter((category) => category.name === name);
+      if (matches.length === 1) migrated.push(matches[0].key);
+    }
+    if (
+      owns(attempt, token) &&
+      (migrated.length !== playlist.hiddenCategories.length ||
+        migrated.some((value, index) => value !== playlist.hiddenCategories[index]))
+    ) {
+      useSettings.getState().setHiddenCategories(playlist.id, migrated);
+    }
+  };
+
+  const refreshXtream = async (
+    playlist: Playlist,
+    attempt: AbortController,
+    token: number,
+  ): Promise<LoadResult> => {
+    if (playlist.source.kind !== "xtream") return { count: 0, error: "" };
+    try {
+      const session = await authenticateXtream(playlist.source, attempt.signal);
+      const [categories, live] = await Promise.all([
+        loadXtreamCategories(session, attempt.signal),
+        loadXtreamLive(session, playlist.id, attempt.signal),
+      ]);
+      if (!owns(attempt, token)) return { count: get().channels.length, error: "" };
+      const hasLibrary = categories.some(
+        (category) => category.kind === "movie" || category.kind === "series",
+      );
+      if (!live.length && !hasLibrary)
+        throw new Error("no playable content in that Xtream account");
+      const catalogue = liveCatalogue(categories, live);
+      const managedCategories = categories.map(({ key, name }) => ({ key, name }));
+      migrateHiddenCategories(playlist, catalogue.categories, attempt, token);
+      adoptPersonal(playlist, catalogue.channels);
+      void disk.write(xtreamCacheKey(playlist, "account"), JSON.stringify(session.account));
+      void disk.write(xtreamCacheKey(playlist, "categories"), JSON.stringify(categories));
+      void disk.write(xtreamCacheKey(playlist, "live"), JSON.stringify(live));
+      for (const scope of XTREAM_SCOPES) {
+        write(xtreamStampKey(playlist, scope), String(Date.now()));
+      }
+      rememberCategoryCount(playlist.id, managedCategories.length);
+      commit(attempt, token, {
+        ...catalogue,
+        managedCategories,
+        accounts: { ...get().accounts, [playlist.id]: session.account },
+        loading: false,
+        error: "",
+        errorKey: "",
+        errorDetail: "",
+      });
+      return { count: catalogue.channels.length, error: "" };
+    } catch (error) {
+      return reportFailure(error, playlist, attempt, token);
     }
   };
 
   return {
     channels: [],
     categories: [],
-    favourites: readJSON<string[]>(FAVOURITES_KEY, []),
+    managedCategories: [],
     loading: false,
     error: "",
     errorKey: "",
     errorDetail: "",
+    accounts: {},
 
-    async loadCategory(name): Promise<LoadResult> {
-      const category = get().categories.find((item) => item.name === name);
-      if (!category || !("categoryId" in category) || category.channels.length) {
-        return { count: category?.channels.length ?? 0, error: "" };
-      }
-      inFlight?.abort();
-      const attempt = new AbortController();
-      inFlight = attempt;
+    async validatePlaylist(_name, source): Promise<LoadResult> {
       try {
-        const loaded = sorted(await loadXtreamCategory(category, attempt.signal));
-        const categories = get().categories.map((item) =>
-          item === category ? { ...category, channels: loaded } : item,
-        );
-        const channels: Channel[] = [];
-        for (const item of categories) channels.push(...item.channels);
-        set({ channels, categories, error: "", errorKey: "", errorDetail: "" });
-        return { count: loaded.length, error: "" };
-      } catch (error) {
-        if (attempt.signal.aborted) return { count: 0, error: "" };
-        const detail = error instanceof Error ? error.message : String(error);
-        const message = `Could not load the category: ${detail}`;
-        set({ error: message, errorKey: "playlist.loadFailed", errorDetail: detail });
-        return {
-          count: 0,
-          error: message,
-          errorKey: "playlist.loadFailed",
-          errorDetail: detail,
-        };
-      }
-    },
-
-    async validatePlaylist(_name, url): Promise<LoadResult> {
-      try {
-        const response = await fetch(requestUrl(url), { cache: "no-cache" });
+        if (source.kind === "xtream") {
+          await authenticateXtream(source);
+          return { count: 1, error: "" };
+        }
+        const response = await fetch(requestUrl(source.url), { cache: "no-cache" });
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const count = parseM3U(await response.text()).length;
         if (!count) throw new Error("no channels in that playlist");
         return { count, error: "" };
       } catch (error) {
-        if (parseXtreamPlaylistUrl(url)) {
-          try {
-            const categories = await loadXtreamCatalog(url);
-            const channels = await loadXtreamCategory(categories[0]);
-            if (channels.length) return { count: channels.length, error: "" };
-          } catch (apiError) {
-            if (!(apiError instanceof Error && apiError.message === "HTTP 404")) error = apiError;
-          }
-        }
-        const detail = error instanceof Error ? error.message : String(error);
+        const detail = failureDetail(error, source);
         return {
           count: 0,
           error: `Could not load the playlist: ${detail}`,
@@ -306,14 +384,14 @@ export const useChannels = create<State>((set, get) => {
     async load(force = false): Promise<LoadResult> {
       cancelPending?.();
       cancelPending = null;
-
+      const { attempt, token } = begin();
       const playlist = useSettings.getState().activePlaylist();
-      // Nothing configured yet, which is the first run. The onboarding screen is showing.
       if (!playlist) {
-        channelPlaylistUrl = "";
-        set({
+        channelSource = "";
+        commit(attempt, token, {
           channels: [],
           categories: [],
+          managedCategories: [],
           loading: false,
           error: "",
           errorKey: "",
@@ -322,123 +400,156 @@ export const useChannels = create<State>((set, get) => {
         return { count: 0, error: "" };
       }
 
-      /*
-       * The cached copy first, and then get out of the way.
-       *
-       * This used to show the cache and then immediately go to the network regardless, so
-       * every launch paid for the playlist twice before the first picture: a download, a
-       * second parse of text that was almost always identical, and a synchronous write of
-       * the whole file back to flash. All of it on the main thread, all of it between the
-       * viewer pressing the button and the channel starting.
-       *
-       * Now the cache answers the launch. A refresh still happens when the copy is old, but
-       * behind the picture rather than in front of it, in idle time, and this returns
-       * without waiting for it.
-       */
-      /*
-       * Loading, before anything is awaited.
-       *
-       * Not a spinner for its own sake. The splash reports either "Loading the playlist" or
-       * "That playlist has no channels in it" depending on this flag, and the store starts
-       * with it false and no channels, so for as long as this function has not answered, a
-       * television that is working perfectly tells the viewer their playlist is empty and
-       * offers to replace it.
-       *
-       * It used to be raised here and I moved it below the cache read, reasoning that an
-       * indexed lookup resolves in a few milliseconds and a spinner that brief is noise. That
-       * was answering the wrong question: the cost of not raising it is not a missing
-       * spinner, it is a false statement, and on a set with a slow main thread and slower
-       * flash the window is not a few milliseconds.
-       */
-      const switchingPlaylist = channelPlaylistUrl !== playlist.url;
-      channelPlaylistUrl = playlist.url;
-      set({
-        ...(switchingPlaylist ? { channels: [], categories: [] } : {}),
+      const identity =
+        playlist.source.kind === "m3u" ? `m3u:${playlist.source.url}` : xtreamPrefix(playlist);
+      const switching = channelSource !== identity;
+      channelSource = identity;
+      commit(attempt, token, {
+        ...(switching ? { channels: [], categories: [], managedCategories: [] } : {}),
         loading: true,
         error: "",
         errorKey: "",
         errorDetail: "",
       });
 
-      /*
-       * A read from disk rather than from localStorage, so this is now awaited. The wait is
-       * for one indexed lookup off flash rather than for a download, and it is bought at the
-       * price of not blocking the main thread while flash is written.
-       */
-      const cached = force ? null : await disk.read(cacheKey(playlist.url));
-      if (typeof cached === "string" && cached) {
-        const parsed = parse(cached);
-        if (parsed.channels.length) {
-          rememberCategoryCount(playlist.url, parsed.categories.length);
-          set({ ...parsed, loading: false, error: "", errorKey: "", errorDetail: "" });
-          const at = Number(read(stampKey(playlist.url))) || 0;
-          if (Date.now() - at < CACHE_TTL_MS)
-            return { count: parsed.channels.length, error: "" };
-          cancelPending = whenIdle(() => {
-            cancelPending = null;
-            void refresh(playlist.url, cached);
-          }, 4000);
-          return { count: parsed.channels.length, error: "" };
+      if (playlist.source.kind === "m3u") {
+        const url = playlist.source.url;
+        const cached = force ? null : await disk.read(cacheKey(url));
+        if (!owns(attempt, token)) return { count: get().channels.length, error: "" };
+        if (typeof cached === "string" && cached) {
+          const catalogue = m3uCatalogue(cached);
+          if (catalogue.channels.length) {
+            adoptPersonal(playlist, catalogue.channels);
+            rememberCategoryCount(playlist.id, catalogue.categories.length);
+            commit(attempt, token, {
+              ...catalogue,
+              loading: false,
+              error: "",
+              errorKey: "",
+              errorDetail: "",
+            });
+            const at = Number(read(stampKey(url))) || 0;
+            if (Date.now() - at < CACHE_TTL_MS) {
+              return { count: catalogue.channels.length, error: "" };
+            }
+            cancelPending = whenIdle(() => {
+              cancelPending = null;
+              void refreshM3U(playlist, cached, attempt, token);
+            }, 4000);
+            return { count: catalogue.channels.length, error: "" };
+          }
         }
+        return refreshM3U(playlist, "", attempt, token);
       }
 
-      // Nothing usable to show, so the network is the only answer and the viewer waits.
-      return refresh(playlist.url, "");
+      const cached = force
+        ? [null, null, null]
+        : await Promise.all(
+            XTREAM_SCOPES.map((scope) => disk.read(xtreamCacheKey(playlist, scope))),
+          );
+      if (!owns(attempt, token)) return { count: get().channels.length, error: "" };
+      const account = accountSummary(parseJSON(cached[0]));
+      const categories = parseJSON<XtreamCategory[]>(cached[1]);
+      const live = parseJSON<Channel[]>(cached[2]);
+      const hasLibrary =
+        Array.isArray(categories) &&
+        categories.some((category) => category.kind === "movie" || category.kind === "series");
+      if (
+        account &&
+        Array.isArray(categories) &&
+        Array.isArray(live) &&
+        (live.length || hasLibrary)
+      ) {
+        const catalogue = liveCatalogue(categories, live);
+        const managedCategories = categories.map(({ key, name }) => ({ key, name }));
+        migrateHiddenCategories(playlist, catalogue.categories, attempt, token);
+        adoptPersonal(playlist, catalogue.channels);
+        rememberCategoryCount(playlist.id, managedCategories.length);
+        commit(attempt, token, {
+          ...catalogue,
+          managedCategories,
+          accounts: { ...get().accounts, [playlist.id]: account },
+          loading: false,
+          error: "",
+          errorKey: "",
+          errorDetail: "",
+        });
+        const fresh = XTREAM_SCOPES.every(
+          (scope) =>
+            Date.now() - (Number(read(xtreamStampKey(playlist, scope))) || 0) < CACHE_TTL_MS,
+        );
+        if (fresh) return { count: catalogue.channels.length, error: "" };
+        cancelPending = whenIdle(() => {
+          cancelPending = null;
+          void refreshXtream(playlist, attempt, token);
+        }, 4000);
+        return { count: catalogue.channels.length, error: "" };
+      }
+      return refreshXtream(playlist, attempt, token);
     },
 
-    /**
-     * Throw away cached playlists nobody is configured to watch any more.
-     *
-     * Removing a playlist used to leave its cached copy behind for good, and there was no
-     * code anywhere that could ever have deleted it: the key was derived from an id that no
-     * longer existed, so nothing knew the entry's name. Within a 5MB budget that is a leak
-     * with a hard stop at the end of it.
-     *
-     * A sweep rather than a deletion in removePlaylist, because the same pass collects
-     * everything else that goes stale on its own: a playlist whose address was edited, and
-     * the copies written by versions of this app that kept them in localStorage. One place
-     * that asks "is anything still using this", run once at launch, cannot miss a case the
-     * way five call sites can.
-     */
     async sweep(): Promise<void> {
-      const wanted = new Set(useSettings.getState().playlists.map((p) => cacheKey(p.url)));
-      // Logos are not playlists and are not swept here: they are bounded by the budget and
-      // are worth keeping across a playlist change, since the channels usually come back.
-      await disk.forget((key) => key.startsWith("playlist:") && !wanted.has(key));
+      const playlists = useSettings.getState().playlists;
+      const wantedM3U = new Set(
+        playlists
+          .filter((playlist) => playlist.source.kind === "m3u")
+          .map((playlist) => cacheKey((playlist.source as { kind: "m3u"; url: string }).url)),
+      );
+      const wantedXtream = playlists
+        .filter((playlist) => playlist.source.kind === "xtream")
+        .map((playlist) => `${xtreamPrefix(playlist)}:`);
+      await disk.forget(
+        (key) =>
+          (key.startsWith("playlist:") && !wantedM3U.has(key)) ||
+          (key.startsWith("xtream:") && !wantedXtream.some((prefix) => key.startsWith(prefix))),
+      );
 
       for (const key of keys()) {
         if (key.startsWith(LEGACY_PREFIX)) remove(key);
       }
-      const stamps = new Set(useSettings.getState().playlists.map((p) => stampKey(p.url)));
-      for (const key of keys()) {
-        if (key.startsWith("openiptv.at.") && !stamps.has(key)) remove(key);
+      const wantedStamps = new Set<string>();
+      const wantedXtreamStamps: string[] = [];
+      for (const playlist of playlists) {
+        if (playlist.source.kind === "m3u") wantedStamps.add(stampKey(playlist.source.url));
+        else wantedXtreamStamps.push(`openiptv.at.${xtreamPrefix(playlist)}:`);
       }
-    },
-
-    toggleFavourite(id) {
-      const next = get().favourites.includes(id)
-        ? get().favourites.filter((f) => f !== id)
-        : [...get().favourites, id];
-      write(FAVOURITES_KEY, JSON.stringify(next));
-      set({ favourites: next });
-    },
-
-    rememberLast: (id) => write(LAST_KEY, id),
-    lastPlayed: () => read(LAST_KEY),
-
-    clearPersonal() {
-      remove(FAVOURITES_KEY);
-      remove(LAST_KEY);
-      set({ favourites: [] });
+      for (const key of keys()) {
+        if (
+          key.startsWith("openiptv.at.") &&
+          !wantedStamps.has(key) &&
+          !wantedXtreamStamps.some((prefix) => key.startsWith(prefix))
+        )
+          remove(key);
+      }
     },
   };
 });
+
+export async function clearPlaylistCache(playlist: Playlist): Promise<void> {
+  const diskPrefix = `xtream:${playlist.id}:`;
+  await disk.forget((key) =>
+    playlist.source.kind === "m3u"
+      ? key === cacheKey(playlist.source.url)
+      : key.startsWith(diskPrefix),
+  );
+  for (const key of keys()) {
+    const owned =
+      playlist.source.kind === "m3u"
+        ? key === stampKey(playlist.source.url)
+        : key.startsWith(`openiptv.at.${diskPrefix}`);
+    if (owned) remove(key);
+  }
+  const accounts = { ...useChannels.getState().accounts };
+  delete accounts[playlist.id];
+  useChannels.setState({ accounts });
+}
 
 export async function clearCache(): Promise<void> {
   cancelPending?.();
   cancelPending = null;
   inFlight?.abort();
   inFlight = null;
+  requestToken += 1;
   await disk.forgetAll();
   for (const key of keys()) {
     if (key.startsWith(LEGACY_PREFIX) || key.startsWith("openiptv.at.")) remove(key);

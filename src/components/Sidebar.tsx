@@ -6,6 +6,8 @@ import { ScrollIndicator } from "./ScrollIndicator";
 import { KeyGuide, SettingsPath } from "./KeyGuide";
 import { RAIL_ROW_BASE, useWindowed } from "../hooks/useWindowed";
 import { useViewport } from "../hooks/useViewport";
+import type { XtreamContentKind } from "../services/xtream";
+import { ContentSelector } from "./ContentSelector";
 
 /**
  * The category rail.
@@ -24,7 +26,7 @@ import { useViewport } from "../hooks/useViewport";
  * by pressing up and nothing sits outside the four directional path.
  */
 interface Props {
-  categories: { name: string; count: number; hidden: boolean }[];
+  categories: { key: string; name: string; count: number; hidden: boolean }[];
   /** Which category the channel list is showing. */
   selected: number;
   /** Which row the remote is on. Zero is the title bar, so a category is index + 1. */
@@ -34,8 +36,16 @@ interface Props {
   allHidden: boolean;
   focused: boolean;
   scale: number;
+  content?: {
+    value: XtreamContentKind;
+    focus: XtreamContentKind;
+    available: readonly XtreamContentKind[];
+    focused: boolean;
+    onChange: (value: XtreamContentKind) => void;
+  };
   /** Must be stable, or every row rebuilds on every press. */
   onSelect: (index: number) => void;
+  onWheel: (direction: -1 | 1) => void;
 }
 
 const Row = memo(function Row({
@@ -71,7 +81,7 @@ const Row = memo(function Row({
           groups in two scripts, "News | اخبار", truncates catastrophically: the ellipsis
           removes the logical end of the string, which in a right to left run is its visual
           beginning, so what is left on screen is the middle of a word. */}
-      <Text value={name} className="row-label two-line" />
+      <Text value={name} className="row-label two-line" marquee />
       {hidden && (
         <span className="hidden-state" role="img" aria-label={t("channel.hidden")}>
           <Icon name="hidden" />
@@ -98,7 +108,9 @@ export const Sidebar = memo(function Sidebar({
   allHidden,
   focused,
   scale,
+  content,
   onSelect,
+  onWheel,
 }: Props) {
   const { t, number, direction } = useLocale();
   const viewport = useRef<HTMLDivElement>(null);
@@ -117,7 +129,7 @@ export const Sidebar = memo(function Sidebar({
   for (let i = win.start; i < win.end; i++) {
     rows.push(
       <Row
-        key={categories[i].name}
+        key={categories[i].key}
         name={categories[i].name}
         count={categories[i].count}
         index={i}
@@ -133,6 +145,17 @@ export const Sidebar = memo(function Sidebar({
 
   return (
     <nav className={`rail pane ${focused ? "focused" : ""}`}>
+      {content && (
+        <div className="rail-content-switcher">
+          <ContentSelector
+            value={content.value}
+            focus={content.focus}
+            available={content.available}
+            focused={content.focused}
+            onChange={content.onChange}
+          />
+        </div>
+      )}
       {/*
        * What this column is, and how many are in it.
        *
@@ -155,11 +178,18 @@ export const Sidebar = memo(function Sidebar({
         {!!categories.length && <span className="count">{number(categories.length)}</span>}
       </div>
 
-      <div className="viewport" ref={viewport}>
+      <div
+        className="viewport"
+        ref={viewport}
+        onWheel={(event) => {
+          if (event.deltaY) onWheel(event.deltaY > 0 ? 1 : -1);
+        }}
+      >
         <div className="window" style={{ transform: `translateY(${-win.offset}px)` }}>
           {rows}
         </div>
-        {!loading && !categories.length &&
+        {!loading &&
+          !categories.length &&
           (allHidden ? (
             <div className="empty">
               <p>{t("channel.allCategoriesHidden")}</p>
@@ -181,8 +211,8 @@ export const Sidebar = memo(function Sidebar({
           ) : (
             <p className="empty">{t("channel.noCategories")}</p>
           ))}
+        <ScrollIndicator count={categories.length} first={win.first} visible={win.visible} />
       </div>
-      <ScrollIndicator count={categories.length} first={win.first} visible={win.visible} />
     </nav>
   );
 });

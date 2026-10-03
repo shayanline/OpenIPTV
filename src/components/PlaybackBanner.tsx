@@ -1,5 +1,5 @@
 import { useLocale } from "../hooks/useLocale";
-import type { Channel } from "../types";
+import type { Channel, PlaybackTarget } from "../types";
 import { Text } from "./Text";
 import { Logo } from "./Logo";
 import { KeyGuide } from "./KeyGuide";
@@ -33,25 +33,45 @@ import { KeyGuide } from "./KeyGuide";
 
 const BANNER_LOGO = { width: 132, height: 68 };
 
-export function PlaybackBanner({
-  channel,
-  position,
-}: {
-  channel: Channel;
+export const clock = (seconds: number): string => {
+  const whole = Math.max(0, Math.floor(seconds));
+  const hours = Math.floor(whole / 3600);
+  const minutes = Math.floor((whole % 3600) / 60);
+  const remainder = whole % 60;
+  return hours
+    ? `${hours}:${String(minutes).padStart(2, "0")}:${String(remainder).padStart(2, "0")}`
+    : `${minutes}:${String(remainder).padStart(2, "0")}`;
+};
+
+type PlaybackBannerProps = {
   /** Where this channel sits in the list channel up and down walks. */
   position?: { at: number; of: number; list: string };
-}) {
+  elapsed?: number | null;
+  duration?: number | null;
+  programme?: { current?: string; next?: string };
+} & ({ channel: Channel; target?: never } | { channel?: never; target: PlaybackTarget });
+
+export function PlaybackBanner({
+  channel,
+  target,
+  position,
+  elapsed,
+  duration,
+  programme,
+}: PlaybackBannerProps) {
   const { t, number, direction } = useLocale();
+  const item = target ?? channel;
+  const finite = target?.mode === "finite";
   const inlineEndArrow = direction === "rtl" ? "←" : "→";
-  const displayName = channel.name || t("channel.unnamed");
+  const displayName = item.name || t("channel.unnamed");
   return (
     <div className="pb-stack">
       <div className="pb">
         {/* The number first and largest, because it is the one piece of a channel's identity a
             viewer can type, and on a row with no artwork it is all there is. */}
-        <span className="pb-number">{number(channel.number)}</span>
+        {channel && <span className="pb-number">{String(channel.number)}</span>}
         <Logo
-          src={channel.logo}
+          src={item.logo}
           alt={displayName}
           className="pb-logo"
           width={BANNER_LOGO.width}
@@ -61,10 +81,18 @@ export function PlaybackBanner({
         <div className="pb-id">
           <Text value={displayName} className="pb-title" />
           <span className="pb-meta">
-            {channel.quality && <span className="pb-quality">{channel.quality}</span>}
+            {channel?.quality && <span className="pb-quality">{channel.quality}</span>}
             {/* The list channel up and down walks, and where in it this channel is, so the
                 scope of the next press is stated rather than discovered. */}
-            {position ? (
+            {finite && elapsed !== null && elapsed !== undefined && duration ? (
+              <Text
+                value={t("banner.finiteTime", {
+                  elapsed: clock(elapsed),
+                  duration: clock(duration),
+                })}
+                className="pb-group"
+              />
+            ) : position ? (
               <Text
                 value={t("banner.position", {
                   at: number(position.at),
@@ -74,9 +102,25 @@ export function PlaybackBanner({
                 className="pb-group"
               />
             ) : (
-              <Text value={channel.group} className="pb-group" />
+              <Text value={item.group} className="pb-group" />
             )}
           </span>
+          {channel && (programme?.current || programme?.next) && (
+            <span className="pb-programmes">
+              {programme.current && (
+                <Text
+                  value={t("banner.now", { title: programme.current })}
+                  className="pb-programme"
+                />
+              )}
+              {programme.next && (
+                <Text
+                  value={t("banner.next", { title: programme.next })}
+                  className="pb-programme"
+                />
+              )}
+            </span>
+          )}
         </div>
       </div>
 
@@ -87,15 +131,24 @@ export function PlaybackBanner({
           every channel change. */}
       <KeyGuide
         className="pb-hints"
-        items={[
-          { keys: ["\u2191", "\u2193"], label: t("guide.changeChannel") },
-          { keys: ["OK"], label: t("common.allChannels") },
-          { keys: ["Green"], label: t("guide.favourite") },
-          /* Two keys, one label, because two keys do it. Right is the shorter reach of the pair
-             and RETURN is the one every other screen uses, so both are taught rather than
-             leaving whichever the viewer tries first to be the one that appears not to work. */
-          { keys: ["Return", inlineEndArrow], label: t("guide.hideThis") },
-        ]}
+        items={
+          finite
+            ? [
+                { keys: ["Rewind", "Forward"], label: t("guide.seek") },
+                { keys: ["Play", "Pause"], label: t("common.playPause") },
+                { keys: ["Stop"], label: t("common.stop") },
+                { keys: ["Return", inlineEndArrow], label: t("guide.hideThis") },
+              ]
+            : [
+                { keys: ["\u2191", "\u2193"], label: t("guide.changeChannel") },
+                { keys: ["OK"], label: t("common.allChannels") },
+                { keys: ["Green"], label: t("guide.favourite") },
+                /* Two keys, one label, because two keys do it. Right is the shorter reach of the pair
+                   and RETURN is the one every other screen uses, so both are taught rather than
+                   leaving whichever the viewer tries first to be the one that appears not to work. */
+                { keys: ["Return", inlineEndArrow], label: t("guide.hideThis") },
+              ]
+        }
       />
     </div>
   );

@@ -21,7 +21,9 @@ if (!file || !version) {
 // Tizen accepts two or three dotted integers and nothing else, so a prerelease suffix such as
 // 0.3.0-beta.1 has to be refused here rather than at install time on the set.
 if (!/^\d+\.\d+(\.\d+)?$/.test(version)) {
-  console.error(`version "${version}" is not two or three dotted integers, which is all a widget may carry`);
+  console.error(
+    `version "${version}" is not two or three dotted integers, which is all a widget may carry`,
+  );
   process.exit(1);
 }
 

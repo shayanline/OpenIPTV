@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
+const m3u = (url: string) => ({ kind: "m3u" as const, url });
+
 const PLAYLIST = `#EXTM3U
 #EXTINF:-1 group-title="News",Alpha
 http://example.invalid/a.m3u8`;
@@ -18,7 +20,15 @@ async function load() {
       disk.set(key, value);
       return true;
     },
-    forget: async () => 0,
+    forget: async (matches: (key: string) => boolean) => {
+      let removed = 0;
+      for (const key of [...disk.keys()]) {
+        if (!matches(key)) continue;
+        disk.delete(key);
+        removed += 1;
+      }
+      return removed;
+    },
     forgetAll: async () => {
       cleared += 1;
       disk.clear();
@@ -34,6 +44,7 @@ async function load() {
     forgetRepairHosts: () => {
       forgottenRepairHosts += 1;
     },
+    forgetRepairSource: () => {},
   }));
   const protocol = await import("../src/services/remoteProtocol");
   const settings = await import("../src/stores/settings");
@@ -67,7 +78,7 @@ describe("remote command parsing", () => {
       {
         type: "setup.preview",
         name: "News",
-        url: "http://example.invalid/list.m3u",
+        source: m3u("http://example.invalid/list.m3u"),
       },
     ];
 
@@ -108,7 +119,7 @@ describe("remote command application", () => {
 
   test("serializes commands so only one request can claim a revision", async () => {
     const s = await load();
-    s.useSettings.getState().addPlaylist("One", "http://example.invalid/one.m3u");
+    s.useSettings.getState().addPlaylist("One", m3u("http://example.invalid/one.m3u"));
     let release: (value: unknown) => void = () => {};
     const fetchMock = vi.fn(
       () =>
@@ -145,7 +156,7 @@ describe("remote command application", () => {
       command: {
         type: "setup.preview",
         name: "News",
-        url: "http://example.invalid/list.m3u",
+        source: m3u("http://example.invalid/list.m3u"),
       },
     });
 
@@ -153,11 +164,11 @@ describe("remote command application", () => {
     expect(s.useSettings.getState().locale).toBe("system");
     expect(s.useSetup.getState()).toMatchObject({
       name: "News",
-      url: "http://example.invalid/list.m3u",
+      source: m3u("http://example.invalid/list.m3u"),
     });
     expect(result.snapshot.setup).toEqual({
       name: "News",
-      url: "http://example.invalid/list.m3u",
+      source: m3u("http://example.invalid/list.m3u"),
     });
     expect(result.snapshot.revision).toBe(0);
     const setting = await s.applyRemoteCommand({
@@ -178,7 +189,7 @@ describe("remote command application", () => {
       command: {
         type: "playlist.add" as const,
         name: "One",
-        url: "http://example.invalid/one.m3u",
+        source: m3u("http://example.invalid/one.m3u"),
       },
     };
 
@@ -191,8 +202,8 @@ describe("remote command application", () => {
 
   test("removing the active playlist promotes and loads the next one", async () => {
     const s = await load();
-    s.useSettings.getState().addPlaylist("One", "http://example.invalid/one.m3u");
-    s.useSettings.getState().addPlaylist("Two", "http://example.invalid/two.m3u");
+    s.useSettings.getState().addPlaylist("One", m3u("http://example.invalid/one.m3u"));
+    s.useSettings.getState().addPlaylist("Two", m3u("http://example.invalid/two.m3u"));
     const [first, second] = s.useSettings.getState().playlists;
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, text: async () => PLAYLIST }));
 
@@ -220,7 +231,7 @@ describe("remote command application", () => {
         type: "setup",
         locale: "fr",
         name: "Bad",
-        url: "http://example.invalid/bad.m3u",
+        source: m3u("http://example.invalid/bad.m3u"),
       },
     });
     expect(bad.ok).toBe(false);
@@ -236,12 +247,164 @@ describe("remote command application", () => {
         type: "setup",
         locale: "fr",
         name: "News",
-        url: "http://example.invalid/good.m3u",
+        source: m3u("http://example.invalid/good.m3u"),
       },
     });
     expect(result.ok).toBe(true);
     expect(good.useSettings.getState().locale).toBe("fr");
     expect(good.useSettings.getState().playlists[0].name).toBe("News");
+  });
+
+  test("Xtream snapshots omit passwords and blank remote edits preserve them", async () => {
+    const s = await load();
+    s.useSettings.getState().addPlaylist("Provider", {
+      kind: "xtream",
+      server: "https://provider.example",
+      username: "viewer",
+      password: "secret",
+      output: "ts",
+    });
+    const playlist = s.useSettings.getState().playlists[0];
+
+    expect(s.remoteSnapshot().playlists[0].source).toEqual({
+      kind: "xtream",
+      server: "https://provider.example",
+      username: "viewer",
+      output: "ts",
+      hasPassword: true,
+    });
+    expect(JSON.stringify(s.remoteSnapshot())).not.toContain("secret");
+
+    const result = await s.applyRemoteCommand({
+      id: "blank-password",
+      revision: 0,
+      command: {
+        type: "playlist.update",
+        id: playlist.id,
+        name: "Provider",
+        source: {
+          kind: "xtream",
+          server: "https://new-provider.example",
+          username: "viewer",
+          password: "",
+          output: "m3u8",
+        },
+      },
+    });
+
+    expect(result.ok).toBe(true);
+    expect(s.useSettings.getState().playlists[0].source).toEqual({
+      kind: "xtream",
+      server: "https://new-provider.example",
+      username: "viewer",
+      password: "secret",
+      output: "m3u8",
+    });
+  });
+
+  test("sanitises account summaries and operation errors at the device boundary", async () => {
+    const s = await load();
+    const password = "device-boundary-secret";
+    s.useSettings.getState().addPlaylist("Provider", {
+      kind: "xtream",
+      server: "https://provider.example",
+      username: "viewer",
+      password,
+      output: "m3u8",
+    });
+    const playlist = s.useSettings.getState().playlists[0];
+    const streamUrl = `https://provider.example/live/viewer/${password}/7.m3u8`;
+    s.useChannels.setState({
+      accounts: {
+        [playlist.id]: {
+          status: "Active",
+          expiresAt: 1_900_000_000,
+          isTrial: true,
+          activeConnections: 1,
+          maxConnections: 2,
+        },
+      },
+      error: `Could not play ${streamUrl}`,
+      errorDetail: streamUrl,
+    });
+
+    const serialised = JSON.stringify(s.remoteSnapshot());
+    expect(serialised).not.toContain(password);
+    expect(serialised).not.toContain("/live/viewer/");
+    expect(s.remoteSnapshot().playlists[0].account).toEqual({
+      status: "Active",
+      expiresAt: 1_900_000_000,
+      isTrial: true,
+      activeConnections: 1,
+      maxConnections: 2,
+    });
+    expect(s.remoteSnapshot().operation.error).toBe("The change could not be saved.");
+    expect(s.remoteSnapshot().operation.errorDetail).toBe("");
+  });
+
+  test("a supplied remote password replaces the saved password", async () => {
+    const s = await load();
+    s.useSettings.getState().addPlaylist("Provider", {
+      kind: "xtream",
+      server: "https://provider.example",
+      username: "viewer",
+      password: "old-secret",
+      output: "ts",
+    });
+    const playlist = s.useSettings.getState().playlists[0];
+
+    const result = await s.applyRemoteCommand({
+      id: "replace-password",
+      revision: 0,
+      command: {
+        type: "playlist.update",
+        id: playlist.id,
+        name: "Provider",
+        source: { ...playlist.source, password: "new-secret" },
+      },
+    });
+
+    expect(result.ok).toBe(true);
+    expect(s.useSettings.getState().playlists[0].source).toMatchObject({
+      password: "new-secret",
+    });
+    expect(JSON.stringify(result.snapshot)).not.toContain("new-secret");
+  });
+
+  test("playlist removal and account replacement clear source owned data", async () => {
+    const s = await load();
+    s.useSettings.getState().addPlaylist("Provider", {
+      kind: "xtream",
+      server: "https://provider.example",
+      username: "viewer",
+      password: "secret",
+      output: "m3u8",
+    });
+    const playlist = s.useSettings.getState().playlists[0];
+    disk.set(`xtream:${playlist.id}:v1:account`, "cached");
+    localStorage.setItem(`openiptv.at.xtream:${playlist.id}:v1:account`, "1");
+
+    await s.applyRemoteCommand({
+      id: "replace-account",
+      revision: 0,
+      command: {
+        type: "playlist.update",
+        id: playlist.id,
+        name: "Provider",
+        source: {
+          kind: "xtream",
+          server: "https://replacement.example",
+          username: "viewer",
+          password: "",
+          output: "m3u8",
+        },
+      },
+    });
+
+    expect([...disk.keys()].some((key) => key.startsWith(`xtream:${playlist.id}:`))).toBe(
+      false,
+    );
+    expect(localStorage.getItem(`openiptv.at.xtream:${playlist.id}:v1:account`)).toBeNull();
   });
 
   test("settings keep their TV side effects and cache clears only on command", async () => {

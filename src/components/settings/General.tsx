@@ -12,7 +12,7 @@ import { Icon } from "../Icon";
 export function ApplicationData({ onAsking }: { onAsking: (asking: boolean) => void }) {
   const { t } = useLocale();
   const s = useSettings();
-  const { load, clearPersonal } = useChannels();
+  const { load } = useChannels();
   const [confirming, setConfirming] = useState(false);
   const [clearing, setClearing] = useState(false);
 
@@ -87,7 +87,6 @@ export function ApplicationData({ onAsking }: { onAsking: (asking: boolean) => v
             // cached playlists and logos are the third store and had the same problem: an
             // app with no playlists configured, holding a copy of one.
             s.reset();
-            clearPersonal();
             void forgetAll();
             // The fourth store follows the same rule, and which hosts this television cannot read
             // is a diagnosis it made rather than a fact.

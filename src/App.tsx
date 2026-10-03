@@ -8,6 +8,14 @@ import {
   useSyncExternalStore,
 } from "react";
 import { useChannels } from "./stores/channels";
+import { usePersonal } from "./stores/personal";
+import {
+  libraryPlaybackUrl,
+  useLibrary,
+  type GuideProgramme,
+  type LibraryItem,
+  type LibraryList,
+} from "./stores/library";
 import { useSettings } from "./stores/settings";
 import { onTizen } from "./services/player";
 import { warmChain } from "./services/logos";
@@ -25,9 +33,13 @@ import { searchChannels } from "./services/search";
 import { KEY, registerRemoteKeys, useRemote } from "./hooks/useRemote";
 import { ChannelList } from "./components/ChannelList";
 import { Sidebar } from "./components/Sidebar";
-import { PanelHeader } from "./components/PanelHeader";
+import {
+  availableHeaderControls,
+  PanelHeader,
+  type HeaderControlId,
+} from "./components/PanelHeader";
 import { Settings } from "./components/Settings";
-import { PlaybackBanner } from "./components/PlaybackBanner";
+import { clock, PlaybackBanner } from "./components/PlaybackBanner";
 import { PlaybackInfo } from "./components/PlaybackInfo";
 import { Onboarding } from "./components/Onboarding";
 import { Clock } from "./components/Clock";
@@ -35,6 +47,9 @@ import { ExitDialog, exitApp } from "./components/ExitDialog";
 import { PictureState } from "./components/PictureState";
 import { KeyGuide } from "./components/KeyGuide";
 import { PointerPad } from "./components/PointerPad";
+import { MediaList, type MediaRow } from "./components/MediaList";
+import { MediaDetails, type FiniteSelection } from "./components/MediaDetails";
+import { GuideList } from "./components/GuideList";
 import { SmartRemote, remoteVisible } from "./components/SmartRemote";
 import { useChrome } from "./hooks/useChrome";
 import { usePointerAwake } from "./hooks/usePointerAwake";
@@ -42,9 +57,17 @@ import { RETRY_DELAYS_MS, useTuner } from "./hooks/useTuner";
 import { useLocale } from "./hooks/useLocale";
 import { applyDocumentLocale } from "./services/locale";
 import { useRemoteAccess } from "./hooks/useRemoteAccess";
+import { useBrowseStack, type BrowseFrame } from "./hooks/useBrowseStack";
 import { developmentRemoteAccess } from "./services/remoteServer";
 import { hasPairedDevices, subscribePairedDevices } from "./services/deviceAccess";
-import type { Channel } from "./types";
+import type { Channel, PlaybackTarget } from "./types";
+import {
+  formatXtreamRating,
+  type XtreamContentKind,
+  type XtreamMovie,
+  type XtreamSeries,
+  type XtreamSeriesDetail,
+} from "./services/xtream";
 
 /*
  * Every timer in the interface, in one place, with the reason for each number.
@@ -60,6 +83,17 @@ import type { Channel } from "./types";
 /** The empty channel list, shared, so that "no channels" is one value and not a new one each render. */
 const NO_CHANNELS: Channel[] = [];
 
+const currentGuideIndex = (items: readonly GuideProgramme[]) => {
+  const now = Math.floor(Date.now() / 1000);
+  return items.findIndex(
+    (programme) =>
+      programme.startTimestamp !== undefined &&
+      programme.stopTimestamp !== undefined &&
+      programme.startTimestamp <= now &&
+      programme.stopTimestamp > now,
+  );
+};
+
 /**
  * The cursor position of the search field, which is the row above the first result.
  *
@@ -71,6 +105,14 @@ const FIELD = -1;
 
 /** No favourites, shared, for the same reason and with the same effect on the memo below it. */
 const NO_FAVOURITES: ReadonlySet<string> = new Set<string>();
+const XTREAM_CONTENT: readonly XtreamContentKind[] = ["live", "movie", "series"];
+const EMPTY_MEDIA_FRAME: BrowseFrame<MediaRow> = {
+  key: "media:empty",
+  title: "",
+  items: [],
+  cursor: 0,
+  state: "loading",
+};
 
 /**
  * How long the rail waits, after the last press, before the channel column follows it.
@@ -144,8 +186,8 @@ type View = "watch" | "panel";
  *   2. OK does the obvious thing where it is pressed. At the picture that is always the
  *      channel list, and on a focused button it is that button.
  *   3. Left leaves the channel list for categories, and Right chooses the highlighted channel.
- *      In categories, Right enters the channel list and Left stays put. The title bar cycles
- *      Search and Settings in both directions.
+ *      In categories, Right enters the channel list and Left stays put. The title bar moves
+ *      through every control available for the active source.
  *   4. RETURN always goes back. It clears the screen if anything is on it, closes the panel if
  *      the panel is open, and closes the application only when there is nothing left to close.
  *
@@ -164,21 +206,20 @@ type View = "watch" | "panel";
  */
 
 export default function App() {
+  const { channels, categories, load, sweep, loading, error, errorKey, errorDetail } =
+    useChannels();
   const {
-    channels,
-    categories,
     favourites,
-    load,
-    sweep,
-    loading,
-    error,
-    errorKey,
-    errorDetail,
+    lastPlayed,
+    progressFor,
     toggleFavourite,
     rememberLast,
-    lastPlayed,
-  } = useChannels();
+    rememberProgress,
+    completeProgress,
+  } = usePersonal();
+  const library = useLibrary();
   const settings = useSettings();
+  const activePlaylist = settings.activePlaylist();
   const { locale, direction, t, number } = useLocale();
   const [showSettings, setShowSettings] = useState(false);
   const configured = settings.playlists.length > 0;
@@ -217,7 +258,7 @@ export default function App() {
    * one case where the list is the honest thing to show.
    */
   const [view, setView] = useState<View>(() =>
-    useSettings.getState().resumeLast && useChannels.getState().lastPlayed()
+    useSettings.getState().resumeLast && usePersonal.getState().hasRememberedLast()
       ? "watch"
       : "panel",
   );
@@ -228,16 +269,73 @@ export default function App() {
   const [cursor, setCursor] = useState(1); // rail row, zero is the title bar
   const [index, setIndex] = useState(0);
   const [pane, setPane] = useState<"rail" | "list">("list");
+  const [guideChannelId, setGuideChannelId] = useState("");
+  const [guideIndex, setGuideIndex] = useState(0);
+  const [guideClosing, setGuideClosing] = useState(false);
+  const guideReturnIndex = useRef(0);
+  const guideCloseTimer = useRef<number | undefined>(undefined);
+  const guideTimer = useRef<number | undefined>(undefined);
   const [showExit, setShowExit] = useState(false);
+  const mediaBrowse = useBrowseStack(EMPTY_MEDIA_FRAME);
+  const finiteSelection = useRef<FiniteSelection | null>(null);
+  const movieItemKeys = useRef(new Map<string, string[]>());
+  const switcherReturnCursor = useRef(1);
+  const contentPositions = useRef<
+    Record<XtreamContentKind, { category: number; cursor: number; index: number }>
+  >({
+    live: { category: 0, cursor: 1, index: 0 },
+    movie: { category: 0, cursor: 1, index: 0 },
+    series: { category: 0, cursor: 1, index: 0 },
+  });
 
   /**
-   * Which of the title bar's two keys the cursor is on, while it is up there.
+   * Which title bar control holds the cursor while it is above the lists.
    *
-   * The bar is one cursor position with two keys in it rather than two positions, because left
-   * and right already mean "move within whatever is showing" and up and down already walk the
-   * rail. Search is the leftmost and the one arrived at, since it is the one anybody reaches for.
+   * The available controls stay in one ordered model. M3U starts with Search, while Xtream starts
+   * with the content selector. Guide can join the same order once programme data is available.
    */
-  const [headerKey, setHeaderKey] = useState<"search" | "settings">("search");
+  const [contentKind, setContentKind] = useState<XtreamContentKind>("live");
+  const [contentFocus, setContentFocus] = useState<XtreamContentKind>("live");
+  const headerControls = useMemo(
+    () => availableHeaderControls(activePlaylist?.source.kind === "xtream"),
+    [activePlaylist?.source.kind],
+  );
+  const [headerKey, setHeaderKey] = useState<HeaderControlId>(headerControls[0]);
+
+  const activePlaylistRef = useRef(activePlaylist);
+  activePlaylistRef.current = activePlaylist;
+  const activeSourceKey = `${activePlaylist?.id ?? ""}:v${activePlaylist?.sourceVersion ?? 0}`;
+  useEffect(() => {
+    if (!activeSourceKey) return;
+    const playlist = activePlaylistRef.current;
+    library.selectPlaylist(playlist);
+    if (!playlist?.id) return;
+    setContentKind("live");
+    setContentFocus("live");
+    setHeaderKey(playlist.source.kind === "xtream" ? "content" : "search");
+    setCategory(0);
+    setCursor(1);
+    setIndex(0);
+  }, [activeSourceKey, library.selectPlaylist]);
+
+  const changeContent = useCallback(
+    (kind: XtreamContentKind) => {
+      if (kind === contentKind) return;
+      contentPositions.current[contentKind] = { category, cursor, index };
+      const next = contentPositions.current[kind];
+      switcherReturnCursor.current = Math.max(1, next.cursor);
+      setContentKind(kind);
+      setContentFocus(kind);
+      setHeaderKey("content");
+      setGuideChannelId("");
+      setCategory(next.category);
+      setCursor(next.cursor);
+      setIndex(next.index);
+      setSearching(false);
+      setPane("list");
+    },
+    [category, contentKind, cursor, index],
+  );
 
   /**
    * The search, which is the channel column showing an answer instead of a category.
@@ -273,7 +371,6 @@ export default function App() {
   const [revealHidden, setRevealHidden] = useState(false);
   const [softHidden, setSoftHidden] = useState<string[]>([]);
 
-  const activePlaylist = settings.activePlaylist();
   const lineup = useMemo(
     () => lineupOf(channels, categories, favourites, activePlaylist),
     [channels, categories, favourites, activePlaylist],
@@ -290,7 +387,7 @@ export default function App() {
     const categoryLists = revealHidden
       ? categories
       : categories.filter(
-          (category) => !savedHidden.has(category.name) || softHiddenSet.has(category.name),
+          (category) => !savedHidden.has(category.key) || softHiddenSet.has(category.key),
         );
     return favouriteList ? [favouriteList, ...categoryLists] : categoryLists;
   }, [browsableLists, categories, revealHidden, savedHidden, softHiddenSet]);
@@ -316,7 +413,10 @@ export default function App() {
    * notices with three favourites and everybody notices with two hundred.
    */
   const favouriteIds = useMemo<ReadonlySet<string>>(
-    () => (favourites.length ? new Set(favourites) : NO_FAVOURITES),
+    () =>
+      favourites.length
+        ? new Set(favourites.map((favourite) => favourite.itemKey))
+        : NO_FAVOURITES,
     [favourites],
   );
 
@@ -353,6 +453,227 @@ export default function App() {
    * dialled number.
    */
   const column = searching ? results.matches : visible;
+  const guideChannel = channels.find((channel) => channel.id === guideChannelId);
+  const guide = library.guideFor(guideChannelId);
+  const libraryKind = contentKind === "movie" || contentKind === "series" ? contentKind : null;
+  const libraryFavourites = useMemo(
+    () =>
+      libraryKind && activePlaylist
+        ? favourites.filter(
+            (favourite) =>
+              favourite.playlistId === activePlaylist.id && favourite.kind === libraryKind,
+          )
+        : [],
+    [activePlaylist, favourites, libraryKind],
+  );
+  const libraryCategories = useMemo(() => {
+    if (!libraryKind) return [];
+    const provider = revealHidden
+      ? library.categories[libraryKind].items
+      : library.categories[libraryKind].items.filter(
+          (item) => !savedHidden.has(item.key) || softHiddenSet.has(item.key),
+        );
+    return libraryFavourites.length
+      ? [
+          {
+            key: `${libraryKind}:favourites`,
+            id: "favourites",
+            kind: libraryKind,
+            name: t("channel.favourites"),
+            count: libraryFavourites.length,
+          },
+          ...provider,
+        ]
+      : provider;
+  }, [
+    library.categories,
+    libraryFavourites,
+    libraryKind,
+    revealHidden,
+    savedHidden,
+    softHiddenSet,
+    t,
+  ]);
+
+  useEffect(() => {
+    if (!libraryKind || !library.playlistId || library.sourceVersion < 1) return;
+    void library.loadCategories(libraryKind);
+    void library.loadSearch(libraryKind);
+  }, [
+    libraryKind,
+    library.loadCategories,
+    library.loadSearch,
+    library.playlistId,
+    library.sourceVersion,
+  ]);
+
+  useEffect(() => {
+    if (!searching || !libraryKind || !library.playlistId) return;
+    void library.loadSearch(libraryKind);
+  }, [library.loadSearch, library.playlistId, libraryKind, searching]);
+
+  useEffect(() => {
+    if (!libraryKind || !libraryCategories.length || category < libraryCategories.length)
+      return;
+    setCategory(0);
+    setCursor(1);
+    setIndex(0);
+  }, [category, libraryCategories.length, libraryKind]);
+
+  const selectedLibraryCategory = libraryKind ? libraryCategories[category] : undefined;
+  useEffect(() => {
+    if (!selectedLibraryCategory || selectedLibraryCategory.id === "favourites") return;
+    void library.loadCategory(selectedLibraryCategory.key);
+  }, [selectedLibraryCategory, library.loadCategory]);
+
+  const favouriteLibraryItems = useMemo(
+    () =>
+      libraryFavourites.map((favourite) =>
+        favourite.kind === "movie"
+          ? ({
+              key: favourite.itemKey,
+              streamId: favourite.providerId,
+              categoryKey: favourite.categoryKey,
+              name: favourite.name,
+              logo: favourite.logo,
+              extension: favourite.extension ?? "",
+              year: "",
+              rating: "",
+            } satisfies XtreamMovie)
+          : ({
+              key: favourite.itemKey,
+              seriesId: favourite.providerId,
+              categoryKey: favourite.categoryKey,
+              name: favourite.name,
+              logo: favourite.logo,
+              year: "",
+              rating: "",
+            } satisfies XtreamSeries),
+      ),
+    [libraryFavourites],
+  );
+  const selectedLibraryFrame = useMemo<LibraryList<LibraryItem>>(
+    () =>
+      selectedLibraryCategory
+        ? selectedLibraryCategory.id === "favourites"
+          ? {
+              state: favouriteLibraryItems.length ? "loaded" : "empty",
+              items: favouriteLibraryItems,
+            }
+          : (library.categoryItems[selectedLibraryCategory.key] ?? {
+              state: "loading",
+              items: [],
+            })
+        : {
+            state: libraryKind ? library.categories[libraryKind].state : "empty",
+            items: [],
+          },
+    [
+      favouriteLibraryItems,
+      library.categories,
+      library.categoryItems,
+      libraryKind,
+      selectedLibraryCategory,
+    ],
+  );
+  const loadedLibraryItems = useMemo(() => {
+    if (!libraryKind) return [];
+    const found = new Map<string, XtreamMovie | XtreamSeries>();
+    for (const item of favouriteLibraryItems) found.set(item.key, item);
+    for (const [key, frame] of Object.entries(library.categoryItems)) {
+      if (!key.startsWith(`${libraryKind}:`)) continue;
+      for (const item of frame.items) found.set(item.key, item as XtreamMovie | XtreamSeries);
+    }
+    return [...found.values()];
+  }, [favouriteLibraryItems, library.categoryItems, libraryKind]);
+  const completeLibraryItems = useMemo(() => {
+    if (!libraryKind) return [];
+    const found = new Map<string, XtreamMovie | XtreamSeries>();
+    for (const item of favouriteLibraryItems) found.set(item.key, item);
+    for (const item of library.searchItems[libraryKind].items) {
+      const libraryItem = item as XtreamMovie | XtreamSeries;
+      if (
+        activePlaylist?.hiddenCategoryMode !== "search" &&
+        savedHidden.has(libraryItem.categoryKey)
+      )
+        continue;
+      found.set(item.key, libraryItem);
+    }
+    return [...found.values()];
+  }, [
+    activePlaylist?.hiddenCategoryMode,
+    favouriteLibraryItems,
+    library.searchItems,
+    libraryKind,
+    savedHidden,
+  ]);
+  const searchedLibraryItems = useMemo(() => {
+    const term = applied.trim().toLocaleLowerCase();
+    if (!term) return completeLibraryItems;
+    return completeLibraryItems.filter((item) => item.name.toLocaleLowerCase().includes(term));
+  }, [applied, completeLibraryItems]);
+  const rootLibraryItems = searching ? searchedLibraryItems : selectedLibraryFrame.items;
+  const searchLibraryFrame = libraryKind ? library.searchItems[libraryKind] : undefined;
+  const mediaRows = useMemo<MediaRow[]>(
+    () =>
+      rootLibraryItems.map((item) => ({
+        key: item.key,
+        kind: libraryKind ?? "movie",
+        name: item.name,
+        logo: item.logo,
+        meta: item.year,
+        rating: formatXtreamRating(item.rating),
+        favourite: favouriteIds.has(item.key),
+      })),
+    [favouriteIds, libraryKind, rootLibraryItems],
+  );
+  const mediaRoot = useMemo<BrowseFrame<MediaRow>>(() => {
+    const state = searching
+      ? searchLibraryFrame?.state === "loaded"
+        ? mediaRows.length
+          ? "loaded"
+          : "empty"
+        : (searchLibraryFrame?.state ?? "loading")
+      : selectedLibraryFrame.state;
+    const error = searching ? searchLibraryFrame?.error : selectedLibraryFrame.error;
+    return {
+      key: searching
+        ? `search:${libraryKind}`
+        : `category:${selectedLibraryCategory?.key ?? libraryKind ?? "none"}`,
+      title: searching
+        ? t("common.search")
+        : (selectedLibraryCategory?.name ??
+          (libraryKind
+            ? t(libraryKind === "movie" ? "content.movies" : "content.series")
+            : "")),
+      items: mediaRows,
+      cursor: Math.max(0, Math.min(index, mediaRows.length - 1)),
+      state,
+      ...(error ? { error } : {}),
+    };
+  }, [
+    index,
+    libraryKind,
+    mediaRows,
+    searching,
+    searchLibraryFrame,
+    selectedLibraryCategory,
+    selectedLibraryFrame,
+    t,
+  ]);
+
+  const mediaRootRef = useRef(mediaRoot);
+  mediaRootRef.current = mediaRoot;
+  const mediaResetKey = `${activePlaylist?.id ?? ""}:v${activePlaylist?.sourceVersion ?? 0}:${contentKind}:${selectedLibraryCategory?.key ?? ""}:${searching}`;
+  useEffect(() => {
+    if (!mediaResetKey) return;
+    mediaBrowse.reset(mediaRootRef.current);
+  }, [mediaBrowse.reset, mediaResetKey]);
+
+  useEffect(() => {
+    if (mediaBrowse.depth !== 1) return;
+    mediaBrowse.replace(mediaRoot);
+  }, [mediaRoot, mediaBrowse.depth, mediaBrowse.replace]);
 
   /*
    * Type, and let the results catch up.
@@ -376,11 +697,24 @@ export default function App() {
     }
     void appRef.current?.requestFullscreen?.();
   }, []);
+  const rememberLive = useCallback(
+    (itemKey: string) => {
+      const channel = channels.find((item) => item.id === itemKey);
+      if (!channel || !activePlaylist) return;
+      rememberLast({
+        playlistId: activePlaylist.id,
+        kind: "live",
+        itemKey,
+        categoryKey: channel.xtream?.categoryKey ?? channel.group,
+      });
+    },
+    [activePlaylist, channels, rememberLast],
+  );
   const tuner = useTuner({
     list: visible,
     fit: settings.aspectId,
     video: videoRef,
-    rememberLast,
+    rememberLast: rememberLive,
     onNamed: chrome.holdBanner,
     onPicture: chrome.raiseBanner,
     onFault: chrome.lowerBanner,
@@ -389,11 +723,34 @@ export default function App() {
   const { current, busy, paused, fault } = tuner;
 
   useEffect(() => {
+    if (current?.mode !== "live") return;
+    const playing = channels.find((channel) => channel.id === current.id);
+    if (playing?.xtream) void library.loadGuide(playing);
+  }, [channels, current?.id, current?.mode, library.loadGuide]);
+
+  useEffect(() => {
+    if (!guideChannelId) return;
+    const currentIndex = currentGuideIndex(guide.items);
+    if (currentIndex >= 0) setGuideIndex(currentIndex);
+  }, [guide.items, guideChannelId]);
+
+  useEffect(() => {
+    window.clearTimeout(guideTimer.current);
+    if (view !== "panel" || pane !== "list" || contentKind !== "live" || guideChannelId) return;
+    const focused = column[index];
+    if (!focused?.xtream) return;
+    guideTimer.current = window.setTimeout(() => {
+      void useLibrary.getState().loadGuide(focused);
+    }, RAIL_SETTLE_MS);
+    return () => window.clearTimeout(guideTimer.current);
+  }, [column, contentKind, guideChannelId, index, pane, view]);
+
+  useEffect(() => {
     tuner.setMuted(showSettings && !!current);
   }, [current, showSettings, tuner.setMuted]);
 
   /** The channel as it is now, for callbacks that run between renders. */
-  const currentRef = useRef<Channel | null>(null);
+  const currentRef = useRef<PlaybackTarget | null>(null);
   currentRef.current = current;
 
   /**
@@ -451,6 +808,8 @@ export default function App() {
   useEffect(
     () => () => {
       window.clearTimeout(railTimer.current);
+      window.clearTimeout(guideTimer.current);
+      window.clearTimeout(guideCloseTimer.current);
     },
     [],
   );
@@ -502,7 +861,7 @@ export default function App() {
   /**
    * Which column the cursor was in before it went up into the title bar.
    *
-   * Search and Settings sit above both columns, so leaving them vertically has to land in the
+   * The header controls sit above both columns, so leaving them vertically has to land in the
    * list the viewer came from rather than always in the categories. A ref rather than state
    * because it is read by the key handler between renders, and nothing on screen depends on it.
    */
@@ -517,6 +876,40 @@ export default function App() {
     setSoftHidden([]);
     setView("watch");
   }, []);
+
+  useEffect(() => {
+    if (current?.mode !== "finite" || tuner.position === null) return;
+    rememberProgress(current.id, tuner.position, tuner.duration ?? undefined);
+  }, [current, tuner.position, tuner.duration, rememberProgress]);
+
+  useEffect(() => {
+    if (!paused || current?.mode !== "finite" || tuner.position === null) return;
+    rememberProgress(current.id, tuner.position, tuner.duration ?? undefined, true);
+  }, [current, paused, tuner.position, tuner.duration, rememberProgress]);
+
+  useEffect(() => {
+    const persistHidden = () => {
+      if (!document.hidden || currentRef.current?.mode !== "finite" || tuner.position === null)
+        return;
+      rememberProgress(
+        currentRef.current.id,
+        tuner.position,
+        tuner.duration ?? undefined,
+        true,
+      );
+    };
+    document.addEventListener("visibilitychange", persistHidden);
+    return () => document.removeEventListener("visibilitychange", persistHidden);
+  }, [tuner.position, tuner.duration, rememberProgress]);
+
+  useEffect(() => {
+    if (!tuner.completed || current?.mode !== "finite") return;
+    completeProgress(current.id);
+    tuner.clear();
+    currentRef.current = null;
+    chrome.lowerBanner();
+    openPanel();
+  }, [current, tuner.completed, tuner.clear, completeProgress, chrome.lowerBanner, openPanel]);
 
   /**
    * Which list a channel lives in, preferring a real category over Favourites.
@@ -569,8 +962,6 @@ export default function App() {
       }
       setCategory(to);
       setIndex(at);
-      const list = listsRef.current[to];
-      if (list && !isFavouritesList(list)) void useChannels.getState().loadCategory(list.name);
     };
     if (now) apply();
     else railTimer.current = window.setTimeout(apply, RAIL_SETTLE_MS);
@@ -590,13 +981,13 @@ export default function App() {
    * always possible, since a background refresh is not something the viewer did.
    */
   useEffect(() => {
-    if (!lists.length || category < lists.length) return;
-    const to = lists.length - 1;
-    if (cursorRef.current !== 0) {
-      setCursor(to + 1);
-      cursorRef.current = to + 1;
+    if (!lists.length) return;
+    const last = lists.length - 1;
+    if (cursorRef.current > lists.length) {
+      setCursor(lists.length);
+      cursorRef.current = lists.length;
     }
-    showCategory(to, 0, true);
+    if (category > last) showCategory(last, 0, true);
   }, [lists.length, category, showCategory]);
 
   /**
@@ -607,7 +998,11 @@ export default function App() {
    * on screen, in the category that channel belongs to.
    */
   const revealPanel = useCallback(() => {
-    const playing = currentRef.current;
+    const target = currentRef.current;
+    const playing =
+      target?.mode === "live"
+        ? channels.find((channel) => channel.id === target.id)
+        : undefined;
     if (playing) {
       const cat = locate(playing);
       if (cat >= 0) {
@@ -622,7 +1017,7 @@ export default function App() {
     }
     setPane("list");
     openPanel();
-  }, [locate, lists, openPanel, showCategory]);
+  }, [channels, locate, lists, openPanel, showCategory]);
 
   /**
    * Resume whatever was on last time, once the playlist has arrived.
@@ -642,9 +1037,9 @@ export default function App() {
     resumed.current = true;
     if (!settings.resumeLast) return;
 
-    const found = browsableChannels.find((c) => c.id === lastPlayed());
+    const found = browsableChannels.find((c) => c.id === lastPlayed?.itemKey);
     if (!found) {
-      if (lastPlayed()) openPanel();
+      if (usePersonal.getState().hasRememberedLast()) openPanel();
       return;
     }
     const cat = locate(found);
@@ -655,7 +1050,7 @@ export default function App() {
     }
     setPane("list");
     tuner.start(found);
-  }, [channels, browsableChannels]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [channels, browsableChannels, lastPlayed?.itemKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /**
    * Put the rail cursor somewhere, and let the category follow.
@@ -682,12 +1077,42 @@ export default function App() {
    * faster than React re-renders, and every press in a burst was computing its destination
    * from the same captured cursor. Holding Down walked one row and stopped dead.
    */
+  const commitRailCursor = useCallback(() => {
+    const nextCategory = cursorRef.current - 1;
+    if (nextCategory < 0) return;
+    if (libraryKind) {
+      setCategory(nextCategory);
+      setIndex(0);
+    } else showCategory(nextCategory, 0, true);
+  }, [libraryKind, showCategory]);
+
   const nudgeCursor = useCallback(
     (delta: number) => {
       // The rail has Settings at zero above the categories, so its length is one more.
-      moveCursor(wrap(cursorRef.current + delta, lists.length + 1));
+      const previous = cursorRef.current;
+      const next = wrap(previous + delta, lists.length + 1);
+      if (next === 0) {
+        if (previous > 0) commitRailCursor();
+        switcherReturnCursor.current = 1;
+      }
+      cursorRef.current = next;
+      setCursor(next);
     },
-    [moveCursor, lists.length],
+    [commitRailCursor, lists.length],
+  );
+
+  const nudgeLibraryCursor = useCallback(
+    (delta: number) => {
+      const previous = cursorRef.current;
+      const next = wrap(previous + delta, libraryCategories.length + 1);
+      if (next === 0) {
+        if (previous > 0) commitRailCursor();
+        switcherReturnCursor.current = 1;
+      }
+      cursorRef.current = next;
+      setCursor(next);
+    },
+    [commitRailCursor, libraryCategories.length],
   );
 
   const jump = useCallback(
@@ -726,7 +1151,7 @@ export default function App() {
   const favouriteCurrent = useCallback(
     (channel: Channel | undefined) => {
       if (!channel) return;
-      const had = favourites.includes(channel.id);
+      const had = favourites.some((favourite) => favourite.itemKey === channel.id);
       const favouriteList = isFavouritesList(lists[0]) ? lists[0] : undefined;
       const listed = searchableChannels.some((item) => item.id === channel.id);
       if (!had && !listed) {
@@ -749,11 +1174,21 @@ export default function App() {
         showCategory(to, vanishes && from === 0 ? 0 : index, true);
       }
 
-      toggleFavourite(channel.id);
+      if (!activePlaylist) return;
+      toggleFavourite({
+        itemKey: channel.id,
+        playlistId: activePlaylist.id,
+        kind: "live",
+        providerId: channel.xtream?.streamId ?? channel.id,
+        categoryKey: channel.xtream?.categoryKey ?? channel.group,
+        name: channel.name,
+        logo: channel.logo,
+      });
       chrome.say(had ? t("app.removedFavourite") : t("app.addedFavourite"));
     },
     [
       favourites,
+      activePlaylist,
       lists,
       searchableChannels,
       toggleFavourite,
@@ -766,6 +1201,29 @@ export default function App() {
 
   const revealHiddenCategories = useCallback(() => {
     if (view !== "panel" || (pane === "rail" && cursor === 0)) return false;
+    if (libraryKind) {
+      const current = libraryCategories[category];
+      const provider = library.categories[libraryKind].items;
+      const nextProvider = revealHidden
+        ? provider.filter((item) => !savedHidden.has(item.key) || softHiddenSet.has(item.key))
+        : provider;
+      const favourite = libraryFavourites.length
+        ? [{ key: `${libraryKind}:favourites`, id: "favourites" }, ...nextProvider]
+        : nextProvider;
+      const nextCategory = current
+        ? Math.max(
+            0,
+            favourite.findIndex((item) => item.key === current.key),
+          )
+        : 0;
+      setCategory(nextCategory);
+      setCursor(nextCategory + 1);
+      cursorRef.current = nextCategory + 1;
+      setIndex(0);
+      if (revealHidden) setSoftHidden([]);
+      setRevealHidden((visible) => !visible);
+      return true;
+    }
     const favouriteList = isFavouritesList(browsableLists[0]) ? browsableLists[0] : undefined;
     const nextLists = revealHidden
       ? browsableLists
@@ -777,19 +1235,19 @@ export default function App() {
       const exact = nextLists.findIndex((candidate) =>
         isFavouritesList(list)
           ? isFavouritesList(candidate)
-          : !isFavouritesList(candidate) && candidate.name === list.name,
+          : !isFavouritesList(candidate) && candidate.key === list.key,
       );
       if (exact >= 0) return exact;
-      const raw = categories.findIndex((category) => category.name === list.name);
+      const raw = categories.findIndex((category) => category.key === list.key);
       for (let at = raw + 1; at < categories.length; at++) {
         const next = nextLists.findIndex(
-          (candidate) => !isFavouritesList(candidate) && candidate.name === categories[at].name,
+          (candidate) => !isFavouritesList(candidate) && candidate.key === categories[at].key,
         );
         if (next >= 0) return next;
       }
       for (let at = raw - 1; at >= 0; at--) {
         const previous = nextLists.findIndex(
-          (candidate) => !isFavouritesList(candidate) && candidate.name === categories[at].name,
+          (candidate) => !isFavouritesList(candidate) && candidate.key === categories[at].key,
         );
         if (previous >= 0) return previous;
       }
@@ -806,37 +1264,67 @@ export default function App() {
     if (revealHidden) setSoftHidden([]);
     setRevealHidden((visible) => !visible);
     return true;
-  }, [view, pane, cursor, lists, category, browsableLists, revealHidden, categories, index]);
+  }, [
+    view,
+    pane,
+    cursor,
+    libraryKind,
+    libraryCategories,
+    library.categories,
+    libraryFavourites.length,
+    savedHidden,
+    softHiddenSet,
+    lists,
+    category,
+    browsableLists,
+    revealHidden,
+    categories,
+    index,
+  ]);
 
   const toggleCategoryVisibility = useCallback(() => {
     if (view !== "panel" || pane !== "rail" || cursor === 0) return false;
-    const item = lists[cursor - 1];
-    if (!item || isFavouritesList(item)) return true;
+    const libraryItem = libraryKind ? libraryCategories[cursor - 1] : undefined;
+    if (libraryItem?.id === "favourites") return true;
+    const item = libraryItem ?? lists[cursor - 1];
+    if (!item || (!libraryKind && isFavouritesList(item as LineupList))) return true;
     const state = useSettings.getState();
     const playlist = state.activePlaylist();
     if (!playlist) return true;
-    const hidden = savedHidden.has(item.name);
+    const hidden = savedHidden.has(item.key);
     if (!hidden && !revealHidden) {
       setSoftHidden((current) =>
-        current.includes(item.name) ? current : [...current, item.name],
+        current.includes(item.key) ? current : [...current, item.key],
       );
     } else if (hidden) {
-      setSoftHidden((current) => current.filter((name) => name !== item.name));
+      setSoftHidden((current) => current.filter((key) => key !== item.key));
     }
-    if (hidden && revealHidden && savedHidden.size === 1) {
+    if (!libraryKind && hidden && revealHidden && savedHidden.size === 1) {
+      const liveItem = item as LineupList;
       const favouriteAppears =
         isFavouritesList(lists[0]) ||
-        item.channels.some((channel) => favouriteIds.has(channel.id));
-      const categoryAt = categories.findIndex((category) => category.name === item.name);
+        liveItem.channels.some((channel) => favouriteIds.has(channel.id));
+      const categoryAt = categories.findIndex((category) => category.key === item.key);
       const to = categoryAt + (favouriteAppears ? 1 : 0);
       setCategory(to);
       setCursor(to + 1);
       cursorRef.current = to + 1;
       setRevealHidden(false);
     }
-    state.setCategoryHidden(playlist.id, item.name, !hidden);
+    state.setCategoryHidden(playlist.id, item.key, !hidden);
     return true;
-  }, [view, pane, cursor, lists, savedHidden, revealHidden, categories, favouriteIds]);
+  }, [
+    view,
+    pane,
+    cursor,
+    libraryKind,
+    libraryCategories,
+    lists,
+    savedHidden,
+    revealHidden,
+    categories,
+    favouriteIds,
+  ]);
 
   const redContextRef = useRef({
     configured,
@@ -918,7 +1406,7 @@ export default function App() {
         jump(Number(chrome.commitDigits()));
         return;
       }
-      if (!channels.length && !loading) {
+      if (!channels.length && !loading && activePlaylist?.source.kind !== "xtream") {
         setShowSettings(true);
         return;
       }
@@ -936,7 +1424,14 @@ export default function App() {
     };
     const onDown = (event: KeyboardEvent) => {
       const panelClosed = document.querySelector(".panel")?.classList.contains("away");
-      if (event.keyCode !== KEY.ENTER || !okContextRef.current.eligible || !panelClosed) return;
+      const guideOpen = !!document.querySelector(".guide-drawer");
+      if (
+        event.keyCode !== KEY.ENTER ||
+        !okContextRef.current.eligible ||
+        !panelClosed ||
+        guideOpen
+      )
+        return;
       event.preventDefault();
       event.stopImmediatePropagation();
       pressed = true;
@@ -1014,8 +1509,81 @@ export default function App() {
   const closeSearch = useCallback(() => {
     window.clearTimeout(queryTimer.current);
     setSearching(false);
+    setQuery("");
+    setApplied("");
     setIndex(0);
   }, []);
+
+  const leaveSearchStart = useCallback(() => {
+    closeSearch();
+    const next = category + 1;
+    cursorRef.current = next;
+    setCursor(next);
+    setPane("rail");
+  }, [category, closeSearch]);
+
+  const leaveSearchUp = useCallback(() => {
+    barFrom.current = "list";
+    setPane("rail");
+    setHeaderKey(headerControls.find((control) => control !== "content") ?? headerControls[0]);
+    moveCursor(0);
+  }, [headerControls, moveCursor]);
+
+  const openGuide = useCallback(() => {
+    const channel =
+      current?.mode === "live"
+        ? channels.find((candidate) => candidate.id === current.id)
+        : undefined;
+    if (!channel?.xtream) return;
+    window.clearTimeout(guideCloseTimer.current);
+    setGuideClosing(false);
+    const heldGuide = useLibrary.getState().guideFor(channel.id);
+    setGuideIndex(Math.max(0, currentGuideIndex(heldGuide.items)));
+    guideReturnIndex.current = Math.max(0, index);
+    window.clearTimeout(queryTimer.current);
+    setSearching(false);
+    setQuery("");
+    setApplied("");
+    setGuideChannelId(channel.id);
+    setPane("list");
+    if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+    chrome.clear();
+    watch();
+    void useLibrary.getState().loadGuide(channel);
+  }, [channels, chrome.clear, current, index, watch]);
+
+  const closeGuide = useCallback(() => {
+    if (!guideChannelId || guideClosing) return;
+    setGuideClosing(true);
+    window.clearTimeout(guideCloseTimer.current);
+    guideCloseTimer.current = window.setTimeout(() => {
+      setGuideChannelId("");
+      setGuideClosing(false);
+      setPane("list");
+      setIndex(guideReturnIndex.current);
+    }, cssMs("--t-panel"));
+  }, [guideChannelId, guideClosing]);
+
+  const playGuide = useCallback(
+    (at = guideIndex) => {
+      const target = guide.items[at]?.target;
+      if (!target) return;
+      finiteSelection.current = null;
+      rememberLast({
+        playlistId: target.playlistId,
+        kind: "catchup",
+        itemKey: target.id,
+        categoryKey: guideChannel?.xtream?.categoryKey ?? target.group,
+      });
+      tuner.start(target);
+      watch();
+    },
+    [guide.items, guideChannel, guideIndex, rememberLast, tuner.start, watch],
+  );
+
+  const retryGuide = useCallback(() => {
+    if (guideChannel) void useLibrary.getState().loadGuide(guideChannel);
+  }, [guideChannel]);
 
   /**
    * Play a result, and take the rail with it.
@@ -1039,6 +1607,337 @@ export default function App() {
       watch();
     },
     [locate, lists, showCategory, closeSearch, tuner.start, watch],
+  );
+
+  const setMediaCursor = useCallback(
+    (next: number | ((current: number) => number)) => {
+      setIndex((current) => {
+        const value = typeof next === "function" ? next(current) : next;
+        mediaBrowse.setCursor(value);
+        return value;
+      });
+    },
+    [mediaBrowse.setCursor],
+  );
+
+  const selectFinite = useCallback(
+    async (selection: FiniteSelection) => {
+      if (!activePlaylist) return;
+      try {
+        const url = await libraryPlaybackUrl(selection.item);
+        const progress = progressFor(selection.item.key);
+        const catalogueKind = selection.kind === "movie" ? "movie" : "series";
+        const parent =
+          selection.kind === "movie"
+            ? selection.item
+            : (library.searchItems.series.items as XtreamSeries[]).find(
+                (item) => item.key === selection.item.seriesKey,
+              );
+        const categoryKey = parent?.categoryKey ?? "";
+        const categoryName =
+          library.categories[catalogueKind].items.find((item) => item.key === categoryKey)
+            ?.name ?? categoryKey;
+        const target: PlaybackTarget = {
+          id: selection.item.key,
+          playlistId: activePlaylist.id,
+          mode: "finite",
+          kind: selection.kind,
+          name: selection.item.name,
+          group: categoryName,
+          logo: "logo" in selection.item ? selection.item.logo : "",
+          url,
+          ...(progress?.seconds ? { resumeAt: progress.seconds } : {}),
+        };
+        finiteSelection.current = selection;
+        rememberLast({
+          playlistId: activePlaylist.id,
+          kind: selection.kind,
+          itemKey: selection.item.key,
+          categoryKey,
+        });
+        closeSearch();
+        tuner.start(target);
+        watch();
+      } catch (error) {
+        chrome.say(error instanceof Error ? error.message : t("library.failed"));
+      }
+    },
+    [
+      activePlaylist,
+      chrome.say,
+      closeSearch,
+      library.categories,
+      library.searchItems.series.items,
+      progressFor,
+      rememberLast,
+      t,
+      tuner.start,
+      watch,
+    ],
+  );
+
+  const seasonsFrame = useCallback(
+    (seriesKey: string, detail: XtreamSeriesDetail): BrowseFrame<MediaRow> => {
+      const seasons = [...new Set(detail.episodes.map((episode) => episode.season))];
+      return {
+        key: `series:${seriesKey}`,
+        title: detail.name,
+        items: seasons.map((season) => ({
+          key: `${seriesKey}:season:${season}`,
+          kind: "season",
+          name: t("library.season", { number: season }),
+          season,
+        })),
+        cursor: 0,
+        state: seasons.length ? "loaded" : "empty",
+      };
+    },
+    [t],
+  );
+
+  const chooseMedia = useCallback(
+    async (at = index) => {
+      const frame = mediaBrowse.current;
+      if (frame.key.startsWith("movie-detail:")) {
+        const movieKey = frame.key.slice("movie-detail:".length);
+        const detail = useLibrary.getState().movieDetails[movieKey]?.value;
+        if (detail) {
+          selectFinite({
+            kind: "movie",
+            item: detail,
+            itemKeys: movieItemKeys.current.get(movieKey) ?? [movieKey],
+          });
+        }
+        return;
+      }
+      const row = frame.items[at];
+      if (!row) return;
+      if (row.kind === "movie") {
+        movieItemKeys.current.set(
+          row.key,
+          frame.items.filter((item) => item.kind === "movie").map((item) => item.key),
+        );
+        mediaBrowse.push({
+          key: `movie-detail:${row.key}`,
+          title: row.name,
+          items: [],
+          cursor: 0,
+          state: "loading",
+        });
+        setIndex(0);
+        await useLibrary.getState().loadMovie(row.key);
+        const loaded = useLibrary.getState().movieDetails[row.key];
+        const detailKey = `movie-detail:${row.key}`;
+        mediaBrowse.replaceIfCurrent(detailKey, {
+          key: detailKey,
+          title: row.name,
+          items: [],
+          cursor: 0,
+          state: loaded?.value ? "loaded" : "failed",
+          ...(loaded?.error ? { error: loaded.error } : {}),
+        });
+        return;
+      }
+      if (row.kind === "series") {
+        mediaBrowse.push({
+          key: `series-detail:${row.key}`,
+          title: row.name,
+          items: [],
+          cursor: 0,
+          state: "loading",
+        });
+        setIndex(0);
+        await useLibrary.getState().loadSeries(row.key);
+        const loaded = useLibrary.getState().seriesDetails[row.key];
+        const detailKey = `series-detail:${row.key}`;
+        if (loaded?.value) {
+          mediaBrowse.replaceIfCurrent(detailKey, seasonsFrame(row.key, loaded.value));
+        } else {
+          mediaBrowse.replaceIfCurrent(detailKey, {
+            key: detailKey,
+            title: row.name,
+            items: [],
+            cursor: 0,
+            state: "failed",
+            error: loaded?.error,
+          });
+        }
+        return;
+      }
+      if (row.kind === "season") {
+        const seriesKey = frame.key.slice("series:".length);
+        const detail = useLibrary.getState().seriesDetails[seriesKey]?.value;
+        const episodes =
+          detail?.episodes.filter((episode) => episode.season === row.season) ?? [];
+        mediaBrowse.push({
+          key: `season:${seriesKey}:${row.season}`,
+          title: detail?.name ? `${row.name} - ${detail.name}` : row.name,
+          items: episodes.map((episode) => ({
+            key: episode.key,
+            kind: "episode",
+            name: episode.name,
+            number: episode.number,
+            meta:
+              episode.durationSeconds !== undefined
+                ? clock(episode.durationSeconds)
+                : undefined,
+          })),
+          cursor: 0,
+          state: episodes.length ? "loaded" : "empty",
+        });
+        setIndex(0);
+        return;
+      }
+      let episode: XtreamSeriesDetail["episodes"][number] | undefined;
+      for (const detail of Object.values(useLibrary.getState().seriesDetails)) {
+        episode = detail.value?.episodes.find((item) => item.key === row.key);
+        if (episode) break;
+      }
+      if (episode) selectFinite({ kind: "episode", item: episode });
+    },
+    [
+      index,
+      mediaBrowse.current,
+      mediaBrowse.push,
+      mediaBrowse.replaceIfCurrent,
+      seasonsFrame,
+      selectFinite,
+      t,
+    ],
+  );
+
+  const stepFinite = useCallback(
+    async (delta: number) => {
+      const selection = finiteSelection.current;
+      if (!selection) return;
+      if (selection.kind === "movie") {
+        const at = selection.itemKeys.indexOf(selection.item.key);
+        const nextKey = selection.itemKeys[at + delta];
+        const next =
+          completeLibraryItems.find((item) => item.key === nextKey) ??
+          loadedLibraryItems.find((item) => item.key === nextKey);
+        if (at < 0 || !next || !("streamId" in next)) return;
+        await useLibrary.getState().loadMovie(next.key);
+        const detail = useLibrary.getState().movieDetails[next.key]?.value;
+        if (detail) {
+          await selectFinite({ kind: "movie", item: detail, itemKeys: selection.itemKeys });
+        }
+        return;
+      }
+      for (const detail of Object.values(useLibrary.getState().seriesDetails)) {
+        const episodes = detail.value?.episodes.filter(
+          (episode) => episode.season === selection.item.season,
+        );
+        const at = episodes?.findIndex((episode) => episode.key === selection.item.key) ?? -1;
+        const next = episodes?.[at + delta];
+        if (at >= 0 && next) void selectFinite({ kind: "episode", item: next });
+      }
+    },
+    [completeLibraryItems, loadedLibraryItems, selectFinite],
+  );
+
+  const popMediaFrame = useCallback(() => {
+    if (!mediaBrowse.parent) return false;
+    setIndex(mediaBrowse.parent.cursor);
+    mediaBrowse.pop();
+    return true;
+  }, [mediaBrowse.parent, mediaBrowse.pop]);
+
+  const retryMedia = useCallback(async () => {
+    const key = mediaBrowse.current.key;
+    if (key.startsWith("movie-detail:")) {
+      const movieKey = key.slice("movie-detail:".length);
+      const title = mediaBrowse.current.title;
+      mediaBrowse.replace({ key, title, items: [], cursor: 0, state: "loading" });
+      await library.retry(movieKey);
+      const loaded = useLibrary.getState().movieDetails[movieKey];
+      mediaBrowse.replaceIfCurrent(key, {
+        key,
+        title,
+        items: [],
+        cursor: 0,
+        state: loaded?.value ? "loaded" : "failed",
+        ...(loaded?.error ? { error: loaded.error } : {}),
+      });
+      return;
+    }
+    if (key.startsWith("series-detail:")) {
+      const seriesKey = key.slice("series-detail:".length);
+      mediaBrowse.replace({
+        key,
+        title: mediaBrowse.current.title,
+        items: [],
+        cursor: 0,
+        state: "loading",
+      });
+      await library.retry(seriesKey);
+      const loaded = useLibrary.getState().seriesDetails[seriesKey];
+      if (loaded?.value) {
+        mediaBrowse.replaceIfCurrent(key, seasonsFrame(seriesKey, loaded.value));
+      } else {
+        mediaBrowse.replaceIfCurrent(key, {
+          key,
+          title: mediaBrowse.current.title,
+          items: [],
+          cursor: 0,
+          state: "failed",
+          error: loaded?.error,
+        });
+      }
+      return;
+    }
+    if (key.startsWith("search:") && libraryKind) {
+      await library.retry(key);
+      return;
+    }
+    if (selectedLibraryCategory) await library.retry(selectedLibraryCategory.key);
+  }, [
+    library.retry,
+    libraryKind,
+    mediaBrowse.current,
+    mediaBrowse.replace,
+    mediaBrowse.replaceIfCurrent,
+    seasonsFrame,
+    selectedLibraryCategory,
+  ]);
+
+  const favouriteMediaCurrent = useCallback(() => {
+    if (!activePlaylist || !libraryKind) return;
+    const row = mediaBrowse.current.items[index];
+    if (!row || (row.kind !== "movie" && row.kind !== "series")) return;
+    const item = (searching ? completeLibraryItems : loadedLibraryItems).find(
+      (candidate) => candidate.key === row.key,
+    );
+    if (!item) return;
+    toggleFavourite({
+      itemKey: item.key,
+      playlistId: activePlaylist.id,
+      kind: row.kind,
+      providerId:
+        row.kind === "movie" ? (item as XtreamMovie).streamId : (item as XtreamSeries).seriesId,
+      categoryKey: item.categoryKey,
+      name: item.name,
+      logo: item.logo,
+      ...(row.kind === "movie" ? { extension: (item as XtreamMovie).extension } : {}),
+    });
+  }, [
+    activePlaylist,
+    completeLibraryItems,
+    index,
+    libraryKind,
+    loadedLibraryItems,
+    searching,
+    mediaBrowse.current.items,
+    toggleFavourite,
+  ]);
+
+  const seekFinite = useCallback(
+    (seconds: number) => {
+      void tuner.seek(seconds).then((moved) => {
+        if (!moved) chrome.say(t("error.seekUnavailable"));
+      });
+    },
+    [chrome.say, t, tuner.seek],
   );
 
   /**
@@ -1094,10 +1993,14 @@ export default function App() {
          * kindest reading of it is "I have finished with this channel", which is the list.
          */
         case KEY.STOP:
+          if (current.mode === "finite" && tuner.position !== null) {
+            rememberProgress(current.id, tuner.position, tuner.duration ?? undefined, true);
+          }
           tuner.clear();
           currentRef.current = null;
           chrome.lowerBanner();
-          revealPanel();
+          if (current.mode === "finite") openPanel();
+          else revealPanel();
           break;
         /*
          * The scan keys reload the channel.
@@ -1108,21 +2011,37 @@ export default function App() {
          * on a live stream that has stalled is to fetch it again.
          */
         case KEY.REWIND:
+          if (current.mode === "finite") seekFinite(-10);
+          else tuner.retune();
+          break;
         case KEY.FORWARD:
-          tuner.retune();
+          if (current.mode === "finite") seekFinite(10);
+          else tuner.retune();
           break;
         // Previous and next channel, which is what "previous and next" means on live
         // television. They announce rather than take focus, because they change the channel.
         case KEY.PREV:
-          tuner.step(-1);
+          if (current.mode === "finite") void stepFinite(-1);
+          else tuner.step(-1);
           break;
         case KEY.NEXT:
-          tuner.step(1);
+          if (current.mode === "finite") void stepFinite(1);
+          else tuner.step(1);
           break;
       }
       return true;
     },
-    [current, tuner, chrome.raiseBanner, revealPanel],
+    [
+      current,
+      tuner,
+      chrome.raiseBanner,
+      chrome.lowerBanner,
+      openPanel,
+      rememberProgress,
+      revealPanel,
+      seekFinite,
+      stepFinite,
+    ],
   );
 
   const onKey = useCallback(
@@ -1130,6 +2049,13 @@ export default function App() {
       // Only layer four owns the remote. A failed channel deliberately does not: pressing
       // down to try the next one has to keep working.
       if (!configured || showSettings || showExit) return;
+
+      const active = document.activeElement;
+      const textControl =
+        active instanceof HTMLInputElement ||
+        active instanceof HTMLTextAreaElement ||
+        (active instanceof HTMLElement && active.isContentEditable);
+      if (textControl && code >= KEY.SPACE && code <= 126) return;
 
       if (onTransport(code)) {
         event.preventDefault();
@@ -1144,7 +2070,15 @@ export default function App() {
       }
       if (code === KEY.GREEN) {
         event.preventDefault();
-        favouriteCurrent(view === "panel" ? visible[index] : (current ?? undefined));
+        if (view === "panel" && guideChannelId) favouriteCurrent(guideChannel);
+        else if (view === "panel" && libraryKind) favouriteMediaCurrent();
+        else {
+          const playing =
+            current?.mode === "live"
+              ? channels.find((channel) => channel.id === current.id)
+              : undefined;
+          favouriteCurrent(view === "panel" ? visible[index] : playing);
+        }
         return;
       }
       // Up goes forwards, towards the higher channel number, which is what channel up has
@@ -1165,7 +2099,7 @@ export default function App() {
        * anything on it. Answered here rather than in the panel branch, because the panel is
        * behind it with no rows to move through, so every press would land on nothing.
        */
-      if (!channels.length && !loading) {
+      if (!channels.length && !loading && activePlaylist?.source.kind !== "xtream") {
         if (code === KEY.ENTER) {
           event.preventDefault();
           openSettings();
@@ -1176,6 +2110,43 @@ export default function App() {
           setShowExit(true);
           return;
         }
+      }
+
+      if (guideChannelId) {
+        const owned =
+          code === KEY.UP ||
+          code === KEY.DOWN ||
+          code === KEY.ENTER ||
+          code === KEY.BACK ||
+          code === KEY.ESC ||
+          code === inlineStart ||
+          code === inlineEnd;
+        if (owned) event.preventDefault();
+        if (code === KEY.UP) {
+          setGuideIndex((currentIndex) => Math.max(0, currentIndex - 1));
+          return;
+        }
+        if (code === KEY.DOWN) {
+          setGuideIndex((currentIndex) =>
+            Math.min(Math.max(0, guide.items.length - 1), currentIndex + 1),
+          );
+          return;
+        }
+        if (code === KEY.ENTER) {
+          if (guide.state === "failed") retryGuide();
+          else playGuide();
+          return;
+        }
+        if (
+          code === KEY.BACK ||
+          code === KEY.ESC ||
+          code === inlineStart ||
+          code === inlineEnd
+        ) {
+          closeGuide();
+          return;
+        }
+        return;
       }
 
       // A channel number can be dialled from anywhere.
@@ -1238,6 +2209,13 @@ export default function App() {
            * banner, so the two presses are a toggle rather than one working and the other not.
            */
           case inlineEnd:
+            if (
+              current?.mode === "live" &&
+              channels.some((channel) => channel.id === current.id && channel.xtream)
+            ) {
+              openGuide();
+              return;
+            }
             if (chrome.showing) {
               chrome.clear();
               return;
@@ -1316,6 +2294,23 @@ export default function App() {
           }
           return;
         }
+        if (code === KEY.UP) {
+          event.preventDefault();
+          barFrom.current = "list";
+          setPane("rail");
+          setHeaderKey(
+            headerControls.find((control) => control !== "content") ?? headerControls[0],
+          );
+          moveCursor(0);
+          return;
+        }
+        if (code === KEY.DOWN) {
+          event.preventDefault();
+          if (libraryKind) {
+            if (mediaBrowse.current.items.length) setMediaCursor(0);
+          } else if (column.length) setIndex(0);
+          return;
+        }
         if (code === KEY.BACK || code === KEY.ESC) {
           event.preventDefault();
           /*
@@ -1351,6 +2346,12 @@ export default function App() {
        * so choosing a search result and choosing a category row cannot drift apart: a result takes
        * the rail to that channel's category, and a row of a category does not need to.
        */
+      const panelLength = guideChannelId
+        ? guide.items.length
+        : libraryKind
+          ? mediaBrowse.current.items.length
+          : column.length;
+      const hasMediaBack = !!libraryKind && !!mediaBrowse.parent;
       const chooseChannel = () => {
         if (searching) {
           if (column[index]) pickResult(column[index]);
@@ -1367,17 +2368,15 @@ export default function App() {
       /*
        * Up and down cycle through the title bar and whichever column the cursor is in.
        *
-       * The categories have always worked this way, because Search and Settings sit at row zero of
-       * the rail with the categories below them, so walking up off the first category reaches them
-       * and walking down comes back. The channel column had no such route: the only way to those two
-       * keys from a channel was left into the rail, up to the top, and then back again, which is
-       * three presses to reach something a viewer can see directly above where they are looking.
+       * The categories have always worked this way, because the header sits at row zero of the rail
+       * with the categories below it, so walking up off the first category reaches the controls and
+       * walking down comes back. The channel column had no such route. Reaching the header from a
+       * channel required three presses through the rail despite the controls being directly above it.
        *
        * So the bar is now the row above both columns rather than above one of them, and which column
        * the cursor left is remembered, because coming back to the categories from a channel list
        * would be the interface deciding the viewer meant something they did not press. Horizontal
-       * movement stays within the two lists, while the two controls in the bar stay a pair of their
-       * own.
+       * movement stays within the two lists or the ordered controls in the bar.
        *
        * The search field is left out of it. While searching, the thing above the results is the field
        * being typed into, and putting the title bar above that as well would make one press mean two
@@ -1385,10 +2384,13 @@ export default function App() {
        */
       const inBar = pane === "rail" && cursor === 0;
       const atTop = index <= 0;
-      const atBottom = index >= column.length - 1;
-      const enterBar = (from: "rail" | "list") => {
+      const atBottom = index >= panelLength - 1;
+      const firstTitleControl =
+        headerControls.find((control) => control !== "content") ?? headerControls[0];
+      const enterTitleBar = (from: "rail" | "list") => {
         barFrom.current = from;
         setPane("rail");
+        setHeaderKey(firstTitleControl);
         moveCursor(0);
       };
 
@@ -1396,30 +2398,67 @@ export default function App() {
         case KEY.UP:
           event.preventDefault();
           if (pane === "list") {
-            if (!searching && atTop) enterBar("list");
-            else setIndex((i) => stepColumn(i, -1, column.length, searching));
+            if (hasMediaBack && index === 0) setMediaCursor(FIELD);
+            else if (hasMediaBack && index === FIELD) enterTitleBar("list");
+            else if (!searching && atTop) enterTitleBar("list");
+            else if (libraryKind)
+              setMediaCursor((i) => stepColumn(i, -1, panelLength, searching));
+            else setIndex((i) => stepColumn(i, -1, panelLength, searching));
+          } else if (inBar && headerKey === "content") {
+            barFrom.current = "rail";
+            setHeaderKey(firstTitleControl);
           } else if (inBar && barFrom.current === "list") {
             // The arrow chooses the edge to return to: up wraps to the bottom, down to the top.
             // This is also what lets a channel list reached from its first row come back to row zero.
             setPane("list");
-            setIndex(Math.max(0, column.length - 1));
-          } else {
-            if (cursor === 1) barFrom.current = "rail";
-            nudgeCursor(-1);
+            if (libraryKind) setMediaCursor(Math.max(0, panelLength - 1));
+            else setIndex(Math.max(0, panelLength - 1));
+          } else if (!inBar) {
+            if (cursor === 1) {
+              barFrom.current = "rail";
+              setHeaderKey(headerControls[0]);
+              setContentFocus(contentKind);
+            }
+            if (libraryKind) nudgeLibraryCursor(-1);
+            else nudgeCursor(-1);
           }
           break;
         case KEY.DOWN:
           event.preventDefault();
           if (pane === "list") {
-            if (!searching && atBottom) enterBar("list");
-            else setIndex((i) => stepColumn(i, 1, column.length, searching));
+            if (hasMediaBack && index === FIELD) setMediaCursor(0);
+            else if (hasMediaBack && atBottom) enterTitleBar("list");
+            else if (!searching && atBottom) enterTitleBar("list");
+            else if (libraryKind)
+              setMediaCursor((i) => stepColumn(i, 1, panelLength, searching));
+            else setIndex((i) => stepColumn(i, 1, panelLength, searching));
+          } else if (inBar && headerKey === "content") {
+            const length = libraryKind ? libraryCategories.length : lists.length;
+            if (length) {
+              const next = Math.max(1, Math.min(switcherReturnCursor.current, length));
+              cursorRef.current = next;
+              setCursor(next);
+              setCategory(next - 1);
+              setIndex(0);
+            }
           } else if (inBar && barFrom.current === "list") {
-            // Down from Search/Settings returns to the top rather than the row that reached the bar.
+            // Down from the header returns to the top rather than the row that reached the bar.
             setPane("list");
-            setIndex(0);
+            if (hasMediaBack) setMediaCursor(FIELD);
+            else if (libraryKind) setMediaCursor(0);
+            else setIndex(0);
+          } else if (inBar && headerControls.includes("content")) {
+            switcherReturnCursor.current = category + 1;
+            setHeaderKey("content");
+            setContentFocus(contentKind);
           } else {
-            if (cursor === lists.length) barFrom.current = "rail";
-            nudgeCursor(1);
+            if (cursor === (libraryKind ? libraryCategories.length : lists.length)) {
+              barFrom.current = "rail";
+              setHeaderKey(headerControls[0]);
+              setContentFocus(contentKind);
+            }
+            if (libraryKind) nudgeLibraryCursor(1);
+            else nudgeCursor(1);
           }
           break;
         case inlineStart:
@@ -1432,29 +2471,77 @@ export default function App() {
               setCursor(category + 1);
             }
             setPane("rail");
+          } else if (cursor > 0 && headerControls.includes("content")) {
+            commitRailCursor();
+            switcherReturnCursor.current = cursorRef.current;
+            barFrom.current = "rail";
+            setHeaderKey("content");
+            setContentFocus(contentKind);
+            moveCursor(0);
           } else if (cursor === 0) {
-            setHeaderKey("search");
+            if (headerKey === "content") {
+              const position = XTREAM_CONTENT.indexOf(contentFocus);
+              if (position > 0) setContentFocus(XTREAM_CONTENT[position - 1]);
+            } else {
+              const position = headerControls.indexOf(headerKey);
+              const previous = headerControls[Math.max(0, position - 1)];
+              setHeaderKey(previous);
+              if (previous === "content")
+                setContentFocus(XTREAM_CONTENT[XTREAM_CONTENT.length - 1]);
+            }
           }
           break;
         case inlineEnd:
           event.preventDefault();
-          if (pane === "list") chooseChannel();
+          if (pane === "list" && guideChannelId) playGuide();
+          else if (pane === "list" && libraryKind) {
+            if (hasMediaBack && index === FIELD) popMediaFrame();
+            else if (mediaBrowse.current.state === "failed") retryMedia();
+            else void chooseMedia();
+          } else if (pane === "list") chooseChannel();
           else if (cursor === 0) {
-            setHeaderKey("settings");
-          } else if (pane === "rail") setPane("list");
+            if (headerKey === "content") {
+              const position = XTREAM_CONTENT.indexOf(contentFocus);
+              if (position < XTREAM_CONTENT.length - 1)
+                setContentFocus(XTREAM_CONTENT[position + 1]);
+              else setHeaderKey(headerControls[1]);
+            } else {
+              const position = headerControls.indexOf(headerKey);
+              setHeaderKey(headerControls[Math.min(headerControls.length - 1, position + 1)]);
+            }
+          } else if (pane === "rail") {
+            commitRailCursor();
+            setPane("list");
+          }
           break;
         case KEY.ENTER:
           event.preventDefault();
           if (pane === "rail") {
             if (cursor === 0) {
-              if (headerKey === "settings") openSettings();
-              else openSearch();
+              if (headerKey === "content") {
+                changeContent(contentFocus);
+                cursorRef.current = 0;
+                setCursor(0);
+                setPane("rail");
+              } else if (headerKey === "settings") openSettings();
+              else if (headerKey === "search") openSearch();
             }
             // The Tab UI guidance: moving from the category area into the content list puts
             // the focus on the first item when the category has just changed, and back on the
             // item it left when it has not. moveCursor is what resets the index, so arriving
             // here without having moved keeps the row the viewer was on.
-            else setPane("list");
+            else {
+              commitRailCursor();
+              setPane("list");
+            }
+          } else if (guideChannelId) {
+            if (index === FIELD) closeGuide();
+            else if (guide.state === "failed") retryGuide();
+            else playGuide();
+          } else if (libraryKind) {
+            if (hasMediaBack && index === FIELD) popMediaFrame();
+            else if (mediaBrowse.current.state === "failed") retryMedia();
+            else void chooseMedia();
           } else chooseChannel();
           break;
         case KEY.BACK:
@@ -1471,6 +2558,13 @@ export default function App() {
            * Clearing from down in the results takes the cursor back to the field, because the
            * results it was standing in have just gone and the field is the only place left.
            */
+          if (guideChannelId) {
+            closeGuide();
+            break;
+          }
+          if (libraryKind && popMediaFrame()) {
+            break;
+          }
           if (searching && query) {
             setQuery("");
             setApplied("");
@@ -1491,8 +2585,9 @@ export default function App() {
       configured,
       showSettings,
       showExit,
-      channels.length,
+      channels,
       loading,
+      activePlaylist?.source.kind,
       onTransport,
       view,
       jump,
@@ -1501,9 +2596,14 @@ export default function App() {
       index,
       tuner,
       favouriteCurrent,
+      favouriteMediaCurrent,
       current,
       cursor,
+      commitRailCursor,
       nudgeCursor,
+      nudgeLibraryCursor,
+      libraryCategories.length,
+      lists.length,
       openPanel,
       revealPanel,
       watch,
@@ -1512,10 +2612,28 @@ export default function App() {
       query,
       column,
       headerKey,
+      headerControls,
+      contentKind,
+      contentFocus,
+      changeContent,
+      libraryKind,
+      mediaBrowse.current,
+      mediaBrowse.parent,
+      chooseMedia,
+      popMediaFrame,
+      retryMedia,
+      setMediaCursor,
       openSearch,
       openSettings,
       closeSearch,
       pickResult,
+      guideChannelId,
+      guideChannel,
+      guide,
+      openGuide,
+      closeGuide,
+      playGuide,
+      retryGuide,
       inlineStart,
       inlineEnd,
     ],
@@ -1590,33 +2708,66 @@ export default function App() {
 
   const pickCategory = useCallback(
     (i: number) => {
-      moveCursor(i + 1);
+      if (libraryKind) {
+        setCategory(i);
+        setCursor(i + 1);
+        cursorRef.current = i + 1;
+        setIndex(0);
+      } else moveCursor(i + 1);
       setPane("list");
     },
-    [moveCursor],
+    [libraryKind, moveCursor],
   );
+
+  const indexedLibraryCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    if (!libraryKind) return counts;
+    for (const item of library.searchItems[libraryKind].items) {
+      const key = (item as XtreamMovie | XtreamSeries).categoryKey;
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+    return counts;
+  }, [library.searchItems, libraryKind]);
 
   const railItems = useMemo(
     () =>
       lists.map((l) => ({
+        key: l.key,
         name: isFavouritesList(l)
           ? t("channel.favourites")
           : l.name === UNCATEGORISED
             ? t("channel.uncategorised")
             : l.name,
         count: l.channels.length,
-        hidden: !isFavouritesList(l) && savedHidden.has(l.name),
+        hidden: !isFavouritesList(l) && savedHidden.has(l.key),
       })),
     [lists, savedHidden, t],
   );
+  const libraryRailItems = libraryCategories.map((item) => ({
+    key: item.key,
+    name: item.name === UNCATEGORISED ? t("channel.uncategorised") : item.name,
+    count:
+      item.id === "favourites"
+        ? libraryFavourites.length
+        : (indexedLibraryCounts.get(item.key) ??
+          library.categoryItems[item.key]?.items.length ??
+          item.count ??
+          0),
+    hidden: savedHidden.has(item.key),
+  }));
   const selectedRailList = cursor > 0 ? lists[cursor - 1] : undefined;
+  const selectedLibraryRail =
+    libraryKind && cursor > 0 ? libraryCategories[cursor - 1] : undefined;
+  const visibilityKey =
+    selectedLibraryRail?.id === "favourites"
+      ? undefined
+      : (selectedLibraryRail?.key ??
+        (selectedRailList && !isFavouritesList(selectedRailList)
+          ? selectedRailList.key
+          : undefined));
   const categoryVisibilityGuide =
-    pane === "rail" && cursor > 0 && selectedRailList && !isFavouritesList(selectedRailList)
-      ? t(
-          savedHidden.has(selectedRailList.name)
-            ? "guide.unhideCategory"
-            : "guide.hideCategory",
-        )
+    pane === "rail" && visibilityKey
+      ? t(savedHidden.has(visibilityKey) ? "guide.unhideCategory" : "guide.hideCategory")
       : undefined;
 
   /**
@@ -1676,6 +2827,11 @@ export default function App() {
       list: displayListName(lists[category]),
     };
   }, [tuner.shown, visible, lists, category, t]);
+  const bannerChannel =
+    tuner.shown?.mode === "live"
+      ? channels.find((channel) => channel.id === tuner.shown?.id)
+      : undefined;
+  const bannerGuide = bannerChannel ? library.guideFor(bannerChannel.id) : undefined;
 
   return (
     <div ref={appRef} className="app" dir={direction}>
@@ -1703,32 +2859,34 @@ export default function App() {
        * Naming the keys that already work is the honest answer, and it is what the rest of
        * the app does. OK and the yellow key both open Settings from here.
        */}
-      {configured && !channels.length && (
-        <div className="splash">
-          {/*
-           * The mark above the name, because this is the first thing a viewer sees after choosing
-           * the app and a launcher tile that turns into a word on a black screen does not look like
-           * the same application starting. The same file the launcher itself draws, so the two
-           * cannot drift: scripts/icon.mjs renders the bitmap from this vector.
-           */}
-          <img className="splash-mark" src="./icon.svg" alt="" aria-hidden="true" />
-          <h1>OpenIPTV</h1>
-          <p>{loading ? t("app.loadingPlaylist") : t("app.emptyPlaylist")}</p>
-          {/* Under the line it belongs to rather than above the name, so the eye reads the mark, then
+      {configured &&
+        !channels.length &&
+        (loading || activePlaylist?.source.kind !== "xtream") && (
+          <div className="splash">
+            {/*
+             * The mark above the name, because this is the first thing a viewer sees after choosing
+             * the app and a launcher tile that turns into a word on a black screen does not look like
+             * the same application starting. The same file the launcher itself draws, so the two
+             * cannot drift: scripts/icon.mjs renders the bitmap from this vector.
+             */}
+            <img className="splash-mark" src="./icon.svg" alt="" aria-hidden="true" />
+            <h1>OpenIPTV</h1>
+            <p>{loading ? t("app.loadingPlaylist") : t("app.emptyPlaylist")}</p>
+            {/* Under the line it belongs to rather than above the name, so the eye reads the mark, then
               what is happening, and the moving thing is last: a spinner at the top of a column drags
               attention off the words it is supposed to be explaining. */}
-          {loading && <div className="spinner" />}
-          {!loading && (
-            <KeyGuide
-              className="splash-keys"
-              items={[
-                { keys: ["OK"], label: t("app.chooseAnotherPlaylist") },
-                { keys: ["Return"], label: t("common.closeApp") },
-              ]}
-            />
-          )}
-        </div>
-      )}
+            {loading && <div className="spinner" />}
+            {!loading && (
+              <KeyGuide
+                className="splash-keys"
+                items={[
+                  { keys: ["OK"], label: t("app.chooseAnotherPlaylist") },
+                  { keys: ["Return"], label: t("common.closeApp") },
+                ]}
+              />
+            )}
+          </div>
+        )}
 
       {/*
        * What is happening to the picture, in the middle of the picture, and nowhere else.
@@ -1751,6 +2909,7 @@ export default function App() {
           retryIn={tuner.retryIn}
           attempt={tuner.attempt}
           attempts={RETRY_DELAYS_MS.length}
+          finite={current.mode === "finite"}
         />
       )}
 
@@ -1767,8 +2926,48 @@ export default function App() {
        * during a burst of channel up are not the same thing: the name has to keep up with the
        * key while the tuner deliberately does not.
        */}
-      {tuner.shown && atPlayer && chrome.banner && !fault && (
-        <PlaybackBanner channel={tuner.shown!} position={position} />
+      {tuner.shown &&
+        atPlayer &&
+        chrome.banner &&
+        !fault &&
+        (tuner.shown.mode === "finite" ? (
+          <PlaybackBanner
+            target={tuner.shown}
+            elapsed={tuner.position}
+            duration={tuner.duration}
+          />
+        ) : bannerChannel ? (
+          <PlaybackBanner
+            channel={bannerChannel}
+            position={position}
+            programme={{
+              current: bannerGuide?.current?.title,
+              next: bannerGuide?.next?.title,
+            }}
+          />
+        ) : null)}
+
+      {guideChannel && !modal && (
+        <aside className={`guide-drawer ${guideClosing ? "closing" : ""}`}>
+          <GuideList
+            category={guideChannel.name}
+            guide={guide}
+            index={guideIndex}
+            focused
+            scale={settings.scale()}
+            onMove={setGuideIndex}
+            onSelect={(at) => {
+              setGuideIndex(at);
+              playGuide(at);
+            }}
+            onRetry={retryGuide}
+            onWheel={(direction) =>
+              setGuideIndex((currentIndex) =>
+                Math.max(0, Math.min(guide.items.length - 1, currentIndex + direction)),
+              )
+            }
+          />
+        </aside>
       )}
 
       {/* ---- layer 3, the panel ---------------------------------------------------- */}
@@ -1778,53 +2977,161 @@ export default function App() {
         <PanelHeader
           active={pane === "rail" && cursor === 0}
           on={headerKey}
-          searching={searching}
+          controls={headerControls}
+          searching={searching && (!libraryKind || mediaBrowse.depth === 1)}
           onSearch={openSearch}
           onSettings={openSettings}
         />
         <div className="panel-cols">
           <Sidebar
-            categories={railItems}
+            categories={libraryKind ? libraryRailItems : railItems}
             /* Nothing is showing while a search is, and the rail has to say so. Left pointing at
              the category the column used to hold, the marker claims the results beside it came
              from there, which is the one thing that mark means. The Search key carries the state
              instead, which is where it belongs. */
             selected={searching ? -1 : category}
             cursor={cursor}
-            loading={loading}
-            allHidden={categories.length > 0 && !lists.length}
+            loading={
+              libraryKind ? library.categories[libraryKind].state === "loading" : loading
+            }
+            allHidden={!libraryKind && categories.length > 0 && !lists.length}
             focused={pane === "rail"}
             scale={settings.scale()}
-            onSelect={pickCategory}
-          />
-          <ChannelList
-            channels={column}
-            category={displayListName(lists[category])}
-            index={index}
-            loading={loading}
-            focused={pane === "list"}
-            playingId={told.current.playingId}
-            live={told.current.live}
-            favourites={favouriteIds}
-            showNumbers={settings.showNumbers}
-            showLogos={settings.showLogos}
-            scale={settings.scale()}
-            numberDigits={numberDigits}
-            search={
-              searching
+            content={
+              activePlaylist?.source.kind === "xtream"
                 ? {
-                    query,
-                    total: results.total,
-                    /* The field holds the keyboard only while this column holds the remote. Stepping
-                   into the rail has to put the keyboard away, or it stays up over a list the
-                   viewer has left, covering the categories they went to read. */
-                    onField: pane === "list" && index === FIELD,
-                    onQuery: setQuery,
+                    value: contentKind,
+                    focus: contentFocus,
+                    available: XTREAM_CONTENT,
+                    focused: pane === "rail" && cursor === 0 && headerKey === "content",
+                    onChange: changeContent,
                   }
                 : undefined
             }
-            onSelect={searchPick}
+            onSelect={pickCategory}
+            onWheel={(direction) => {
+              setPane("rail");
+              if (libraryKind) nudgeLibraryCursor(direction);
+              else nudgeCursor(direction);
+            }}
           />
+          {libraryKind ? (
+            mediaBrowse.current.key.startsWith("movie-detail:") ? (
+              <MediaDetails
+                title={mediaBrowse.current.title}
+                trail={mediaBrowse.trail.map((frame) => frame.title)}
+                state={
+                  library.movieDetails[mediaBrowse.current.key.slice("movie-detail:".length)]
+                    ?.state ?? "loading"
+                }
+                detail={
+                  library.movieDetails[mediaBrowse.current.key.slice("movie-detail:".length)]
+                    ?.value
+                }
+                itemKeys={
+                  movieItemKeys.current.get(
+                    mediaBrowse.current.key.slice("movie-detail:".length),
+                  ) ?? []
+                }
+                resumeAt={
+                  progressFor(mediaBrowse.current.key.slice("movie-detail:".length))?.seconds
+                }
+                focused={pane === "list"}
+                backFocused={pane === "list" && index === FIELD}
+                onBack={popMediaFrame}
+                onPlay={selectFinite}
+                onRetry={retryMedia}
+              />
+            ) : (
+              <MediaList
+                title={mediaBrowse.current.title}
+                items={mediaBrowse.current.items}
+                state={mediaBrowse.current.state}
+                index={index}
+                focused={pane === "list"}
+                scale={settings.scale()}
+                trail={mediaBrowse.trail.map((frame) => frame.title)}
+                detail={
+                  mediaBrowse.current.key.startsWith("series:")
+                    ? library.seriesDetails[mediaBrowse.current.key.slice("series:".length)]
+                        ?.value
+                    : undefined
+                }
+                backFocused={pane === "list" && index === FIELD}
+                onBack={mediaBrowse.parent ? popMediaFrame : undefined}
+                search={
+                  searching
+                    ? {
+                        query,
+                        onField: pane === "list" && index === FIELD,
+                        onQuery: setQuery,
+                        onExitStart: leaveSearchStart,
+                        onExitUp: leaveSearchUp,
+                        onExitDown: () => {
+                          if (mediaBrowse.current.items.length) setMediaCursor(0);
+                        },
+                      }
+                    : undefined
+                }
+                onSelect={(at) => {
+                  setMediaCursor(at);
+                  void chooseMedia(at);
+                }}
+                onRetry={retryMedia}
+                onWheel={(direction) => {
+                  setPane("list");
+                  setMediaCursor((currentIndex) =>
+                    stepColumn(
+                      currentIndex,
+                      direction,
+                      mediaBrowse.current.items.length,
+                      searching,
+                    ),
+                  );
+                }}
+              />
+            )
+          ) : (
+            <ChannelList
+              channels={column}
+              category={displayListName(lists[category])}
+              index={index}
+              loading={loading}
+              focused={pane === "list"}
+              playingId={told.current.playingId}
+              live={told.current.live}
+              favourites={favouriteIds}
+              showNumbers={settings.showNumbers}
+              showLogos={settings.showLogos}
+              scale={settings.scale()}
+              numberDigits={numberDigits}
+              search={
+                searching
+                  ? {
+                      query,
+                      total: results.total,
+                      /* The field holds the keyboard only while this column holds the remote. Stepping
+                     into the rail has to put the keyboard away, or it stays up over a list the
+                     viewer has left, covering the categories they went to read. */
+                      onField: pane === "list" && index === FIELD,
+                      onQuery: setQuery,
+                      onExitStart: leaveSearchStart,
+                      onExitUp: leaveSearchUp,
+                      onExitDown: () => {
+                        if (column.length) setIndex(0);
+                      },
+                    }
+                  : undefined
+              }
+              onSelect={searchPick}
+              onWheel={(direction) => {
+                setPane("list");
+                setIndex((currentIndex) =>
+                  stepColumn(currentIndex, direction, column.length, searching),
+                );
+              }}
+            />
+          )}
         </div>
 
         {/*

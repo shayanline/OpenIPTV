@@ -4,7 +4,7 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { act, cleanup, fireEvent, screen } from "@testing-library/react";
 import { KEY } from "../src/hooks/useRemote";
 import { moveWithinPlaylistRow } from "../src/components/Settings";
-import { mountApp, press, settle } from "./support/app";
+import { mountApp, press, settle, XTREAM_SOURCE } from "./support/app";
 import {
   createPairingSession,
   listPairedDevices,
@@ -135,6 +135,40 @@ test("playlist source selection stays distinct from remote focus", () => {
   expect(focused).toContain("color: var(--on-focus)");
 });
 
+test("playlist settings keep the specific M3U address guidance", async () => {
+  await mountApp(PLAYLIST);
+  press(KEY.YELLOW);
+  fireEvent.click(screen.getByRole("button", { name: "Playlists" }));
+  fireEvent.click(screen.getByRole("button", { name: "Add a playlist" }));
+  fireEvent.change(screen.getByLabelText("Playlist address"), {
+    target: { value: "http://example.com/my list.m3u" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+  expect(screen.getByRole("alert").textContent).toBe("Addresses cannot contain spaces.");
+  const { useSettings } = await import("../src/stores/settings");
+  expect(useSettings.getState().playlists).toHaveLength(1);
+});
+
+test("the Settings Xtream stream format closes when focus moves to the password", async () => {
+  await mountApp(PLAYLIST);
+  press(KEY.YELLOW);
+  fireEvent.click(screen.getByRole("button", { name: "Playlists" }));
+  fireEvent.click(screen.getByRole("button", { name: "Add a playlist" }));
+  fireEvent.click(screen.getByRole("button", { name: "Xtream login" }));
+
+  const output = screen.getByLabelText("Stream format");
+  output.focus();
+  fireEvent.click(output);
+  expect(screen.getByRole("listbox", { name: "Stream format" })).toBeTruthy();
+  expect(output.getAttribute("aria-expanded")).toBe("true");
+
+  act(() => screen.getByLabelText("Password").focus());
+
+  expect(screen.queryByRole("listbox", { name: "Stream format" })).toBeNull();
+  expect(output.getAttribute("aria-expanded")).toBe("false");
+});
+
 test("playlist settings add Xtream credentials while keeping M3U as the default", async () => {
   await mountApp(PLAYLIST);
   press(KEY.YELLOW);
@@ -157,7 +191,14 @@ test("playlist settings add Xtream credentials while keeping M3U as the default"
   const { useSettings } = await import("../src/stores/settings");
   expect(useSettings.getState().playlists[1]).toMatchObject({
     name: "provider.example",
-    url: "http://provider.example:8080/get.php?username=viewer&password=secret&type=m3u_plus&output=ts",
+    source: {
+      kind: "xtream",
+      server: "http://provider.example:8080",
+      username: "viewer",
+      password: "secret",
+      output: "ts",
+    },
+    sourceVersion: 1,
   });
   expect(document.querySelector(".settings-list-body")?.textContent).toContain(
     "http://provider.example:8080",
@@ -177,6 +218,21 @@ test("playlist settings add Xtream credentials while keeping M3U as the default"
   expect(screen.getByLabelText("Stream format").getAttribute("aria-label")).toBe(
     "Stream format, MPEG TS",
   );
+
+  fireEvent.change(screen.getByLabelText("Server address"), {
+    target: { value: "http://new-provider.example:8080" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Save" }));
+  expect(useSettings.getState().playlists[1]).toMatchObject({
+    source: {
+      kind: "xtream",
+      server: "http://new-provider.example:8080",
+      username: "viewer",
+      password: "secret",
+      output: "ts",
+    },
+    sourceVersion: 2,
+  });
 });
 
 test("About groups support and application data beneath concise app information", async () => {
@@ -198,6 +254,83 @@ test("About groups support and application data beneath concise app information"
   expect(
     screen.getByRole("link", { name: "https://github.com/shayanline/OpenIPTV" }),
   ).toHaveProperty("tabIndex", -1);
+});
+
+test("saved Xtream playlists show safe account status details", async () => {
+  await mountApp(PLAYLIST);
+  const { useSettings } = await import("../src/stores/settings");
+  const { useChannels } = await import("../src/stores/channels");
+  act(() => {
+    useSettings.getState().addPlaylist("Provider", {
+      kind: "xtream",
+      server: "https://provider.example",
+      username: "viewer-private",
+      password: "status-secret",
+      output: "m3u8",
+    });
+    const playlist = useSettings.getState().playlists[1];
+    useChannels.setState({
+      accounts: {
+        [playlist.id]: {
+          status: "Active",
+          expiresAt: 1_900_000_000,
+          isTrial: true,
+          activeConnections: 1,
+          maxConnections: 2,
+        },
+      },
+    });
+  });
+
+  press(KEY.YELLOW);
+  fireEvent.click(screen.getByRole("button", { name: "Playlists" }));
+
+  const row = document.querySelectorAll(".pl")[1];
+  expect(row.textContent).toContain("Active trial");
+  expect(row.textContent).toContain("Expires");
+  expect(row.textContent).toContain("1 of 2 connections active");
+  expect(row.textContent).not.toContain("status-secret");
+  expect(row.textContent).not.toContain("viewer-private");
+});
+
+test("saved Xtream status supports unknown expiry, inactive and expired accounts", async () => {
+  await mountApp(PLAYLIST);
+  const { useSettings } = await import("../src/stores/settings");
+  const { useChannels } = await import("../src/stores/channels");
+  act(() => {
+    for (const [name, status] of [
+      ["Unknown", "Active"],
+      ["Inactive", "Disabled"],
+      ["Expired", "Expired"],
+    ] as const) {
+      useSettings.getState().addPlaylist(name, {
+        kind: "xtream",
+        server: `https://${name.toLowerCase()}.example`,
+        username: "viewer",
+        password: "secret",
+        output: "m3u8",
+      });
+      const saved = useSettings.getState().playlists;
+      const playlist = saved[saved.length - 1];
+      useChannels.setState((state) => ({
+        accounts: {
+          ...state.accounts,
+          [playlist.id]: {
+            status: name === "Expired" ? "Active" : status,
+            isTrial: false,
+            ...(name === "Expired" ? { expiresAt: 1 } : {}),
+          },
+        },
+      }));
+    }
+  });
+
+  press(KEY.YELLOW);
+  fireEvent.click(screen.getByRole("button", { name: "Playlists" }));
+
+  expect(screen.getAllByText("Expiry unknown")).toHaveLength(2);
+  expect(screen.getAllByText("Inactive").length).toBeGreaterThan(0);
+  expect(screen.getAllByText("Expired").length).toBeGreaterThan(0);
 });
 
 test("remote navigation reaches the Categories action in a playlist row", async () => {
@@ -379,6 +512,8 @@ test("category paging recovers when a refresh returns fewer categories", async (
   fireEvent.click(screen.getByRole("button", { name: "Manage categories for Test" }));
   const rows = document.querySelectorAll<HTMLButtonElement>(".category-setting-row");
   fireEvent.keyDown(rows[rows.length - 1], { keyCode: KEY.DOWN });
+  expect(document.activeElement).toBe(screen.getByRole("button", { name: "Next" }));
+  fireEvent.click(screen.getByRole("button", { name: "Next" }));
   expect(screen.getByText("Category 21")).toBeTruthy();
 
   const { useChannels } = await import("../src/stores/channels");
@@ -387,6 +522,7 @@ test("category paging recovers when a refresh returns fewer categories", async (
     useChannels.setState({
       channels: state.channels.slice(0, 1),
       categories: state.categories.slice(0, 1),
+      managedCategories: state.managedCategories.slice(0, 1),
     });
   });
 
@@ -404,7 +540,7 @@ test("an empty category manager explains that the playlist has no categories", a
   fireEvent.click(screen.getByRole("button", { name: "Playlists" }));
   fireEvent.click(screen.getByRole("button", { name: "Manage categories for Test" }));
   const { useChannels } = await import("../src/stores/channels");
-  act(() => useChannels.setState({ channels: [], categories: [] }));
+  act(() => useChannels.setState({ channels: [], categories: [], managedCategories: [] }));
 
   expect(screen.getByText("This playlist has no categories.")).toBeTruthy();
   expect(Boolean(screen.queryByText("No categories match this search."))).toBe(false);
@@ -415,7 +551,7 @@ test("category settings preserve arbitrary playlist content outside fixed labels
   const { useSettings } = await import("../src/stores/settings");
   const playlist = useSettings.getState().playlists[0];
   await act(async () => {
-    useSettings.getState().updatePlaylist(playlist.id, LONG_PLAYLIST_NAME, playlist.url);
+    useSettings.getState().updatePlaylist(playlist.id, LONG_PLAYLIST_NAME, playlist.source);
   });
 
   press(KEY.YELLOW);
@@ -440,7 +576,9 @@ test("managing an inactive playlist loads that playlist before showing its categ
   await mountApp(CATEGORIES);
   const { useSettings } = await import("../src/stores/settings");
   await act(async () => {
-    useSettings.getState().addPlaylist("Second", "http://list.invalid/second.m3u");
+    useSettings
+      .getState()
+      .addPlaylist("Second", { kind: "m3u", url: "http://list.invalid/second.m3u" });
   });
   vi.mocked(fetch).mockResolvedValueOnce({
     ok: true,
@@ -480,7 +618,9 @@ test("a failed inactive playlist load does not show categories from the active p
   await mountApp(CATEGORIES);
   const { useSettings } = await import("../src/stores/settings");
   await act(async () => {
-    useSettings.getState().addPlaylist("Offline", "http://list.invalid/offline.m3u");
+    useSettings
+      .getState()
+      .addPlaylist("Offline", { kind: "m3u", url: "http://list.invalid/offline.m3u" });
   });
   const first = useSettings.getState().activePlaylistId;
   vi.mocked(fetch).mockRejectedValueOnce(new Error("offline"));
@@ -496,6 +636,52 @@ test("a failed inactive playlist load does not show categories from the active p
   expect(Boolean(document.querySelector(".settings-detail-context"))).toBe(false);
   expect(screen.getByRole("status").textContent).toContain("offline");
   expect(useSettings.getState().activePlaylistId).toBe(first);
+});
+
+test("Xtream category management includes every content kind with visible paging controls", async () => {
+  const liveCategories = Array.from({ length: 25 }, (_, index) => ({
+    category_id: `live-${index + 1}`,
+    category_name: `Live category ${index + 1}`,
+  }));
+  const movieCategories = Array.from({ length: 25 }, (_, index) => ({
+    category_id: `movie-${index + 1}`,
+    category_name: `Movie category ${index + 1}`,
+  }));
+  const seriesCategories = Array.from({ length: 5 }, (_, index) => ({
+    category_id: `series-${index + 1}`,
+    category_name: `Series category ${index + 1}`,
+  }));
+  const fetchImplementation = async (input: string | URL) => {
+    const url = new URL(String(input));
+    const action = url.searchParams.get("action") ?? "authenticate";
+    const body: Record<string, unknown> = {
+      authenticate: {
+        user_info: { auth: 1, status: "Active" },
+        server_info: { server_protocol: "http", url: "provider.example" },
+      },
+      get_live_categories: liveCategories,
+      get_vod_categories: movieCategories,
+      get_series_categories: seriesCategories,
+      get_live_streams: [],
+    };
+    return { ok: true, status: 200, json: async () => body[action] } as Response;
+  };
+  await mountApp("", { source: XTREAM_SOURCE, fetchImplementation });
+
+  press(KEY.YELLOW);
+  fireEvent.click(screen.getByRole("button", { name: "Playlists" }));
+  expect(screen.getByRole("button", { name: "Manage categories for Test" }).textContent).toBe(
+    "55 Categories",
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Manage categories for Test" }));
+
+  expect(screen.getByRole("button", { name: "Hide Live category 1" })).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Hide Live category 21" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Next" }));
+  expect(screen.getByRole("button", { name: "Hide Live category 21" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Previous" })).toBeTruthy();
+  fireEvent.click(document.querySelectorAll(".category-kind-option")[2]);
+  expect(screen.getByRole("button", { name: "Hide Series category 5" })).toBeTruthy();
 });
 
 test("resetting application data revokes authorised devices", async () => {

@@ -1,6 +1,13 @@
 import { create } from "zustand";
 import { isLocalePreference, type LocalePreference } from "../services/locale";
+import {
+  m3uSource,
+  parseXtreamPlaylistUrl,
+  type PlaylistSource,
+  xtreamSource,
+} from "../services/playlistUrl";
 import { readJSON, write } from "../services/store";
+import { usePersonal } from "./personal";
 
 /**
  * Everything the viewer can change, persisted to localStorage.
@@ -44,7 +51,8 @@ export type HiddenCategoryMode = "exclude" | "search";
 export interface Playlist {
   id: string;
   name: string;
-  url: string;
+  source: PlaylistSource;
+  sourceVersion: number;
   hiddenCategories: string[];
   hiddenCategoryMode: HiddenCategoryMode;
   categoryCount?: number;
@@ -76,9 +84,9 @@ interface Settings {
   compatibility: boolean;
 
   set: <K extends keyof Settings>(key: K, value: Settings[K]) => void;
-  addPlaylist: (name: string, url: string) => void;
+  addPlaylist: (name: string, source: PlaylistSource) => void;
   removePlaylist: (id: string) => void;
-  updatePlaylist: (id: string, name: string, url: string) => void;
+  updatePlaylist: (id: string, name: string, source: PlaylistSource) => void;
   setHiddenCategories: (playlistId: string, categories: string[]) => void;
   setCategoryHidden: (playlistId: string, category: string, hidden: boolean) => void;
   setHiddenCategoryMode: (playlistId: string, mode: HiddenCategoryMode) => void;
@@ -135,6 +143,53 @@ function freshId(existing: Playlist[]): string {
   return id;
 }
 
+function sourceFrom(value: Record<string, unknown>): PlaylistSource | null {
+  const source = value.source;
+  if (source && typeof source === "object" && !Array.isArray(source)) {
+    const saved = source as Record<string, unknown>;
+    if (saved.kind === "m3u" && typeof saved.url === "string") {
+      return { kind: "m3u", url: saved.url };
+    }
+    if (
+      saved.kind === "xtream" &&
+      typeof saved.server === "string" &&
+      typeof saved.username === "string" &&
+      typeof saved.password === "string" &&
+      (saved.output === "m3u8" || saved.output === "ts")
+    ) {
+      return xtreamSource(saved.server, saved.username, saved.password, saved.output);
+    }
+    return null;
+  }
+  if (typeof value.url !== "string") return null;
+  return (
+    parseXtreamPlaylistUrl(value.url) ?? m3uSource(value.url) ?? { kind: "m3u", url: value.url }
+  );
+}
+
+function sameSource(left: PlaylistSource, right: PlaylistSource): boolean {
+  if (left.kind !== right.kind) return false;
+  if (left.kind === "m3u" && right.kind === "m3u") return left.url === right.url;
+  if (left.kind === "xtream" && right.kind === "xtream") {
+    return (
+      left.server === right.server &&
+      left.username === right.username &&
+      left.password === right.password &&
+      left.output === right.output
+    );
+  }
+  return false;
+}
+
+function replacesAccount(left: PlaylistSource, right: PlaylistSource): boolean {
+  if (left.kind !== right.kind) return true;
+  return (
+    left.kind === "xtream" &&
+    right.kind === "xtream" &&
+    (left.server !== right.server || left.username !== right.username)
+  );
+}
+
 function load(): typeof DEFAULTS {
   // Merged rather than replaced, so a settings file written by an older version keeps working
   // when new keys appear.
@@ -155,21 +210,33 @@ function load(): typeof DEFAULTS {
   }
   if (!isLocalePreference(merged.locale)) merged.locale = DEFAULTS.locale;
   merged.playlists = Array.isArray(merged.playlists)
-    ? merged.playlists
-        .filter(
-          (value): value is Playlist =>
-            !!value && typeof value === "object" && !Array.isArray(value),
-        )
-        .map((playlist) => ({
-          ...playlist,
-          hiddenCategories: Array.isArray(playlist.hiddenCategories)
-            ? playlist.hiddenCategories.filter((category) => typeof category === "string")
+    ? merged.playlists.reduce<Playlist[]>((playlists, value) => {
+        if (!value || typeof value !== "object" || Array.isArray(value)) return playlists;
+        const savedPlaylist = value as Record<string, unknown>;
+        const source = sourceFrom(savedPlaylist);
+        if (!source) return playlists;
+        playlists.push({
+          id: typeof savedPlaylist.id === "string" ? savedPlaylist.id : "",
+          name: typeof savedPlaylist.name === "string" ? savedPlaylist.name : "",
+          source,
+          sourceVersion:
+            typeof savedPlaylist.sourceVersion === "number" && savedPlaylist.sourceVersion >= 1
+              ? Math.floor(savedPlaylist.sourceVersion)
+              : 1,
+          hiddenCategories: Array.isArray(savedPlaylist.hiddenCategories)
+            ? savedPlaylist.hiddenCategories.filter(
+                (category): category is string => typeof category === "string",
+              )
             : [],
-          hiddenCategoryMode: playlist.hiddenCategoryMode === "search" ? "search" : "exclude",
-          ...(typeof playlist.categoryCount === "number" && playlist.categoryCount >= 0
-            ? { categoryCount: Math.floor(playlist.categoryCount) }
+          hiddenCategoryMode:
+            savedPlaylist.hiddenCategoryMode === "search" ? "search" : "exclude",
+          ...(typeof savedPlaylist.categoryCount === "number" &&
+          savedPlaylist.categoryCount >= 0
+            ? { categoryCount: Math.floor(savedPlaylist.categoryCount) }
             : {}),
-        }))
+        });
+        return playlists;
+      }, [])
     : [];
   const canonical = JSON.stringify(merged);
   if (JSON.stringify(saved) !== canonical) write(KEY, canonical);
@@ -203,11 +270,12 @@ export const useSettings = create<Settings>((set, get) => ({
     persist(get());
   },
 
-  addPlaylist(name, url) {
+  addPlaylist(name, source) {
     const playlist = {
       id: freshId(get().playlists),
       name: name.trim(),
-      url: url.trim(),
+      source,
+      sourceVersion: 1,
       hiddenCategories: [],
       hiddenCategoryMode: "exclude" as HiddenCategoryMode,
     };
@@ -228,22 +296,28 @@ export const useSettings = create<Settings>((set, get) => ({
       activePlaylistId:
         get().activePlaylistId === id ? (remaining[0]?.id ?? "") : get().activePlaylistId,
     });
+    usePersonal.getState().clearPlaylistPersonal(id);
     persist(get());
   },
 
-  updatePlaylist(id, name, url) {
+  updatePlaylist(id, name, source) {
+    const existing = get().playlists.find((playlist) => playlist.id === id);
+    const replaceAccount = existing ? replacesAccount(existing.source, source) : false;
     set({
-      playlists: get().playlists.map((p) =>
-        p.id === id
-          ? {
-              ...p,
-              name: name.trim(),
-              url: url.trim(),
-              categoryCount: p.url === url.trim() ? p.categoryCount : undefined,
-            }
-          : p,
-      ),
+      playlists: get().playlists.map((p) => {
+        if (p.id !== id) return p;
+        const changed = !sameSource(p.source, source);
+        return {
+          ...p,
+          name: name.trim(),
+          source,
+          sourceVersion: changed ? p.sourceVersion + 1 : p.sourceVersion,
+          hiddenCategories: replaceAccount ? [] : p.hiddenCategories,
+          categoryCount: changed ? undefined : p.categoryCount,
+        };
+      }),
     });
+    if (replaceAccount) usePersonal.getState().clearPlaylistPersonal(id);
     persist(get());
   },
 
@@ -291,6 +365,7 @@ export const useSettings = create<Settings>((set, get) => ({
 
   reset() {
     set({ ...DEFAULTS });
+    usePersonal.getState().clearPersonal();
     persist(get());
   },
 

@@ -76,6 +76,18 @@ interface AVPlay {
   getState(): AVPlayState;
   /** Only ever read, and only to tell a playing picture from a frozen one. */
   getCurrentTime?(): number;
+  getDuration?(): number;
+  seekTo?(milliseconds: number, success?: () => void, failure?: (error: unknown) => void): void;
+  jumpForward?(
+    milliseconds: number,
+    success?: () => void,
+    failure?: (error: unknown) => void,
+  ): void;
+  jumpBackward?(
+    milliseconds: number,
+    success?: () => void,
+    failure?: (error: unknown) => void,
+  ): void;
   getCurrentStreamInfo?(): AVPlayStreamInfo[];
   getStreamingProperty?(key: string): string;
   getVideoSeamlessInfo?(): { scan_type: number; rotation_degree: number };
@@ -174,13 +186,21 @@ const START_TIMEOUT_MS = 30000;
 const STALL_TICK_MS = 3000;
 const STALL_LIMIT_MS = 12000;
 
-export const onTizen = (): boolean =>
-  typeof window !== "undefined" && !!window.webapis?.avplay;
+export const onTizen = (): boolean => typeof window !== "undefined" && !!window.webapis?.avplay;
 
 /** AVPlay throws objects carrying its own error name, hls.js and the DOM throw Errors. */
 const codeOf = (e: unknown): string => {
   const o = e as { name?: string; message?: string } | null;
   return o?.name || o?.message || String(e);
+};
+
+const extensionOf = (address: string): string => {
+  try {
+    const name = new URL(address, window.location.href).pathname;
+    return name.slice(name.lastIndexOf(".") + 1).toLowerCase();
+  } catch {
+    return "";
+  }
 };
 
 /**
@@ -261,6 +281,9 @@ export class Player {
   private pausedByViewer = false;
   /** Whether the viewer is holding the picture, so a still frame is not read as a fault. */
   private held = false;
+  private mode: "live" | "finite" = "live";
+  private resumeLimitation = "";
+  private seeking = false;
   private progress: number | undefined;
   private lastPosition = -1;
   private stalledFor = 0;
@@ -277,9 +300,13 @@ export class Player {
 
   /** Anything conclusive, good or bad, calls off the watchdog. */
   private emit(e: PlayerEvent) {
-    if (e.type === "playing" || e.type === "error") {
+    if (e.type === "playing" || e.type === "ended" || e.type === "error") {
       window.clearTimeout(this.watchdog);
       this.watchdog = undefined;
+    }
+    if (e.type === "ended") {
+      window.clearInterval(this.progress);
+      this.progress = undefined;
     }
     // A picture has arrived, so from here the question stops being whether it will start and
     // becomes whether it is still moving.
@@ -288,18 +315,38 @@ export class Player {
   }
 
   /** Where the playhead is, in seconds, or null when neither engine will say. */
-  private position(): number | null {
+  getPosition(): number | null {
     if (onTizen()) {
       try {
         const av = window.webapis?.avplay;
-        if (!av || av.getState() !== "PLAYING") return null;
+        const state = av?.getState();
+        if (!av || (state !== "READY" && state !== "PLAYING" && state !== "PAUSED"))
+          return null;
         const ms = av.getCurrentTime?.();
-        return typeof ms === "number" ? ms / 1000 : null;
+        return typeof ms === "number" && Number.isFinite(ms) ? ms / 1000 : null;
       } catch {
         return null;
       }
     }
-    return this.video ? this.video.currentTime : null;
+    const value = this.video?.currentTime;
+    return typeof value === "number" && Number.isFinite(value) ? value : null;
+  }
+
+  getResumeLimitation(): string | null {
+    return this.resumeLimitation || null;
+  }
+
+  getDuration(): number | null {
+    if (onTizen()) {
+      try {
+        const value = window.webapis?.avplay?.getDuration?.();
+        return typeof value === "number" && Number.isFinite(value) ? value / 1000 : null;
+      } catch {
+        return null;
+      }
+    }
+    const value = this.video?.duration;
+    return typeof value === "number" && Number.isFinite(value) ? value : null;
   }
 
   /**
@@ -314,11 +361,11 @@ export class Player {
   private watchProgress() {
     window.clearInterval(this.progress);
     this.stalledFor = 0;
-    this.lastPosition = this.position() ?? -1;
+    this.lastPosition = this.getPosition() ?? -1;
 
     this.progress = window.setInterval(() => {
-      if (this.held) return;                       // paused on purpose is not a stall
-      const now = this.position();
+      if (this.held || this.seeking) return; // paused or seeking on purpose is not a stall
+      const now = this.getPosition();
       if (now === null) return;
       // A tenth of a second, so a clock that only ticks per frame still counts as moving.
       if (now > this.lastPosition + 0.1) {
@@ -365,22 +412,31 @@ export class Player {
     video.muted = this.muted;
     video.addEventListener("playing", this.onPlaying);
     video.addEventListener("waiting", this.onWaiting);
+    video.addEventListener("ended", this.onEnded);
+    video.addEventListener("error", this.onMediaError);
   }
 
   detach() {
     if (!this.video) return;
     this.video.removeEventListener("playing", this.onPlaying);
     this.video.removeEventListener("waiting", this.onWaiting);
+    this.video.removeEventListener("ended", this.onEnded);
+    this.video.removeEventListener("error", this.onMediaError);
     this.video = null;
   }
 
   private onPlaying = () => this.emit({ type: "playing" });
   private onWaiting = () => this.emit({ type: "buffering" });
+  private onEnded = () => this.emit({ type: "ended" });
+  private onMediaError = () =>
+    this.fail(this.mode === "finite" ? "FINITE_FORMAT_UNSUPPORTED" : "NOT_SUPPORTED");
 
   play(
     url: string,
     browserRepair = false,
     bufferSeconds = DEFAULT_INITIAL_BUFFER_SECONDS,
+    mode: "live" | "finite" = "live",
+    startSeconds = 0,
   ) {
     /*
      * Wound down, not destroyed.
@@ -395,6 +451,9 @@ export class Player {
     this.teardown(false);
     this.failed = false;
     this.held = false;
+    this.mode = mode;
+    this.resumeLimitation = "";
+    this.seeking = false;
     this.switches = 0;
     this.lastBitrate = "";
     this.lastLevel = -1;
@@ -409,8 +468,8 @@ export class Player {
     // this point is a failure as far as the viewer is concerned.
     window.clearTimeout(this.watchdog);
     this.watchdog = window.setTimeout(() => this.fail("TIMEOUT"), START_TIMEOUT_MS);
-    if (onTizen()) this.playAVPlay(url, bufferSeconds);
-    else void this.playBrowser(url, browserRepair);
+    if (onTizen()) this.playAVPlay(url, bufferSeconds, startSeconds);
+    else void this.playBrowser(url, browserRepair, startSeconds);
   }
 
   /**
@@ -480,15 +539,32 @@ export class Player {
    * called from, but close destroys the instance and the pipeline has to be rebuilt, which
    * is exactly the wrong thing to do when someone is holding the channel key down.
    */
-  private playAVPlay(url: string, bufferSeconds: number) {
+  private playAVPlay(url: string, bufferSeconds: number, startSeconds: number) {
     const av = window.webapis!.avplay!;
     try {
       ensureSurface();
 
       const state = av.getState();
-      if (state !== "NONE" && state !== "IDLE") av.stop();   // any state -> IDLE
+      if (state !== "NONE" && state !== "IDLE") av.stop(); // any state -> IDLE
 
-      av.open(url);                                          // NONE|IDLE -> IDLE
+      av.open(url); // NONE|IDLE -> IDLE
+      if (this.mode === "finite" && startSeconds > 0) {
+        if (av.seekTo) {
+          try {
+            av.seekTo(
+              startSeconds * 1000,
+              () => {},
+              (error) => {
+                this.resumeLimitation = `SEEK_FAILED ${codeOf(error)}`;
+              },
+            );
+          } catch (error) {
+            this.resumeLimitation = `SEEK_FAILED ${codeOf(error)}`;
+          }
+        } else {
+          this.resumeLimitation = "SEEK_UNSUPPORTED";
+        }
+      }
 
       // The rect is always in a 1920x1080 space whatever the panel or the app resolution,
       // and letterbox keeps a channel of any aspect from being stretched to fill it.
@@ -548,13 +624,19 @@ export class Player {
           "PLAYER_BUFFER_SIZE_IN_SECOND",
           bufferSeconds,
         );
-      } catch { /* older firmware may not have it, and the default is only slower */ }
+      } catch {
+        /* older firmware may not have it, and the default is only slower */
+      }
 
       // How long to wait for a channel that is not coming. This only shortens the wait: the
       // player is documented to hang thirty seconds on a connection failure, and cutting that
       // to fifteen means AVPlay names the fault before the app's own watchdog gives up and
       // reports a bare timeout instead.
-      try { av.setTimeoutForBuffering?.(15); } catch { /* older firmware may not have it */ }
+      try {
+        av.setTimeoutForBuffering?.(15);
+      } catch {
+        /* older firmware may not have it */
+      }
 
       /**
        * What the server said, kept until something fails and then spent on the explanation.
@@ -592,9 +674,10 @@ export class Player {
       });
 
       this.emit({ type: "buffering" });
-      av.prepareAsync(                                       // IDLE -> READY
+      av.prepareAsync(
+        // IDLE -> READY
         () => {
-          av.play();                                         // READY -> PLAYING
+          av.play(); // READY -> PLAYING
           this.emit({ type: "playing" });
         },
         (e) => this.fail(codeOf(e)),
@@ -613,8 +696,11 @@ export class Player {
   setFit(fit: Fit) {
     this.fit = fit;
     if (onTizen()) {
-      try { window.webapis?.avplay?.setDisplayMethod?.(AVPLAY_MODE[fit]); }
-      catch { /* older firmware, or not playing yet: the next open applies it */ }
+      try {
+        window.webapis?.avplay?.setDisplayMethod?.(AVPLAY_MODE[fit]);
+      } catch {
+        /* older firmware, or not playing yet: the next open applies it */
+      }
       return;
     }
     if (this.video) this.video.style.objectFit = OBJECT_FIT[fit];
@@ -684,7 +770,9 @@ export class Player {
     try {
       const state = av.getState();
       if (state === "READY" || state === "PLAYING" || state === "PAUSED") av.suspend?.();
-    } catch { /* nothing to suspend */ }
+    } catch {
+      /* nothing to suspend */
+    }
   }
 
   show() {
@@ -695,14 +783,24 @@ export class Player {
     const av = window.webapis!.avplay!;
     try {
       if (av.getState() !== "NONE") av.restore?.();
-    } catch { /* nothing to restore */ }
+    } catch {
+      /* nothing to restore */
+    }
   }
 
-  private async playBrowser(url: string, browserRepair: boolean) {
+  private async playBrowser(url: string, browserRepair: boolean, startSeconds: number) {
     const video = this.video;
     if (!video) return;
     video.muted = this.muted;
     this.emit({ type: "buffering" });
+
+    const extension = extensionOf(url);
+    if (this.mode === "finite" && extension !== "m3u8") {
+      video.src = url;
+      if (startSeconds > 0) video.currentTime = startSeconds;
+      this.tryPlay(video);
+      return;
+    }
 
     const Hls = await loadHls();
     // The viewer may have moved on while the engine was being fetched, and this attempt is
@@ -767,8 +865,8 @@ export class Player {
     let left = 3;
     hls.on(Hls.Events.ERROR, (_e, data) => {
       if (!data.fatal) return;
-      const recoverable = data.type === Hls.ErrorTypes.NETWORK_ERROR
-        || data.type === Hls.ErrorTypes.MEDIA_ERROR;
+      const recoverable =
+        data.type === Hls.ErrorTypes.NETWORK_ERROR || data.type === Hls.ErrorTypes.MEDIA_ERROR;
       if (!recoverable || left-- <= 0) {
         this.fail(data.details);
         return;
@@ -787,7 +885,10 @@ export class Player {
       if (this.lastLevel >= 0 && this.lastLevel !== data.level) this.switches += 1;
       this.lastLevel = data.level;
     });
-    hls.on(Hls.Events.MANIFEST_PARSED, () => this.tryPlay(video));
+    hls.on(Hls.Events.MANIFEST_PARSED, () => {
+      if (this.mode === "finite" && startSeconds > 0) video.currentTime = startSeconds;
+      this.tryPlay(video);
+    });
     hls.loadSource(url);
     hls.attachMedia(video);
   }
@@ -888,13 +989,67 @@ export class Player {
     return stats;
   }
 
+  async seekBy(seconds: number): Promise<boolean> {
+    if (this.mode !== "finite" || !Number.isFinite(seconds) || seconds === 0) return false;
+    const current = this.getPosition();
+    if (current === null) return false;
+    const duration = this.getDuration();
+    const target = Math.max(
+      0,
+      duration === null ? current + seconds : Math.min(duration, current + seconds),
+    );
+    const delta = target - current;
+    if (delta === 0) return true;
+
+    this.seeking = true;
+    const finish = (success: boolean) => {
+      this.seeking = false;
+      this.lastPosition = this.getPosition() ?? target;
+      this.stalledFor = 0;
+      return success;
+    };
+
+    if (!onTizen()) {
+      if (!this.video) return finish(false);
+      try {
+        this.video.currentTime = target;
+        return finish(true);
+      } catch {
+        return finish(false);
+      }
+    }
+
+    const av = window.webapis!.avplay!;
+    const state = av.getState();
+    if (state !== "READY" && state !== "PLAYING" && state !== "PAUSED") {
+      return finish(false);
+    }
+    const exact = state === "READY" || Math.abs(delta - seconds) > 0.001;
+    const operation = exact ? av.seekTo : delta > 0 ? av.jumpForward : av.jumpBackward;
+    if (!operation) return finish(false);
+
+    return new Promise<boolean>((resolve) => {
+      const succeeded = () => resolve(finish(true));
+      const failed = () => resolve(finish(false));
+      try {
+        operation.call(av, exact ? target * 1000 : Math.abs(delta) * 1000, succeeded, failed);
+      } catch {
+        failed();
+      }
+    });
+  }
+
   pause() {
     this.held = true;
     // A viewer who has paused is not waiting for permission to start, so the gesture the
     // browser was holding out for is no longer wanted.
     this.ungate();
     if (onTizen()) {
-      try { window.webapis!.avplay!.pause?.(); } catch { /* nothing to pause */ }
+      try {
+        window.webapis!.avplay!.pause?.();
+      } catch {
+        /* nothing to pause */
+      }
     } else {
       this.video?.pause();
     }
@@ -913,8 +1068,26 @@ export class Player {
    * watching. It costs the couple of seconds any channel change costs, which is exactly what
    * a viewer pressing Play after a pause expects to see.
    */
-  resume(url: string) {
+  resumePlayback() {
+    this.held = false;
+    if (onTizen()) {
+      try {
+        const av = window.webapis!.avplay!;
+        if (av.getState() === "PAUSED") av.play();
+      } catch (error) {
+        this.fail(codeOf(error));
+      }
+      return;
+    }
+    if (this.video) this.tryPlay(this.video);
+  }
+
+  resumeLive(url: string) {
     this.play(url);
+  }
+
+  resume(url: string) {
+    this.resumeLive(url);
   }
 
   /** Give the decoder back and let go of the television's video plane entirely. */
@@ -937,6 +1110,7 @@ export class Player {
     this.progress = undefined;
     this.pausedByViewer = false;
     this.held = false;
+    this.seeking = false;
     this.ungate();
     if (this.hls) {
       this.hls.destroy();

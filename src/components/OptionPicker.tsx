@@ -62,7 +62,13 @@ export function OptionPicker<T extends string>({
   }, [choose, close, open]);
 
   return (
-    <div className="option-picker" ref={pickerRef}>
+    <div
+      className="option-picker"
+      ref={pickerRef}
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false);
+      }}
+    >
       <button
         id={id}
         ref={currentRef}

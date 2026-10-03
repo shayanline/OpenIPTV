@@ -67,23 +67,36 @@ export function Devices({
   return (
     <div className="device-access">
       <h3>{t("settings.remoteAccess")}</h3>
-      {!remoteAccess.pairing && <p className="sheet-lead">{t("remote.pairedHint")}</p>}
+      {!remoteAccess.pairing && (
+        <>
+          <p className="sheet-lead">{t("remote.pairedHint")}</p>
+          <p className="sheet-lead">{t("remote.trustedNetwork")}</p>
+        </>
+      )}
       {(remoteAccess.pairing || showConnected) && (
         <RemoteSetup
           remoteAccess={remoteAccess}
           headingLevel={4}
-          onCancelPairing={remoteAccess.pairing ? () => remoteAccess.cancelPairing() : undefined}
+          onCancelPairing={
+            remoteAccess.pairing ? () => remoteAccess.cancelPairing() : undefined
+          }
         />
       )}
       {remoteAccess.status === "starting" && (
-        <p className="sheet-lead" role="status">{t("remote.starting")}</p>
+        <p className="sheet-lead" role="status">
+          {t("remote.starting")}
+        </p>
       )}
       {remoteAccess.pairingError && (
-        <p className="field-problem" role="alert">{t("remote.pairingFailed")}</p>
+        <p className="field-problem" role="alert">
+          {t("remote.pairingFailed")}
+        </p>
       )}
       {remoteAccess.status === "unavailable" && (
         <>
-          <p className="field-problem" role="alert">{t("remote.unavailable")}</p>
+          <p className="field-problem" role="alert">
+            {t("remote.unavailable")}
+          </p>
           <div className="actions device-access-actions">
             <button type="button" className="btn tonal" onClick={remoteAccess.retry}>
               {t("remote.retry")}
@@ -140,7 +153,11 @@ export function Devices({
               <>
                 <div className="device-row-main">
                   <strong dir="auto">{device.name}</strong>
-                  <span>{t("remote.lastUsed", { when: new Date(device.lastUsedAt).toLocaleDateString(locale) })}</span>
+                  <span>
+                    {t("remote.lastUsed", {
+                      when: new Date(device.lastUsedAt).toLocaleDateString(locale),
+                    })}
+                  </span>
                 </div>
                 <button
                   type="button"

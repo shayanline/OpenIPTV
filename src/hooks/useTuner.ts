@@ -1,13 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Player, type PlaybackStats, type PlayerEvent } from "../services/player";
 import { releaseLogos } from "../services/logos";
-import { nextChannel } from "../services/lineup";
+import type { Fit } from "../services/player";
+import { onTizen, type PlaybackStats, Player, type PlayerEvent } from "../services/player";
 import {
-  idleRepair, pauseRepair, prepare, repair, rememberNeedsRepair, revalidate, resumeRepair,
+  idleRepair,
+  pauseRepair,
+  prepare,
+  rememberNeedsRepair,
+  repair,
+  resumeRepair,
+  revalidate,
   stopRepair,
 } from "../services/repair";
-import type { Fit } from "../services/player";
-import type { Channel } from "../types";
+import type { Channel, PlaybackTarget } from "../types";
 
 /*
  * Everything to do with getting a picture on the screen and keeping it there.
@@ -31,6 +36,28 @@ import type { Channel } from "../types";
  */
 const ZAP_SETTLE_MS = 450;
 
+const HTTP_FALLBACK_FAULT =
+  /CONNECTION_FAILED|NETWORK|manifestLoad|levelLoad|fragLoad|TIMEOUT|CIPHER|CERT/i;
+
+const canUseHttpFallback = () =>
+  onTizen() || (typeof window !== "undefined" && window.location.protocol === "http:");
+
+const httpFallback = (address: string): string => {
+  try {
+    const url = new URL(address);
+    if (url.protocol !== "https:") return "";
+    url.protocol = "http:";
+    if (typeof window !== "undefined" && window.location.protocol === "http:") {
+      const relay = new URL("/__openiptv_http_relay__", window.location.origin);
+      relay.searchParams.set("url", url.toString());
+      return relay.toString();
+    }
+    return url.toString();
+  } catch {
+    return "";
+  }
+};
+
 /**
  * How long to wait before trying a failed channel again, and how many times.
  *
@@ -41,9 +68,25 @@ const ZAP_SETTLE_MS = 450;
  */
 export const RETRY_DELAYS_MS = [4000, 8000, 15000];
 
+type TuneItem = Channel | PlaybackTarget;
+
+const targetOf = (item: TuneItem): PlaybackTarget =>
+  "mode" in item
+    ? item
+    : {
+        id: item.id,
+        playlistId: item.xtream?.playlistId ?? "",
+        mode: "live",
+        kind: "live",
+        name: item.name,
+        group: item.group,
+        logo: item.logo,
+        url: item.url,
+      };
+
 export interface TunerOptions {
   /** The list channel up and down walks, which is whatever the viewer is looking at. */
-  list: Channel[];
+  list: TuneItem[];
   /** How the picture should be fitted, reapplied after every start. */
   fit: Fit;
   /** The element hls.js draws into off the television. */
@@ -65,11 +108,11 @@ export interface TunerOptions {
 
 export interface Tuner {
   /** The channel actually being played. */
-  current: Channel | null;
+  current: PlaybackTarget | null;
   /** The channel landed on but not yet tuned, while the channel key is still going. */
-  preview: Channel | null;
+  preview: PlaybackTarget | null;
   /** What the banner should name: the one being walked to, or failing that the one on. */
-  shown: Channel | null;
+  shown: PlaybackTarget | null;
   busy: boolean;
   paused: boolean;
   /** How full the buffer is while connecting, where the engine reports it, and null otherwise. */
@@ -82,7 +125,10 @@ export interface Tuner {
   retryIn: number;
   /** Automatic attempts already made at this channel. */
   attempt: number;
-  start: (channel: Channel) => void;
+  position: number | null;
+  duration: number | null;
+  completed: boolean;
+  start: (target: TuneItem) => void;
   retune: () => void;
   /** Give up on the channel entirely, leaving nothing playing. */
   clear: () => void;
@@ -90,16 +136,18 @@ export interface Tuner {
   step: (delta: number) => void;
   setPlaying: (play: boolean) => void;
   togglePause: () => void;
+  seek: (deltaSeconds: number) => Promise<boolean>;
   setMuted: (muted: boolean) => void;
   adjustVolume: (delta: number) => void;
   getStats: () => PlaybackStats | null;
 }
 
 export function useTuner(options: TunerOptions): Tuner {
-  const { list, fit, video, rememberLast, onNamed, onPicture, onFault, compatibility } = options;
+  const { list, fit, video, rememberLast, onNamed, onPicture, onFault, compatibility } =
+    options;
 
-  const [current, setCurrent] = useState<Channel | null>(null);
-  const [preview, setPreview] = useState<Channel | null>(null);
+  const [current, setCurrent] = useState<PlaybackTarget | null>(null);
+  const [preview, setPreview] = useState<PlaybackTarget | null>(null);
   const [busy, setBusy] = useState(false);
   const [paused, setPaused] = useState(false);
   const [fault, setFault] = useState("");
@@ -107,10 +155,13 @@ export function useTuner(options: TunerOptions): Tuner {
   const [waited, setWaited] = useState(0);
   const [retryIn, setRetryIn] = useState(0);
   const [attempt, setAttempt] = useState(0);
+  const [position, setPosition] = useState<number | null>(null);
+  const [duration, setDuration] = useState<number | null>(null);
+  const [completed, setCompleted] = useState(false);
 
   const player = useRef<Player | null>(null);
   /** The current channel as it is now, for callbacks that run between renders. */
-  const currentRef = useRef<Channel | null>(null);
+  const currentRef = useRef<PlaybackTarget | null>(null);
   currentRef.current = current;
   const busyRef = useRef(busy);
   busyRef.current = busy;
@@ -123,7 +174,7 @@ export function useTuner(options: TunerOptions): Tuner {
    * meant every press in a burst stepped from the same place, so the tenth press landed on
    * the second channel.
    */
-  const previewRef = useRef<Channel | null>(null);
+  const previewRef = useRef<PlaybackTarget | null>(null);
   const zapTimer = useRef<number | undefined>(undefined);
   const retryTimer = useRef<number | undefined>(undefined);
   /** The channel whose arrival has been announced, so it is announced only once. */
@@ -159,7 +210,8 @@ export function useTuner(options: TunerOptions): Tuner {
          * null rather than 0 for the difference between "no progress reported" and "reported
          * nothing yet": a nought on screen reads as a channel that is getting nowhere.
          */
-        if (e.percent !== undefined) setFilling(Math.min(100, Math.max(0, Math.round(e.percent))));
+        if (e.percent !== undefined)
+          setFilling(Math.min(100, Math.max(0, Math.round(e.percent))));
         return;
       }
       if (e.type === "playing") {
@@ -180,6 +232,15 @@ export function useTuner(options: TunerOptions): Tuner {
           announced.current = playing;
           hooks.current.onPicture();
         }
+        return;
+      }
+      if (e.type === "ended" && currentRef.current?.mode === "finite") {
+        setBusy(false);
+        setPaused(false);
+        setCompleted(true);
+        setPosition(player.current?.getPosition() ?? null);
+        setDuration(player.current?.getDuration() ?? null);
+        hooks.current.onFault();
         return;
       }
       /*
@@ -203,6 +264,23 @@ export function useTuner(options: TunerOptions): Tuner {
       player.current = null;
     };
   }, [video]);
+
+  useEffect(() => {
+    if (current?.mode !== "finite" || completed) {
+      if (!current) {
+        setPosition(null);
+        setDuration(null);
+      }
+      return;
+    }
+    const update = () => {
+      setPosition(player.current?.getPosition() ?? null);
+      setDuration(player.current?.getDuration() ?? null);
+    };
+    update();
+    const timer = window.setInterval(update, 1000);
+    return () => window.clearInterval(timer);
+  }, [current, completed]);
 
   // Applied on every change and after every channel start, since a fresh AVPlay instance
   // begins on its own default.
@@ -235,10 +313,13 @@ export function useTuner(options: TunerOptions): Tuner {
     return () => document.removeEventListener("visibilitychange", onVisibility);
   }, []);
 
-  useEffect(() => () => {
-    window.clearTimeout(zapTimer.current);
-    window.clearTimeout(retryTimer.current);
-  }, []);
+  useEffect(
+    () => () => {
+      window.clearTimeout(zapTimer.current);
+      window.clearTimeout(retryTimer.current);
+    },
+    [],
+  );
 
   /**
    * Count the seconds a channel has been tuning, so a slow one can say so.
@@ -281,13 +362,20 @@ export function useTuner(options: TunerOptions): Tuner {
   wantsRepair.current = compatibility;
 
   const tuneToken = useRef(0);
-  const tuneTo = useCallback((channel: Channel) => {
+  const httpFallbackTried = useRef("");
+  const tuneTo = useCallback((target: PlaybackTarget) => {
     tuneToken.current += 1;
     const token = tuneToken.current;
     const play = (url: string, browserRepair = false, bufferSeconds?: number) => {
       if (tuneToken.current !== token) return;
-      player.current?.play(url, browserRepair, bufferSeconds);
+      player.current?.play(url, browserRepair, bufferSeconds, target.mode, target.resumeAt);
     };
+
+    if (target.mode === "finite") {
+      idleRepair();
+      play(target.url);
+      return;
+    }
 
     if (!wantsRepair.current) {
       /*
@@ -300,25 +388,25 @@ export function useTuner(options: TunerOptions): Tuner {
        * holds the descriptor for the application rather than for the worker.
        */
       idleRepair();
-      play(channel.url);
+      play(target.url);
       return;
     }
-    void prepare(channel.url).then((target) => {
+    void prepare(target.url, target.playlistId).then((prepared) => {
       if (tuneToken.current !== token) return;
-      if (!wantsRepair.current || !target) {
+      if (!wantsRepair.current || !prepared) {
         idleRepair();
-        play(channel.url);
+        play(target.url);
         return;
       }
-      if (!target.repaired) {
+      if (!prepared.repaired) {
         idleRepair();
-        play(channel.url, false, target.bufferSeconds);
+        play(target.url, false, prepared.bufferSeconds);
         return;
       }
-      play(target.url, target.browser, target.bufferSeconds);
+      play(prepared.url, prepared.browser, prepared.bufferSeconds);
 
-      if (target.cached) {
-        void revalidate(channel.url).then((changed) => {
+      if (prepared.cached) {
+        void revalidate(target.url, target.playlistId).then((changed) => {
           if (!changed || tuneToken.current !== token || !wantsRepair.current) return;
           setFault("");
           setPaused(false);
@@ -326,11 +414,31 @@ export function useTuner(options: TunerOptions): Tuner {
           setWaited(0);
           setRetryIn(0);
           announced.current = "";
-          tuneTo(channel);
+          tuneTo(target);
         });
       }
     });
   }, []);
+
+  useEffect(() => {
+    const target = currentRef.current;
+    if (!fault || !target || !canUseHttpFallback() || !HTTP_FALLBACK_FAULT.test(fault)) return;
+    const fallback = httpFallback(target.url);
+    const attemptKey = `${target.id}:${target.url}`;
+    if (!fallback || httpFallbackTried.current === attemptKey) return;
+
+    httpFallbackTried.current = attemptKey;
+    const downgraded = { ...target, url: fallback };
+    currentRef.current = downgraded;
+    setCurrent(downgraded);
+    setFault("");
+    setPaused(false);
+    setBusy(true);
+    setWaited(0);
+    setRetryIn(0);
+    announced.current = "";
+    tuneTo(downgraded);
+  }, [fault, tuneTo]);
 
   /**
    * Try the channel that is already on again, from nothing.
@@ -367,19 +475,21 @@ export function useTuner(options: TunerOptions): Tuner {
    */
   const repairAsked = useRef("");
   useEffect(() => {
-    if (!fault || !current || !compatibility) return;
+    if (!fault || !current || current.mode !== "live" || !compatibility) return;
     if (repairAsked.current === current.id) return;
     repairAsked.current = current.id;
 
     let live = true;
-    void repair(current.url).then((repaired) => {
+    void repair(current.url, current.playlistId).then((repaired) => {
       if (!live || !repaired) return;
       // Remembered by host, so the next channel from the same source skips the failure entirely,
       // this launch and the next.
-      rememberNeedsRepair(current.url);
+      rememberNeedsRepair(current.url, current.playlistId);
       retune();
     });
-    return () => { live = false; };
+    return () => {
+      live = false;
+    };
   }, [fault, current, compatibility, retune]);
 
   /**
@@ -390,7 +500,7 @@ export function useTuner(options: TunerOptions): Tuner {
    * network connection all night for a channel that closed down.
    */
   useEffect(() => {
-    if (!fault || !current) return;
+    if (!fault || !current || current.mode !== "live") return;
     if (attempts.current >= RETRY_DELAYS_MS.length) return;
 
     const wait = RETRY_DELAYS_MS[attempts.current];
@@ -421,33 +531,41 @@ export function useTuner(options: TunerOptions): Tuner {
    * tune that had not happened yet is abandoned, and the channel becomes unannounced so its
    * arrival is announced again.
    */
-  const start = useCallback((channel: Channel) => {
-    // Written here as well as during render, because anything that starts a channel and then
-    // acts on it in the same tick, such as opening the panel onto whatever is playing, would
-    // otherwise read the one before.
-    currentRef.current = channel;
-    setCurrent(channel);
-    setFault("");
-    setPaused(false);
+  const start = useCallback(
+    (item: TuneItem) => {
+      const target = targetOf(item);
+      // Written here as well as during render, because anything that starts a channel and then
+      // acts on it in the same tick, such as opening the panel onto whatever is playing, would
+      // otherwise read the one before.
+      httpFallbackTried.current = "";
+      currentRef.current = target;
+      setCurrent(target);
+      setFault("");
+      setPaused(false);
+      setCompleted(false);
+      setPosition(target.resumeAt ?? null);
+      setDuration(null);
 
-    window.clearTimeout(retryTimer.current);
-    window.clearTimeout(zapTimer.current);
-    setRetryIn(0);
-    attempts.current = 0;
-    setAttempt(0);
-    previewRef.current = null;
-    setPreview(null);
+      window.clearTimeout(retryTimer.current);
+      window.clearTimeout(zapTimer.current);
+      setRetryIn(0);
+      attempts.current = 0;
+      setAttempt(0);
+      previewRef.current = null;
+      setPreview(null);
 
-    // Said immediately rather than waiting for the engine to report buffering, so the gap
-    // between asking and the engine answering is not silent.
-    setBusy(true);
-    setWaited(0);
-    announced.current = "";
-    hooks.current.onNamed();
+      // Said immediately rather than waiting for the engine to report buffering, so the gap
+      // between asking and the engine answering is not silent.
+      setBusy(true);
+      setWaited(0);
+      announced.current = "";
+      hooks.current.onNamed();
 
-    rememberLast(channel.id);
-    tuneTo(channel);
-  }, [rememberLast, tuneTo]);
+      rememberLast(target.id);
+      tuneTo(target);
+    },
+    [rememberLast, tuneTo],
+  );
 
   const clear = useCallback(() => {
     player.current?.stop();
@@ -455,6 +573,7 @@ export function useTuner(options: TunerOptions): Tuner {
     stopRepair();
     window.clearTimeout(retryTimer.current);
     window.clearTimeout(zapTimer.current);
+    httpFallbackTried.current = "";
     currentRef.current = null;
     previewRef.current = null;
     setCurrent(null);
@@ -462,6 +581,9 @@ export function useTuner(options: TunerOptions): Tuner {
     setFault("");
     setBusy(false);
     setRetryIn(0);
+    setPosition(null);
+    setDuration(null);
+    setCompleted(false);
     announced.current = "";
   }, []);
 
@@ -474,20 +596,25 @@ export function useTuner(options: TunerOptions): Tuner {
    * changes on every press and the tuning happens once, when the viewer settles, which is
    * also how a television has always behaved.
    */
-  const step = useCallback((delta: number) => {
-    const from = previewRef.current ?? currentRef.current;
-    const next = nextChannel(list, from?.id ?? "", delta);
-    if (next === -1) return;
-    const channel = list[next];
+  const step = useCallback(
+    (delta: number) => {
+      if (!list.length) return;
+      const from = previewRef.current ?? currentRef.current;
+      const fromIndex = list.findIndex((item) => item.id === from?.id);
+      const origin = fromIndex === -1 ? (delta > 0 ? -1 : 0) : fromIndex;
+      const next = (((origin + delta) % list.length) + list.length) % list.length;
+      const target = targetOf(list[next]);
 
-    previewRef.current = channel;
-    setPreview(channel);
-    hooks.current.onNamed();
+      previewRef.current = target;
+      setPreview(target);
+      hooks.current.onNamed();
 
-    window.clearTimeout(zapTimer.current);
-    zapTimer.current = window.setTimeout(() => start(channel), ZAP_SETTLE_MS);
-    return next;
-  }, [list, start]);
+      window.clearTimeout(zapTimer.current);
+      zapTimer.current = window.setTimeout(() => start(target), ZAP_SETTLE_MS);
+      return next;
+    },
+    [list, start],
+  );
 
   /**
    * Pause, or come back from a pause and rejoin the broadcast.
@@ -496,24 +623,41 @@ export function useTuner(options: TunerOptions): Tuner {
    * television has moved on and there is no seek bar to catch up with. Without this a pause
    * left the viewer permanently behind, with nothing on screen to explain it.
    */
-  const setPlaying = useCallback((play: boolean) => {
-    const channel = currentRef.current;
-    if (!channel) return;
-    // Nothing to pause until there is a picture. Without this, pausing a channel that was
-    // still connecting put "Paused" over a programme that had never started.
-    if (!play && busyRef.current) return;
-    if (play) {
-      setPaused(false);
-      setBusy(true);
-      setWaited(0);
-      tuneTo(channel);
-    } else {
-      setPaused(true);
-      player.current?.pause();
-    }
-  }, [tuneTo]);
+  const setPlaying = useCallback(
+    (play: boolean) => {
+      const channel = currentRef.current;
+      if (!channel) return;
+      // Nothing to pause until there is a picture. Without this, pausing a channel that was
+      // still connecting put "Paused" over a programme that had never started.
+      if (!play && busyRef.current) return;
+      if (play) {
+        setPaused(false);
+        if (channel.mode === "finite") {
+          player.current?.resumePlayback();
+        } else {
+          setBusy(true);
+          setWaited(0);
+          tuneTo(channel);
+        }
+      } else {
+        setPaused(true);
+        player.current?.pause();
+      }
+    },
+    [tuneTo],
+  );
 
   const togglePause = useCallback(() => setPlaying(paused), [paused, setPlaying]);
+
+  const seek = useCallback(async (deltaSeconds: number) => {
+    if (currentRef.current?.mode !== "finite") return false;
+    const moved = (await player.current?.seekBy(deltaSeconds)) ?? false;
+    if (moved) {
+      setPosition(player.current?.getPosition() ?? null);
+      setDuration(player.current?.getDuration() ?? null);
+    }
+    return moved;
+  }, []);
 
   const setMuted = useCallback((muted: boolean) => {
     mutedRef.current = muted;
@@ -527,9 +671,28 @@ export function useTuner(options: TunerOptions): Tuner {
   const getStats = useCallback(() => player.current?.getStats() ?? null, []);
 
   return {
-    current, preview, shown: preview ?? current,
-    busy, paused, filling, fault, waited, retryIn, attempt,
-    start, retune, clear, step: step as (delta: number) => void, setPlaying, togglePause,
-    setMuted, adjustVolume, getStats,
+    current,
+    preview,
+    shown: preview ?? current,
+    busy,
+    paused,
+    filling,
+    fault,
+    waited,
+    retryIn,
+    attempt,
+    position,
+    duration,
+    completed,
+    start,
+    retune,
+    clear,
+    step: step as (delta: number) => void,
+    setPlaying,
+    togglePause,
+    seek,
+    setMuted,
+    adjustVolume,
+    getStats,
   };
 }

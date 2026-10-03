@@ -37,7 +37,10 @@ export function SettingsPath({
   );
 }
 
-export function KeyGuide({ items, className = "" }: {
+export function KeyGuide({
+  items,
+  className = "",
+}: {
   items: Guide[];
   /** A layout variant, since the same guide sits along a banner, a panel and a column. */
   className?: string;
@@ -47,7 +50,9 @@ export function KeyGuide({ items, className = "" }: {
       {items.map((item) => (
         <span key={item.keys.join("|")}>
           {item.beforeKeys && <span className="guide-prefix">{item.beforeKeys}</span>}
-          {item.keys.map((key) => <kbd key={key}>{key}</kbd>)}
+          {item.keys.map((key) => (
+            <kbd key={key}>{key}</kbd>
+          ))}
           {item.label}
         </span>
       ))}

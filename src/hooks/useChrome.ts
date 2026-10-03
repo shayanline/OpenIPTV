@@ -76,11 +76,14 @@ export function useChrome(): Chrome {
   /** The digits as they are now, for presses arriving faster than React re-renders. */
   const dialled = useRef("");
 
-  useEffect(() => () => {
-    window.clearTimeout(noticeTimer.current);
-    window.clearTimeout(toastTimer.current);
-    window.clearTimeout(digitTimer.current);
-  }, []);
+  useEffect(
+    () => () => {
+      window.clearTimeout(noticeTimer.current);
+      window.clearTimeout(toastTimer.current);
+      window.clearTimeout(digitTimer.current);
+    },
+    [],
+  );
 
   /**
    * Whether the banner is up, readable between renders.
@@ -163,14 +166,23 @@ export function useChrome(): Chrome {
     window.clearTimeout(toastTimer.current);
     window.clearTimeout(digitTimer.current);
     dialled.current = "";
-    show(false);                          // through show, so settleBanner cannot believe it is up
+    show(false); // through show, so settleBanner cannot believe it is up
     setToast("");
     setDigits("");
   }, [show]);
 
   return {
-    banner, toast, digits,
+    banner,
+    toast,
+    digits,
     showing: banner || !!toast || !!digits,
-    raiseBanner, holdBanner, lowerBanner, settleBanner, say, dial, commitDigits, clear,
+    raiseBanner,
+    holdBanner,
+    lowerBanner,
+    settleBanner,
+    say,
+    dial,
+    commitDigits,
+    clear,
   };
 }

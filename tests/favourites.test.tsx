@@ -2,7 +2,16 @@ import { afterEach, beforeEach, test, vi } from "vitest";
 import assert from "node:assert/strict";
 import { act, cleanup, fireEvent, screen } from "@testing-library/react";
 import { KEY } from "../src/hooks/useRemote";
-import { hold, mountApp, press, pressDown, release, settle } from "./support/app";
+import {
+  hold,
+  mountApp,
+  press,
+  pressDown,
+  release,
+  settle,
+  XTREAM_SOURCE,
+  xtreamFetch,
+} from "./support/app";
 
 /**
  * The Favourites row, which is in the rail only while there is something in it.
@@ -99,7 +108,10 @@ test("hiding every category says how to restore the list", async () => {
   assert.deepEqual(rail(), []);
   const empty = screen.getByText("All categories are hidden.").parentElement;
   assert.equal(empty?.querySelector("kbd")?.textContent, "Red");
-  assert.equal(empty?.querySelector(".settings-path")?.textContent, "Settings›Playlists›Categories");
+  assert.equal(
+    empty?.querySelector(".settings-path")?.textContent,
+    "Settings›Playlists›Categories",
+  );
 });
 
 test("search mode keeps explicit favourites from hidden categories", async () => {
@@ -112,6 +124,97 @@ test("search mode keeps explicit favourites from hidden categories", async () =>
   assert.deepEqual(rail(), ["Favourites", "Sport"]);
   assert.equal(showing(), "Favourites");
   assert.ok(screen.getByText("Alpha"));
+});
+
+test("an existing live favourite migrates into personal state without leaving the rail", async () => {
+  localStorage.setItem("openiptv.favourites", '["a"]');
+
+  await mountApp(PLAYLIST);
+  const { usePersonal } = await import("../src/stores/personal");
+
+  assert.deepEqual(rail(), ["Favourites", "News", "Sport"]);
+  assert.deepEqual(
+    usePersonal.getState().favourites.map((item) => item.itemKey),
+    ["a"],
+  );
+  assert.equal(localStorage.getItem("openiptv.favourites"), null);
+});
+
+test("an Xtream favourite from another playlist does not appear", async () => {
+  localStorage.setItem("openiptv.favourites", '["xtream:other:live:1"]');
+  await mountApp("", {
+    source: XTREAM_SOURCE,
+    fetchImplementation: xtreamFetch(
+      [{ category_id: "news", category_name: "News" }],
+      [{ stream_id: 1, name: "Local News", category_id: "news" }],
+    ),
+  });
+
+  assert.deepEqual(rail(), ["News"]);
+});
+
+test("duplicate Xtream category names keep independent hidden identities", async () => {
+  await mountApp("", {
+    source: XTREAM_SOURCE,
+    hiddenCategories: ["live:first"],
+    fetchImplementation: xtreamFetch(
+      [
+        { category_id: "first", category_name: "News" },
+        { category_id: "second", category_name: "News" },
+      ],
+      [
+        { stream_id: 1, name: "Hidden News", category_id: "first" },
+        { stream_id: 2, name: "Visible News", category_id: "second" },
+      ],
+    ),
+  });
+
+  assert.deepEqual(rail(), ["News"]);
+  assert.equal(document.body.textContent?.includes("Hidden News"), false);
+  assert.equal(document.body.textContent?.includes("Visible News"), true);
+});
+
+test("one matching legacy Xtream hidden label migrates to its category key", async () => {
+  await mountApp("", {
+    source: XTREAM_SOURCE,
+    hiddenCategories: ["Live · News"],
+    fetchImplementation: xtreamFetch(
+      [
+        { category_id: "news", category_name: "News" },
+        { category_id: "sport", category_name: "Sport" },
+      ],
+      [
+        { stream_id: 1, name: "News channel", category_id: "news" },
+        { stream_id: 2, name: "Sport channel", category_id: "sport" },
+      ],
+    ),
+  });
+  const { useSettings } = await import("../src/stores/settings");
+
+  assert.deepEqual(useSettings.getState().playlists[0].hiddenCategories, ["live:news"]);
+  assert.deepEqual(rail(), ["Sport"]);
+});
+
+test("ambiguous and missing legacy Xtream hidden labels are removed and shown", async () => {
+  await mountApp("", {
+    source: XTREAM_SOURCE,
+    hiddenCategories: ["Live · News", "Live · Missing"],
+    fetchImplementation: xtreamFetch(
+      [
+        { category_id: "first", category_name: "News" },
+        { category_id: "second", category_name: "News" },
+      ],
+      [
+        { stream_id: 1, name: "First News", category_id: "first" },
+        { stream_id: 2, name: "Second News", category_id: "second" },
+      ],
+    ),
+  });
+  const { useSettings } = await import("../src/stores/settings");
+
+  assert.deepEqual(useSettings.getState().playlists[0].hiddenCategories, []);
+  assert.deepEqual(rail(), ["News", "News"]);
+  assert.equal(document.body.textContent?.includes("First News"), true);
 });
 
 test("the red key hides and unhides the selected category immediately", async () => {
@@ -290,8 +393,8 @@ test("a hidden channel cannot be added to an invisible Favourites row", async ()
 
   press(KEY.GREEN);
 
-  const { useChannels } = await import("../src/stores/channels");
-  assert.deepEqual(useChannels.getState().favourites, []);
+  const { usePersonal } = await import("../src/stores/personal");
+  assert.deepEqual(usePersonal.getState().favourites, []);
   assert.ok(screen.getByText("Unhide this category before adding favourites."));
 });
 
@@ -324,7 +427,7 @@ test("unfavouriting a hidden playing channel keeps the visible category selected
  * viewer's thumb. Nothing on screen says this has regressed except that it feels slow, so
  * the timing is asserted rather than left to be noticed.
  */
-test("walking the rail moves the cursor at once and the channel column only after", async () => {
+test("walking the rail moves only the cursor until the category is committed", async () => {
   await mountApp(PLAYLIST);
   press(KEY.LEFT); // into the rail, on News
 
@@ -333,7 +436,11 @@ test("walking the rail moves the cursor at once and the channel column only afte
   assert.equal(showing(), "News", "the column was rebuilt while the key was still moving");
 
   await settle();
-  assert.equal(showing(), "Sport", "the column never caught up");
+  assert.equal(showing(), "News", "moving focus changed the displayed category");
+
+  press(KEY.RIGHT);
+  await settle();
+  assert.equal(showing(), "Sport", "committing the rail did not change the category");
 });
 
 test("a refresh that returns fewer categories brings the cursor back inside", async () => {
@@ -358,7 +465,10 @@ test("a refresh that returns fewer categories brings the cursor back inside", as
 #EXTINF:-1 tvg-id="a" group-title="News",Alpha
 http://example.invalid/a.m3u8`);
   await act(async () => {
-    useChannels.setState({ channels: shorter, categories: groupByCategory(shorter) });
+    useChannels.setState({
+      channels: shorter,
+      categories: groupByCategory(shorter).map((item) => ({ key: item.name, ...item })),
+    });
   });
   await settle();
 

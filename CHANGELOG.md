@@ -8,20 +8,34 @@ Notable changes, newest first, in the format of [Keep a Changelog](https://keepa
 
 - **Xtream playlist setup.** Viewers can enter a server address, username, password and stream format while OpenIPTV builds the standard M3U Plus address locally.
 - **Xtream remote setup.** Paired devices offer the same Xtream creation and editing flow as the television interface.
+- **Complete Xtream catalogues.** Live channels, movies, series, seasons and episodes use the Xtream API with provider wide search, category visibility and cached counts.
+- **Programme Guide.** Live playback includes a channel specific Guide drawer with current programme highlighting, catchup actions and cached schedule data.
+- **Finite playback.** Movies and episodes support play, pause, seeking, resume progress and finite completion without live stream retries.
 
 ### Changed
 
 - **Playlist source selection.** M3U remains the default, while compatible Xtream addresses reopen as credential fields and public or nonstandard addresses remain in the M3U editor.
 - **Stream format selection.** Xtream setup supports HLS and MPEG TS with a consistent, inset format control across left to right and right to left interfaces.
-- **Complete translations.** Xtream setup and stream format labels are represented across every supported locale catalog.
+- **Complete translations.** Xtream setup, browsing, Guide, playback and stream format labels are represented across every supported locale catalog.
+- **Television navigation.** The title bar, content switcher, category rail, media hierarchy and Settings use separate focus levels with consistent remote cycles and visible return paths.
+- **Large catalogue loading.** Movie and series summary indexes load once per content type, provide unopened category counts and remain cached for six hours.
+- **Guide presentation.** Programme information uses an animated One UI drawer over the player, while Up, Down and mouse wheel movement follow each programme.
+- **Lucide icons.** The television and remote web interfaces use one consistent Lucide SVG icon set with packaged attribution.
+- **HTTP stream fallback.** Tizen retries eligible HTTPS connection failures once through the provider HTTP endpoint. Local browser and TV simulator sessions use a same origin relay that preserves MP4 byte ranges and rewrites HTTP HLS references, while hosted HTTPS browsers never downgrade.
 
 ### Security
 
 - **Credential presentation.** Password fields stay masked and saved playlist summaries conceal Xtream password values.
+- **HTTP fallback scope.** Automatic HTTP retry is limited to packaged Samsung playback and pages already served over HTTP, so an HTTPS browser session cannot expose stream credentials through mixed content.
 
 ### Fixed
 
 - **Failed playlist isolation.** A failed authentication or playlist switch leaves the new playlist empty instead of presenting channels and categories from the previously active playlist.
+- **Category navigation.** Focus can traverse every category, wrap through the content switcher and preserve the blue displayed category marker until a new category is committed.
+- **Windowed lists.** Final rows remain reachable, scroll indicators stay inside their measured viewport and mouse wheel movement works across virtual lists.
+- **Search navigation.** Space and number input remain text, while Up and Down leave the Search field for the title bar or first result.
+- **Welcome navigation.** Samsung remote OK explicitly activates source, language and submission controls instead of depending on desktop keyboard behavior.
+- **Focused metadata.** Channel numbers, episode numbers, durations, years and rating badges retain readable contrast on the focus surface.
 
 ## 1.7.0
 

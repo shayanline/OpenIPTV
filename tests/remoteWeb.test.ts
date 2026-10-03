@@ -82,6 +82,13 @@ const labels = {
   conflict: "Settings changed on another device. Review and try again.",
   unavailable: "The TV is unavailable. Keep OpenIPTV open and try again.",
   revoked: "This device no longer has access.",
+  trustedNetwork:
+    "This local HTTP connection is intended only for a trusted private network. Account credentials and stream addresses are never shown.",
+  accountActive: "Active",
+  accountTrial: "trial",
+  accountExpiryUnknown: "Expiry unknown",
+  accountExpires: "Expires",
+  accountConnections: "1 of 2 connections active",
 };
 
 const publicState = { locale: "en", direction: "ltr", labels };
@@ -107,9 +114,16 @@ const snapshot = (change: Record<string, unknown> = {}) => ({
     compatibility: false,
     showPlaybackStats: false,
   },
-  playlists: [{ id: "pl-1", name: "News", url: "http://example.com/list.m3u" }],
+  playlists: [
+    {
+      id: "pl-1",
+      name: "News",
+      source: { kind: "m3u", url: "http://example.com/list.m3u" },
+      sourceVersion: 1,
+    },
+  ],
   activePlaylistId: "pl-1",
-  setup: { name: "", url: "" },
+  setup: { name: "", source: { kind: "m3u", url: "" } },
   devices: [{ id: "device-1", name: "My device", createdAt: 1, lastUsedAt: 1 }],
   about: { version: "1.5.0", repository: "https://github.com/shayanline/OpenIPTV" },
   operation: { loading: false, error: "", errorKey: "", errorDetail: "" },
@@ -304,10 +318,21 @@ test("labels playlist fields and actions with their context", async () => {
             {
               id: "one",
               name: "One",
-              url: "http://example.com/get.php?username=one&password=secret&type=m3u_plus&output=m3u8",
-              active: true,
+              source: {
+                kind: "xtream",
+                server: "http://example.com",
+                username: "one",
+                output: "m3u8",
+                hasPassword: true,
+              },
+              sourceVersion: 1,
             },
-            { id: "two", name: "Two", url: "http://example.com/two.m3u", active: false },
+            {
+              id: "two",
+              name: "Two",
+              source: { kind: "m3u", url: "http://example.com/two.m3u" },
+              sourceVersion: 1,
+            },
           ],
         }),
       ),
@@ -335,6 +360,60 @@ test("labels playlist fields and actions with their context", async () => {
   expect(document.querySelector("[data-item-menu]")?.parentElement).toBe(document.body);
   expect(document.querySelector('[data-menu-action="activate"]')?.textContent).toBe(
     labels.activate,
+  );
+});
+
+test("shows safe Xtream account status and the trusted local HTTP boundary", async () => {
+  localStorage.setItem("openiptv.remote", JSON.stringify({ deviceId: "p", credential: "c" }));
+  const password = "web-status-secret";
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(() =>
+      reply(
+        200,
+        snapshot({
+          playlists: [
+            {
+              id: "xtream-one",
+              name: "Provider",
+              source: {
+                kind: "xtream",
+                server: "http://provider.example",
+                username: "viewer-private",
+                output: "m3u8",
+                hasPassword: true,
+              },
+              sourceVersion: 1,
+              account: {
+                status: "Active",
+                isTrial: true,
+                activeConnections: 1,
+                maxConnections: 2,
+              },
+            },
+          ],
+          operation: {
+            loading: false,
+            error: "",
+            errorKey: "",
+            errorDetail: "",
+          },
+        }),
+      ),
+    ),
+  );
+
+  await loadApp().start();
+
+  const text = document.querySelector("#playlists")?.textContent ?? "";
+  expect(text).toContain("Active trial");
+  expect(text).toContain("Expiry unknown");
+  expect(text).toContain("1 of 2 connections active");
+  expect(document.querySelector("#devices")?.textContent).toContain(labels.trustedNetwork);
+  expect(document.body.textContent).not.toContain(password);
+  expect(document.body.textContent).not.toContain("viewer-private");
+  expect(readFileSync(join(process.cwd(), "public/remote/remote.js"), "utf8")).not.toContain(
+    "get.php",
   );
 });
 
@@ -393,9 +472,13 @@ test("remote first setup keeps M3U default and submits Xtream credentials as M3U
       .slice(1)
       .map((call) => JSON.parse(call[1].body).command)
       .filter((command) => command.type === "setup");
-    expect(commands[0].url).toBe(
-      "https://provider.example:8443/get.php?username=viewer&password=secret&type=m3u_plus&output=m3u8",
-    );
+    expect(commands[0].source).toEqual({
+      kind: "xtream",
+      server: "https://provider.example:8443",
+      username: "viewer",
+      password: "secret",
+      output: "m3u8",
+    });
   });
 });
 
@@ -405,7 +488,10 @@ test("mirrors setup typing and language through a quiet preview command", async 
   const preview = snapshot({
     playlists: [],
     activePlaylistId: "",
-    setup: { name: "Device playlist", url: "http://example.com/device.m3u" },
+    setup: {
+      name: "Device playlist",
+      source: { kind: "m3u", url: "http://example.com/device.m3u" },
+    },
   });
   const translated = snapshot({
     revision: 1,
@@ -439,7 +525,7 @@ test("mirrors setup typing and language through a quiet preview command", async 
   expect(JSON.parse(fetchMock.mock.calls[1][1].body).command).toEqual({
     type: "setup.preview",
     name: "Device playlist",
-    url: "http://example.com/device.m3u",
+    source: { kind: "m3u", url: "http://example.com/device.m3u" },
   });
   expect(JSON.parse(fetchMock.mock.calls[2][1].body).command).toEqual({
     type: "setting",
@@ -619,29 +705,39 @@ test("remote settings add an Xtream login through the playlist command", async (
   expect(JSON.parse(fetchMock.mock.calls[1][1].body).command).toEqual({
     type: "playlist.add",
     name: "",
-    url: "http://provider.example:8080/get.php?username=viewer&password=secret&type=m3u_plus&output=ts",
+    source: {
+      kind: "xtream",
+      server: "http://provider.example:8080",
+      username: "viewer",
+      password: "secret",
+      output: "ts",
+    },
   });
 });
 
 test("remote editing restores the Xtream credential form", async () => {
   localStorage.setItem("openiptv.remote", JSON.stringify({ deviceId: "p", credential: "c" }));
-  vi.stubGlobal(
-    "fetch",
-    vi.fn(() =>
-      reply(
-        200,
-        snapshot({
-          playlists: [
-            {
-              id: "pl-1",
-              name: "Provider",
-              url: "https://provider.example:8443/portal/get.php?username=viewer&password=secret&type=m3u_plus&output=ts",
-            },
-          ],
-        }),
-      ),
-    ),
-  );
+  const provider = snapshot({
+    playlists: [
+      {
+        id: "pl-1",
+        name: "Provider",
+        source: {
+          kind: "xtream",
+          server: "https://provider.example:8443/portal",
+          username: "viewer",
+          output: "ts",
+          hasPassword: true,
+        },
+        sourceVersion: 1,
+      },
+    ],
+  });
+  const fetchMock = vi
+    .fn()
+    .mockImplementationOnce(() => reply(200, provider))
+    .mockImplementationOnce(() => reply(200, { ok: true, snapshot: provider }));
+  vi.stubGlobal("fetch", fetchMock);
   await loadApp().start();
 
   choosePlaylistAction("edit");
@@ -655,11 +751,26 @@ test("remote editing restores the Xtream credential form", async () => {
   expect((document.querySelector('[name="editUsername"]') as HTMLInputElement).value).toBe(
     "viewer",
   );
-  expect((document.querySelector('[name="editPassword"]') as HTMLInputElement).value).toBe(
-    "secret",
-  );
+  expect((document.querySelector('[name="editPassword"]') as HTMLInputElement).value).toBe("");
   expect((document.querySelector('[name="editOutput"]') as HTMLSelectElement).value).toBe("ts");
   expect(document.querySelector('[name="editUrl"]')).toBeNull();
+
+  document
+    .querySelector("[data-edit-playlist]")
+    ?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+  await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+  expect(JSON.parse(fetchMock.mock.calls[1][1].body).command).toEqual({
+    type: "playlist.update",
+    id: "pl-1",
+    name: "Provider",
+    source: {
+      kind: "xtream",
+      server: "https://provider.example:8443/portal",
+      username: "viewer",
+      password: "",
+      output: "ts",
+    },
+  });
 });
 
 test("adds playlists and confirms removal before sending commands", async () => {
@@ -737,7 +848,7 @@ test("edits and refreshes an existing playlist", async () => {
     type: "playlist.update",
     id: "pl-1",
     name: "Renamed news",
-    url: "http://example.com/renamed.m3u",
+    source: { kind: "m3u", url: "http://example.com/renamed.m3u" },
   });
   expect(JSON.parse(fetchMock.mock.calls[2][1].body).command.type).toBe("playlist.refresh");
 });

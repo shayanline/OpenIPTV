@@ -32,6 +32,9 @@ interface Props {
     /** Whether the cursor is on the field, which is the row above the first result. */
     onField: boolean;
     onQuery: (query: string) => void;
+    onExitUp: () => void;
+    onExitDown: () => void;
+    onExitStart: () => void;
   };
   playingId: string;
   /** Whether the playing channel is actually running, so the marker can say so honestly. */
@@ -56,6 +59,7 @@ interface Props {
   numberDigits: number;
   /** Must be stable, or every row rebuilds on every press. */
   onSelect: (index: number) => void;
+  onWheel: (direction: -1 | 1) => void;
 }
 
 /**
@@ -103,7 +107,7 @@ const Row = memo(function Row({
   height: number;
   onPick: (index: number) => void;
 }) {
-  const { t, number } = useLocale();
+  const { t } = useLocale();
   const displayName = channel.name || t("channel.unnamed");
   return (
     <button
@@ -112,7 +116,7 @@ const Row = memo(function Row({
       style={{ top, height }}
       onClick={() => onPick(index)}
     >
-      {showNumbers && <span className="ch-number">{number(channel.number)}</span>}
+      {showNumbers && <span className="ch-number">{String(channel.number)}</span>}
       {showLogos && (
         // Where there is no number column, a channel with no artwork shows its number. Where
         // there is one, it shows a quiet television instead: with both, the row read "1 1
@@ -121,12 +125,12 @@ const Row = memo(function Row({
           src={channel.logo}
           alt={displayName}
           fetchable={settled}
-          label={showNumbers ? undefined : number(channel.number)}
+          label={showNumbers ? undefined : String(channel.number)}
           width={LOGO_BOX.width}
           height={LOGO_BOX.height}
         />
       )}
-      <Text value={displayName} className="row-label" />
+      <Text value={displayName} className="row-label" marquee />
       {favourite && (
         <span className="ch-star">
           <Icon name="star" />
@@ -166,8 +170,9 @@ export const ChannelList = memo(function ChannelList({
   search,
   numberDigits,
   onSelect,
+  onWheel,
 }: Props) {
-  const { t, number } = useLocale();
+  const { t } = useLocale();
   const viewport = useRef<HTMLDivElement>(null);
   const height = useViewport(viewport);
   /*
@@ -297,15 +302,21 @@ export const ChannelList = memo(function ChannelList({
             shown={channels.length}
             total={search.total}
             onChange={search.onQuery}
+            onExitUp={search.onExitUp}
+            onExitDown={search.onExitDown}
+            onExitStart={search.onExitStart}
           />
         ) : (
-          <>
-            <Text value={category || t("channel.channels")} className="panel-title" />
-            {!!channels.length && <span className="count">{number(channels.length)}</span>}
-          </>
+          <Text value={category || t("channel.channels")} className="panel-title" />
         )}
       </div>
-      <div className="viewport" ref={viewport}>
+      <div
+        className="viewport"
+        ref={viewport}
+        onWheel={(event) => {
+          if (event.deltaY) onWheel(event.deltaY > 0 ? 1 : -1);
+        }}
+      >
         {loading && !channels.length ? (
           Array.from({ length: 8 }, (_, i) => (
             /* Eight identical placeholders with no identity of their own and no order to
@@ -343,8 +354,8 @@ export const ChannelList = memo(function ChannelList({
                 : t("channel.typeName")}
           </p>
         )}
+        <ScrollIndicator count={channels.length} first={win.first} visible={win.visible} />
       </div>
-      <ScrollIndicator count={channels.length} first={win.first} visible={win.visible} />
     </div>
   );
 });
