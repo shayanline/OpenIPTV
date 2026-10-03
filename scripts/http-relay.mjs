@@ -77,14 +77,14 @@ const relay = async (request, response, target, redirects = 0) => {
     if (request.headers[name]) headers[name] = request.headers[name];
   }
   const upstream = requestHttp(
-    target,
     {
+      protocol: "http:",
+      hostname: selected.address,
+      family: selected.family,
+      port: target.port || 80,
+      path: `${target.pathname}${target.search}`,
       method: request.method,
-      headers,
-      lookup: (_hostname, options, callback) => {
-        if (options.all) callback(null, [selected]);
-        else callback(null, selected.address, selected.family);
-      },
+      headers: { ...headers, host: target.host },
     },
     (incoming) => {
       if (
