@@ -8,6 +8,7 @@ import {
   checkPlaylistUrl,
   m3uSource,
   nameFromUrl,
+  parseXtreamPlaylistUrl,
   type PlaylistSource,
   sourceDisplay,
   xtreamSource,
@@ -63,7 +64,12 @@ export function Onboarding({
   const { move } = useSpatialNav(box, true);
   const { name, source, set: setSetup } = useSetup();
   const [problem, setProblem] = useState<MessageKey | "">("");
+  const [dismissedXtreamUrl, setDismissedXtreamUrl] = useState("");
   const url = source.kind === "m3u" ? source.url : "";
+  const suggestedXtream =
+    source.kind === "m3u" && source.url !== dismissedXtreamUrl
+      ? parseXtreamPlaylistUrl(source.url)
+      : null;
   const server = source.kind === "xtream" ? source.server : "";
   const username = source.kind === "xtream" ? source.username : "";
   const password = source.kind === "xtream" ? source.password : "";
@@ -118,6 +124,11 @@ export function Onboarding({
       event.stopPropagation();
       moveWelcomeVertical(KEY.DOWN);
     }
+  };
+
+  const applyXtream = (next: NonNullable<typeof suggestedXtream>) => {
+    setSetup({ name, source: next });
+    setProblem("");
   };
 
   const submit = () => {
@@ -256,6 +267,27 @@ export function Onboarding({
                       setProblem("");
                     }}
                   />
+                  {suggestedXtream && (
+                    <div className="xtream-suggestion">
+                      <span>{t("onboarding.xtreamDetected")}</span>
+                      <div>
+                        <button
+                          type="button"
+                          className="btn tonal"
+                          onClick={() => setDismissedXtreamUrl(source.url)}
+                        >
+                          <span>{t("onboarding.keepM3u")}</span>
+                        </button>
+                        <button
+                          type="button"
+                          className="btn tonal"
+                          onClick={() => applyXtream(suggestedXtream)}
+                        >
+                          <span>{t("onboarding.useXtream")}</span>
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </>
               ) : (
                 <div className="xtream-fields">
@@ -266,7 +298,13 @@ export function Onboarding({
                     spellCheck={false}
                     dir="ltr"
                     onChange={(event) => {
-                      setSetup({ name, source: { ...source, server: event.target.value } });
+                      setSetup({
+                        name,
+                        source: parseXtreamPlaylistUrl(event.target.value) ?? {
+                          ...source,
+                          server: event.target.value,
+                        },
+                      });
                       setProblem("");
                     }}
                   />

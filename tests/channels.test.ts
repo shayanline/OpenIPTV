@@ -377,6 +377,20 @@ test("an HTTPS browser explains an HTTP Xtream transport failure", async () => {
   expect(result.errorDetail).not.toContain("Failed to fetch");
 });
 
+test("an HTTPS browser explains an HTTP M3U transport failure", async () => {
+  const s = await load();
+  vi.stubGlobal("window", { location: { protocol: "https:" } });
+  vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("Failed to fetch")));
+
+  const result = await s.useChannels
+    .getState()
+    .validatePlaylist("Provider", { kind: "m3u", url: "http://provider.example/list.m3u" });
+
+  expect(result.errorDetail).toMatch(/HTTPS/i);
+  expect(result.errorDetail).toMatch(/CORS|Cross Origin/i);
+  expect(result.errorDetail).not.toContain("Failed to fetch");
+});
+
 test("a missing Player API explains the M3U alternative", async () => {
   const s = await load();
   vi.stubGlobal("fetch", vi.fn().mockResolvedValue(xtreamResponse({}, 404)));

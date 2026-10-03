@@ -7,6 +7,7 @@ import {
   checkPlaylistUrl,
   m3uSource,
   nameFromUrl,
+  parseXtreamPlaylistUrl,
   sourceDisplay,
   type XtreamOutput,
   xtreamSource,
@@ -468,6 +469,9 @@ export function Playlists({
   const [password, setPassword] = useState("");
   const [output, setOutput] = useState<XtreamOutput>("m3u8");
   const [problem, setProblem] = useState<MessageKey | "">("");
+  const [dismissedXtreamUrl, setDismissedXtreamUrl] = useState("");
+  const suggestedXtream =
+    source === "m3u" && url !== dismissedXtreamUrl ? parseXtreamPlaylistUrl(url) : null;
   /** Which playlist has been asked about but not yet confirmed for removal. */
   const [confirming, setConfirming] = useState("");
   const [managing, setManaging] = useState("");
@@ -495,6 +499,7 @@ export function Playlists({
     setPassword("");
     setOutput("m3u8");
     setProblem("");
+    setDismissedXtreamUrl("");
     navigation.open("playlist-add", t("playlist.addTitle"), "playlist-add", () =>
       setEditing(null),
     );
@@ -512,12 +517,22 @@ export function Playlists({
     setPassword(xtream?.password ?? "");
     setOutput(xtream?.output ?? "m3u8");
     setProblem("");
+    setDismissedXtreamUrl("");
     navigation.open(
       `playlist-edit-${p.id}`,
       t("playlist.editTitle"),
       `playlist-edit-${p.id}`,
       () => setEditing(null),
     );
+  };
+
+  const applyXtream = (next: NonNullable<typeof suggestedXtream>) => {
+    setSource("xtream");
+    setServer(next.server);
+    setUsername(next.username);
+    setPassword(next.password);
+    setOutput(next.output);
+    setProblem("");
   };
 
   /**
@@ -680,6 +695,27 @@ export function Playlists({
                 }}
                 placeholder={t("onboarding.urlPlaceholder")}
               />
+              {suggestedXtream && (
+                <div className="xtream-suggestion">
+                  <span>{t("onboarding.xtreamDetected")}</span>
+                  <div>
+                    <button
+                      type="button"
+                      className="btn tonal"
+                      onClick={() => setDismissedXtreamUrl(url)}
+                    >
+                      <span>{t("onboarding.keepM3u")}</span>
+                    </button>
+                    <button
+                      type="button"
+                      className="btn tonal"
+                      onClick={() => applyXtream(suggestedXtream)}
+                    >
+                      <span>{t("onboarding.useXtream")}</span>
+                    </button>
+                  </div>
+                </div>
+              )}
             </>
           ) : (
             <div className="xtream-fields">
@@ -689,7 +725,11 @@ export function Playlists({
                 value={server}
                 spellCheck={false}
                 dir="ltr"
-                onChange={(event) => setServer(event.target.value)}
+                onChange={(event) => {
+                  const parsed = parseXtreamPlaylistUrl(event.target.value);
+                  if (parsed) applyXtream(parsed);
+                  else setServer(event.target.value);
+                }}
               />
               <label htmlFor="pl-username">{t("onboarding.username")}</label>
               <input

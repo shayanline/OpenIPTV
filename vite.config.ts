@@ -19,6 +19,11 @@ export default defineConfig({
           if (!handleHttpRelay(request, response)) next();
         });
       },
+      configurePreviewServer(server) {
+        server.middlewares.use((request, response, next) => {
+          if (!handleHttpRelay(request, response)) next();
+        });
+      },
     },
   ],
   define: { __APP_VERSION__: JSON.stringify(pkg.version) },
