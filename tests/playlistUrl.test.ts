@@ -89,6 +89,18 @@ test("saved Xtream addresses are parsed into typed credentials with defaults", (
       output: "ts",
     },
   );
+  assert.deepEqual(
+    parseXtreamPlaylistUrl(
+      "https://provider.example/get.php?username=user&password=pass&type=m3u_plus&output=mpegts",
+    ),
+    {
+      kind: "xtream",
+      server: "https://provider.example",
+      username: "user",
+      password: "pass",
+      output: "ts",
+    },
+  );
   assert.equal(
     parseXtreamPlaylistUrl(
       "https://provider.example/get.php?username=user&password=pass&type=m3u&output=ts",

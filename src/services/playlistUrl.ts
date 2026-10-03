@@ -90,7 +90,8 @@ export function parseXtreamPlaylistUrl(
     const username = url.searchParams.get("username") ?? "";
     const password = url.searchParams.get("password") ?? "";
     const type = url.searchParams.get("type") ?? "m3u_plus";
-    const output = url.searchParams.get("output") ?? defaultOutput;
+    const requestedOutput = url.searchParams.get("output") ?? defaultOutput;
+    const output = requestedOutput === "mpegts" ? "ts" : requestedOutput;
     if (
       !/\/get\.php$/i.test(url.pathname) ||
       !username ||
