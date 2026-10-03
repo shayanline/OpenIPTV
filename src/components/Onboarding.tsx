@@ -68,7 +68,7 @@ export function Onboarding({
   const url = source.kind === "m3u" ? source.url : "";
   const suggestedXtream =
     source.kind === "m3u" && source.url !== dismissedXtreamUrl
-      ? parseXtreamPlaylistUrl(source.url)
+      ? parseXtreamPlaylistUrl(source.url, "m3u8")
       : null;
   const server = source.kind === "xtream" ? source.server : "";
   const username = source.kind === "xtream" ? source.username : "";
@@ -300,7 +300,7 @@ export function Onboarding({
                     onChange={(event) => {
                       setSetup({
                         name,
-                        source: parseXtreamPlaylistUrl(event.target.value) ?? {
+                        source: parseXtreamPlaylistUrl(event.target.value, "m3u8") ?? {
                           ...source,
                           server: event.target.value,
                         },

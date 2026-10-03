@@ -37,18 +37,23 @@ import type { Channel, PlaybackTarget } from "../types";
 const ZAP_SETTLE_MS = 450;
 
 const HTTP_FALLBACK_FAULT =
-  /CONNECTION_FAILED|NETWORK|manifestLoad|levelLoad|fragLoad|TIMEOUT|CIPHER|CERT/i;
+  /CONNECTION_FAILED|NETWORK|manifestLoad|levelLoad|fragLoad|TIMEOUT|CIPHER|CERT|NOT_SUPPORTED/i;
 
 const canUseHttpFallback = () =>
   onTizen() || (typeof window !== "undefined" && window.location.protocol === "http:");
 
-const httpFallback = (address: string): string => {
+export const httpFallback = (
+  address: string,
+  pageProtocol = typeof window === "undefined" ? "" : window.location.protocol,
+  pageOrigin = typeof window === "undefined" ? "" : window.location.origin,
+): string => {
   try {
     const url = new URL(address);
-    if (url.protocol !== "https:") return "";
-    url.protocol = "http:";
-    if (typeof window !== "undefined" && window.location.protocol === "http:") {
-      const relay = new URL("/__openiptv_http_relay__", window.location.origin);
+    if (url.origin === pageOrigin && url.pathname === "/__openiptv_http_relay__") return "";
+    if (url.protocol === "https:") url.protocol = "http:";
+    else if (url.protocol !== "http:" || pageProtocol !== "http:") return "";
+    if (pageProtocol === "http:") {
+      const relay = new URL("/__openiptv_http_relay__", pageOrigin);
       relay.searchParams.set("url", url.toString());
       return relay.toString();
     }
@@ -534,6 +539,7 @@ export function useTuner(options: TunerOptions): Tuner {
   const start = useCallback(
     (item: TuneItem) => {
       const target = targetOf(item);
+      if (currentRef.current?.id === target.id) return;
       // Written here as well as during render, because anything that starts a channel and then
       // acts on it in the same tick, such as opening the panel onto whatever is playing, would
       // otherwise read the one before.

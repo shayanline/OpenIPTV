@@ -158,7 +158,7 @@ test("playlist settings suggest and prefill Xtream from an M3U address", async (
   fireEvent.change(screen.getByLabelText("Playlist address"), {
     target: {
       value:
-        "http://provider.example:8080/get.php?username=viewer&password=secret&type=m3u_plus&output=m3u8",
+        "http://provider.example:8080/get.php?username=viewer&password=secret&type=m3u_plus",
     },
   });
 
@@ -169,6 +169,9 @@ test("playlist settings suggest and prefill Xtream from an M3U address", async (
   );
   expect((screen.getByLabelText("Username") as HTMLInputElement).value).toBe("viewer");
   expect((screen.getByLabelText("Password") as HTMLInputElement).value).toBe("secret");
+  expect(screen.getByLabelText("Stream format").getAttribute("aria-label")).toBe(
+    "Stream format, HLS, recommended",
+  );
 });
 
 test("playlist settings extract credentials entered in the Xtream server field", async () => {

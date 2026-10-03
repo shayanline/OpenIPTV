@@ -899,7 +899,7 @@ console.log(
   `  player     ${
     video
       ? "the app's own browser path, Tizen paths skipped"
-      : `AVPlay carried out by hls.js, Tizen paths live${engine ? "" : ", no engine found so no decode"}`
+      : `AVPlay carried out by hls.js or video, Tizen paths live${engine ? "" : ", no engine found so no decode"}`
   }`,
 );
 console.log(

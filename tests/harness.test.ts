@@ -3,7 +3,8 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { request } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { test } from "vitest";
+import { runInNewContext } from "node:vm";
+import { test, vi } from "vitest";
 import { host, XTREAM_FIXTURE } from "../scripts/present.mjs";
 import {
   createXtreamJourneyTracker,
@@ -187,6 +188,73 @@ test("serves Xtream movie details, episodes, programme data, and finite media ro
       server.close((error) => (error ? reject(error) : resolve())),
     );
     rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("the TV shim keeps relayed finite media out of hls.js", () => {
+  const loaded: string[] = [];
+  let instances = 0;
+  class Hls {
+    static Events = {
+      ERROR: "error",
+      LEVEL_SWITCHED: "level-switched",
+      MANIFEST_PARSED: "manifest-parsed",
+    };
+    static isSupported = () => true;
+    levels = [];
+    constructor() {
+      instances += 1;
+    }
+    on() {}
+    loadSource(source: string) {
+      loaded.push(source);
+    }
+    attachMedia() {}
+    destroy() {}
+  }
+  const pause = vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(() => {});
+  const load = vi.spyOn(HTMLMediaElement.prototype, "load").mockImplementation(() => {});
+  const log = vi.spyOn(console, "log").mockImplementation(() => {});
+  Object.assign(window, { Hls });
+  runInNewContext(readFileSync(join(process.cwd(), "scripts/tv/shim.js"), "utf8"), {
+    console,
+    document,
+    performance,
+    setTimeout,
+    URL,
+    window,
+  });
+  const relay = (target: string) =>
+    `${window.location.origin}/__openiptv_http_relay__?url=${encodeURIComponent(target)}`;
+  const hls = relay("http://media.example/live/channel.m3u8");
+  const movie = relay("http://media.example/movie/film.mp4");
+
+  try {
+    window.webapis?.avplay?.open(hls);
+    window.webapis?.avplay?.prepareAsync(
+      () => {},
+      () => {},
+    );
+    assert.equal(instances, 1);
+    assert.deepEqual(loaded, [hls]);
+
+    window.webapis?.avplay?.stop();
+    window.webapis?.avplay?.open(movie);
+    window.webapis?.avplay?.prepareAsync(
+      () => {},
+      () => {},
+    );
+    assert.equal(instances, 1);
+    assert.equal(document.querySelector<HTMLVideoElement>("#tv-video-el")?.src, movie);
+  } finally {
+    document.querySelector("#tv-video-plane")?.remove();
+    document.querySelector("#tv-hide-avplayer")?.remove();
+    pause.mockRestore();
+    load.mockRestore();
+    log.mockRestore();
+    delete (window as Window & { Hls?: unknown }).Hls;
+    delete window.webapis;
+    delete window.tizen;
   }
 });
 

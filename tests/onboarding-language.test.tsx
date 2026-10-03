@@ -70,7 +70,7 @@ test("M3U setup suggests Xtream and prefills the login when accepted", () => {
   fireEvent.change(screen.getByLabelText("Playlist address"), {
     target: {
       value:
-        "http://provider.example:8080/get.php?username=viewer&password=secret&type=m3u_plus&output=m3u8",
+        "http://provider.example:8080/get.php?username=viewer&password=secret&type=m3u_plus",
     },
   });
 
@@ -106,7 +106,7 @@ test("Xtream setup extracts credentials pasted into the server field", () => {
   fireEvent.change(screen.getByLabelText("Server address"), {
     target: {
       value:
-        "https://provider.example/portal/get.php?username=user%20name&password=p%26ss&type=m3u_plus&output=ts",
+        "https://provider.example/portal/get.php?username=user%20name&password=p%26ss&type=m3u_plus",
     },
   });
 
@@ -116,7 +116,7 @@ test("Xtream setup extracts credentials pasted into the server field", () => {
   expect((screen.getByLabelText("Username") as HTMLInputElement).value).toBe("user name");
   expect((screen.getByLabelText("Password") as HTMLInputElement).value).toBe("p&ss");
   expect(screen.getByLabelText("Stream format").getAttribute("aria-label")).toBe(
-    "Stream format, MPEG TS",
+    "Stream format, HLS, recommended",
   );
 });
 
