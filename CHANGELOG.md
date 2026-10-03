@@ -2,6 +2,13 @@
 
 Notable changes, newest first, in the format of [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## 1.9.2
+
+### Fixed
+
+- **Category position.** Returning from the category rail to the displayed category preserves the selected channel and scroll position, while changing category still starts at its first item.
+- **Programme Guide navigation.** Every programme keeps a visible cursor, refreshed lists clamp the cursor to a valid row, focus reaches the viewport edge before scrolling, mouse wheel navigation moves the selection, and pointer hover leaves it unchanged.
+
 ## 1.9.1
 
 ### Changed
