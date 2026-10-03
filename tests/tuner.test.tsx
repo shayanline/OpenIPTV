@@ -69,7 +69,7 @@ vi.mock("../src/services/repair", () => ({
   stopRepair: vi.fn(),
 }));
 
-import { useTuner } from "../src/hooks/useTuner";
+import { httpFallback, useTuner } from "../src/hooks/useTuner";
 
 const live: PlaybackTarget = {
   id: "live-1",
@@ -92,6 +92,14 @@ const movie: PlaybackTarget = {
   logo: "",
   url: "http://example.invalid/movie.mp4",
   resumeAt: 25,
+};
+
+const episode: PlaybackTarget = {
+  ...movie,
+  id: "episode-1",
+  kind: "episode",
+  name: "Episode",
+  url: "http://example.invalid/episode.mp4",
 };
 
 function mount(compatibility = true) {
@@ -122,6 +130,19 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.useRealTimers();
+});
+
+test.each([
+  ["live channel", live],
+  ["movie", movie],
+  ["series episode", episode],
+])("reselecting the current %s does not restart playback", (_label, target) => {
+  const { result } = mount(false);
+
+  act(() => result.current.start(target));
+  act(() => result.current.start(target));
+
+  expect(playerMock.instances[0].play).toHaveBeenCalledOnce();
 });
 
 test("finite targets bypass compatibility preparation and start at their resume position", () => {
@@ -158,6 +179,37 @@ test("HTTP pages retry failed HTTPS media once over HTTP", () => {
 
   act(() => playerMock.instances[0].emit({ type: "error", code: "manifestLoadError" }));
   expect(playerMock.instances[0].play).toHaveBeenCalledTimes(2);
+});
+
+test("HTTP pages retry failed HTTP finite media once through the local relay", () => {
+  const { result } = mount();
+  act(() => result.current.start(movie));
+  act(() =>
+    playerMock.instances[0].emit({ type: "error", code: "PLAYER_ERROR_NOT_SUPPORTED_FILE" }),
+  );
+
+  const relayed = new URL("/__openiptv_http_relay__", window.location.origin);
+  relayed.searchParams.set("url", movie.url);
+  expect(playerMock.instances[0].play).toHaveBeenLastCalledWith(
+    relayed.toString(),
+    false,
+    undefined,
+    "finite",
+    25,
+  );
+  expect(playerMock.instances[0].play).toHaveBeenCalledTimes(2);
+
+  act(() =>
+    playerMock.instances[0].emit({ type: "error", code: "PLAYER_ERROR_NOT_SUPPORTED_FILE" }),
+  );
+  expect(playerMock.instances[0].play).toHaveBeenCalledTimes(2);
+});
+
+test("packaged TV fallback stays direct because no local relay exists", () => {
+  expect(httpFallback("https://provider.example/movie.mp4", "file:", "null")).toBe(
+    "http://provider.example/movie.mp4",
+  );
+  expect(httpFallback("http://provider.example/movie.mp4", "file:", "null")).toBe("");
 });
 
 test("finite pause resumes in place and seek delegates to the player", async () => {

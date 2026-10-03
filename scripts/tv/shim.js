@@ -130,6 +130,17 @@
   let hls = null;
   let frameSample = null;
 
+  const isHlsSource = (address) => {
+    try {
+      const request = new URL(address, window.location.href);
+      const relayed =
+        request.pathname === "/__openiptv_http_relay__" ? request.searchParams.get("url") : "";
+      return new URL(relayed || request.toString()).pathname.toLowerCase().endsWith(".m3u8");
+    } catch {
+      return false;
+    }
+  };
+
   /** Give back the decoder, whichever engine happens to be driving it. */
   const release = () => {
     frameSample = null;
@@ -266,7 +277,8 @@
           }
         };
 
-        if (window.Hls && window.Hls.isSupported()) {
+        const hlsSupported = window.Hls ? window.Hls.isSupported() : false;
+        if (isHlsSource(source) && hlsSupported) {
           hls = new window.Hls({ backBufferLength: 0, maxMaxBufferLength: 30 });
           hls.on(window.Hls.Events.MANIFEST_PARSED, ready);
           hls.on(window.Hls.Events.LEVEL_SWITCHED, (_event, data) => {

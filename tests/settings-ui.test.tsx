@@ -150,6 +150,54 @@ test("playlist settings keep the specific M3U address guidance", async () => {
   expect(useSettings.getState().playlists).toHaveLength(1);
 });
 
+test("playlist settings suggest and prefill Xtream from an M3U address", async () => {
+  await mountApp(PLAYLIST);
+  press(KEY.YELLOW);
+  fireEvent.click(screen.getByRole("button", { name: "Playlists" }));
+  fireEvent.click(screen.getByRole("button", { name: "Add a playlist" }));
+  fireEvent.change(screen.getByLabelText("Playlist address"), {
+    target: {
+      value:
+        "http://provider.example:8080/get.php?username=viewer&password=secret&type=m3u_plus",
+    },
+  });
+
+  fireEvent.click(screen.getByRole("button", { name: "Use Xtream" }));
+
+  expect((screen.getByLabelText("Server address") as HTMLInputElement).value).toBe(
+    "http://provider.example:8080",
+  );
+  expect((screen.getByLabelText("Username") as HTMLInputElement).value).toBe("viewer");
+  expect((screen.getByLabelText("Password") as HTMLInputElement).value).toBe("secret");
+  expect(screen.getByLabelText("Stream format").getAttribute("aria-label")).toBe(
+    "Stream format, HLS, recommended",
+  );
+});
+
+test("playlist settings extract credentials entered in the Xtream server field", async () => {
+  await mountApp(PLAYLIST);
+  press(KEY.YELLOW);
+  fireEvent.click(screen.getByRole("button", { name: "Playlists" }));
+  fireEvent.click(screen.getByRole("button", { name: "Add a playlist" }));
+  fireEvent.click(screen.getByRole("button", { name: "Xtream login" }));
+
+  fireEvent.change(screen.getByLabelText("Server address"), {
+    target: {
+      value:
+        "https://provider.example/get.php?username=viewer&password=secret&type=m3u_plus&output=ts",
+    },
+  });
+
+  expect((screen.getByLabelText("Server address") as HTMLInputElement).value).toBe(
+    "https://provider.example",
+  );
+  expect((screen.getByLabelText("Username") as HTMLInputElement).value).toBe("viewer");
+  expect((screen.getByLabelText("Password") as HTMLInputElement).value).toBe("secret");
+  expect(screen.getByLabelText("Stream format").getAttribute("aria-label")).toBe(
+    "Stream format, MPEG TS",
+  );
+});
+
 test("the Settings Xtream stream format closes when focus moves to the password", async () => {
   await mountApp(PLAYLIST);
   press(KEY.YELLOW);

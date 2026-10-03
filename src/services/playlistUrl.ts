@@ -81,13 +81,17 @@ export function sourceDisplay(source: PlaylistSource): string {
   return source.kind === "m3u" ? source.url : source.server;
 }
 
-export function parseXtreamPlaylistUrl(raw: string): XtreamSource | null {
+export function parseXtreamPlaylistUrl(
+  raw: string,
+  defaultOutput: XtreamOutput = "ts",
+): XtreamSource | null {
   try {
     const url = new URL(raw.trim());
     const username = url.searchParams.get("username") ?? "";
     const password = url.searchParams.get("password") ?? "";
     const type = url.searchParams.get("type") ?? "m3u_plus";
-    const output = url.searchParams.get("output") ?? "ts";
+    const requestedOutput = url.searchParams.get("output") ?? defaultOutput;
+    const output = requestedOutput === "mpegts" ? "ts" : requestedOutput;
     if (
       !/\/get\.php$/i.test(url.pathname) ||
       !username ||

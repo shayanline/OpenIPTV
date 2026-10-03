@@ -2,6 +2,23 @@
 
 Notable changes, newest first, in the format of [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## 1.9.1
+
+### Changed
+
+- **Xtream conversion.** Complete `get.php` addresses can switch setup into credential fields, interactive conversion defaults to HLS, and `mpegts` is accepted as MPEG TS.
+
+### Security
+
+- **HTTP relay resolution.** The development relay pins the validated public address for each upstream request, so DNS cannot change the destination after validation.
+
+### Fixed
+
+- **Browser transport guidance.** Hosted HTTPS failures explain that the provider must support HTTPS and Cross Origin Resource Sharing instead of showing only a generic fetch error.
+- **Local HTTP relay.** Vite Preview installs the same relay as the development server, while relayed HLS references and finite media preserve their correct loading paths.
+- **Finite playback fallback.** Local HTTP movies can retry once through the relay without changing direct HTTP playback on a packaged television.
+- **Playback selection.** Selecting the current channel, movie or series episode again returns to the picture without restarting its stream.
+
 ## 1.9.0
 
 ### Added

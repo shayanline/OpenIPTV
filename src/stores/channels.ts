@@ -89,10 +89,10 @@ const failureDetail = (error: unknown, source: PlaylistSource) => {
   if (source.kind === "xtream" && detail === "HTTP 404") {
     return "The Xtream Player API returned HTTP 404. If the provider gave you a working get.php address, add it as an M3U source.";
   }
+  const address = source.kind === "xtream" ? source.server : source.url;
   if (
-    source.kind === "xtream" &&
     window.location.protocol === "https:" &&
-    new URL(source.server).protocol === "http:" &&
+    new URL(address).protocol === "http:" &&
     !/^HTTP \d+$/.test(detail)
   ) {
     return translate(

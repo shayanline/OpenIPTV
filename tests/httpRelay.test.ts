@@ -1,9 +1,19 @@
 import { expect, test } from "vitest";
+import config from "../vite.config";
 import {
   blockedHttpRelayHost,
   resolveHttpRelayTarget,
   rewriteHttpManifest,
 } from "../scripts/http-relay.mjs";
+
+test("HTTP relay is installed for Vite development and preview servers", () => {
+  const relay = config.plugins.find(
+    (plugin) => plugin && typeof plugin === "object" && plugin.name === "openiptv-http-relay",
+  ) as { configureServer?: unknown; configurePreviewServer?: unknown } | undefined;
+
+  expect(relay?.configureServer).toBeTypeOf("function");
+  expect(relay?.configurePreviewServer).toBeTypeOf("function");
+});
 
 test("HTTP relay blocks local and private literal hosts", () => {
   expect(blockedHttpRelayHost("localhost")).toBe(true);

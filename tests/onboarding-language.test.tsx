@@ -64,6 +64,62 @@ test("M3U setup keeps the specific address guidance", () => {
   expect(onAdd).not.toHaveBeenCalled();
 });
 
+test("M3U setup suggests Xtream and prefills the login when accepted", () => {
+  render(<Onboarding onAdd={() => {}} onExit={() => {}} />);
+
+  fireEvent.change(screen.getByLabelText("Playlist address"), {
+    target: {
+      value:
+        "http://provider.example:8080/get.php?username=viewer&password=secret&type=m3u_plus",
+    },
+  });
+
+  expect(screen.getByText("This address contains an Xtream login.")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Use Xtream" }));
+
+  expect((screen.getByLabelText("Server address") as HTMLInputElement).value).toBe(
+    "http://provider.example:8080",
+  );
+  expect((screen.getByLabelText("Username") as HTMLInputElement).value).toBe("viewer");
+  expect((screen.getByLabelText("Password") as HTMLInputElement).value).toBe("secret");
+  expect(screen.getByLabelText("Stream format").getAttribute("aria-label")).toBe(
+    "Stream format, HLS, recommended",
+  );
+});
+
+test("M3U setup can keep a detected Xtream address as M3U", () => {
+  render(<Onboarding onAdd={() => {}} onExit={() => {}} />);
+
+  const address =
+    "http://provider.example/get.php?username=viewer&password=secret&type=m3u_plus";
+  fireEvent.change(screen.getByLabelText("Playlist address"), { target: { value: address } });
+  fireEvent.click(screen.getByRole("button", { name: "Keep M3U" }));
+
+  expect(screen.queryByText("This address contains an Xtream login.")).toBeNull();
+  expect((screen.getByLabelText("Playlist address") as HTMLInputElement).value).toBe(address);
+});
+
+test("Xtream setup extracts credentials pasted into the server field", () => {
+  render(<Onboarding onAdd={() => {}} onExit={() => {}} />);
+  fireEvent.click(screen.getByRole("button", { name: "Xtream login" }));
+
+  fireEvent.change(screen.getByLabelText("Server address"), {
+    target: {
+      value:
+        "https://provider.example/portal/get.php?username=user%20name&password=p%26ss&type=m3u_plus",
+    },
+  });
+
+  expect((screen.getByLabelText("Server address") as HTMLInputElement).value).toBe(
+    "https://provider.example/portal",
+  );
+  expect((screen.getByLabelText("Username") as HTMLInputElement).value).toBe("user name");
+  expect((screen.getByLabelText("Password") as HTMLInputElement).value).toBe("p&ss");
+  expect(screen.getByLabelText("Stream format").getAttribute("aria-label")).toBe(
+    "Stream format, HLS, recommended",
+  );
+});
+
 test("source buttons own physical arrow navigation on the welcome screen", () => {
   render(<Onboarding onAdd={() => {}} onExit={() => {}} />);
   const m3u = screen.getByRole("button", { name: "M3U playlist" });

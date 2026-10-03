@@ -2728,6 +2728,25 @@ html[dir="rtl"] .form select {
 .xtream-fields {
   display: contents;
 }
+.xtream-suggestion {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s2);
+  padding: var(--s2) var(--s3);
+  border-radius: var(--r-md);
+  background: var(--surface-1);
+  color: var(--text-2);
+  font-size: var(--t-caption);
+}
+.xtream-suggestion > div {
+  display: flex;
+  flex: 0 0 auto;
+  gap: var(--s1);
+}
+.xtream-suggestion .btn {
+  margin-top: 0;
+}
 .actions {
   display: flex;
   gap: var(--s1);
@@ -4044,8 +4063,12 @@ html[dir="rtl"] .form select {
 .no-flex-gap .device-row > * + * {
   margin-left: var(--s1);
 }
-.no-flex-gap .actions > * + * {
+.no-flex-gap .actions > * + *,
+.no-flex-gap .xtream-suggestion > div > * + * {
   margin-left: var(--s1);
+}
+.no-flex-gap .xtream-suggestion > * + * {
+  margin-left: var(--s2);
 }
 .no-flex-gap .about > * + * {
   margin-left: var(--s5);
@@ -4417,11 +4440,16 @@ html[dir="rtl"] .category-search-popup {
 html[dir="rtl"] .no-flex-gap .pl > * + *,
 html[dir="rtl"] .no-flex-gap .device-row > * + *,
 html[dir="rtl"] .no-flex-gap .actions > * + *,
+html[dir="rtl"] .no-flex-gap .xtream-suggestion > div > * + *,
 html[dir="rtl"] .no-flex-gap .picture-state-doing > * + *,
 html[dir="rtl"] .no-flex-gap .pb-meta > * + *,
 html[dir="rtl"] .no-flex-gap .dialog-actions > * + * {
   margin-left: 0;
   margin-right: var(--s1);
+}
+html[dir="rtl"] .no-flex-gap .xtream-suggestion > * + * {
+  margin-left: 0;
+  margin-right: var(--s2);
 }
 html[dir="rtl"] .no-flex-gap .pb > * + *,
 html[dir="rtl"] .no-flex-gap .picture-state > * + *,
