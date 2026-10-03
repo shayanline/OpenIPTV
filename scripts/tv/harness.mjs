@@ -522,7 +522,15 @@ export async function walk(cdp, port, selectors, { before } = {}) {
   );
   await capture("settings.categories");
   await d.press("Escape", 27, "!document.querySelector('.category-settings-list')");
-  await click("Remove", "!!document.querySelector('.dialog')");
+  await click(
+    "Remove",
+    `(() => {
+      const active = document.activeElement;
+      const hint = document.querySelector('.hints.sheet-hints > span:nth-child(2)');
+      return active === document.querySelector('.dialog-actions button') &&
+        hint?.textContent?.includes(active?.textContent?.trim());
+    })()`,
+  );
   await capture("settings.confirm");
   await click("Keep it", "!document.querySelector('.dialog')");
   await click("Playback", sectionShowing("Playback"));
