@@ -64,17 +64,21 @@ mkdirSync(OUT, { recursive: true });
 // sentence rather than an EADDRINUSE stack when a previous run is still up.
 const server = await host("dist", PORT);
 
-const browser = spawn(chrome, [
-  `--remote-debugging-port=${CHROME_PORT}`,
-  `--window-size=${WIDTH},${HEIGHT}`,
-  "--headless=new",
-  "--hide-scrollbars",
-  "--no-first-run",
-  "--no-sandbox",
-  // A fresh profile every run, so nothing is photographed out of the disk cache from last time.
-  `--user-data-dir=${mkdtempSync(join(tmpdir(), "openiptv-store-"))}`,
-  "about:blank",
-], { stdio: "ignore" });
+const browser = spawn(
+  chrome,
+  [
+    `--remote-debugging-port=${CHROME_PORT}`,
+    `--window-size=${WIDTH},${HEIGHT}`,
+    "--headless=new",
+    "--hide-scrollbars",
+    "--no-first-run",
+    "--no-sandbox",
+    // A fresh profile every run, so nothing is photographed out of the disk cache from last time.
+    `--user-data-dir=${mkdtempSync(join(tmpdir(), "openiptv-store-"))}`,
+    "about:blank",
+  ],
+  { stdio: "ignore" },
+);
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 await sleep(1500);
@@ -83,7 +87,10 @@ const cdp = await connect(CHROME_PORT);
 await cdp.send("Page.enable");
 await cdp.send("Runtime.enable");
 await cdp.send("Emulation.setDeviceMetricsOverride", {
-  width: WIDTH, height: HEIGHT, deviceScaleFactor: 1, mobile: false,
+  width: WIDTH,
+  height: HEIGHT,
+  deviceScaleFactor: 1,
+  mobile: false,
 });
 
 const app = driver(cdp, PORT);
@@ -100,7 +107,9 @@ async function shoot(name) {
   const bytes = Buffer.from(data, "base64");
   writeFileSync(`${OUT}/${name}.jpg`, bytes);
   const kb = Math.round(bytes.length / 1024);
-  console.log(`  ${name}.jpg  ${WIDTH}x${HEIGHT}  ${kb}KB${kb > 500 ? "  OVER THE 500KB LIMIT" : ""}`);
+  console.log(
+    `  ${name}.jpg  ${WIDTH}x${HEIGHT}  ${kb}KB${kb > 500 ? "  OVER THE 500KB LIMIT" : ""}`,
+  );
 }
 
 /*
@@ -128,8 +137,11 @@ const keyed = async (label) => {
     el.click();
     return true;
   })()`);
-  if (!hit) throw new Error(`No key labelled "${label}" in the panel's title bar, so screen ${label} `
-    + "cannot be reached and a screenshot of whatever was still open would be worse than none.");
+  if (!hit)
+    throw new Error(
+      `No key labelled "${label}" in the panel's title bar, so screen ${label} ` +
+        "cannot be reached and a screenshot of whatever was still open would be worse than none.",
+    );
 };
 
 // 1. Every channel, which is the screen the application opens on and the one a viewer uses most.
@@ -152,7 +164,7 @@ await keyed("Search");
 for (const character of "news") {
   await cdp.send("Input.dispatchKeyEvent", { type: "char", text: character });
 }
-await sleep(500);                          // the search's own debounce, and a frame to draw
+await sleep(500); // the search's own debounce, and a frame to draw
 await shoot("screenshot-3");
 
 // 4. Settings, on the section carrying the compatibility switch, so the screenshot shows it off.
@@ -180,7 +192,9 @@ console.log("\nTwo icon layers, from public/icon.svg:");
  * The page the two layers are drawn on, written to dist/ for the moment it takes to photograph it
  * and never shipped: dist/ is rebuilt by every build and ignored by git.
  */
-writeFileSync("dist/store-icon.html", `<!doctype html>
+writeFileSync(
+  "dist/store-icon.html",
+  `<!doctype html>
 <meta charset="utf-8">
 <style>
   html, body { margin: 0; width: ${WIDTH}px; height: ${HEIGHT}px; overflow: hidden; }
@@ -205,20 +219,31 @@ writeFileSync("dist/store-icon.html", `<!doctype html>
     }
   </script>
 </body>
-`);
+`,
+);
 
-for (const [name, transparent] of [["icon-logo", true], ["icon-background", false]]) {
-  await cdp.send("Emulation.setDefaultBackgroundColorOverride",
-    { color: transparent ? { r: 0, g: 0, b: 0, a: 0 } : { r: 11, g: 13, b: 20, a: 1 } });
-  await cdp.send("Page.navigate",
-    { url: `http://127.0.0.1:${PORT}/store-icon.html?layer=${transparent ? "logo" : "background"}` });
+for (const [name, transparent] of [
+  ["icon-logo", true],
+  ["icon-background", false],
+]) {
+  await cdp.send("Emulation.setDefaultBackgroundColorOverride", {
+    color: transparent ? { r: 0, g: 0, b: 0, a: 0 } : { r: 11, g: 13, b: 20, a: 1 },
+  });
+  await cdp.send("Page.navigate", {
+    url: `http://127.0.0.1:${PORT}/store-icon.html?layer=${transparent ? "logo" : "background"}`,
+  });
   await sleep(900);
-  const { data } = await cdp.send("Page.captureScreenshot",
-    { format: "png", captureBeyondViewport: false, omitBackground: transparent });
+  const { data } = await cdp.send("Page.captureScreenshot", {
+    format: "png",
+    captureBeyondViewport: false,
+    omitBackground: transparent,
+  });
   const bytes = Buffer.from(data, "base64");
   writeFileSync(`${OUT}/${name}.png`, bytes);
   const kb = Math.round(bytes.length / 1024);
-  console.log(`  ${name}.png  ${WIDTH}x${HEIGHT}  ${kb}KB${kb > 300 ? "  OVER THE 300KB LIMIT" : ""}`);
+  console.log(
+    `  ${name}.png  ${WIDTH}x${HEIGHT}  ${kb}KB${kb > 300 ? "  OVER THE 300KB LIMIT" : ""}`,
+  );
 }
 
 cdp.close();

@@ -1,6 +1,6 @@
 import { sendKey } from "../hooks/useRemote";
 import { APP_VERSION, REPO_URL } from "../meta";
-import { clearCache, useChannels } from "../stores/channels";
+import { clearCache, clearPlaylistCache, useChannels } from "../stores/channels";
 import { useSetup } from "../stores/setup";
 import {
   ASPECTS,
@@ -17,14 +17,21 @@ import {
   translate,
   type LocalePreference,
 } from "./locale";
-import { checkPlaylistUrl } from "./playlistUrl";
+import {
+  m3uSource,
+  nameFromUrl,
+  type PlaylistSource,
+  type XtreamSource,
+  xtreamSource,
+} from "./playlistUrl";
 import {
   listPairedDevices,
   renamePairedDevice,
   revokePairedDevice,
   type PairedDevice,
 } from "./deviceAccess";
-import { forgetRepairHosts, stopRepair } from "./repair";
+import { forgetRepairHosts, forgetRepairSource, stopRepair } from "./repair";
+import type { XtreamAccount } from "./xtream";
 
 type BooleanSetting =
   | "showNumbers"
@@ -41,12 +48,19 @@ type SettingCommand =
   | { type: "setting"; key: "fontSizeId"; value: string }
   | { type: "setting"; key: "aspectId"; value: AspectId };
 
+type RemoteXtreamSource = Omit<XtreamSource, "password"> & { hasPassword: boolean };
+type RemotePlaylistSource = Exclude<PlaylistSource, XtreamSource> | RemoteXtreamSource;
+type RemotePlaylist = Omit<Playlist, "source"> & {
+  source: RemotePlaylistSource;
+  account?: XtreamAccount;
+};
+
 export type RemoteCommand =
   | SettingCommand
-  | { type: "setup"; locale: LocalePreference; name: string; url: string }
-  | { type: "setup.preview"; name: string; url: string }
-  | { type: "playlist.add"; name: string; url: string }
-  | { type: "playlist.update"; id: string; name: string; url: string }
+  | { type: "setup"; locale: LocalePreference; name: string; source: PlaylistSource }
+  | { type: "setup.preview"; name: string; source: PlaylistSource }
+  | { type: "playlist.add"; name: string; source: PlaylistSource }
+  | { type: "playlist.update"; id: string; name: string; source: PlaylistSource }
   | { type: "playlist.remove"; id: string }
   | { type: "playlist.activate"; id: string }
   | { type: "playlist.refresh" }
@@ -73,9 +87,9 @@ export interface RemoteSnapshot {
     compatibility: boolean;
     showPlaybackStats: boolean;
   };
-  playlists: Playlist[];
+  playlists: RemotePlaylist[];
   activePlaylistId: string;
-  setup: { name: string; url: string };
+  setup: { name: string; source: RemotePlaylistSource };
   devices: PairedDevice[];
   about: { version: string; repository: string };
   operation: { loading: boolean; error: string; errorKey: string; errorDetail: string };
@@ -104,9 +118,8 @@ const BOOLEAN_SETTINGS = new Set<BooleanSetting>([
 ]);
 const CHOICE_SETTINGS = new Set<ChoiceSetting>(["locale", "fontSizeId", "aspectId"]);
 const REMOTE_KEYS = new Set([
-  13, 37, 38, 39, 40, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57,
-  403, 404, 405, 406, 412, 413, 415, 417, 427, 428, 448, 449,
-  10009, 10232, 10233, 10252,
+  13, 37, 38, 39, 40, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 403, 404, 405, 406, 412, 413, 415,
+  417, 427, 428, 448, 449, 10009, 10232, 10233, 10252,
 ]);
 const completed = new Map<string, CommandResult>();
 let revision = 0;
@@ -126,6 +139,42 @@ function exact(value: Record<string, unknown>, keys: string[]): boolean {
 
 function text(value: unknown): value is string {
   return typeof value === "string";
+}
+
+function playlistSource(value: unknown): PlaylistSource | null {
+  const source = record(value);
+  if (!source || !text(source.kind)) return null;
+  if (source.kind === "m3u" && exact(source, ["kind", "url"]) && text(source.url)) {
+    return { kind: "m3u", url: source.url };
+  }
+  if (
+    source.kind === "xtream" &&
+    exact(source, ["kind", "server", "username", "password", "output"]) &&
+    text(source.server) &&
+    text(source.username) &&
+    text(source.password) &&
+    (source.output === "m3u8" || source.output === "ts")
+  ) {
+    return {
+      kind: "xtream",
+      server: source.server,
+      username: source.username,
+      password: source.password,
+      output: source.output,
+    };
+  }
+  return null;
+}
+
+function remoteSource(source: PlaylistSource): RemotePlaylistSource {
+  if (source.kind === "m3u") return source;
+  return {
+    kind: "xtream",
+    server: source.server,
+    username: source.username,
+    output: source.output,
+    hasPassword: !!source.password,
+  };
 }
 
 function validSetting(key: unknown, value: unknown): SettingCommand | null {
@@ -152,31 +201,37 @@ export function parseRemoteCommand(value: unknown): RemoteCommand | null {
   }
   if (
     input.type === "setup" &&
-    exact(input, ["type", "locale", "name", "url"]) &&
+    exact(input, ["type", "locale", "name", "source"]) &&
     isLocalePreference(input.locale) &&
-    text(input.name) &&
-    text(input.url)
+    text(input.name)
   ) {
-    return { type: input.type, locale: input.locale, name: input.name, url: input.url };
+    const source = playlistSource(input.source);
+    return source ? { type: input.type, locale: input.locale, name: input.name, source } : null;
   }
   if (
     input.type === "setup.preview" &&
-    exact(input, ["type", "name", "url"]) &&
-    text(input.name) &&
-    text(input.url)
+    exact(input, ["type", "name", "source"]) &&
+    text(input.name)
   ) {
-    return { type: input.type, name: input.name, url: input.url };
+    const source = playlistSource(input.source);
+    return source ? { type: input.type, name: input.name, source } : null;
   }
   if (
     (input.type === "playlist.add" || input.type === "playlist.update") &&
-    exact(input, input.type === "playlist.add" ? ["type", "name", "url"] : ["type", "id", "name", "url"]) &&
+    exact(
+      input,
+      input.type === "playlist.add"
+        ? ["type", "name", "source"]
+        : ["type", "id", "name", "source"],
+    ) &&
     (input.type === "playlist.add" || text(input.id)) &&
-    text(input.name) &&
-    text(input.url)
+    text(input.name)
   ) {
+    const source = playlistSource(input.source);
+    if (!source) return null;
     return input.type === "playlist.add"
-      ? { type: input.type, name: input.name, url: input.url }
-      : { type: input.type, id: input.id as string, name: input.name, url: input.url };
+      ? { type: input.type, name: input.name, source }
+      : { type: input.type, id: input.id as string, name: input.name, source };
   }
   if (
     (input.type === "playlist.remove" ||
@@ -217,10 +272,8 @@ export function remoteSnapshot(): RemoteSnapshot {
   const channels = useChannels.getState();
   const setup = useSetup.getState();
   const locale = resolveLocale(settings.locale);
-  const t = (
-    key: Parameters<typeof translate>[1],
-    values?: Parameters<typeof translate>[2],
-  ) => translate(locale, key, values);
+  const t = (key: Parameters<typeof translate>[1], values?: Parameters<typeof translate>[2]) =>
+    translate(locale, key, values);
   return {
     revision,
     locale,
@@ -326,6 +379,17 @@ export function remoteSnapshot(): RemoteSnapshot {
       revoke: t("remote.revoke"),
       revokeConfirm: t("remote.revokeBody"),
       revokeSelfConfirm: t("remote.revokeSelfBody"),
+      trustedNetwork: t("remote.trustedNetwork"),
+      accountActive: t("playlist.accountActive"),
+      accountInactive: t("playlist.accountInactive"),
+      accountExpired: t("playlist.accountExpired"),
+      accountTrial: t("playlist.accountTrial"),
+      accountExpiryUnknown: t("playlist.accountExpiryUnknown"),
+      accountExpires: t("playlist.accountExpires", { date: "{date}" }),
+      accountConnections: t("playlist.accountConnections", {
+        active: "{active}",
+        maximum: "{maximum}",
+      }),
       save: t("common.save"),
       open: t("common.open"),
       close: t("common.close"),
@@ -347,16 +411,20 @@ export function remoteSnapshot(): RemoteSnapshot {
       compatibility: settings.compatibility,
       showPlaybackStats: settings.showPlaybackStats,
     },
-    playlists: settings.playlists.map((playlist) => ({ ...playlist })),
+    playlists: settings.playlists.map((playlist) => ({
+      ...playlist,
+      source: remoteSource(playlist.source),
+      ...(channels.accounts[playlist.id] ? { account: channels.accounts[playlist.id] } : {}),
+    })),
     activePlaylistId: settings.activePlaylistId,
-    setup: { name: setup.name, url: setup.url },
+    setup: { name: setup.name, source: remoteSource(setup.source) },
     devices: listPairedDevices(),
     about: { version: APP_VERSION, repository: REPO_URL },
     operation: {
       loading: channels.loading,
-      error: channels.error,
+      error: channels.error ? t("remote.changeFailed") : "",
       errorKey: channels.errorKey,
-      errorDetail: channels.errorDetail,
+      errorDetail: "",
     },
   };
 }
@@ -395,6 +463,25 @@ async function applySetting(command: SettingCommand): Promise<void> {
   }
 }
 
+function replacesSourceAccount(left: PlaylistSource, right: PlaylistSource): boolean {
+  return (
+    left.kind !== right.kind ||
+    (left.kind === "xtream" &&
+      right.kind === "xtream" &&
+      (left.server !== right.server || left.username !== right.username))
+  );
+}
+
+function validSource(source: PlaylistSource, password = ""): PlaylistSource | null {
+  if (source.kind === "m3u") return m3uSource(source.url);
+  return xtreamSource(
+    source.server,
+    source.username,
+    source.password || password,
+    source.output,
+  );
+}
+
 async function perform(command: RemoteCommand): Promise<CommandResult["reason"] | undefined> {
   const settings = useSettings.getState();
   const channels = useChannels.getState();
@@ -407,17 +494,20 @@ async function perform(command: RemoteCommand): Promise<CommandResult["reason"] 
     return;
   }
   if (command.type === "setup.preview") {
-    useSetup.getState().set({ name: command.name, url: command.url });
+    useSetup.getState().set({ name: command.name, source: command.source });
     return;
   }
   if (command.type === "setup") {
-    if (!checkPlaylistUrl(command.url).ok) return "invalid";
-    const validation = await channels.validatePlaylist(command.name, command.url.trim());
+    const source = validSource(command.source);
+    if (!source) return "invalid";
+    const validation = await channels.validatePlaylist(command.name, source);
     if (validation.error || !validation.count) return "failed";
     const playlist = {
       id: playlistId(),
-      name: command.name.trim() || new URL(command.url).hostname,
-      url: command.url.trim(),
+      name:
+        command.name.trim() || nameFromUrl(source.kind === "m3u" ? source.url : source.server),
+      source,
+      sourceVersion: 1,
       hiddenCategories: [],
       hiddenCategoryMode: "exclude" as const,
     };
@@ -427,25 +517,42 @@ async function perform(command: RemoteCommand): Promise<CommandResult["reason"] 
     return;
   }
   if (command.type === "playlist.add") {
-    if (!checkPlaylistUrl(command.url).ok) return "invalid";
-    const url = command.url.trim();
-    settings.addPlaylist(command.name.trim() || new URL(url).hostname, url);
+    const source = validSource(command.source);
+    if (!source) return "invalid";
+    settings.addPlaylist(
+      command.name.trim() || nameFromUrl(source.kind === "m3u" ? source.url : source.server),
+      source,
+    );
     return;
   }
   if (command.type === "playlist.update") {
     const playlist = settings.playlists.find((item) => item.id === command.id);
     if (!playlist) return "notFound";
-    if (!checkPlaylistUrl(command.url).ok) return "invalid";
-    const url = command.url.trim();
-    const reload = settings.activePlaylistId === command.id && playlist.url !== url;
-    settings.updatePlaylist(command.id, command.name.trim() || new URL(url).hostname, url);
+    const password = playlist.source.kind === "xtream" ? playlist.source.password : "";
+    const source = validSource(command.source, password);
+    if (!source) return "invalid";
+    const reload =
+      settings.activePlaylistId === command.id &&
+      JSON.stringify(playlist.source) !== JSON.stringify(source);
+    settings.updatePlaylist(
+      command.id,
+      command.name.trim() || nameFromUrl(source.kind === "m3u" ? source.url : source.server),
+      source,
+    );
+    if (replacesSourceAccount(playlist.source, source)) {
+      await clearPlaylistCache(playlist);
+      forgetRepairSource(playlist.id);
+    }
     if (reload) await channels.load(true);
     return;
   }
   if (command.type === "playlist.remove") {
-    if (!settings.playlists.some((playlist) => playlist.id === command.id)) return "notFound";
+    const playlist = settings.playlists.find((item) => item.id === command.id);
+    if (!playlist) return "notFound";
     const active = settings.activePlaylistId === command.id;
     settings.removePlaylist(command.id);
+    await clearPlaylistCache(playlist);
+    forgetRepairSource(playlist.id);
     if (active) await channels.load();
     return;
   }

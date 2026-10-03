@@ -2,7 +2,19 @@ import type { MessageKey, MessageValues } from "../services/locale";
 
 export default {
   "common.search": "Cari",
+  "common.guide": "Panduan",
   "common.settings": "Pengaturan",
+  "content.live": "Siaran langsung",
+  "content.movies": "Film",
+  "content.series": "Serial",
+  "library.loading": "Memuat…",
+  "library.failed": "Konten ini tidak dapat dimuat.",
+  "library.retry": "Coba lagi",
+  "library.details": "Detail",
+  "library.resume": "Lanjutkan",
+  "library.season": ({ number }) => `Musim ${number}`,
+  "library.episode": ({ number }) => `Episode ${number}`,
+  "library.searchScope": ({ kind }) => `Pencarian mencakup kategori ${kind} yang telah dimuat.`,
   "common.move": "Pindahkan",
   "common.open": "Buka",
   "common.closeSettings": "Tutup pengaturan",
@@ -166,6 +178,13 @@ export default {
   "app.hiddenFavouriteUnavailable":
     "Batalkan sembunyikan kategori ini sebelum menambah favorit.",
   "banner.position": ({ at, of, list }) => `${at} dari ${of} di ${list}`,
+  "banner.finiteTime": ({ elapsed, duration }) => `${elapsed} / ${duration}`,
+  "banner.now": ({ title }) => `Sekarang: ${title}`,
+  "banner.next": ({ title }) => `Berikutnya: ${title}`,
+  "guide.title": ({ category }) => `Panduan program: ${category}`,
+  "guide.playFromStart": "Putar dari awal",
+  "guide.empty": "Informasi acara tidak tersedia.",
+  "guide.failed": "Informasi acara tidak dapat dimuat.",
   "guide.addIt": "Tambahkan",
   "guide.showMatches": "Tampilkan kecocokan",
   "guide.clear": "Hapus",
@@ -185,8 +204,7 @@ export default {
   "channel.unnamed": "Tanpa nama",
   "channel.hidden": "Tersembunyi",
   "channel.noCategories": "Belum ada kategori.",
-  "channel.allCategoriesHidden":
-    "Semua kategori disembunyikan.",
+  "channel.allCategoriesHidden": "Semua kategori disembunyikan.",
   "channel.nothingInCategory": "Tidak ada apa pun dalam kategori ini.",
   "channel.noMatches": ({ query }) => `Tidak ada kanal yang cocok dengan “${query}”.`,
   "channel.typeName": "Ketik nama kanal.",
@@ -254,6 +272,8 @@ export default {
   "playlist.refreshFailed": ({ detail }) =>
     `Tidak dapat menyegarkan: ${detail}. Salinan terakhir yang disimpan ditampilkan.`,
   "playlist.loadFailed": ({ detail }) => `Tidak dapat memuat daftar putar: ${detail}`,
+  "playlist.browserTransportFailed":
+    "Browser ini tidak dapat menjangkau penyedia melalui HTTPS. Penyedia harus mendukung HTTPS dan CORS.",
   "playlist.loadingActive": "Memuat daftar putar aktif…",
   "playlist.loadedActive": ({ count }) => `${count} kanal dimuat dari daftar putar aktif.`,
   "playlist.addToStart": "Tambahkan alamat daftar putar M3U untuk mulai menonton.",
@@ -347,7 +367,8 @@ export default {
   "about.qrAlt": ({ url }) => `Kode QR yang mengarah ke ${url}`,
   "settings.remoteAccess": "Akses jarak jauh",
   "remote.setupTitle": "Siapkan dengan perangkat Anda",
-  "remote.setupBody": "Pindai kode QR untuk menambahkan daftar putar dan memilih pengaturan dengan lebih mudah.",
+  "remote.setupBody":
+    "Pindai kode QR untuk menambahkan daftar putar dan memilih pengaturan dengan lebih mudah.",
   "remote.addressHint": "Jika tidak dapat memindai, buka alamat ini",
   "remote.codeHint": "Kemudian masukkan kode ini",
   "remote.waiting": "Menunggu perangkat terhubung",
@@ -355,7 +376,8 @@ export default {
   "remote.connected": ({ name }) => `${name} terhubung`,
   "remote.unavailable": "Penyiapan perangkat tidak tersedia di jaringan ini.",
   "remote.manualFallback": "Anda tetap dapat memasukkan daftar putar di sebelah kiri.",
-  "remote.pairedHint": "Perangkat dapat mengelola daftar putar dan pengaturan saat OpenIPTV berjalan.",
+  "remote.pairedHint":
+    "Perangkat dapat mengelola daftar putar dan pengaturan saat OpenIPTV berjalan.",
   "remote.noDevices": "Tidak ada perangkat yang dipasangkan.",
   "remote.thisDevice": "Perangkat ini",
   "remote.lastUsed": ({ when }) => `Terakhir digunakan ${when}`,
@@ -370,19 +392,40 @@ export default {
   "remote.setupCompleteBody": ({ count }) =>
     `${count} saluran ditemukan dan ditambahkan ke OpenIPTV. Lanjutkan di TV atau buka Pengaturan di sini untuk mengelola daftar putar dan preferensi.`,
   "remote.setupFailedTitle": "Daftar putar ini tidak dapat ditambahkan",
-  "remote.setupLoadFailed": "Tidak ada saluran yang ditemukan di alamat ini. Periksa alamat lalu coba lagi.",
+  "remote.setupLoadFailed":
+    "Tidak ada saluran yang ditemukan di alamat ini. Periksa alamat lalu coba lagi.",
   "remote.deviceName": "Nama perangkat",
   "remote.renameAria": ({ name }) => `Ubah nama ${name}`,
   "remote.revokeAria": ({ name }) => `Cabut akses ${name}`,
   "remote.revokeQuestion": ({ name }) => `Cabut akses ${name}?`,
-  "remote.revokeBody": "Perangkat ini harus memindai kode QR baru sebelum dapat terhubung lagi.",
-  "remote.revokeSelfBody": "Ini adalah perangkat yang sedang digunakan. Mencabut akses akan memutuskan sambungannya dan perangkat harus dipasangkan lagi.",
+  "remote.revokeBody":
+    "Perangkat ini harus memindai kode QR baru sebelum dapat terhubung lagi.",
+  "remote.revokeSelfBody":
+    "Ini adalah perangkat yang sedang digunakan. Mencabut akses akan memutuskan sambungannya dan perangkat harus dipasangkan lagi.",
   "remote.remotePlayPause": "Putar/Jeda",
   "remote.revoke": "Cabut akses",
   "remote.qrAlt": "Kode QR untuk penyiapan perangkat lokal",
   "remote.conflict": "Pengaturan telah diubah di perangkat lain. Tinjau lalu coba lagi.",
   "remote.tvUnavailable": "TV tidak tersedia. Biarkan OpenIPTV terbuka lalu coba lagi.",
   "remote.revoked": "Perangkat ini tidak lagi memiliki akses.",
+  "remote.trustedNetwork":
+    "Koneksi HTTP lokal ini hanya untuk jaringan pribadi tepercaya. Kredensial akun dan alamat stream tidak pernah ditampilkan.",
+  "playlist.accountActive": "Aktif",
+  "playlist.accountInactive": "Tidak aktif",
+  "playlist.accountExpired": "Kedaluwarsa",
+  "playlist.accountTrial": "uji coba",
+  "playlist.accountExpiryUnknown": "Masa berlaku tidak diketahui",
+  "playlist.accountExpires": ({ date }) => `Berlaku hingga ${date}`,
+  "playlist.accountConnections": ({ active, maximum }) =>
+    `${active} dari ${maximum} koneksi aktif`,
+  "guide.seek": "Geser sepuluh detik",
+  "search.mediaName": "Nama film atau serial",
+  "search.mediaAria": "Cari film atau serial berdasarkan nama",
+  "error.seekUnavailable": "Video ini tidak dapat digeser pada perangkat ini.",
+  "error.continueOrTryFormat": "Lanjutkan dari posisi saat ini atau coba format lain.",
+  "error.finiteFormatUnsupported":
+    "Video ini menggunakan format yang tidak dapat didekode oleh pemutar.",
+  "error.tryTelevisionOrVideo": "Coba di televisi atau pilih video lain.",
   "exit.question": "Tutup OpenIPTV?",
   "exit.body": "Anda dapat membukanya lagi dari baris Aplikasi.",
 } satisfies Partial<Record<MessageKey, string | ((values: MessageValues) => string)>>;

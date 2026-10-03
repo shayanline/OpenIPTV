@@ -85,6 +85,8 @@ html.tizen .app {
 }
 
 .icon {
+  position: relative;
+  top: -1px;
   display: block;
   width: 1.05em;
   height: 1.05em;
@@ -267,7 +269,7 @@ html.tizen .app {
 .panel-keys {
   display: flex;
   align-items: center;
-  gap: var(--s2);
+  gap: var(--s1);
 }
 
 /*
@@ -315,6 +317,51 @@ html.tizen .app {
   transform: translateX(calc(-100% - var(--panel-shadow-w)));
   pointer-events: none;
   transition: transform var(--t-panel) var(--ease-exit);
+}
+.guide-drawer {
+  position: absolute;
+  z-index: var(--z-panel);
+  top: var(--safe-y);
+  right: var(--safe-x);
+  bottom: var(--safe-y);
+  width: var(--list-w);
+  max-width: calc(100% - var(--safe-x) - var(--safe-x));
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background: var(--over-video);
+  box-shadow: var(--lift);
+  animation: guide-drawer-in var(--t-panel) var(--ease-enter);
+}
+@keyframes guide-drawer-in {
+  from {
+    transform: translateX(calc(100% + var(--safe-x)));
+  }
+}
+.guide-drawer.closing {
+  pointer-events: none;
+  animation: guide-drawer-out var(--t-panel) var(--ease-exit) forwards;
+}
+@keyframes guide-drawer-out {
+  to {
+    transform: translateX(calc(100% + var(--safe-x)));
+  }
+}
+.guide-drawer .guide-list {
+  width: 100%;
+  padding: var(--s3);
+}
+.guide-drawer .pane-head {
+  min-height: 64px;
+  margin-bottom: var(--s2);
+  padding: 0 0 var(--s2);
+  border-bottom: 1px solid var(--line);
+}
+.guide-drawer .panel-title {
+  font-size: var(--t-section);
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
 }
 
 .rail,
@@ -407,6 +454,38 @@ html.tizen .app {
    different heights is exactly the ragged layout it warns about. */
 /* The header's glyph and its word are one thing, so the count can keep the far edge to itself.
    Loose children of a header that spreads them would put the word in the middle of the column. */
+.pane-head.media-appbar {
+  justify-content: flex-start;
+  margin-bottom: 0;
+}
+.media-appbar .panel-title {
+  flex: 1;
+}
+.media-back {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 40px;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-pill);
+  background: var(--surface-2);
+  color: var(--text-2);
+}
+.media-back .icon {
+  width: 22px;
+  height: 22px;
+}
+.media-back:focus {
+  outline: none;
+}
+.pane.focused .media-back.selected,
+.media-back:hover {
+  background: var(--focus);
+  color: var(--on-focus);
+}
 .pane-head-label {
   display: flex;
   flex: 1 1 auto;
@@ -426,6 +505,9 @@ html.tizen .app {
      selected first row is a filled block, so without this the two almost touch. */
   margin-bottom: var(--s2);
   padding-right: var(--s2);
+}
+.rail .pane-head {
+  margin-bottom: 0;
 }
 
 /*
@@ -470,8 +552,332 @@ html.tizen .app {
   letter-spacing: 0.06em;
 }
 
-/* Search and Settings, in the panel's title bar. Two of them now, so the rule is named after
-   what they are rather than after the one that used to be alone here. */
+/* The source selector and application controls share the panel's title bar. */
+.content-selector {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+  padding: 4px;
+  border-radius: var(--r-pill);
+  background: var(--tonal);
+}
+.content-option {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  padding: 0 var(--s2);
+  border: 0;
+  border-radius: var(--r-pill);
+  background: transparent;
+  color: var(--text-2);
+  font-size: var(--t-caption);
+}
+.content-option .icon {
+  width: 24px;
+  height: 24px;
+}
+.content-option.selected {
+  background: var(--control-on);
+  color: var(--on-accent);
+}
+.content-option.focused {
+  background: var(--focus);
+  color: var(--on-focus);
+}
+.content-option:focus {
+  outline: none;
+}
+.rail-content-switcher {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 65px;
+  margin: 0 var(--s2) 0 0;
+  padding: 2px 0 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+}
+.rail-content-switcher .content-selector {
+  width: 100%;
+  margin: 0;
+}
+.rail-content-switcher .content-option {
+  justify-content: center;
+  flex: 1;
+}
+
+.media-meta,
+.media-detail-meta,
+.media-search-scope {
+  color: var(--text-3);
+  font-size: var(--t-caption);
+}
+.ch-badge.media-rating {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  line-height: 1;
+  background: var(--accent-dim);
+  color: var(--accent);
+}
+.ch-badge.media-rating .icon {
+  display: block;
+  width: 14px;
+  height: 14px;
+}
+.media-favourite {
+  color: var(--accent);
+}
+.media-breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 36px;
+  margin-bottom: var(--s1);
+  padding: 0 var(--s2) 0 calc(40px + var(--s2));
+  overflow: hidden;
+  color: var(--text-3);
+  font-size: var(--t-caption);
+  white-space: nowrap;
+}
+.media-breadcrumb-part {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.media-breadcrumb .current {
+  color: var(--text-2);
+}
+.media-breadcrumb-separator {
+  flex: 0 0 auto;
+  color: var(--accent);
+}
+.media-search-scope {
+  min-height: 32px;
+  margin: 0;
+  padding: 0 var(--s2);
+}
+.media-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  padding: var(--s4);
+  text-align: center;
+}
+.media-state > * + * {
+  margin-top: var(--s2);
+}
+.guide-programme {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+}
+.guide-play:focus {
+  outline: none;
+}
+.guide-time {
+  flex: 0 0 116px;
+  color: var(--text-3);
+  font-size: var(--t-caption);
+}
+.guide-copy,
+.pb-programmes {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.guide-title-line {
+  display: flex;
+  align-items: center;
+  gap: var(--s1);
+  min-width: 0;
+}
+.guide-title-line .row-label {
+  min-width: 0;
+}
+.guide-now {
+  flex: 0 0 auto;
+  padding: 2px var(--s1);
+  border-radius: var(--r-pill);
+  background: var(--accent-dim);
+  color: var(--accent);
+  font-size: var(--t-caption);
+}
+.guide-row.current {
+  background: var(--accent-dim);
+}
+.guide-row.current::before {
+  content: "";
+  position: absolute;
+  top: 22%;
+  bottom: 22%;
+  left: 0;
+  width: 4px;
+  border-radius: var(--r-pill);
+  background: var(--accent);
+}
+.guide-row.current .guide-time {
+  color: var(--accent);
+}
+.guide-description,
+.pb-programme {
+  overflow: hidden;
+  color: var(--text-3);
+  font-size: var(--t-caption);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.guide-play {
+  flex: 0 0 auto;
+}
+.pane.focused .guide-row.selected .guide-time,
+.pane.focused .guide-row.selected .guide-description,
+.pane.focused .guide-row.selected .pb-programme {
+  color: rgba(0, 0, 0, 0.62);
+}
+.media-detail-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  padding: var(--s3);
+  overflow: hidden;
+}
+.media-hero {
+  display: flex;
+  gap: var(--s3);
+  min-height: 0;
+}
+.media-hero.compact {
+  gap: var(--s2);
+  padding: var(--s2);
+  border-bottom: 1px solid var(--line);
+}
+.media-poster {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 176px;
+  width: 176px;
+  height: 264px;
+  overflow: hidden;
+  border-radius: var(--r-md);
+  background: var(--tonal);
+}
+.media-hero.compact .media-poster {
+  flex-basis: 96px;
+  width: 96px;
+  height: 144px;
+}
+.media-poster-art {
+  display: block;
+  max-width: 100%;
+  max-height: 100%;
+}
+.media-poster > .icon {
+  width: 48px;
+  height: 48px;
+  color: var(--text-3);
+}
+.media-hero-copy {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+.media-title {
+  display: -webkit-box;
+  margin: 0 0 var(--s2);
+  overflow: hidden;
+  font-size: var(--t-title);
+  line-height: 1.15;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+.media-hero.compact .media-title {
+  font-size: var(--t-section);
+}
+.media-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s1);
+  margin-bottom: var(--s2);
+}
+.media-badge {
+  padding: 3px var(--s1);
+  border-radius: var(--r-pill);
+  background: var(--tonal);
+  color: var(--text-2);
+  font-size: var(--t-caption);
+  font-variant-numeric: tabular-nums;
+}
+.media-badge.rating {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  line-height: 1;
+  background: var(--accent-dim);
+  color: var(--accent);
+}
+.media-badge.rating .icon {
+  display: block;
+  width: 14px;
+  height: 14px;
+}
+.media-plot {
+  display: -webkit-box;
+  margin: 0 0 var(--s2);
+  overflow: hidden;
+  color: var(--text-2);
+  font-size: var(--t-caption);
+  line-height: 1.35;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 5;
+}
+.media-hero.compact .media-plot {
+  -webkit-line-clamp: 2;
+}
+.media-cast {
+  margin: 0 0 var(--s1);
+  overflow: hidden;
+  color: var(--text-3);
+  font-size: var(--t-caption);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.media-play-action {
+  align-self: flex-start;
+  margin-top: var(--s3);
+}
+.media-play-action:focus {
+  background: var(--tonal);
+  color: var(--text);
+}
+.media-details.focused .media-play-action.selected {
+  background: var(--focus);
+  color: var(--on-focus);
+}
+.media-number {
+  flex: 0 0 48px;
+  color: var(--text-3);
+  font-size: var(--t-caption);
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
 .panel-key {
   display: flex;
   align-items: center;
@@ -569,6 +975,10 @@ html.tizen .app {
  * "which category are these from" stops being obvious. So it waits until then, and then it is
  * still, because by then the column has long since caught up.
  */
+.rail .row-label {
+  position: relative;
+  top: 2px;
+}
 .rail .row.hidden {
   opacity: 0.42;
 }
@@ -590,7 +1000,7 @@ html.tizen .app {
 .pane:not(.focused) .row.showing {
   color: var(--text);
 }
-.pane:not(.focused) .row.showing::before {
+.row.showing::before {
   content: "";
   position: absolute;
   left: 0;
@@ -600,6 +1010,10 @@ html.tizen .app {
   border-radius: var(--r-pill);
   background: var(--accent);
   transform: translateY(-50%);
+}
+.rail.focused .row.showing.selected::before,
+.sheet-rail.focused .row.showing.selected::before {
+  display: none;
 }
 
 /*
@@ -660,6 +1074,61 @@ html.tizen .app {
   text-overflow: clip;
   line-height: 1.25;
 }
+.teleprompter {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.teleprompter-run {
+  display: inline-block;
+  min-width: 100%;
+  white-space: nowrap;
+}
+.row-label.two-line.teleprompter {
+  display: block;
+  max-height: 2.5em;
+  white-space: normal;
+}
+.teleprompter.vertical .teleprompter-run {
+  display: block;
+  white-space: normal;
+}
+.pane.focused .row.selected .teleprompter.overflowing:not(.vertical) .teleprompter-run,
+.guide-list.focused
+  .guide-row.cursor
+  .teleprompter.overflowing:not(.vertical)
+  .teleprompter-run {
+  animation: teleprompter-x 10s linear 1.2s infinite;
+}
+.pane.focused .row.selected .teleprompter.vertical.overflowing .teleprompter-run {
+  animation: teleprompter-y 10s linear 1.2s infinite;
+}
+@keyframes teleprompter-x {
+  0%,
+  15% {
+    transform: translateX(0);
+  }
+  65%,
+  82% {
+    transform: translateX(var(--teleprompter-shift));
+  }
+  100% {
+    transform: translateX(0);
+  }
+}
+@keyframes teleprompter-y {
+  0%,
+  15% {
+    transform: translateY(0);
+  }
+  65%,
+  82% {
+    transform: translateY(var(--teleprompter-shift));
+  }
+  100% {
+    transform: translateY(0);
+  }
+}
 
 .count,
 .ch-badge {
@@ -694,6 +1163,10 @@ html.tizen .app {
 .pane.focused .row.selected .count,
 .pane.focused .row.selected .ch-badge {
   background: rgba(0, 0, 0, 0.12);
+  color: rgba(0, 0, 0, 0.62);
+}
+.pane.focused .row.selected .media-number,
+.pane.focused .row.selected .media-meta {
   color: rgba(0, 0, 0, 0.62);
 }
 
@@ -889,8 +1362,7 @@ html.tizen .app {
    is within it. It fades in on movement and away when idle, as the guidelines describe. */
 .scrollbar {
   position: absolute;
-  /* Spanning the rows, which now run to the foot of the pane, so this does too. */
-  top: calc(var(--safe-y) + var(--s5));
+  top: 0;
   bottom: 0;
   right: 6px;
   width: 4px;
@@ -932,7 +1404,7 @@ html.tizen .app {
 }
 .playback-info {
   position: absolute;
-  z-index: var(--z-notice);
+  z-index: 51;
   top: 50%;
   right: var(--safe-x);
   left: auto;
@@ -1384,11 +1856,11 @@ html[dir="rtl"] .playback-info {
   gap: var(--s1);
   max-width: 820px;
 }
-.language-picker {
+.option-picker {
   position: relative;
   min-width: 320px;
 }
-.language-picker-current {
+.option-picker-current {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1403,24 +1875,24 @@ html[dir="rtl"] .playback-info {
   font-size: var(--t-label);
   text-align: start;
 }
-.language-picker-current:focus {
+.option-picker-current:focus {
   outline: none;
   background: var(--focus);
   color: var(--on-focus);
 }
-.language-picker-chevron {
+.option-picker-chevron {
   margin-left: var(--s2);
   color: var(--text-2);
 }
-.language-picker-current:focus .language-picker-chevron {
+.option-picker-current:focus .option-picker-chevron {
   color: var(--on-focus);
 }
-.language-picker-current > span:first-child,
-.language-picker-option > span {
+.option-picker-current > span:first-child,
+.option-picker-option > span {
   position: relative;
   top: 2px;
 }
-.language-picker-list {
+.option-picker-list {
   position: absolute;
   z-index: var(--z-popup);
   top: calc(100% + var(--s1));
@@ -1433,7 +1905,7 @@ html[dir="rtl"] .playback-info {
   background: var(--surface-2);
   box-shadow: var(--lift);
 }
-.language-picker-option {
+.option-picker-option {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1448,22 +1920,22 @@ html[dir="rtl"] .playback-info {
   font-size: var(--t-label);
   text-align: start;
 }
-.language-picker-option.selected {
+.option-picker-option.selected {
   background: var(--accent-dim);
 }
-.language-picker-option:focus {
+.option-picker-option:focus {
   outline: none;
   background: var(--focus);
   color: var(--on-focus);
 }
-.language-picker-secondary {
+.option-picker-secondary {
   color: var(--text-2);
   font-size: var(--t-caption);
 }
-.language-picker-option:focus .language-picker-secondary {
+.option-picker-option:focus .option-picker-secondary {
   color: rgba(0, 0, 0, 0.55);
 }
-html[dir="rtl"] .language-picker-list {
+html[dir="rtl"] .option-picker-list {
   right: auto;
   left: 0;
 }
@@ -1508,6 +1980,42 @@ html[dir="rtl"] .language-picker-list {
   margin: 0 0 var(--s3) var(--s2);
   font-size: var(--t-hero);
   font-weight: 600;
+}
+.settings-titlebar {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  min-height: 56px;
+  margin-bottom: var(--s3);
+}
+.settings-titlebar h2 {
+  margin: 0;
+}
+.settings-close {
+  position: relative;
+  top: -3px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 44px;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-pill);
+  background: var(--surface-2);
+  color: var(--text-2);
+}
+.settings-close .icon {
+  width: 22px;
+  height: 22px;
+}
+.settings-close:focus {
+  outline: none;
+}
+.sheet-rail.focused .settings-close.selected {
+  background: var(--focus);
+  color: var(--on-focus);
 }
 /* The rows stop short of the divider on their right, the same clearance the panel's channel column
    keeps on its left, so the highlight never touches the line. */
@@ -1695,6 +2203,41 @@ html[dir="rtl"] .language-picker-list {
   background: transparent;
   font-size: var(--t-body);
 }
+.category-kind-selector {
+  display: flex;
+  gap: var(--s1);
+  margin: var(--s2) 0;
+}
+.category-kind-option {
+  display: flex;
+  align-items: center;
+  gap: var(--s1);
+  flex: 1;
+  min-height: 52px;
+  padding: 0 var(--s2);
+  border: 0;
+  border-radius: var(--r-md);
+  background: var(--surface-2);
+  color: var(--text-2);
+  font-size: var(--t-caption);
+}
+.category-kind-option > span:not(.count) {
+  flex: 1;
+  text-align: start;
+}
+.category-kind-option .icon {
+  width: 20px;
+  height: 20px;
+}
+.category-kind-option[aria-pressed="true"] {
+  background: var(--control-on);
+  color: var(--on-accent);
+}
+.category-kind-option:focus {
+  outline: none;
+  background: var(--focus);
+  color: var(--on-focus);
+}
 .settings-list-tools {
   position: relative;
 }
@@ -1792,11 +2335,21 @@ html[dir="rtl"] .language-picker-list {
 .category-setting-row:focus .switch:not(.on) .switch-knob {
   background: rgba(16, 16, 19, 0.62);
 }
+.category-pagination {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  margin-top: var(--s2);
+}
+.category-pagination .btn[aria-disabled="true"] {
+  opacity: 0.45;
+}
 .category-position {
-  margin: var(--s2) 0 0;
+  flex: 1;
+  margin: 0;
   color: var(--text-3);
   font-size: var(--t-caption);
-  text-align: end;
+  text-align: center;
 }
 
 /*
@@ -2006,6 +2559,16 @@ html[dir="rtl"] .language-picker-list {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.playlist-account-status {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px var(--s2);
+  color: var(--text-2);
+  font-size: var(--t-caption);
+}
+.pl-main:focus .playlist-account-status {
+  color: rgba(0, 0, 0, 0.72);
+}
 .device-access {
   display: flex;
   flex-direction: column;
@@ -2155,6 +2718,10 @@ html[dir="rtl"] .form select {
   margin-top: 0;
 }
 .playlist-source-options .btn[aria-pressed="true"] {
+  background: var(--control-on);
+  color: var(--on-accent);
+}
+.playlist-source-options .btn[aria-pressed="true"]:focus {
   background: var(--focus);
   color: var(--on-focus);
 }
@@ -2486,19 +3053,10 @@ html[dir="rtl"] .form select {
   right: 2px;
   top: 61px;
 }
-/* The same faint chevrons the remote's own wheel is drawn with, rather than four arrows the
-   hardware does not print. */
-.pad-up .chev {
-  transform: rotate(45deg) translate(1px, 1px);
-}
-.pad-down .chev {
-  transform: rotate(-135deg) translate(1px, 1px);
-}
-.pad-left .chev {
-  transform: rotate(-45deg) translate(1px, 1px);
-}
-.pad-right .chev {
-  transform: rotate(135deg) translate(1px, 1px);
+.pad-dir .icon {
+  width: 18px;
+  height: 18px;
+  color: var(--text-3);
 }
 
 .pad-ok {
@@ -3130,27 +3688,13 @@ html[dir="rtl"] .form select {
   border-radius: 8px 26px 26px 8px;
 }
 
-/* A chevron drawn from a rotated corner, so it needs no glyph and no font. */
-.chev {
-  width: 8px;
-  height: 8px;
-  border-top: 2px solid rgba(255, 255, 255, 0.45);
-  border-left: 2px solid rgba(255, 255, 255, 0.45);
+.remote .dp .icon {
+  width: 16px;
+  height: 16px;
+  color: rgba(255, 255, 255, 0.45);
 }
-.dp.up .chev {
-  transform: rotate(45deg) translate(1px, 1px);
-}
-.dp.down .chev {
-  transform: rotate(-135deg) translate(1px, 1px);
-}
-.dp.left .chev {
-  transform: rotate(-45deg) translate(1px, 1px);
-}
-.dp.right .chev {
-  transform: rotate(135deg) translate(1px, 1px);
-}
-.remote .dp:active .chev {
-  border-color: #16181a;
+.remote .dp:active .icon {
+  color: #16181a;
 }
 
 .remote .dp.ok {
@@ -3412,7 +3956,34 @@ html[dir="rtl"] .form select {
 /* The title bar's two keys, and the field's icon against its input. Both are new spacing and
    both would be no spacing at all on a 2020 set without a line here. */
 .no-flex-gap .panel-keys > * + * {
+  margin-left: var(--s1);
+}
+.no-flex-gap .content-selector > * + * {
+  margin-left: 4px;
+}
+.no-flex-gap .content-option > * + * {
+  margin-left: 6px;
+}
+.no-flex-gap .category-kind-option > * + * {
+  margin-left: var(--s1);
+}
+.no-flex-gap .category-kind-selector > * + * {
+  margin-left: var(--s1);
+}
+.no-flex-gap .media-hero > * + * {
+  margin-left: var(--s3);
+}
+.no-flex-gap .media-hero.compact > * + * {
   margin-left: var(--s2);
+}
+.no-flex-gap .media-badges > * + * {
+  margin-left: var(--s1);
+}
+.no-flex-gap .media-badge.rating > * + *,
+.no-flex-gap .media-rating > * + *,
+.no-flex-gap .media-breadcrumb > * + *,
+.no-flex-gap .media-breadcrumb-part > * + * {
+  margin-left: 4px;
 }
 .no-flex-gap .brand > * + * {
   margin-left: var(--s2);
@@ -3436,9 +4007,15 @@ html[dir="rtl"] .form select {
   margin-left: var(--s2);
 }
 .no-flex-gap .row > * + *,
+.no-flex-gap .playlist-account-status > * + *,
+.no-flex-gap .guide-programme > * + *,
 .no-flex-gap .category-setting-row > * + *,
+.no-flex-gap .category-pagination > * + *,
 .no-flex-gap .settings-menu-item > * + * {
   margin-left: var(--s2);
+}
+.no-flex-gap .guide-title-line > * + * {
+  margin-left: var(--s1);
 }
 .no-flex-gap .settings-list-actions > * + *,
 .no-flex-gap .diag-key-history > * + *,
@@ -3447,6 +4024,9 @@ html[dir="rtl"] .form select {
 }
 .no-flex-gap .settings-detail-appbar > * + * {
   margin-left: var(--s1);
+}
+.no-flex-gap .settings-titlebar > * + * {
+  margin-left: var(--s2);
 }
 .no-flex-gap .diag-fact > * + * {
   margin-left: var(--s2);
@@ -3598,6 +4178,10 @@ html[dir="rtl"] .rail {
   padding-left: 0;
   padding-right: var(--safe-x);
 }
+html[dir="rtl"] .rail-content-switcher {
+  margin-left: var(--s2);
+  margin-right: 0;
+}
 html[dir="rtl"] .list {
   padding-left: 0;
   padding-right: var(--s3);
@@ -3612,7 +4196,8 @@ html[dir="rtl"] .window {
   left: var(--s2);
   right: 0;
 }
-html[dir="rtl"] .pane:not(.focused) .row.showing::before {
+html[dir="rtl"] .row.showing::before,
+html[dir="rtl"] .guide-row.current::before {
   left: auto;
   right: 0;
 }
@@ -3650,6 +4235,12 @@ html[dir="rtl"] .sheet-rail {
 html[dir="rtl"] .sheet-rail h2 {
   margin-left: 0;
   margin-right: var(--s2);
+}
+html[dir="rtl"] .settings-titlebar h2 {
+  margin: 0;
+}
+html[dir="rtl"] .settings-close .icon {
+  transform: scaleX(-1);
 }
 html[dir="rtl"] .sheet-rail .rail-scroll .row {
   margin-left: var(--s2);
@@ -3716,7 +4307,45 @@ html[dir="rtl"] .no-flex-gap .panel-key > * + * {
   margin-left: 0;
   margin-right: var(--s1);
 }
-html[dir="rtl"] .no-flex-gap .panel-keys > * + *,
+html[dir="rtl"] .no-flex-gap .panel-keys > * + * {
+  margin-left: 0;
+  margin-right: var(--s1);
+}
+html[dir="rtl"] .no-flex-gap .content-selector > * + * {
+  margin-left: 0;
+  margin-right: 4px;
+}
+html[dir="rtl"] .no-flex-gap .content-option > * + * {
+  margin-left: 0;
+  margin-right: 6px;
+}
+html[dir="rtl"] .no-flex-gap .category-kind-option > * + * {
+  margin-left: 0;
+  margin-right: var(--s1);
+}
+html[dir="rtl"] .no-flex-gap .category-kind-selector > * + * {
+  margin-left: 0;
+  margin-right: var(--s1);
+}
+html[dir="rtl"] .no-flex-gap .media-hero > * + * {
+  margin-left: 0;
+  margin-right: var(--s3);
+}
+html[dir="rtl"] .no-flex-gap .media-hero.compact > * + * {
+  margin-left: 0;
+  margin-right: var(--s2);
+}
+html[dir="rtl"] .no-flex-gap .media-badges > * + * {
+  margin-left: 0;
+  margin-right: var(--s1);
+}
+html[dir="rtl"] .no-flex-gap .media-badge.rating > * + *,
+html[dir="rtl"] .no-flex-gap .media-rating > * + *,
+html[dir="rtl"] .no-flex-gap .media-breadcrumb > * + *,
+html[dir="rtl"] .no-flex-gap .media-breadcrumb-part > * + * {
+  margin-left: 0;
+  margin-right: 4px;
+}
 html[dir="rtl"] .no-flex-gap .brand > * + *,
 html[dir="rtl"] .no-flex-gap .search > * + * {
   margin-left: 0;
@@ -3728,7 +4357,10 @@ html[dir="rtl"] .no-flex-gap .field > * + * {
   margin-right: var(--s3);
 }
 html[dir="rtl"] .no-flex-gap .row > * + *,
+html[dir="rtl"] .no-flex-gap .playlist-account-status > * + *,
+html[dir="rtl"] .no-flex-gap .guide-programme > * + *,
 html[dir="rtl"] .no-flex-gap .category-setting-row > * + *,
+html[dir="rtl"] .no-flex-gap .category-pagination > * + *,
 html[dir="rtl"] .no-flex-gap .settings-menu-item > * + *,
 html[dir="rtl"] .no-flex-gap .pane-head > * + *,
 html[dir="rtl"] .no-flex-gap .pane-head-label > * + * {
@@ -3739,10 +4371,23 @@ html[dir="rtl"] .no-flex-gap .settings-detail-appbar > * + * {
   margin-left: 0;
   margin-right: var(--s1);
 }
-html[dir="rtl"] .settings-detail-back .icon {
+html[dir="rtl"] .no-flex-gap .settings-titlebar > * + * {
+  margin-left: 0;
+  margin-right: var(--s2);
+}
+html[dir="rtl"] .settings-detail-back .icon,
+html[dir="rtl"] .media-back .icon {
   transform: scaleX(-1);
 }
+html[dir="rtl"] .media-breadcrumb {
+  padding-left: var(--s2);
+  padding-right: calc(40px + var(--s2));
+}
 html[dir="rtl"] .settings-list-title .count {
+  margin-left: 0;
+  margin-right: var(--s1);
+}
+html[dir="rtl"] .no-flex-gap .guide-title-line > * + * {
   margin-left: 0;
   margin-right: var(--s1);
 }
@@ -3816,14 +4461,14 @@ html[dir="rtl"] .no-flex-gap .onboard-language-options > * + * {
   margin-left: 0;
   margin-right: var(--s1);
 }
-html[dir="rtl"] .language-picker-chevron {
+html[dir="rtl"] .option-picker-chevron {
   margin-left: 0;
   margin-right: var(--s2);
 }
-.no-flex-gap .language-picker-option > * + * {
+.no-flex-gap .option-picker-option > * + * {
   margin-left: var(--s2);
 }
-html[dir="rtl"] .no-flex-gap .language-picker-option > * + * {
+html[dir="rtl"] .no-flex-gap .option-picker-option > * + * {
   margin-left: 0;
   margin-right: var(--s2);
 }

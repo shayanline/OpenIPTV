@@ -25,62 +25,50 @@ const no = (problem: string, problemKey: MessageKey): UrlCheck => ({
 
 export type XtreamOutput = "m3u8" | "ts";
 
-export interface XtreamCredentials {
+export interface M3USource {
+  kind: "m3u";
+  url: string;
+}
+
+export interface XtreamSource {
+  kind: "xtream";
   server: string;
   username: string;
   password: string;
   output: XtreamOutput;
 }
 
-export function xtreamPlaylistUrl(
+export type PlaylistSource = M3USource | XtreamSource;
+
+export function m3uSource(raw: string): M3USource | null {
+  const url = raw.trim();
+  return checkPlaylistUrl(url).ok ? { kind: "m3u", url } : null;
+}
+
+export function xtreamSource(
   server: string,
   username: string,
   password: string,
   output: XtreamOutput,
-): string {
-  if (!server.trim() || !username.trim() || !password) return "";
+): XtreamSource | null {
+  if (!username.trim() || !password) return null;
   try {
     const url = new URL(server.trim());
     if (
       (url.protocol !== "http:" && url.protocol !== "https:") ||
+      url.username ||
+      url.password ||
       !url.hostname.includes(".")
-    ) {
-      return "";
-    }
-    if (!/\/get\.php$/i.test(url.pathname)) {
-      url.pathname = `${url.pathname.replace(/\/+$/, "")}/get.php`;
-    }
-    url.search = "";
-    url.hash = "";
-    url.searchParams.set("username", username.trim());
-    url.searchParams.set("password", password);
-    url.searchParams.set("type", "m3u_plus");
-    url.searchParams.set("output", output);
-    return url.toString();
-  } catch {
-    return "";
-  }
-}
-
-export function parseXtreamPlaylistUrl(raw: string): XtreamCredentials | null {
-  try {
-    const url = new URL(raw.trim());
-    const username = url.searchParams.get("username") ?? "";
-    const password = url.searchParams.get("password") ?? "";
-    const output = url.searchParams.get("output");
-    if (
-      !/\/get\.php$/i.test(url.pathname) ||
-      !username ||
-      !password ||
-      url.searchParams.get("type") !== "m3u_plus" ||
-      (output !== "m3u8" && output !== "ts")
     ) {
       return null;
     }
-    const path = url.pathname.replace(/\/get\.php$/i, "");
+    url.pathname = url.pathname.replace(/\/get\.php$/i, "").replace(/\/+$/, "");
+    url.search = "";
+    url.hash = "";
     return {
-      server: path ? `${url.origin}${path}` : url.origin,
-      username,
+      kind: "xtream",
+      server: url.toString().replace(/\/$/, ""),
+      username: username.trim(),
       password,
       output,
     };
@@ -89,14 +77,31 @@ export function parseXtreamPlaylistUrl(raw: string): XtreamCredentials | null {
   }
 }
 
-export function redactPlaylistUrl(raw: string): string {
+export function sourceDisplay(source: PlaylistSource): string {
+  return source.kind === "m3u" ? source.url : source.server;
+}
+
+export function parseXtreamPlaylistUrl(raw: string): XtreamSource | null {
   try {
-    const url = new URL(raw);
-    if (!url.searchParams.has("password")) return raw;
-    url.searchParams.set("password", "••••••••");
-    return url.toString().replace(encodeURIComponent("••••••••"), "••••••••");
+    const url = new URL(raw.trim());
+    const username = url.searchParams.get("username") ?? "";
+    const password = url.searchParams.get("password") ?? "";
+    const type = url.searchParams.get("type") ?? "m3u_plus";
+    const output = url.searchParams.get("output") ?? "ts";
+    if (
+      !/\/get\.php$/i.test(url.pathname) ||
+      !username ||
+      !password ||
+      type !== "m3u_plus" ||
+      (output !== "m3u8" && output !== "ts")
+    ) {
+      return null;
+    }
+    url.search = "";
+    url.hash = "";
+    return xtreamSource(url.toString(), username, password, output);
   } catch {
-    return raw;
+    return null;
   }
 }
 

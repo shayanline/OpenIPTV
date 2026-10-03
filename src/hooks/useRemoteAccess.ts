@@ -17,10 +17,7 @@ export type RemoteAccessControl = RemoteAccessState & {
   retry: () => void;
 };
 
-export function useRemoteAccess(
-  enabled: boolean,
-  development = false,
-): RemoteAccessControl {
+export function useRemoteAccess(enabled: boolean, development = false): RemoteAccessControl {
   const [state, setState] = useState(remoteAccessState);
 
   useEffect(() => subscribeRemoteAccess(setState), []);

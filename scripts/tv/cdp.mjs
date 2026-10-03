@@ -52,12 +52,16 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 async function openPage(port) {
   for (const method of ["GET", "PUT"]) {
     try {
-      const res = await fetch(`http://127.0.0.1:${port}/json/new?about:blank`,
-        { method, signal: AbortSignal.timeout(2000) });
+      const res = await fetch(`http://127.0.0.1:${port}/json/new?about:blank`, {
+        method,
+        signal: AbortSignal.timeout(2000),
+      });
       if (!res.ok) continue;
       const page = await res.json();
       if (page.webSocketDebuggerUrl) return page.webSocketDebuggerUrl;
-    } catch { /* try the other one */ }
+    } catch {
+      /* try the other one */
+    }
   }
   return null;
 }
@@ -74,8 +78,9 @@ async function firstPage(port, tries = 60) {
   let asked = false;
   for (let i = 0; i < tries; i++) {
     try {
-      const res = await fetch(`http://127.0.0.1:${port}/json/list`,
-        { signal: AbortSignal.timeout(2000) });
+      const res = await fetch(`http://127.0.0.1:${port}/json/list`, {
+        signal: AbortSignal.timeout(2000),
+      });
       const pages = (await res.json()).filter((p) => p.type === "page");
       if (pages.length) return pages[0].webSocketDebuggerUrl;
       if (!asked) {
@@ -83,7 +88,9 @@ async function firstPage(port, tries = 60) {
         const opened = await openPage(port);
         if (opened) return opened;
       }
-    } catch { /* not up yet */ }
+    } catch {
+      /* not up yet */
+    }
     await sleep(250);
   }
   throw new Error(`No debuggable page on port ${port}, and none could be opened`);
@@ -92,15 +99,22 @@ async function firstPage(port, tries = 60) {
 export async function connect(portOrUrl) {
   const wsUrl = typeof portOrUrl === "number" ? await firstPage(portOrUrl) : portOrUrl;
   const ws = new WebSocket(wsUrl);
-  await new Promise((res, rej) => { ws.onopen = res; ws.onerror = rej; });
+  await new Promise((res, rej) => {
+    ws.onopen = res;
+    ws.onerror = rej;
+  });
   // Chrome closing is how this normally ends, so a socket error on the way out is noise
   // rather than news. The flag is set by close() before the socket is touched, not only in
   // onclose, because a deliberate shutdown reports the error first and the close after, so
   // reacting to onclose alone printed "cdp socket error:" with an empty message on every
   // single tidy exit.
   let closing = false;
-  ws.onclose = () => { closing = true; };
-  ws.onerror = (e) => { if (!closing) console.error("cdp socket error:", e?.message ?? e); };
+  ws.onclose = () => {
+    closing = true;
+  };
+  ws.onerror = (e) => {
+    if (!closing) console.error("cdp socket error:", e?.message ?? e);
+  };
 
   let id = 0;
   const pending = new Map();
@@ -144,26 +158,33 @@ export async function connect(portOrUrl) {
      * against silence rather than a performance assertion, so it only has to be shorter than
      * somebody's patience.
      */
-    send: (method, params = {}, timeout = 60000) => new Promise((resolve, reject) => {
-      const i = ++id;
-      const timer = setTimeout(() => {
-        pending.delete(i);
-        reject(new Error(`${method} did not answer within ${timeout}ms`));
-      }, timeout);
-      const settle = (fn) => (value) => { clearTimeout(timer); fn(value); };
-      pending.set(i, { resolve: settle(resolve), reject: settle(reject) });
-      try {
-        ws.send(JSON.stringify({ id: i, method, params }));
-      } catch (e) {
-        pending.delete(i);
-        clearTimeout(timer);
-        reject(e);
-      }
-    }),
+    send: (method, params = {}, timeout = 60000) =>
+      new Promise((resolve, reject) => {
+        const i = ++id;
+        const timer = setTimeout(() => {
+          pending.delete(i);
+          reject(new Error(`${method} did not answer within ${timeout}ms`));
+        }, timeout);
+        const settle = (fn) => (value) => {
+          clearTimeout(timer);
+          fn(value);
+        };
+        pending.set(i, { resolve: settle(resolve), reject: settle(reject) });
+        try {
+          ws.send(JSON.stringify({ id: i, method, params }));
+        } catch (e) {
+          pending.delete(i);
+          clearTimeout(timer);
+          reject(e);
+        }
+      }),
     on(method, fn) {
       if (!handlers.has(method)) handlers.set(method, []);
       handlers.get(method).push(fn);
     },
-    close: () => { closing = true; ws.close(); },
+    close: () => {
+      closing = true;
+      ws.close();
+    },
   };
 }

@@ -1,6 +1,7 @@
 import { useRef, useState } from "react";
 import { useLocale } from "../hooks/useLocale";
 import { KEY, sendKey } from "../hooks/useRemote";
+import { Icon } from "./Icon";
 
 /**
  * The Smart Remote's navigation area, on screen, for anyone driving with a mouse.
@@ -82,7 +83,7 @@ export function PointerPad({ shown }: { shown: boolean }) {
           onClick={() => sendKey(KEY.UP)}
           aria-label={t("common.up")}
         >
-          <i className="chev" />
+          <Icon name="chevronUp" />
         </button>
         <button
           type="button"
@@ -91,7 +92,7 @@ export function PointerPad({ shown }: { shown: boolean }) {
           onClick={() => sendKey(KEY.RIGHT)}
           aria-label={t("common.right")}
         >
-          <i className="chev" />
+          <Icon name="chevronRight" />
         </button>
         <button
           type="button"
@@ -100,7 +101,7 @@ export function PointerPad({ shown }: { shown: boolean }) {
           onClick={() => sendKey(KEY.DOWN)}
           aria-label={t("common.down")}
         >
-          <i className="chev" />
+          <Icon name="chevronDown" />
         </button>
         <button
           type="button"
@@ -109,7 +110,7 @@ export function PointerPad({ shown }: { shown: boolean }) {
           onClick={() => sendKey(KEY.LEFT)}
           aria-label={t("common.left")}
         >
-          <i className="chev" />
+          <Icon name="chevronLeft" />
         </button>
         <button
           type="button"
@@ -133,17 +134,7 @@ export function PointerPad({ shown }: { shown: boolean }) {
           onClick={() => sendKey(KEY.BACK)}
           aria-label={t("common.returnKey")}
         >
-          <svg
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.9"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <path d="M9 6.5L4.5 11 9 15.5" />
-            <path d="M4.5 11h9a6 6 0 0 1 0 12h-2" />
-          </svg>
+          <Icon name="return" />
         </button>
         <button
           type="button"
@@ -152,11 +143,7 @@ export function PointerPad({ shown }: { shown: boolean }) {
           onClick={() => sendKey(KEY.PLAY_PAUSE)}
           aria-label={t("common.playPause")}
         >
-          <svg viewBox="0 0 24 24" fill="currentColor">
-            <path d="M4 4.5l9 7.5-9 7.5z" />
-            <rect x="15" y="4.5" width="2.4" height="15" rx="1" />
-            <rect x="19.2" y="4.5" width="2.4" height="15" rx="1" />
-          </svg>
+          <Icon name="play" />
         </button>
       </div>
     </div>

@@ -56,7 +56,11 @@ test("the launch screen carries the app's own mark", async () => {
   await mountApp(PLAYLIST, { awaitPlaylist: false });
   const mark = document.querySelector(".splash .splash-mark");
   assert.equal(mark?.getAttribute("src"), "./icon.svg", "no mark on the launch screen");
-  assert.equal(mark?.getAttribute("aria-hidden"), "true", "the mark is decorative beside the name");
+  assert.equal(
+    mark?.getAttribute("aria-hidden"),
+    "true",
+    "the mark is decorative beside the name",
+  );
 });
 
 test("the splash goes once the channels are there", async () => {

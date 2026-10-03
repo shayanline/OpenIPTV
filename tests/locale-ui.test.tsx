@@ -22,7 +22,7 @@ test("the Persian system language applies RTL and opens the panel with Right", a
   expect(document.documentElement.lang).toBe("fa");
   expect(document.documentElement.dir).toBe("rtl");
   expect(panelOpen()).toBe(false);
-  expect(document.querySelector<HTMLElement>(".pb-number")?.textContent).toBe("۱");
+  expect(document.querySelector<HTMLElement>(".pb-number")?.textContent).toBe("1");
 
   press(KEY.RIGHT);
 

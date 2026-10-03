@@ -2,6 +2,38 @@
 
 Notable changes, newest first, in the format of [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## 1.9.0
+
+### Added
+
+- **Complete Xtream catalogues.** Live channels, movies, series, seasons and episodes use the Xtream API with provider wide search, category visibility and cached counts.
+- **Programme Guide.** Live playback includes a channel specific Guide drawer with current programme highlighting, catchup actions and cached schedule data.
+- **Finite playback.** Movies and episodes support play, pause, seeking, resume progress and finite completion without live stream retries.
+
+### Changed
+
+- **Complete translations.** Xtream setup, browsing, Guide, playback and stream format labels are represented across every supported locale catalog.
+- **Television navigation.** The title bar, content switcher, category rail, media hierarchy and Settings use separate focus levels with consistent remote cycles and visible return paths.
+- **Large catalogue loading.** Movie and series summary indexes load once per content type, provide unopened category counts and remain cached for six hours.
+- **Guide presentation.** Programme information uses an animated One UI drawer over the player, while Up, Down and mouse wheel movement follow each programme.
+- **Lucide icons.** The television and remote web interfaces use one consistent Lucide SVG icon set with packaged attribution.
+- **HTTP stream fallback.** Tizen retries eligible HTTPS connection failures once through the provider HTTP endpoint. Local browser and TV simulator sessions use a same origin relay that preserves MP4 byte ranges and rewrites HTTP HLS references, while hosted HTTPS browsers never downgrade.
+- **Playback information.** TV simulation reports resolution, rendition bitrate, network estimate, buffer, frame rate, dropped frames and adaptive levels through the AVPlay diagnostics card.
+
+### Security
+
+- **HTTP relay boundaries.** The development relay accepts only public HTTP targets, rejects literal and DNS resolved private addresses, then pins the validated public address for the upstream request.
+- **HTTP fallback scope.** Automatic HTTP retry is limited to packaged Samsung playback and pages already served over HTTP, so an HTTPS browser session cannot expose stream credentials through mixed content.
+
+### Fixed
+
+- **Category navigation.** Focus can traverse every category, wrap through the content switcher and preserve the blue displayed category marker until a new category is committed.
+- **Windowed lists.** Final rows remain reachable, scroll indicators stay inside their measured viewport and mouse wheel movement works across virtual lists.
+- **Search navigation.** Space and number input remain text, while Up and Down leave the Search field for the title bar or first result.
+- **Welcome navigation.** Physical arrow keys and Samsung remote keys move through every source, input, picker and action without duplicate focus movement.
+- **Focused metadata.** Channel numbers, episode numbers, durations, years and rating badges retain readable contrast on the focus surface.
+- **Playback banner.** Live title cards show the category name without list position text, while movie and episode cards retain finite playback time.
+
 ## 1.8.0
 
 ### Added

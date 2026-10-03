@@ -67,6 +67,24 @@ const REASONS: { match: RegExp; reason: Reason }[] = [
     },
   },
   {
+    match: /SEEK_UNSUPPORTED|SEEK_FAILED/i,
+    reason: {
+      why: "This video cannot seek on this device.",
+      fix: "Continue from the current position or try another format.",
+      whyKey: "error.seekUnavailable",
+      fixKey: "error.continueOrTryFormat",
+    },
+  },
+  {
+    match: /FINITE_FORMAT_UNSUPPORTED/i,
+    reason: {
+      why: "This video uses a format the player cannot decode.",
+      fix: "Try it on the television or choose another video.",
+      whyKey: "error.finiteFormatUnsupported",
+      fixKey: "error.tryTelevisionOrVideo",
+    },
+  },
+  {
     match: /NOT_SUPPORTED_FILE|CODEC|manifestParsing|manifestIncompatible/i,
     reason: {
       why: "This channel sends a format the TV cannot decode.",

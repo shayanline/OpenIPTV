@@ -35,17 +35,17 @@ function interfaceRank(name) {
 }
 
 export function choosePrivateAddress(interfaces = networkInterfaces()) {
-  return Object.entries(interfaces)
-    .sort(([left], [right]) => interfaceRank(left) - interfaceRank(right))
-    .flatMap(([name, entries]) =>
-      (entries ?? []).map((entry) => ({ ...entry, name })),
-    )
-    .find(
-      (entry) =>
-        !entry.internal &&
-        (entry.family === "IPv4" || entry.family === 4) &&
-        privateIPv4(entry.address),
-    )?.address ?? "";
+  return (
+    Object.entries(interfaces)
+      .sort(([left], [right]) => interfaceRank(left) - interfaceRank(right))
+      .flatMap(([name, entries]) => (entries ?? []).map((entry) => ({ ...entry, name })))
+      .find(
+        (entry) =>
+          !entry.internal &&
+          (entry.family === "IPv4" || entry.family === 4) &&
+          privateIPv4(entry.address),
+      )?.address ?? ""
+  );
 }
 
 export function createRemoteRelay({ address, timeoutMs = 30_000 } = {}) {
@@ -163,7 +163,8 @@ export function devRemoteBridge() {
         const path = String(request.url ?? "").split("?", 1)[0];
         if (path === "/__openiptv/remote/info") {
           const bound = server.httpServer?.address();
-          const port = typeof bound === "object" && bound ? bound.port : server.config.server.port;
+          const port =
+            typeof bound === "object" && bound ? bound.port : server.config.server.port;
           response(target, json(200, relay.info(port)));
           return;
         }
@@ -187,7 +188,12 @@ export function devRemoteBridge() {
           try {
             const body = JSON.parse(await readBody(request));
             const id = Number(path.slice(path.lastIndexOf("/") + 1));
-            response(target, relay.respond(id, body) ? json(200, { ok: true }) : json(404, { error: "notFound" }));
+            response(
+              target,
+              relay.respond(id, body)
+                ? json(200, { ok: true })
+                : json(404, { error: "notFound" }),
+            );
           } catch (error) {
             response(target, json(error.status ?? 400, { error: error.message }));
           }

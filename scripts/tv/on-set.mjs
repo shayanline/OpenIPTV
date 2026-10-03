@@ -36,10 +36,12 @@ const APP_URL = "file:///index.html";
 /** The ceiling AVPlay's media sequence parser overflows at, for the manifest report below. */
 const SIGNED_32_BIT = 2_147_483_647;
 
-const sdbPath = () => arg("sdb") ?? [
-  join(process.env.HOME, "tizen-studio/tools/sdb"),
-  join(process.env.HOME, ".tizen-extension-platform/server/sdktools/data/tools/sdb"),
-].find(existsSync);
+const sdbPath = () =>
+  arg("sdb") ??
+  [
+    join(process.env.HOME, "tizen-studio/tools/sdb"),
+    join(process.env.HOME, ".tizen-extension-platform/server/sdktools/data/tools/sdb"),
+  ].find(existsSync);
 
 const SDB = sdbPath();
 if (!SDB) {
@@ -63,14 +65,19 @@ const sdb = (...args) =>
  * with exactly one paired, and says nothing about why.
  */
 const wanted = arg("tv");
-const devices = sdb("devices").split("\n").slice(1)
-  .map((line) => line.trim().split(/\s+/)[0]).filter(Boolean);
+const devices = sdb("devices")
+  .split("\n")
+  .slice(1)
+  .map((line) => line.trim().split(/\s+/)[0])
+  .filter(Boolean);
 const serial = wanted ? devices.find((d) => d.startsWith(wanted)) : devices[0];
 if (!serial) {
-  console.error(devices.length
-    ? `No device matching --tv=${wanted}. Paired: ${devices.join(", ")}`
-    : "No television paired. Enable developer mode, enter this machine's IP, restart the set,\n"
-      + "then: sdb connect <tv-ip>:26101");
+  console.error(
+    devices.length
+      ? `No device matching --tv=${wanted}. Paired: ${devices.join(", ")}`
+      : "No television paired. Enable developer mode, enter this machine's IP, restart the set,\n" +
+          "then: sdb connect <tv-ip>:26101",
+  );
   process.exit(1);
 }
 
@@ -83,11 +90,21 @@ if (!serial) {
  * is read off its output.
  */
 async function attach() {
-  try { sdb("-s", serial, "shell", "0", "was_kill", APP); } catch { /* not running */ }
+  try {
+    sdb("-s", serial, "shell", "0", "was_kill", APP);
+  } catch {
+    /* not running */
+  }
   await new Promise((r) => setTimeout(r, 2000));
 
   const session = spawn(SDB, ["-s", serial, "shell", "0", "debug", APP]);
-  process.on("exit", () => { try { session.kill(); } catch { /* gone */ } });
+  process.on("exit", () => {
+    try {
+      session.kill();
+    } catch {
+      /* gone */
+    }
+  });
 
   const port = await new Promise((resolve, reject) => {
     let seen = "";
@@ -104,7 +121,11 @@ async function attach() {
     });
   });
 
-  try { sdb("-s", serial, "forward", "--remove", `tcp:${port}`); } catch { /* none yet */ }
+  try {
+    sdb("-s", serial, "forward", "--remove", `tcp:${port}`);
+  } catch {
+    /* none yet */
+  }
   sdb("-s", serial, "forward", `tcp:${port}`, `tcp:${port}`);
   await new Promise((r) => setTimeout(r, 3000));
 
@@ -121,9 +142,21 @@ async function attach() {
  * the app running under it. Every path out of here goes through this.
  */
 function restore(session) {
-  try { session?.kill(); } catch { /* gone */ }
-  try { sdb("-s", serial, "shell", "0", "was_kill", APP); } catch { /* not running */ }
-  try { sdb("-s", serial, "shell", "0", "was_execute", APP); } catch { /* say nothing */ }
+  try {
+    session?.kill();
+  } catch {
+    /* gone */
+  }
+  try {
+    sdb("-s", serial, "shell", "0", "was_kill", APP);
+  } catch {
+    /* not running */
+  }
+  try {
+    sdb("-s", serial, "shell", "0", "was_execute", APP);
+  } catch {
+    /* say nothing */
+  }
 }
 
 const { cdp, session } = await attach();
@@ -132,7 +165,9 @@ await cdp.send("Performance.enable");
 
 const evaluate = async (expression) => {
   const { result, exceptionDetails } = await cdp.send("Runtime.evaluate", {
-    expression, returnByValue: true, awaitPromise: true,
+    expression,
+    returnByValue: true,
+    awaitPromise: true,
   });
   if (exceptionDetails) return `threw: ${exceptionDetails.text}`;
   return result.value;
@@ -144,20 +179,26 @@ const metrics = async () => {
 };
 
 // ---- what the set is ------------------------------------------------------------------
-const facts = JSON.parse(await evaluate(`JSON.stringify({
+const facts = JSON.parse(
+  await evaluate(`JSON.stringify({
   ua: navigator.userAgent,
   cores: navigator.hardwareConcurrency,
   memoryGB: navigator.deviceMemory || null,
   heapMB: performance.memory ? Math.round(performance.memory.jsHeapSizeLimit / 1048576) : null,
   screen: screen.width + "x" + screen.height,
   avplay: !!(window.webapis && window.webapis.avplay),
-})`));
+})`),
+);
 const tizen = /Tizen (\d+\.\d+)/.exec(facts.ua)?.[1] ?? "?";
 const chromium = /Chrome\/(\d+)/.exec(facts.ua)?.[1] ?? /\) (\d+)\./.exec(facts.ua)?.[1] ?? "?";
-console.log(`  ${serial}   Tizen ${tizen}, Chromium ${chromium}, ${facts.cores} cores, `
-  + `${facts.memoryGB ?? "?"}GB, ${facts.heapMB ?? "?"}MB heap, ${facts.screen}`
-  + `${facts.avplay ? "" : ", NO AVPLAY"}`);
-console.log("  Not comparable with the simulator's numbers: different engine, different silicon.");
+console.log(
+  `  ${serial}   Tizen ${tizen}, Chromium ${chromium}, ${facts.cores} cores, ` +
+    `${facts.memoryGB ?? "?"}GB, ${facts.heapMB ?? "?"}MB heap, ${facts.screen}` +
+    `${facts.avplay ? "" : ", NO AVPLAY"}`,
+);
+console.log(
+  "  Not comparable with the simulator's numbers: different engine, different silicon.",
+);
 
 /**
  * Frame times, counted in the page, because a busy main thread is what a viewer feels.
@@ -206,12 +247,16 @@ async function phase(label, seconds) {
   const share = (key) => ((after[key] - before[key]) / wall) * 100;
   console.log(`\n  ${label}`);
   console.log(`    process CPU   ${share("ProcessTime").toFixed(0)}% of one core`);
-  console.log(`    main thread   ${share("ThreadTime").toFixed(0)}%, `
-    + `script ${share("ScriptDuration").toFixed(0)}%, layout ${share("LayoutDuration").toFixed(0)}%`);
-  console.log(frames.frames
-    ? `    frames        ${frames.frames} in ${wall.toFixed(0)}s, median ${frames.median}ms, `
-      + `worst ${frames.worst}ms, ${frames.over100} over 100ms`
-    : "    frames        none, so nothing was drawn and nothing here is measurable");
+  console.log(
+    `    main thread   ${share("ThreadTime").toFixed(0)}%, ` +
+      `script ${share("ScriptDuration").toFixed(0)}%, layout ${share("LayoutDuration").toFixed(0)}%`,
+  );
+  console.log(
+    frames.frames
+      ? `    frames        ${frames.frames} in ${wall.toFixed(0)}s, median ${frames.median}ms, ` +
+          `worst ${frames.worst}ms, ${frames.over100} over 100ms`
+      : "    frames        none, so nothing was drawn and nothing here is measurable",
+  );
   console.log(`    heap          ${Math.round((after.JSHeapUsedSize ?? 0) / 1048576)}MB`);
 }
 
@@ -233,7 +278,7 @@ let marks = {};
 while (Date.now() < deadline) {
   await new Promise((r) => setTimeout(r, 250));
   const state = await evaluate("JSON.stringify(window.__launch || null)");
-  if (typeof state !== "string" || state === "null") continue;   // still navigating
+  if (typeof state !== "string" || state === "null") continue; // still navigating
   const parsed = JSON.parse(state);
   marks = parsed.marks;
   if (parsed.done) break;
@@ -276,7 +321,9 @@ await phase("at rest, nothing playing", SECONDS);
 
 // ---- the player, if there is something to play ----------------------------------------
 if (!STREAM) {
-  console.log("\n  No --stream given, so the player was not measured. Pass one to compare what");
+  console.log(
+    "\n  No --stream given, so the player was not measured. Pass one to compare what",
+  );
   console.log("  a picture costs: --stream=https://example.com/channel.m3u8");
 } else {
   /*
@@ -287,7 +334,8 @@ if (!STREAM) {
    * above 2^31 the set's parser overflows and reports the whole stream as one segment,
    * whatever else is right with it.
    */
-  const report = JSON.parse(await evaluate(`(async () => {
+  const report = JSON.parse(
+    await evaluate(`(async () => {
     try {
       const text = await (await fetch(${JSON.stringify(STREAM)})).text();
       const line = text.split("\\n").find((l) => l.indexOf("#EXT-X-MEDIA-SEQUENCE:") === 0);
@@ -298,17 +346,22 @@ if (!STREAM) {
         sequence: line ? Number(line.slice(22)) : null,
       });
     } catch (e) { return JSON.stringify({ error: e.name + ": " + e.message }); }
-  })()`));
+  })()`),
+  );
 
   console.log("\n  the manifest");
   if (report.error) console.log(`    could not be read: ${report.error}`);
   else {
-    console.log(`    ${report.bytes} bytes, ${report.segments} segments, `
-      + `${report.variants} variants listed`);
-    console.log(`    media sequence ${report.sequence ?? "absent"}`
-      + (report.sequence > SIGNED_32_BIT
-        ? `  OVER 2^31, so AVPlay cannot play this: it will show one frame and stall`
-        : ""));
+    console.log(
+      `    ${report.bytes} bytes, ${report.segments} segments, ` +
+        `${report.variants} variants listed`,
+    );
+    console.log(
+      `    media sequence ${report.sequence ?? "absent"}` +
+        (report.sequence > SIGNED_32_BIT
+          ? `  OVER 2^31, so AVPlay cannot play this: it will show one frame and stall`
+          : ""),
+    );
   }
 
   const started = await evaluate(`(() => {
@@ -343,8 +396,10 @@ if (!STREAM) {
    * The playhead is the only honest answer to "is it playing". State says PLAYING for a stream
    * that has frozen, and the app's own stall watchdog is built on exactly this comparison.
    */
-  console.log(`    playhead      moved ${moved}ms in ${SECONDS}s `
-    + `-> ${moved > SECONDS * 800 ? "playing" : "STALLED, the picture is not moving"}`);
+  console.log(
+    `    playhead      moved ${moved}ms in ${SECONDS}s ` +
+      `-> ${moved > SECONDS * 800 ? "playing" : "STALLED, the picture is not moving"}`,
+  );
   console.log(`    live window   ${window_}`);
   const fault = await evaluate("window.__avError || ''");
   if (fault) console.log(`    engine said   ${fault}`);

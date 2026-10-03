@@ -63,7 +63,7 @@ test("coming back up, the list holds still until the cursor leaves the top", () 
 
 test("the end of the list does not scroll past into empty space", () => {
   const w = win(200, 199);
-  assert.equal(w.first, 188);          // 200 - 12
+  assert.equal(w.first, 188); // 200 - 12
   assert.equal(w.end, 200);
   assert.equal(w.offset, 188 * ROW);
 });
@@ -91,10 +91,14 @@ test("the window always contains the cursor, wherever the list happens to sit", 
     for (let previous = 0; previous < count; previous += 7) {
       for (let cursor = 0; cursor < count; cursor++) {
         const w = win(count, cursor, previous);
-        assert.ok(cursor >= w.start && cursor < w.end,
-          `cursor ${cursor} of ${count} from ${previous} fell outside ${w.start}..${w.end}`);
-        assert.ok(cursor >= w.first && cursor < w.first + w.visible,
-          `cursor ${cursor} of ${count} from ${previous} was off screen`);
+        assert.ok(
+          cursor >= w.start && cursor < w.end,
+          `cursor ${cursor} of ${count} from ${previous} fell outside ${w.start}..${w.end}`,
+        );
+        assert.ok(
+          cursor >= w.first && cursor < w.first + w.visible,
+          `cursor ${cursor} of ${count} from ${previous} was off screen`,
+        );
       }
     }
   }

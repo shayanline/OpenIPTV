@@ -1,201 +1,222 @@
-/**
- * Icons, drawn on a 24 grid.
- *
- * Two families, because at three metres they behave differently: transport and status
- * glyphs are solid, since a filled triangle reads instantly where an outlined one turns
- * to mush, and navigational glyphs are single stroke with round caps, which is One UI's
- * lighter, geometric character. Everything takes its colour from the text around it.
- */
-const SOLID = new Set([
-  "settings",
-  "pause",
-  "star",
-  "rewind",
-  "stop",
-  "forward",
-  "previous",
-  "play",
-  "next",
-]);
-
 const paths: Record<string, React.ReactNode> = {
   settings: (
-    <path d="M19.4 12c0-.45-.04-.88-.11-1.3l2.06-1.55a.5.5 0 0 0 .12-.64l-1.95-3.38a.5.5 0 0 0-.6-.22l-2.42.97a7.6 7.6 0 0 0-2.25-1.3l-.37-2.58a.5.5 0 0 0-.49-.42h-3.9a.5.5 0 0 0-.49.42l-.37 2.58c-.82.31-1.57.75-2.25 1.3l-2.42-.97a.5.5 0 0 0-.6.22L1.41 8.51a.5.5 0 0 0 .12.64l2.06 1.55a8.1 8.1 0 0 0 0 2.6l-2.06 1.55a.5.5 0 0 0-.12.64l1.95 3.38a.5.5 0 0 0 .6.22l2.42-.97c.68.55 1.43.99 2.25 1.3l.37 2.58a.5.5 0 0 0 .49.42h3.9a.5.5 0 0 0 .49-.42l.37-2.58a7.6 7.6 0 0 0 2.25-1.3l2.42.97a.5.5 0 0 0 .6-.22l1.95-3.38a.5.5 0 0 0-.12-.64l-2.06-1.55c.07-.42.11-.85.11-1.3Zm-7.4 3.65A3.65 3.65 0 1 1 15.65 12 3.65 3.65 0 0 1 12 15.65Z" />
-  ),
-  pause: <path d="M8.4 5.4h3.1v13.2H8.4zM12.5 5.4h3.1v13.2h-3.1z" />,
-  rewind: (
     <>
-      <path d="M11 5.5v13L3 12z" />
-      <path d="M21 5.5v13l-8-6.5z" />
+      <path d="M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915" />
+      <circle cx="12" cy="12" r="3" />
     </>
   ),
-  stop: <rect x="5" y="5" width="14" height="14" rx="1.5" />,
-  forward: (
+  pause: (
     <>
-      <path d="M13 5.5v13l8-6.5z" />
-      <path d="M3 5.5v13l8-6.5z" />
-    </>
-  ),
-  previous: (
-    <>
-      <path d="M5 5.5v13" />
-      <path d="M19 5.5v13l-9-6.5z" />
-    </>
-  ),
-  play: <path d="M6 4.5l13 7.5-13 7.5z" />,
-  next: (
-    <>
-      <path d="M19 5.5v13" />
-      <path d="M5 5.5v13l9-6.5z" />
+      <rect x="14" y="3" width="5" height="18" rx="1" />
+      <rect x="5" y="3" width="5" height="18" rx="1" />
     </>
   ),
   star: (
-    <path d="M12 3.6l2.58 5.23 5.77.84-4.18 4.07.99 5.75L12 16.77l-5.16 2.72.99-5.75-4.18-4.07 5.77-.84z" />
+    <path d="M11.525 2.295a.53.53 0 0 1 .95 0l2.31 4.679a2.123 2.123 0 0 0 1.595 1.16l5.166.756a.53.53 0 0 1 .294.904l-3.736 3.638a2.123 2.123 0 0 0-.611 1.878l.882 5.14a.53.53 0 0 1-.771.56l-4.618-2.428a2.122 2.122 0 0 0-1.973 0L6.396 21.01a.53.53 0 0 1-.77-.56l.881-5.139a2.122 2.122 0 0 0-.611-1.879L2.16 9.795a.53.53 0 0 1 .294-.906l5.165-.755a2.122 2.122 0 0 0 1.597-1.16z" />
   ),
-  /* Something is wrong, said as calmly as a symbol can. A round outline rather than the usual
-     triangle: a triangle is a hazard, and a channel that is off the air is not a danger, it is
-     a disappointment. */
-  warn: (
+  rewind: (
     <>
-      <circle cx="12" cy="12" r="9" />
-      <path d="M12 7.4v5.4" />
-      <path d="M12 16.2v.1" />
+      <path d="M12 6a2 2 0 0 0-3.414-1.414l-6 6a2 2 0 0 0 0 2.828l6 6A2 2 0 0 0 12 18z" />
+      <path d="M22 6a2 2 0 0 0-3.414-1.414l-6 6a2 2 0 0 0 0 2.828l6 6A2 2 0 0 0 22 18z" />
     </>
   ),
-  /* A magnifier, single stroke like the other navigational glyphs. Angled down and to the
-     right, which is the way every remote's search glyph points and therefore the one a viewer
-     recognises without reading the word beside it. */
+  forward: (
+    <>
+      <path d="M12 6a2 2 0 0 1 3.414-1.414l6 6a2 2 0 0 1 0 2.828l-6 6A2 2 0 0 1 12 18z" />
+      <path d="M2 6a2 2 0 0 1 3.414-1.414l6 6a2 2 0 0 1 0 2.828l-6 6A2 2 0 0 1 2 18z" />
+    </>
+  ),
+  stop: <rect width="18" height="18" x="3" y="3" rx="2" />,
+  previous: (
+    <>
+      <path d="M17.971 4.285A2 2 0 0 1 21 6v12a2 2 0 0 1-3.029 1.715l-9.997-5.998a2 2 0 0 1-.003-3.432z" />
+      <path d="M3 20V4" />
+    </>
+  ),
+  play: (
+    <path d="M5 5a2 2 0 0 1 3.008-1.728l11.997 6.998a2 2 0 0 1 .003 3.458l-12 7A2 2 0 0 1 5 19z" />
+  ),
+  next: (
+    <>
+      <path d="M21 4v16" />
+      <path d="M6.029 4.285A2 2 0 0 0 3 6v12a2 2 0 0 0 3.029 1.715l9.997-5.998a2 2 0 0 0 .003-3.432z" />
+    </>
+  ),
+  warn: (
+    <>
+      <circle cx="12" cy="12" r="10" />
+      <line x1="12" x2="12" y1="8" y2="12" />
+      <line x1="12" x2="12.01" y1="16" y2="16" />
+    </>
+  ),
   search: (
     <>
-      <circle cx="10.6" cy="10.6" r="6.4" />
-      <path d="M15.3 15.3l4.5 4.5" />
+      <path d="m21 21-4.34-4.34" />
+      <circle cx="11" cy="11" r="8" />
+    </>
+  ),
+  movie: (
+    <>
+      <path d="m12.296 3.464 3.02 3.956" />
+      <path d="M20.2 6 3 11l-.9-2.4c-.3-1.1.3-2.2 1.3-2.5l13.5-4c1.1-.3 2.2.3 2.5 1.3z" />
+      <path d="M3 11h18v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+      <path d="m6.18 5.276 3.1 3.899" />
+    </>
+  ),
+  series: (
+    <>
+      <path d="m16 6 4 14" />
+      <path d="M12 6v14" />
+      <path d="M8 8v12" />
+      <path d="M4 4v16" />
+    </>
+  ),
+  guide: (
+    <>
+      <path d="M8 2v3" />
+      <path d="M16 2v3" />
+      <rect x="3" y="3" width="18" height="18" rx="2" />
+      <path d="M3 9h18" />
+      <path d="M8 13h.01M12 13h.01M16 13h.01M8 17h.01M12 17h.01M16 17h.01" />
     </>
   ),
   more: (
     <>
-      <circle cx="5" cy="12" r="1" fill="currentColor" stroke="none" />
-      <circle cx="12" cy="12" r="1" fill="currentColor" stroke="none" />
-      <circle cx="19" cy="12" r="1" fill="currentColor" stroke="none" />
+      <circle cx="12" cy="12" r="1" />
+      <circle cx="19" cy="12" r="1" />
+      <circle cx="5" cy="12" r="1" />
     </>
   ),
+  chevronUp: <path d="m18 15-6-6-6 6" />,
+  chevronRight: <path d="m9 18 6-6-6-6" />,
+  chevronDown: <path d="m6 9 6 6 6-6" />,
+  chevronLeft: <path d="m15 18-6-6 6-6" />,
   back: (
     <>
+      <path d="m12 19-7-7 7-7" />
       <path d="M19 12H5" />
-      <path d="M11 6l-6 6 6 6" />
     </>
   ),
   plus: (
     <>
-      <path d="M12 5v14" />
       <path d="M5 12h14" />
+      <path d="M12 5v14" />
     </>
   ),
   refresh: (
     <>
-      <path d="M19 8.2A8 8 0 1 0 20 14" />
-      <path d="M19 3.8v4.4h-4.4" />
+      <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" />
+      <path d="M21 3v5h-5" />
+      <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" />
+      <path d="M8 16H3v5" />
     </>
   ),
   edit: (
     <>
-      <path d="M4.5 19.5l4.2-1 10-10a2.1 2.1 0 0 0-3-3l-10 10-1.2 4Z" />
-      <path d="M14.4 6.8l3 3" />
+      <path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z" />
+      <path d="m15 5 4 4" />
     </>
   ),
   remove: (
     <>
-      <path d="M4.5 7h15" />
-      <path d="M9 4.5h6" />
-      <path d="M7 7l.8 12h8.4L17 7" />
-      <path d="M10 10.5v5" />
-      <path d="M14 10.5v5" />
+      <path d="M10 11v6M14 11v6" />
+      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
+      <path d="M3 6h18" />
+      <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
     </>
   ),
   clear: (
     <>
-      <path d="M5 16.5L14.5 7l4.5 4.5-7.5 7.5H7.5Z" />
-      <path d="M3.5 20h17" />
+      <path d="M21 21H8a2 2 0 0 1-1.42-.587l-3.994-3.999a2 2 0 0 1 0-2.828l10-10a2 2 0 0 1 2.829 0l5.999 6a2 2 0 0 1 0 2.828L12.834 21" />
+      <path d="m5.082 11.09 8.828 8.828" />
     </>
   ),
-  unlink: (
-    <>
-      <path d="M9.5 14.5l5-5" />
-      <path d="M7.2 16.8l-1.3 1.3a3.5 3.5 0 0 1-5-5l3.2-3.2a3.5 3.5 0 0 1 4.9 0" />
-      <path d="M16.8 7.2l1.3-1.3a3.5 3.5 0 0 1 5 5l-3.2 3.2a3.5 3.5 0 0 1-4.9 0" />
-    </>
-  ),
+  unlink: <path d="M15 7h2a5 5 0 0 1 0 10h-2m-6 0H7A5 5 0 0 1 7 7h2" />,
   visible: (
     <>
-      <path d="M2.8 12s3.2-5.2 9.2-5.2 9.2 5.2 9.2 5.2-3.2 5.2-9.2 5.2S2.8 12 2.8 12Z" />
-      <circle cx="12" cy="12" r="2.4" />
+      <path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0" />
+      <circle cx="12" cy="12" r="3" />
     </>
   ),
   hidden: (
     <>
-      <path d="M2.8 12s3.2-5.2 9.2-5.2 9.2 5.2 9.2 5.2-3.2 5.2-9.2 5.2S2.8 12 2.8 12Z" />
-      <circle cx="12" cy="12" r="2.4" />
-      <path d="M4 4l16 16" />
+      <path d="M10.733 5.076a10.744 10.744 0 0 1 11.205 6.575 1 1 0 0 1 0 .696 10.747 10.747 0 0 1-1.444 2.49" />
+      <path d="M14.084 14.158a3 3 0 0 1-4.242-4.242" />
+      <path d="M17.479 17.499a10.75 10.75 0 0 1-15.417-5.151 1 1 0 0 1 0-.696 10.75 10.75 0 0 1 4.446-5.143" />
+      <path d="m2 2 20 20" />
     </>
   ),
-  /* Stands in for artwork a channel did not supply. A television, because that is what the
-     missing thing is a picture of, and it says "nothing to show here" in no language at all. */
   tv: (
     <>
-      <rect x="2.6" y="5" width="18.8" height="13" rx="2.2" />
-      <path d="M8.6 21h6.8" />
+      <path d="m17 2-5 5-5-5" />
+      <rect width="20" height="15" x="2" y="7" rx="2" />
     </>
   ),
-  /* Groups of things, for the heading above the category list. Four panes rather than a stack of
-     lines, because a stack of lines is what the channel column beneath it already looks like and
-     the two headings sit a few centimetres apart. */
   categories: (
     <>
-      <rect x="3.4" y="4.4" width="7.2" height="6.4" rx="1.6" />
-      <rect x="13.4" y="4.4" width="7.2" height="6.4" rx="1.6" />
-      <rect x="3.4" y="13.2" width="7.2" height="6.4" rx="1.6" />
-      <rect x="13.4" y="13.2" width="7.2" height="6.4" rx="1.6" />
+      <rect width="7" height="7" x="3" y="3" rx="1" />
+      <rect width="7" height="7" x="14" y="3" rx="1" />
+      <rect width="7" height="7" x="14" y="14" rx="1" />
+      <rect width="7" height="7" x="3" y="14" rx="1" />
     </>
   ),
-  /* A letter, for the settings section that is mostly type: the font, its size, and what else is
-     drawn beside a channel name. A brush or a palette would say "theme", and there is no theme
-     here to change. */
   appearance: (
     <>
-      <path d="M5.6 19.4L11.4 4.8h1.2l5.8 14.6" />
-      <path d="M8.1 14.6h7.8" />
+      <path d="M12 4v16" />
+      <path d="M4 7V5a1 1 0 0 1 1-1h14a1 1 0 0 1 1 1v2" />
+      <path d="M9 20h6" />
     </>
   ),
-  /* Addresses in a list, which is what a playlist is here: not the channels themselves but the
-     handful of sources they come from. */
   playlists: (
     <>
-      <circle cx="4.9" cy="7" r="1.1" />
-      <circle cx="4.9" cy="12" r="1.1" />
-      <circle cx="4.9" cy="17" r="1.1" />
-      <path d="M9.4 7h10.2" />
-      <path d="M9.4 12h10.2" />
-      <path d="M9.4 17h10.2" />
+      <path d="M21 5H3M10 12H3M10 19H3" />
+      <path d="M15 12.003a1 1 0 0 1 1.517-.859l4.997 2.997a1 1 0 0 1 0 1.718l-4.997 2.997a1 1 0 0 1-1.517-.86z" />
     </>
   ),
-  /* A trace, for the screen that reports what this television is. It reads as measurement rather
-     than repair, which is what the section does: it says, it does not mend. */
   remoteAccess: (
     <>
-      <rect x="2.7" y="4.4" width="12.8" height="11.2" rx="2" />
-      <path d="M6.7 19.6h4.8" />
-      <path d="M9.1 15.6v4" />
-      <path d="M19.1 8.1c1.2.9 1.9 2.3 1.9 3.9s-.7 3-1.9 3.9" />
-      <path d="M20.5 5.7c1.6 1.5 2.5 3.8 2.5 6.3s-.9 4.8-2.5 6.3" />
+      <path d="M4.9 16.1C1 12.2 1 5.8 4.9 1.9" />
+      <path d="M7.8 4.7a6.14 6.14 0 0 0-.8 7.5" />
+      <circle cx="12" cy="9" r="2" />
+      <path d="M16.2 4.8c2 2 2.26 5.11.8 7.47" />
+      <path d="M19.1 1.9a9.96 9.96 0 0 1 0 14.1" />
+      <path d="M9.5 18h5" />
+      <path d="m8 22 4-11 4 11" />
     </>
   ),
-  diagnostics: <path d="M2.8 12.4h4.6l2.5-6.2 3.1 11.6 2.4-5.4h5.8" />,
-  /* The version and the licence. A circle with an i, and deliberately close to `warn` above,
-     since both are the same gesture: a round outline saying something quietly. */
+  diagnostics: (
+    <path d="M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2" />
+  ),
+  power: (
+    <>
+      <path d="M12 2v10" />
+      <path d="M18.4 6.6a9 9 0 1 1-12.77.04" />
+    </>
+  ),
+  mic: (
+    <>
+      <path d="M12 19v3" />
+      <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+      <rect x="9" y="2" width="6" height="13" rx="3" />
+    </>
+  ),
+  return: (
+    <>
+      <path d="M9 14 4 9l5-5" />
+      <path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5a5.5 5.5 0 0 1-5.5 5.5H11" />
+    </>
+  ),
+  home: (
+    <>
+      <path d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8" />
+      <path d="M3 10a2 2 0 0 1 .709-1.528l7-6a2 2 0 0 1 2.582 0l7 6A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+    </>
+  ),
   about: (
     <>
-      <circle cx="12" cy="12" r="9" />
-      <path d="M12 11.2v5.4" />
-      <path d="M12 7.6v.1" />
+      <circle cx="12" cy="12" r="10" />
+      <path d="M12 16v-4" />
+      <path d="M12 8h.01" />
     </>
   ),
 };
@@ -203,16 +224,15 @@ const paths: Record<string, React.ReactNode> = {
 export type IconName = keyof typeof paths;
 
 export function Icon({ name }: { name: IconName }) {
-  const solid = SOLID.has(name);
   return (
     <svg
       className={`icon icon-${name}`}
       viewBox="0 0 24 24"
       aria-hidden="true"
       focusable="false"
-      fill={solid ? "currentColor" : "none"}
-      stroke={solid ? "none" : "currentColor"}
-      strokeWidth={solid ? 0 : 1.8}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
       strokeLinecap="round"
       strokeLinejoin="round"
     >

@@ -108,17 +108,28 @@ async function main() {
   }
 
   const hosted = await serve(DIST);
-  const measure = (before) => withBrowser(chrome, [
-    "--headless=new", "--window-size=1920,1080", "--lang=en-US",
-    "--no-first-run", "--no-default-browser-check",
-    // Linux runners have no unprivileged user namespaces, so the sandbox refuses to start and
-    // this gate is a blocking step. See the longer note in engine-parity.
-    "--no-sandbox", "--disable-gpu", "--hide-scrollbars",
-  ], "openiptv-gap-", async (cdp) => {
-    await cdp.send("Runtime.enable");
-    await cdp.send("Page.enable");
-    return walk(cdp, hosted.port, FLEX_GAP, { before });
-  });
+  const measure = (before) =>
+    withBrowser(
+      chrome,
+      [
+        "--headless=new",
+        "--window-size=1920,1080",
+        "--lang=en-US",
+        "--no-first-run",
+        "--no-default-browser-check",
+        // Linux runners have no unprivileged user namespaces, so the sandbox refuses to start and
+        // this gate is a blocking step. See the longer note in engine-parity.
+        "--no-sandbox",
+        "--disable-gpu",
+        "--hide-scrollbars",
+      ],
+      "openiptv-gap-",
+      async (cdp) => {
+        await cdp.send("Runtime.enable");
+        await cdp.send("Page.enable");
+        return walk(cdp, hosted.port, FLEX_GAP, { before });
+      },
+    );
 
   let failures = 0;
   try {
@@ -134,8 +145,10 @@ async function main() {
     failures = differing;
     console.log(`\n${boxes} child boxes across ${screens} screens, ${failures} differing`);
     if (failures) {
-      console.error("\nThe margin fallback does not reproduce the gap spacing. The rules are " +
-                    "at the foot of src/styles/app.css.");
+      console.error(
+        "\nThe margin fallback does not reproduce the gap spacing. The rules are " +
+          "at the foot of src/styles/app.css.",
+      );
     }
   } finally {
     await hosted.close();

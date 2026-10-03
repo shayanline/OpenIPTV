@@ -14,6 +14,8 @@
 import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
 import { extname, isAbsolute, relative, resolve, sep } from "node:path";
+import { XTREAM_FIXTURE, xtreamFixtureResponse } from "../present.mjs";
+import { handleHttpRelay } from "../http-relay.mjs";
 
 const TYPES = {
   ".html": "text/html",
@@ -31,6 +33,31 @@ const TYPES = {
  * A bidirectional group name, a name long enough to need truncating, a quality badge and a
  * channel with none of those. All three engines have to lay these out the same way.
  */
+export const XTREAM_JOURNEYS = Object.freeze({
+  liveLaunch: "Xtream launch to live rows",
+  heldRailWalk: "Xtream held rail walk",
+  firstCategoryLoad: "Xtream first category",
+  cachedCategoryRevisit: "Xtream category revisit",
+  movieDetail: "Xtream movie detail",
+  episodeNavigation: "Xtream episode navigation",
+  liveSearch: "Xtream live search",
+  heapGrowth: "Xtream heap growth",
+});
+
+export function createXtreamJourneyTracker() {
+  const required = new Set(Object.values(XTREAM_JOURNEYS));
+  return {
+    complete(label) {
+      if (!required.has(label)) throw new Error(`Unknown Xtream journey: ${label}`);
+      required.delete(label);
+    },
+    assertComplete() {
+      if (required.size)
+        throw new Error(`Xtream journeys did not complete: ${[...required].join(", ")}`);
+    },
+  };
+}
+
 export const PLAYLIST = `#EXTM3U
 #EXTINF:-1 tvg-id="a" group-title="News | \u0627\u062e\u0628\u0627\u0631" tvg-quality="FHD",Channel Alpha News
 http://example.invalid/a.m3u8
@@ -44,6 +71,16 @@ http://example.invalid/d.m3u8
 
 export function serve(dist, port = 0) {
   const server = createServer(async (req, res) => {
+    if (handleHttpRelay(req, res)) return;
+    const fixture = xtreamFixtureResponse(req.url ?? "/");
+    if (fixture) {
+      res.writeHead(fixture.status, {
+        "content-type": fixture.type,
+        "access-control-allow-origin": "*",
+        "cache-control": "no-store",
+      });
+      return res.end(fixture.body);
+    }
     const path = req.url.split("?")[0];
     if (path === "/playlist.m3u") {
       res.writeHead(200, { "content-type": "audio/x-mpegurl" });
@@ -89,7 +126,7 @@ export function serve(dist, port = 0) {
 }
 
 /**
- * A playlist already configured, so the walk starts at the interface rather than first run.
+ * The hostile M3U playlist is configured first, so the walk covers it before changing to Xtream.
  *
  * The clock is turned off, and that is not tidying. It is the one element on screen whose
  * content depends on when it was drawn, so two runs a minute apart legitimately disagree
@@ -97,9 +134,39 @@ export function serve(dist, port = 0) {
  * of day as three of them. Nothing else here is non deterministic.
  */
 export const SEED = `(() => {
+  if (sessionStorage.getItem("openiptv.paritySource") === "xtream") return "ok";
   localStorage.setItem("openiptv.settings", JSON.stringify({
-    playlists: [{ id: "pl-1", name: "Parity", url: "/playlist.m3u" }],
-    activePlaylistId: "pl-1", resumeLast: false, panelTimeout: 0, showClock: false,
+    playlists: [{
+      id: "pl-m3u",
+      name: "M3U parity",
+      source: { kind: "m3u", url: "/playlist.m3u" },
+      sourceVersion: 1,
+      hiddenCategories: [],
+      hiddenCategoryMode: "exclude",
+    }],
+    activePlaylistId: "pl-m3u", resumeLast: false, panelTimeout: 0, showClock: false,
+  }));
+  return "ok";
+})()`;
+
+const XTREAM_SEED = `(() => {
+  sessionStorage.setItem("openiptv.paritySource", "xtream");
+  localStorage.setItem("openiptv.settings", JSON.stringify({
+    playlists: [{
+      id: "pl-xtream",
+      name: "Xtream parity",
+      source: {
+        kind: "xtream",
+        server: location.origin,
+        username: ${JSON.stringify(XTREAM_FIXTURE.username)},
+        password: ${JSON.stringify(XTREAM_FIXTURE.password)},
+        output: "m3u8",
+      },
+      sourceVersion: 1,
+      hiddenCategories: [],
+      hiddenCategoryMode: "exclude",
+    }],
+    activePlaylistId: "pl-xtream", resumeLast: false, panelTimeout: 0, showClock: false,
   }));
   return "ok";
 })()`;
@@ -190,15 +257,37 @@ export function driver(cdp, port) {
       })()`);
       await frame();
     },
+    openXtream: async () => {
+      await evaluate(XTREAM_SEED);
+      await cdp.send("Page.reload", { ignoreCache: true });
+      await waitFor(`(() => {
+        const selected = document.querySelector(".rail .row.selected.showing");
+        const rows = document.querySelectorAll(".list .row-label");
+        return document.readyState === "complete"
+          && !document.querySelector(".splash")
+          && document.querySelector(".panel:not(.away)")
+          && selected && selected.textContent.includes("Live")
+          && rows.length > 10
+          && rows[0].textContent === "Live Channel 0001"
+          && rows[1].textContent === "Live Channel 0002";
+      })()`);
+      await evaluate(`(() => {
+        const style = document.createElement("style");
+        style.textContent = "*{transition:none!important;animation:none!important}";
+        document.head.appendChild(style);
+        return true;
+      })()`);
+      await frame();
+    },
   };
 }
 
 /**
  * Every screen the application has, visited in one order.
  *
- * `before` runs once the app is up and before anything is measured, which is where
- * gap-parity neutralises flex gap. Everything else is identical between runs by
- * construction, because there is only one copy of it.
+ * `before` runs after each source document opens and before it is measured, which is where
+ * gap-parity neutralises flex gap. Everything else is identical between runs by construction,
+ * because there is only one copy of it.
  */
 export async function walk(cdp, port, selectors, { before } = {}) {
   const d = driver(cdp, port);
@@ -207,6 +296,10 @@ export async function walk(cdp, port, selectors, { before } = {}) {
 
   const railShowing = (label) => `(() => {
     const row = document.querySelector(".rail .row.selected.showing .row-label");
+    return row && row.textContent === ${JSON.stringify(label)};
+  })()`;
+  const railCursor = (label) => `(() => {
+    const row = document.querySelector(".rail .row.selected .row-label");
     return row && row.textContent === ${JSON.stringify(label)};
   })()`;
   const sectionShowing = (label) => `(() => {
@@ -295,38 +388,27 @@ export async function walk(cdp, port, selectors, { before } = {}) {
     if (ready) await d.waitFor(ready);
   };
 
-  await capture("panel");
-  // Into the rail and down a category, which is the walk the rail debounce governs. The
-  // selected and showing rows agree only once the channel column has settled.
+  await capture("m3u.panel");
+  // The hostile M3U source keeps its bidirectional category, long channel name and quality badge
+  // in the real parity walk before the same browser changes to the large Xtream source.
   await d.press("ArrowLeft", 37, "!!document.querySelector('.rail.focused')");
-  await d.press("ArrowDown", 40, railShowing("Sport"));
-  await capture("panel.secondCategory");
+  await d.press("ArrowDown", 40, railCursor("Sport"));
+  await d.press("ArrowRight", 39, railShowing("Sport"));
+  await capture("m3u.secondCategory");
 
   /*
-   * The search, which is the channel column showing an answer instead of a category.
-   *
-   * Walked because it is a screen, and a screen no gate has ever loaded is a screen nobody knows
-   * lays out. It brings the only text input on the panel and a header that changes shape, both of
-   * which are exactly the sort of thing the older engines get wrong.
-   *
-   * The query goes in through the browser's own input pipeline rather than by assigning to the
-   * field's value: React tracks the value it last wrote, so an assignment leaves its tracker
-   * thinking nothing has changed and the results never appear.
-   *
-   * A `char` key event per character rather than `Input.insertText`, which is the tidier call and
-   * does not exist on Chromium 69: the floor engine answered "'Input.insertText' wasn't found" and
-   * the gate refused to let a newer engine stand in for it, quite rightly. Character events have
-   * been in the protocol since long before any television this app supports.
+   * Search runs through the browser input pipeline on both sources. A `char` event works on
+   * Chromium 69, where the newer Input.insertText protocol method does not exist.
    */
   await keyed("Search", "!!document.querySelector('.search-field')");
-  await capture("panel.search");
+  await capture("m3u.search");
   for (const ch of "sport")
     await cdp.send("Input.dispatchKeyEvent", { type: "char", text: ch });
   await d.waitFor(`(() => {
     const row = document.querySelector(".list .row-label");
     return row && row.textContent === "Gamma Sport";
   })()`);
-  await capture("panel.searchResults");
+  await capture("m3u.searchResults");
   await d.press(
     "Escape",
     27,
@@ -334,8 +416,98 @@ export async function walk(cdp, port, selectors, { before } = {}) {
     const field = document.querySelector(".search-field");
     return field && field.value === "";
   })()`,
-  ); // clears the query
-  await d.press("Escape", 27, "!document.querySelector('.search-field')"); // and leaves the search
+  );
+  await d.press("Escape", 27, "!document.querySelector('.search-field')");
+
+  await d.openXtream();
+  if (before) await d.evaluate(before);
+  await capture(XTREAM_JOURNEYS.liveLaunch);
+  await d.press("ArrowLeft", 37, "!!document.querySelector('.rail.focused')");
+  await d.press("ArrowDown", 40, railCursor("Duplicate"));
+  await d.press("ArrowRight", 39, railShowing("Duplicate"));
+  await capture(XTREAM_JOURNEYS.heldRailWalk);
+  await keyed("Search", "!!document.querySelector('.search-field')");
+  for (const ch of "3199") await cdp.send("Input.dispatchKeyEvent", { type: "char", text: ch });
+  await d.waitFor(`(() => {
+    const row = document.querySelector(".list .row-label");
+    return row && row.textContent === "Live Channel 3199";
+  })()`);
+  await capture(XTREAM_JOURNEYS.liveSearch);
+  await d.press(
+    "Escape",
+    27,
+    `(() => {
+    const field = document.querySelector(".search-field");
+    return field && field.value === "";
+  })()`,
+  );
+  await d.press("Escape", 27, "!document.querySelector('.search-field')");
+
+  await click(
+    "Movies",
+    `(() => {
+      const row = document.querySelector(".media-list .row-label");
+      return row && row.textContent === "Movie 0001";
+    })()`,
+  );
+  await capture(XTREAM_JOURNEYS.firstCategoryLoad);
+  await d.press("ArrowLeft", 37, "!!document.querySelector('.rail.focused')");
+  await d.press("ArrowDown", 40, railCursor("Duplicate"));
+  await d.press(
+    "ArrowRight",
+    39,
+    `(() => {
+      const row = document.querySelector(".media-list .row-label");
+      return row && row.textContent === "Movie 0601";
+    })()`,
+  );
+  await capture("panel.movies.secondCategory");
+  await d.press("ArrowLeft", 37, "!!document.querySelector('.rail.focused')");
+  await d.press("ArrowUp", 38, railCursor("Movies"));
+  await d.press(
+    "ArrowRight",
+    39,
+    `(() => {
+      const row = document.querySelector(".media-list .row-label");
+      return row && row.textContent === "Movie 0001";
+    })()`,
+  );
+  await capture(XTREAM_JOURNEYS.cachedCategoryRevisit);
+  await d.press(
+    "Enter",
+    13,
+    `(() => {
+      const detail = document.querySelector(".media-details");
+      return detail && detail.textContent.includes("Movie details for movie-1");
+    })()`,
+  );
+  await capture(XTREAM_JOURNEYS.movieDetail);
+  await d.press("Escape", 27, "!!document.querySelector('.media-list')");
+
+  await click(
+    "Series",
+    `(() => {
+      const row = document.querySelector(".media-list .row-label");
+      return row && row.textContent === "Series 0001";
+    })()`,
+  );
+  await d.press(
+    "Enter",
+    13,
+    `(() => {
+      const row = document.querySelector(".media-list .row-label");
+      return row && row.textContent === "Season 1";
+    })()`,
+  );
+  await d.press(
+    "Enter",
+    13,
+    `(() => {
+      const row = document.querySelector(".media-list .row-label");
+      return row && row.textContent === "Episode 1.1";
+    })()`,
+  );
+  await capture(XTREAM_JOURNEYS.episodeNavigation);
 
   await keyed("Settings", sectionShowing("Appearance"));
   await capture("settings.appearance");
@@ -345,7 +517,7 @@ export async function walk(cdp, port, selectors, { before } = {}) {
   await capture("settings.playlistForm");
   await click("Cancel", "!document.querySelector('#pl-url')");
   await click(
-    "Manage categories for Parity",
+    "Manage categories for Xtream parity",
     "!!document.querySelector('.category-settings-list')",
   );
   await capture("settings.categories");

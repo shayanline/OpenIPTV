@@ -79,6 +79,7 @@ export function Settings({
   const inlineEndArrow = direction === "rtl" ? "←" : "→";
   const [section, setSection] = useState<Section>("appearance");
   const [inSections, setInSections] = useState(true);
+  const [closeFocused, setCloseFocused] = useState(false);
   const [details, setDetails] = useState<DetailEntry[]>([]);
   const detailsRef = useRef(details);
   detailsRef.current = details;
@@ -162,6 +163,7 @@ export function Settings({
   }, []);
 
   const enterBody = useCallback(() => {
+    setCloseFocused(false);
     setInSections(false);
     window.setTimeout(focusFirst, 0);
   }, [focusFirst]);
@@ -269,6 +271,16 @@ export function Settings({
       }
 
       if (inSections) {
+        if (closeFocused) {
+          if (code === KEY.DOWN) {
+            event.preventDefault();
+            setCloseFocused(false);
+          } else if (code === KEY.ENTER) {
+            event.preventDefault();
+            onClose();
+          }
+          return;
+        }
         if (code === KEY.UP || code === KEY.DOWN) {
           event.preventDefault();
           /*
@@ -278,12 +290,13 @@ export function Settings({
            * section meant every press in a burst moved to the same place: holding Down walked
            * one row and stopped.
            */
-          setSection((was) => {
-            const at = sections.findIndex((s) => s.id === was);
+          const at = sections.findIndex((item) => item.id === section);
+          if (code === KEY.UP && at === 0) setCloseFocused(true);
+          else {
             const next =
               code === KEY.UP ? Math.max(0, at - 1) : Math.min(sections.length - 1, at + 1);
-            return sections[next].id;
-          });
+            setSection(sections[next].id);
+          }
         }
         if (code === KEY.ENTER) {
           event.preventDefault();
@@ -335,8 +348,10 @@ export function Settings({
     },
     [
       asking,
+      closeFocused,
       inSections,
       onClose,
+      section,
       move,
       enterBody,
       leaveBody,
@@ -357,16 +372,27 @@ export function Settings({
   return (
     <div className="sheet" dir={direction}>
       <nav className={`sheet-rail pane ${inSections ? "focused" : ""}`}>
-        <h2>{t("settings.title")}</h2>
+        <div className="settings-titlebar">
+          <button
+            type="button"
+            className={`settings-close ${closeFocused ? "selected" : ""}`}
+            aria-label={t("settings.close")}
+            onClick={onClose}
+          >
+            <Icon name="back" />
+          </button>
+          <h2>{t("settings.title")}</h2>
+        </div>
         <div className="rail-scroll">
           {sections.map((s) => (
             <button
               key={s.id}
               type="button"
-              className={`row ${s.id === section ? "selected showing" : ""}`}
+              className={`row ${s.id === section ? `showing ${closeFocused ? "" : "selected"}` : ""}`}
               aria-current={s.id === section ? "page" : undefined}
               onClick={() => {
                 if (detailsRef.current.length) clearDetails();
+                setCloseFocused(false);
                 setSection(s.id);
                 enterBody();
               }}

@@ -77,7 +77,7 @@ src/
   services/capabilities.ts what the engine can actually do, measured rather than assumed
   services/metrics.ts      the measurements the stylesheet shares with the code
   services/store.ts        localStorage, for the short strings needed before first paint
-  services/disk.ts         IndexedDB, for the playlist and the logos, on a 5MB budget
+  services/disk.ts         IndexedDB, for playlists, Xtream catalogues and logos, on a 24 MB budget
   services/idle.ts         work that must never be why a key press waits
   stores/channels.ts       channels, categories, favourites, last watched
   stores/settings.ts       everything the viewer can change, persisted
@@ -128,8 +128,8 @@ Break one of these and the app fails on hardware no test here owns. The reasonin
   `tests/keyLaws.test.tsx` enforces them.
 - **`services/store` is localStorage, `services/disk` is IndexedDB.** Settings, favourites and
   the last channel are short strings needed before the first paint, so they need a synchronous
-  API. The playlist text and the logos are megabytes and Blobs, which localStorage caps at 5MB
-  and cannot hold. The disk cache keeps its own 5MB budget deliberately.
+  API. Playlist text, Xtream catalogues and logos are megabytes and Blobs, which localStorage caps at 5MB
+  and cannot hold. The disk cache keeps its own 24 MB budget deliberately.
 - **No IndexedDB work on an interaction path.** Writing each logo as it was decoded cost a
   measurable regression, and reading the whole metadata store on every write cost an 840ms frame
   while the interface was idle. Both are queued through `services/idle`.

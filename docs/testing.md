@@ -234,6 +234,16 @@ Three things about attaching cost an evening each and are written into the scrip
 It is not a gate. It needs hardware on the network, so it cannot run in CI and must never block
 anything. Read it before a release, and after any change to the player or the launch path.
 
+### Xtream verification on a set
+
+Use a test account whose owner permits playback, then verify both HLS and MPEG TS live output because AVPlay owns both paths. Open one movie, one series episode, and one archived catchup programme. For each finite item, pause and resume, seek forward and backward by ten seconds, then press STOP and confirm that the launching detail, episode, or guide frame returns with its cursor intact. Complete one item and confirm that it returns without retrying the finished stream.
+
+Open the same movie category twice and confirm that the second visit displays the saved catalogue without a new visible wait. Search for a live channel outside the first category, then confirm that the rail moves to its provider category when the result plays. Repeat an M3U launch, search, category walk, and live channel change so the source specific code has not altered the existing path.
+
+Open the hosted browser build with the same account only when the provider supports HTTPS and Cross Origin Resource Sharing. Confirm that unsupported transport reports the browser limitation without printing the request address or credentials. A browser codec failure does not replace the AVPlay result because the television remains authoritative for finite containers.
+
+Record the television model, Tizen version, selected output, content tested, and any unavailable provider feature. Hardware unavailability does not block a pull request, but the missing checks remain release risk rather than becoming simulated evidence.
+
 ### Phone management on a set
 
 Run these checks after changing the management socket, pairing, welcome screen or phone interface:
@@ -337,6 +347,14 @@ to. `--real-logos` puts the playlist's own addresses back.
 because the entire point of the headful simulator is that somebody looks at it and believes what
 they see.
 
+## The Xtream fixture
+
+`scripts/present.mjs` owns a synthetic Player API account used by the test server, parity walk, and budget simulator. It returns 3,200 live summaries, 840 movies, 560 series, duplicate and empty category names, fixed movie details, three seasons with twelve episodes each, short programme data, archived catchup, and finite media routes. Every value is invented. Responses contain no username or password, while requests still exercise the real credential transport required by Xtream.
+
+The fixture filters live, movie, and series lists by opaque category identifier, so duplicate display names cannot route a request. Its empty categories return successful empty arrays. This distinction lets the harness detect a repeated request that mistakes empty for unloaded.
+
+The shared parity walk starts from Xtream live rows, performs live search, opens a movie category twice, opens movie details, and descends through a series, season, and episode list. The budget simulator retains the M3U regression walk, then changes to the Xtream fixture and measures launch to live rows, an accelerated rail walk, first and cached category visits, movie details, episode navigation, live search, and heap growth. Xtream phases reuse existing stall and response allowances because they exercise the same windowed rows and panel transitions. A new allowance requires repeated quiet measurements that show an existing one measures a different cost.
+
 ## The budget
 
 `npm run tv:budget` is the same walk with a pass or a fail on the end. One budget rather than
@@ -364,6 +382,12 @@ with their thumb, and an interface can hold a tidy 40ms frame while running four
 | the same rows again | 1 to 24 | 30 | 21 to 63 | 69 to 149 | 0 to 1 | 85 / 5 |
 | surfing channels | 5 to 23 | 24 | | | | |
 | open, browse, choose | 14 to 29 | 34 | 39 to 64 | 65 to 92 | 0 | 90 / 5 |
+| Xtream held rail walk | measured by the gate | 4 | measured by the gate | printed | measured by the gate | 60 / 2 |
+| Xtream first category | measured by the gate | 34 | | | | |
+| Xtream category revisit | measured by the gate | 30 | | | | |
+| Xtream movie detail | measured by the gate | 34 | | | | |
+| Xtream episode navigation | measured by the gate | 34 | | | | |
+| Xtream live search | measured by the gate | 34 | | | | |
 
 The worst single press is printed and not gated, and that distinction was learned. Gated, it failed
 a quiet run at 178ms having passed six runs between 57 and 116: the maximum of eighteen samples is

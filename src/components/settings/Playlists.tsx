@@ -2,23 +2,73 @@ import { useLayoutEffect, useRef, useState } from "react";
 import { useLocale } from "../../hooks/useLocale";
 import { KEY, useRemote } from "../../hooks/useRemote";
 import { useSettings, type HiddenCategoryMode, type Playlist } from "../../stores/settings";
-import { useChannels } from "../../stores/channels";
+import { clearPlaylistCache, useChannels } from "../../stores/channels";
 import {
   checkPlaylistUrl,
+  m3uSource,
   nameFromUrl,
-  parseXtreamPlaylistUrl,
-  redactPlaylistUrl,
+  sourceDisplay,
   type XtreamOutput,
-  xtreamPlaylistUrl,
+  xtreamSource,
 } from "../../services/playlistUrl";
 import type { MessageKey } from "../../services/locale";
+import { forgetRepairSource } from "../../services/repair";
+import type { XtreamAccount, XtreamContentKind } from "../../services/xtream";
 import { Confirm } from "../Confirm";
 import { Icon } from "../Icon";
 import { Text } from "../Text";
+import { OptionPicker } from "../OptionPicker";
 import type { SettingsDetailNavigation } from "../Settings";
 import { PageHeader, Row, SettingsListHeader } from "./Field";
 
 const CATEGORY_PAGE_SIZE = 20;
+
+function AccountStatus({ account }: { account: XtreamAccount }) {
+  const { t, locale, number } = useLocale();
+  const status = account.status.toLowerCase();
+  const expired = !!account.expiresAt && account.expiresAt <= Math.floor(Date.now() / 1000);
+  const state =
+    status === "expired" || expired
+      ? "playlist.accountExpired"
+      : status === "active"
+        ? "playlist.accountActive"
+        : "playlist.accountInactive";
+  return (
+    <span className="playlist-account-status">
+      <span>
+        {t(state)}
+        {account.isTrial ? ` ${t("playlist.accountTrial")}` : ""}
+      </span>
+      <span>
+        {account.expiresAt
+          ? t("playlist.accountExpires", {
+              date: new Date(account.expiresAt * 1000).toLocaleDateString(locale),
+            })
+          : t("playlist.accountExpiryUnknown")}
+      </span>
+      {account.activeConnections !== undefined && (
+        <span>
+          {t("playlist.accountConnections", {
+            active: number(account.activeConnections),
+            maximum:
+              account.maxConnections === undefined
+                ? t("diagnostics.unknown")
+                : number(account.maxConnections),
+          })}
+        </span>
+      )}
+    </span>
+  );
+}
+
+function replacesSourceAccount(left: Playlist["source"], right: Playlist["source"]): boolean {
+  return (
+    left.kind !== right.kind ||
+    (left.kind === "xtream" &&
+      right.kind === "xtream" &&
+      (left.server !== right.server || left.username !== right.username))
+  );
+}
 
 function CategoryManager({
   playlist,
@@ -26,12 +76,13 @@ function CategoryManager({
   onAsking,
 }: {
   playlist: Playlist;
-  categories: { name: string }[];
+  categories: { key: string; name: string }[];
   onAsking: (asking: boolean) => void;
 }) {
   const { t, number } = useLocale();
   const settings = useSettings();
   const [query, setQuery] = useState("");
+  const [categoryKind, setCategoryKind] = useState<XtreamContentKind>("live");
   const [page, setPage] = useState(0);
   const [searching, setSearching] = useState(false);
   const [actionsOpen, setActionsOpen] = useState(false);
@@ -39,11 +90,17 @@ function CategoryManager({
   const searchButton = useRef<HTMLButtonElement>(null);
   const searchInput = useRef<HTMLInputElement>(null);
   const moreButton = useRef<HTMLButtonElement>(null);
-  const pageFocus = useRef<-1 | 0 | 1>(0);
+  const previousPage = useRef<HTMLButtonElement>(null);
+  const nextPage = useRef<HTMLButtonElement>(null);
+  const managed =
+    playlist.source.kind === "xtream"
+      ? categories.filter((category) => category.key.startsWith(`${categoryKind}:`))
+      : categories;
+  const managedKeys = new Set(managed.map((category) => category.key));
   const folded = query.trim().toLocaleLowerCase();
   const matches = folded
-    ? categories.filter((category) => category.name.toLocaleLowerCase().includes(folded))
-    : categories;
+    ? managed.filter((category) => category.name.toLocaleLowerCase().includes(folded))
+    : managed;
   const pages = Math.max(1, Math.ceil(matches.length / CATEGORY_PAGE_SIZE));
   const currentPage = Math.min(page, pages - 1);
   const shown = matches.slice(
@@ -61,7 +118,6 @@ function CategoryManager({
   const pageFromRow = (direction: -1 | 1) => {
     const next = currentPage + direction;
     if (next < 0 || next >= pages) return false;
-    pageFocus.current = direction;
     setPage(next);
     return true;
   };
@@ -103,15 +159,15 @@ function CategoryManager({
         ?.focus();
       return;
     }
-    if (pageFocus.current) {
-      const direction = pageFocus.current;
-      pageFocus.current = 0;
-      const rows = document.querySelectorAll<HTMLButtonElement>(".category-setting-row");
-      (direction > 0 ? rows[0] : rows[rows.length - 1])?.focus();
-    }
-  }, [searching, actionsOpen, currentPage]);
+  }, [searching, actionsOpen]);
 
   useRemote((code, event) => {
+    if (searching && code === KEY.ENTER) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      closeSearch();
+      return;
+    }
     if (
       searching &&
       (code === KEY.BACK || code === KEY.ESC || code === KEY.UP || code === KEY.DOWN)
@@ -163,6 +219,38 @@ function CategoryManager({
           <span>{modeLabel}</span>
         </button>
       </Row>
+      {playlist.source.kind === "xtream" && (
+        <div className="category-kind-selector">
+          {(["live", "movie", "series"] as const).map((kind) => (
+            <button
+              key={kind}
+              type="button"
+              className="category-kind-option"
+              aria-pressed={categoryKind === kind}
+              onClick={() => {
+                setCategoryKind(kind);
+                setPage(0);
+              }}
+            >
+              <Icon name={kind === "live" ? "tv" : kind === "movie" ? "movie" : "series"} />
+              <span>
+                {t(
+                  kind === "live"
+                    ? "content.live"
+                    : kind === "movie"
+                      ? "content.movies"
+                      : "content.series",
+                )}
+              </span>
+              <span className="count">
+                {number(
+                  categories.filter((category) => category.key.startsWith(`${kind}:`)).length,
+                )}
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
       <div className="settings-list-tools">
         <SettingsListHeader
           title={t("playlist.manageCategories")}
@@ -221,7 +309,10 @@ function CategoryManager({
               type="button"
               className="settings-menu-item"
               onClick={() => {
-                settings.setHiddenCategories(playlist.id, []);
+                settings.setHiddenCategories(
+                  playlist.id,
+                  playlist.hiddenCategories.filter((key) => !managedKeys.has(key)),
+                );
                 closeActions();
               }}
             >
@@ -233,10 +324,10 @@ function CategoryManager({
       </div>
       <div className="category-settings-list">
         {shown.map((category, row) => {
-          const hidden = playlist.hiddenCategories.includes(category.name);
+          const hidden = playlist.hiddenCategories.includes(category.key);
           return (
             <button
-              key={category.name}
+              key={category.key}
               type="button"
               className={`category-setting-row ${hidden ? "hidden" : ""}`}
               aria-label={t(hidden ? "playlist.unhideCategory" : "playlist.hideCategory", {
@@ -247,20 +338,21 @@ function CategoryManager({
               )}
               onClick={(event) => {
                 const nextHidden = !hidden;
-                settings.setCategoryHidden(playlist.id, category.name, nextHidden);
+                settings.setCategoryHidden(playlist.id, category.key, nextHidden);
                 event.currentTarget.dataset.okGuide = t(
                   nextHidden ? "playlist.unhideCategoryGuide" : "playlist.hideCategoryGuide",
                 );
                 event.currentTarget.dispatchEvent(new FocusEvent("focusin", { bubbles: true }));
               }}
               onKeyDown={(event) => {
-                if (event.keyCode === 40 && row === shown.length - 1 && pageFromRow(1)) {
+                if (
+                  event.keyCode === KEY.DOWN &&
+                  row === shown.length - 1 &&
+                  matches.length > CATEGORY_PAGE_SIZE
+                ) {
                   event.preventDefault();
                   event.stopPropagation();
-                }
-                if (event.keyCode === 38 && row === 0 && pageFromRow(-1)) {
-                  event.preventDefault();
-                  event.stopPropagation();
+                  nextPage.current?.focus();
                 }
               }}
             >
@@ -275,7 +367,7 @@ function CategoryManager({
           );
         })}
       </div>
-      {!categories.length ? (
+      {!managed.length ? (
         <p className="sheet-lead">{t("playlist.noCategories")}</p>
       ) : (
         !shown.length && (
@@ -285,13 +377,49 @@ function CategoryManager({
         )
       )}
       {matches.length > CATEGORY_PAGE_SIZE && (
-        <p className="category-position">
-          {t("playlist.categoryPosition", {
-            from: currentPage * CATEGORY_PAGE_SIZE + 1,
-            to: currentPage * CATEGORY_PAGE_SIZE + shown.length,
-            total: matches.length,
-          })}
-        </p>
+        <div className="category-pagination">
+          <button
+            ref={previousPage}
+            type="button"
+            className="btn tonal"
+            aria-disabled={currentPage === 0}
+            onClick={() => pageFromRow(-1)}
+            onKeyDown={(event) => {
+              if (event.keyCode !== KEY.UP) return;
+              event.preventDefault();
+              event.stopPropagation();
+              const rows =
+                document.querySelectorAll<HTMLButtonElement>(".category-setting-row");
+              rows[rows.length - 1]?.focus();
+            }}
+          >
+            <span>{t("common.previous")}</span>
+          </button>
+          <p className="category-position">
+            {t("playlist.categoryPosition", {
+              from: currentPage * CATEGORY_PAGE_SIZE + 1,
+              to: currentPage * CATEGORY_PAGE_SIZE + shown.length,
+              total: matches.length,
+            })}
+          </p>
+          <button
+            ref={nextPage}
+            type="button"
+            className="btn tonal"
+            aria-disabled={currentPage === pages - 1}
+            onClick={() => pageFromRow(1)}
+            onKeyDown={(event) => {
+              if (event.keyCode !== KEY.UP) return;
+              event.preventDefault();
+              event.stopPropagation();
+              const rows =
+                document.querySelectorAll<HTMLButtonElement>(".category-setting-row");
+              rows[rows.length - 1]?.focus();
+            }}
+          >
+            <span>{t("common.next")}</span>
+          </button>
+        </div>
       )}
       {confirmingAll && (
         <Confirm
@@ -301,10 +429,10 @@ function CategoryManager({
           cancelLabel={t("common.cancel")}
           onCancel={closeHideAll}
           onConfirm={() => {
-            settings.setHiddenCategories(
-              playlist.id,
-              categories.map((category) => category.name),
-            );
+            settings.setHiddenCategories(playlist.id, [
+              ...playlist.hiddenCategories.filter((key) => !managedKeys.has(key)),
+              ...managed.map((category) => category.key),
+            ]);
             closeHideAll();
           }}
         />
@@ -322,7 +450,8 @@ export function Playlists({
 }) {
   const { t, number } = useLocale();
   const s = useSettings();
-  const { load, loading, error, errorKey, errorDetail, channels, categories } = useChannels();
+  const { load, loading, error, errorKey, errorDetail, channels, managedCategories, accounts } =
+    useChannels();
   const errorText = (
     key: MessageKey | "" | undefined,
     detail: string | undefined,
@@ -352,7 +481,8 @@ export function Playlists({
     setEditing({
       id: "",
       name: "",
-      url: "",
+      source: { kind: "m3u", url: "" },
+      sourceVersion: 1,
       hiddenCategories: [],
       hiddenCategoryMode: "exclude",
     });
@@ -370,12 +500,13 @@ export function Playlists({
     );
   };
   const startEdit = (p: Playlist) => {
-    const xtream = parseXtreamPlaylistUrl(p.url);
+    const xtream = p.source.kind === "xtream" ? p.source : null;
+    const address = p.source.kind === "m3u" ? p.source.url : "";
     setEditing(p);
     setName(p.name);
-    setUrl(p.url);
-    setM3uUrl(p.url);
-    setSource(xtream ? "xtream" : "m3u");
+    setUrl(address);
+    setM3uUrl(address);
+    setSource(p.source.kind);
     setServer(xtream?.server ?? "");
     setUsername(xtream?.username ?? "");
     setPassword(xtream?.password ?? "");
@@ -389,13 +520,6 @@ export function Playlists({
     );
   };
 
-  const updateXtreamUrl = (
-    nextServer: string,
-    nextUsername: string,
-    nextPassword: string,
-    nextOutput: XtreamOutput,
-  ) => setUrl(xtreamPlaylistUrl(nextServer, nextUsername, nextPassword, nextOutput));
-
   /**
    * Check first, then load, then say what happened.
    *
@@ -404,19 +528,32 @@ export function Playlists({
    * one that failed if nobody says which it was.
    */
   const save = async () => {
-    const verdict = checkPlaylistUrl(url);
-    if (!verdict.ok) {
-      setProblem(verdict.problemKey ?? "validation.completeAddress");
+    if (source === "m3u") {
+      const verdict = checkPlaylistUrl(url);
+      if (!verdict.ok) {
+        setProblem(verdict.problemKey ?? "validation.completeAddress");
+        return;
+      }
+    }
+    const playlistSource =
+      source === "m3u" ? m3uSource(url) : xtreamSource(server, username, password, output);
+    if (!playlistSource) {
+      setProblem("validation.completeAddress");
       return;
     }
     setProblem("");
 
-    const label = name.trim() || nameFromUrl(url);
+    const label = name.trim() || nameFromUrl(sourceDisplay(playlistSource));
     const loadsActivePlaylist = editing?.id
       ? editing.id === s.activePlaylist()?.id
       : s.playlists.length === 0;
-    if (editing?.id) s.updatePlaylist(editing.id, label, url.trim());
-    else s.addPlaylist(label, url.trim());
+    if (editing?.id) {
+      s.updatePlaylist(editing.id, label, playlistSource);
+      if (replacesSourceAccount(editing.source, playlistSource)) {
+        await clearPlaylistCache(editing);
+        forgetRepairSource(editing.id);
+      }
+    } else s.addPlaylist(label, playlistSource);
     navigation.back();
 
     if (!loadsActivePlaylist) {
@@ -468,13 +605,17 @@ export function Playlists({
   };
 
   const categoryCountFor = (playlist: Playlist) =>
-    playlist.id === s.activePlaylistId && channels.length
-      ? categories.length
+    playlist.id === s.activePlaylistId && managedCategories.length
+      ? managedCategories.length
       : playlist.categoryCount;
   const managedPlaylist = s.playlists.find((playlist) => playlist.id === managing);
   if (managedPlaylist) {
     return (
-      <CategoryManager playlist={managedPlaylist} categories={categories} onAsking={onAsking} />
+      <CategoryManager
+        playlist={managedPlaylist}
+        categories={managedCategories}
+        onAsking={onAsking}
+      />
     );
   }
 
@@ -515,7 +656,6 @@ export function Playlists({
               aria-pressed={source === "xtream"}
               onClick={() => {
                 setSource("xtream");
-                updateXtreamUrl(server, username, password, output);
                 setProblem("");
               }}
             >
@@ -549,10 +689,7 @@ export function Playlists({
                 value={server}
                 spellCheck={false}
                 dir="ltr"
-                onChange={(event) => {
-                  setServer(event.target.value);
-                  updateXtreamUrl(event.target.value, username, password, output);
-                }}
+                onChange={(event) => setServer(event.target.value)}
               />
               <label htmlFor="pl-username">{t("onboarding.username")}</label>
               <input
@@ -560,10 +697,7 @@ export function Playlists({
                 value={username}
                 spellCheck={false}
                 dir="ltr"
-                onChange={(event) => {
-                  setUsername(event.target.value);
-                  updateXtreamUrl(server, event.target.value, password, output);
-                }}
+                onChange={(event) => setUsername(event.target.value)}
               />
               <label htmlFor="pl-password">{t("onboarding.password")}</label>
               <input
@@ -571,24 +705,19 @@ export function Playlists({
                 type="password"
                 value={password}
                 dir="ltr"
-                onChange={(event) => {
-                  setPassword(event.target.value);
-                  updateXtreamUrl(server, username, event.target.value, output);
-                }}
+                onChange={(event) => setPassword(event.target.value)}
               />
               <label htmlFor="pl-output">{t("onboarding.streamFormat")}</label>
-              <select
+              <OptionPicker
                 id="pl-output"
+                label={t("onboarding.streamFormat")}
                 value={output}
-                onChange={(event) => {
-                  const value = event.target.value as XtreamOutput;
-                  setOutput(value);
-                  updateXtreamUrl(server, username, password, value);
-                }}
-              >
-                <option value="m3u8">{t("onboarding.hls")}</option>
-                <option value="ts">{t("onboarding.mpegTs")}</option>
-              </select>
+                options={[
+                  { value: "m3u8", label: t("onboarding.hls") },
+                  { value: "ts", label: t("onboarding.mpegTs") },
+                ]}
+                onChange={setOutput}
+              />
             </div>
           )}
           {problem && (
@@ -669,8 +798,11 @@ export function Playlists({
                 )}
               </span>
               <span className="pl-url" dir="ltr">
-                {redactPlaylistUrl(p.url)}
+                {sourceDisplay(p.source)}
               </span>
+              {p.source.kind === "xtream" && accounts[p.id] && (
+                <AccountStatus account={accounts[p.id]} />
+              )}
             </button>
             {/* Tonal rather than flat. Flat text at three metres reads as a label, not as
                 something you can press, and One UI gives a medium emphasis control a grey
@@ -735,6 +867,8 @@ export function Playlists({
           onConfirm={() => {
             const gone = s.playlists.find((p) => p.id === confirming);
             s.removePlaylist(confirming);
+            if (gone) void clearPlaylistCache(gone);
+            forgetRepairSource(confirming);
             ask("");
             setNote(t("playlist.removed", { name: gone?.name ?? "" }));
             void load();

@@ -20,7 +20,12 @@ export function SearchField({
   focused,
   shown,
   total,
+  placeholder,
+  ariaLabel,
   onChange,
+  onExitUp,
+  onExitDown,
+  onExitStart,
 }: {
   value: string;
   /** Whether the cursor is on the field, as opposed to down among the results. */
@@ -29,9 +34,14 @@ export function SearchField({
   shown: number;
   /** How many matched altogether, which is the larger number when the list has been capped. */
   total: number;
+  placeholder?: string;
+  ariaLabel?: string;
   onChange: (value: string) => void;
+  onExitUp?: () => void;
+  onExitDown?: () => void;
+  onExitStart?: () => void;
 }) {
-  const { t, number } = useLocale();
+  const { t, number, direction } = useLocale();
   const field = useRef<HTMLInputElement>(null);
 
   /*
@@ -59,8 +69,26 @@ export function SearchField({
         className="search-field"
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        placeholder={t("search.channelName")}
-        aria-label={t("search.ariaLabel")}
+        onKeyDown={(event) => {
+          const start = direction === "rtl" ? 39 : 37;
+          if (
+            event.keyCode === start &&
+            event.currentTarget.selectionStart === 0 &&
+            event.currentTarget.selectionEnd === 0
+          ) {
+            event.preventDefault();
+            event.stopPropagation();
+            onExitStart?.();
+            return;
+          }
+          if (event.keyCode !== 38 && event.keyCode !== 40) return;
+          event.preventDefault();
+          event.stopPropagation();
+          if (event.keyCode === 38) onExitUp?.();
+          else onExitDown?.();
+        }}
+        placeholder={placeholder ?? t("search.channelName")}
+        aria-label={ariaLabel ?? t("search.ariaLabel")}
         dir="auto"
         spellCheck={false}
         autoComplete="off"

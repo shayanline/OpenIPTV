@@ -45,9 +45,9 @@ export const LAUNCH_MARKS = {
    * a measurement disbelieved as a whole, quite rightly.
    */
   "first paint":
-    "(performance.getEntriesByType('paint')"
-    + ".filter(function (e) { return e.name === 'first-contentful-paint'; })[0] || {})"
-    + ".startTime",
+    "(performance.getEntriesByType('paint')" +
+    ".filter(function (e) { return e.name === 'first-contentful-paint'; })[0] || {})" +
+    ".startTime",
   "the interface": "!!document.querySelector('#root *')",
   // `.window .row` is a real channel, not the eight skeletons: those are drawn straight into
   // the viewport, so a mark on `.row` alone would report the placeholder as the list and hide

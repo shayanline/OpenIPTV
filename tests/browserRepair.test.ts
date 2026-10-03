@@ -38,8 +38,12 @@ class FakeLoader {
 
   abort() {}
   destroy() {}
-  getCacheAge() { return null; }
-  getResponseHeader() { return null; }
+  getCacheAge() {
+    return null;
+  }
+  getResponseHeader() {
+    return null;
+  }
 }
 
 const fakeHls = {

@@ -57,10 +57,19 @@ export const KEY = {
  * volume and power from the system, which is a good way to make a TV feel broken.
  */
 const REGISTERED = [
-  "ChannelUp", "ChannelDown",
-  "MediaPlayPause", "MediaPlay", "MediaPause", "MediaStop",
-  "MediaRewind", "MediaFastForward", "MediaTrackPrevious", "MediaTrackNext",
-  "ColorF0Red", "ColorF1Green", "ColorF2Yellow",
+  "ChannelUp",
+  "ChannelDown",
+  "MediaPlayPause",
+  "MediaPlay",
+  "MediaPause",
+  "MediaStop",
+  "MediaRewind",
+  "MediaFastForward",
+  "MediaTrackPrevious",
+  "MediaTrackNext",
+  "ColorF0Red",
+  "ColorF1Green",
+  "ColorF2Yellow",
 ];
 
 interface TizenInputDevice {
@@ -89,9 +98,11 @@ export const keyGrants = (): readonly KeyGrant[] => grants;
 
 /** Every key the model claims to have, which is not the same as the ones this app wants. */
 export function supportedKeys(): string[] {
-  const device = (window as unknown as {
-    tizen?: { tvinputdevice?: TizenInputDevice };
-  }).tizen?.tvinputdevice;
+  const device = (
+    window as unknown as {
+      tizen?: { tvinputdevice?: TizenInputDevice };
+    }
+  ).tizen?.tvinputdevice;
   try {
     return device?.getSupportedKeys?.().map((k) => k.name) ?? [];
   } catch {
@@ -100,9 +111,11 @@ export function supportedKeys(): string[] {
 }
 
 export function registerRemoteKeys() {
-  const tizen = (window as unknown as {
-    tizen?: { tvinputdevice?: TizenInputDevice };
-  }).tizen;
+  const tizen = (
+    window as unknown as {
+      tizen?: { tvinputdevice?: TizenInputDevice };
+    }
+  ).tizen;
   const device = tizen?.tvinputdevice;
   if (!device) return;
   grants = REGISTERED.map((name) => {

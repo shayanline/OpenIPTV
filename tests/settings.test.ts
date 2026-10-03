@@ -11,6 +11,7 @@ import assert from "node:assert/strict";
  */
 
 const KEY = "openiptv.settings";
+const m3u = (url: string) => ({ kind: "m3u" as const, url });
 
 const load = () => {
   vi.resetModules();
@@ -128,7 +129,7 @@ test("what is written back is data, never the actions", async () => {
 
 test("the first playlist added becomes the active one", async () => {
   const { useSettings } = await load();
-  useSettings.getState().addPlaylist("First", "http://a.invalid/x.m3u");
+  useSettings.getState().addPlaylist("First", m3u("http://a.invalid/x.m3u"));
   const s = useSettings.getState();
   assert.equal(s.playlists.length, 1);
   assert.equal(s.activePlaylistId, s.playlists[0].id);
@@ -136,9 +137,9 @@ test("the first playlist added becomes the active one", async () => {
 
 test("adding a second playlist does not steal the active one", async () => {
   const { useSettings } = await load();
-  useSettings.getState().addPlaylist("First", "http://a.invalid/x.m3u");
+  useSettings.getState().addPlaylist("First", m3u("http://a.invalid/x.m3u"));
   const first = useSettings.getState().activePlaylistId;
-  useSettings.getState().addPlaylist("Second", "http://b.invalid/y.m3u");
+  useSettings.getState().addPlaylist("Second", m3u("http://b.invalid/y.m3u"));
   assert.equal(useSettings.getState().activePlaylistId, first);
 });
 
@@ -155,7 +156,7 @@ test("new and existing playlists gain private category visibility defaults", asy
   assert.deepEqual(useSettings.getState().playlists[0].hiddenCategories, []);
   assert.equal(useSettings.getState().playlists[0].hiddenCategoryMode, "exclude");
 
-  useSettings.getState().addPlaylist("New", "http://new.invalid/list.m3u");
+  useSettings.getState().addPlaylist("New", m3u("http://new.invalid/list.m3u"));
   assert.deepEqual(useSettings.getState().playlists[1].hiddenCategories, []);
   assert.equal(useSettings.getState().playlists[1].hiddenCategoryMode, "exclude");
 });
@@ -163,8 +164,8 @@ test("new and existing playlists gain private category visibility defaults", asy
 test("category visibility stays with its playlist and survives a reload", async () => {
   const { useSettings } = await load();
   const settings = useSettings.getState();
-  settings.addPlaylist("First", "http://a.invalid/x.m3u");
-  settings.addPlaylist("Second", "http://b.invalid/y.m3u");
+  settings.addPlaylist("First", m3u("http://a.invalid/x.m3u"));
+  settings.addPlaylist("Second", m3u("http://b.invalid/y.m3u"));
   const [first, second] = useSettings.getState().playlists;
 
   useSettings.getState().setCategoryHidden(first.id, "News", true);
@@ -184,8 +185,8 @@ test("category visibility stays with its playlist and survives a reload", async 
 
 test("a playlist can replace its hidden category set in one write", async () => {
   const { useSettings } = await load();
-  useSettings.getState().addPlaylist("First", "http://a.invalid/x.m3u");
-  useSettings.getState().addPlaylist("Second", "http://b.invalid/y.m3u");
+  useSettings.getState().addPlaylist("First", m3u("http://a.invalid/x.m3u"));
+  useSettings.getState().addPlaylist("Second", m3u("http://b.invalid/y.m3u"));
   const [first] = useSettings.getState().playlists;
 
   useSettings.getState().setHiddenCategories(first.id, ["News", "Sport"]);
@@ -201,7 +202,7 @@ test("a playlist can replace its hidden category set in one write", async () => 
 
 test("showing a category removes only that exact playlist category", async () => {
   const { useSettings } = await load();
-  useSettings.getState().addPlaylist("First", "http://a.invalid/x.m3u");
+  useSettings.getState().addPlaylist("First", m3u("http://a.invalid/x.m3u"));
   const id = useSettings.getState().playlists[0].id;
 
   useSettings.getState().setCategoryHidden(id, "News", true);
@@ -214,8 +215,8 @@ test("showing a category removes only that exact playlist category", async () =>
 test("removing the active playlist promotes another rather than leaving nothing active", async () => {
   const { useSettings } = await load();
   const s = () => useSettings.getState();
-  s().addPlaylist("First", "http://a.invalid/x.m3u");
-  s().addPlaylist("Second", "http://b.invalid/y.m3u");
+  s().addPlaylist("First", m3u("http://a.invalid/x.m3u"));
+  s().addPlaylist("Second", m3u("http://b.invalid/y.m3u"));
   const [first, second] = s().playlists;
 
   s().removePlaylist(first.id);
@@ -225,7 +226,7 @@ test("removing the active playlist promotes another rather than leaving nothing 
 test("removing the last playlist leaves the app in its first run state", async () => {
   const { useSettings } = await load();
   const s = () => useSettings.getState();
-  s().addPlaylist("Only", "http://a.invalid/x.m3u");
+  s().addPlaylist("Only", m3u("http://a.invalid/x.m3u"));
   s().removePlaylist(s().playlists[0].id);
   assert.equal(s().playlists.length, 0);
   assert.equal(s().activePlaylistId, "");
@@ -245,15 +246,16 @@ test("an unsupported saved language falls back to the system option", async () =
 
 test("a playlist whose name is blank is still saved with its url trimmed", async () => {
   const { useSettings } = await load();
-  useSettings.getState().addPlaylist("  Spaced  ", "  http://a.invalid/x.m3u  ");
+  useSettings.getState().addPlaylist("  Spaced  ", m3u("http://a.invalid/x.m3u"));
   const p = useSettings.getState().playlists[0];
   assert.equal(p.name, "Spaced");
-  assert.equal(p.url, "http://a.invalid/x.m3u");
+  assert.deepEqual(p.source, m3u("http://a.invalid/x.m3u"));
+  assert.equal(p.sourceVersion, 1);
 });
 
 test("reset clears the playlists and writes the cleared state out", async () => {
   const { useSettings } = await load();
-  useSettings.getState().addPlaylist("One", "http://a.invalid/x.m3u");
+  useSettings.getState().addPlaylist("One", m3u("http://a.invalid/x.m3u"));
   useSettings.getState().reset();
 
   assert.equal(useSettings.getState().playlists.length, 0);
@@ -287,8 +289,8 @@ test("two playlists added in the same millisecond still get an id each", async (
   const { useSettings } = await load();
   // Not a race that has to be provoked: any code adding two in a row hits the same
   // millisecond, and identical ids meant removing one removed both.
-  useSettings.getState().addPlaylist("One", "http://a.invalid/x.m3u");
-  useSettings.getState().addPlaylist("Two", "http://b.invalid/y.m3u");
+  useSettings.getState().addPlaylist("One", m3u("http://a.invalid/x.m3u"));
+  useSettings.getState().addPlaylist("Two", m3u("http://b.invalid/y.m3u"));
   const ids = useSettings.getState().playlists.map((p) => p.id);
   assert.equal(new Set(ids).size, 2);
 });
@@ -296,8 +298,8 @@ test("two playlists added in the same millisecond still get an id each", async (
 test("removing one of two playlists added together leaves exactly the other", async () => {
   const { useSettings } = await load();
   const s = () => useSettings.getState();
-  s().addPlaylist("One", "http://a.invalid/x.m3u");
-  s().addPlaylist("Two", "http://b.invalid/y.m3u");
+  s().addPlaylist("One", m3u("http://a.invalid/x.m3u"));
+  s().addPlaylist("Two", m3u("http://b.invalid/y.m3u"));
   s().removePlaylist(s().playlists[0].id);
   assert.equal(s().playlists.length, 1);
   assert.equal(s().playlists[0].name, "Two");
@@ -305,7 +307,14 @@ test("removing one of two playlists added together leaves exactly the other", as
 
 test("replacing playlists persists one complete first setup state", async () => {
   const { useSettings } = await load();
-  const playlist = { id: "pl-phone", name: "News", url: "http://a.invalid/news.m3u" };
+  const playlist = {
+    id: "pl-phone",
+    name: "News",
+    source: m3u("http://a.invalid/news.m3u"),
+    sourceVersion: 1,
+    hiddenCategories: [],
+    hiddenCategoryMode: "exclude" as const,
+  };
 
   useSettings.getState().replacePlaylists([playlist], playlist.id, "fr");
 
@@ -315,4 +324,154 @@ test("replacing playlists persists one complete first setup state", async () => 
   const saved = JSON.parse(localStorage.getItem(KEY) as string);
   assert.deepEqual(saved.playlists, [playlist]);
   assert.equal(saved.locale, "fr");
+});
+
+test("legacy playlist addresses migrate atomically to typed sources", async () => {
+  localStorage.setItem(
+    KEY,
+    JSON.stringify({
+      playlists: [
+        {
+          id: "xtream-defaults",
+          name: "Provider",
+          url: "https://provider.example/get.php?username=user%2Bname&password=p%26ss",
+        },
+        {
+          id: "unsupported-type",
+          name: "Old API",
+          url: "https://provider.example/get.php?username=user&password=pass&type=m3u&output=ts",
+        },
+        {
+          id: "unsupported-output",
+          name: "Odd output",
+          url: "https://provider.example/get.php?username=user&password=pass&type=m3u_plus&output=rtmp",
+        },
+        { id: "plain", name: "Plain", url: "https://example.com/custom?token=a%2Bb" },
+      ],
+      activePlaylistId: "xtream-defaults",
+    }),
+  );
+
+  const { useSettings } = await load();
+  const playlists = useSettings.getState().playlists;
+  assert.deepEqual(playlists[0].source, {
+    kind: "xtream",
+    server: "https://provider.example",
+    username: "user+name",
+    password: "p&ss",
+    output: "ts",
+  });
+  assert.deepEqual(
+    playlists.slice(1).map((playlist) => playlist.source),
+    [
+      m3u("https://provider.example/get.php?username=user&password=pass&type=m3u&output=ts"),
+      m3u(
+        "https://provider.example/get.php?username=user&password=pass&type=m3u_plus&output=rtmp",
+      ),
+      m3u("https://example.com/custom?token=a%2Bb"),
+    ],
+  );
+  assert.deepEqual(
+    playlists.map((playlist) => playlist.sourceVersion),
+    [1, 1, 1, 1],
+  );
+  assert.deepEqual(
+    playlists.map((playlist) => playlist.id),
+    ["xtream-defaults", "unsupported-type", "unsupported-output", "plain"],
+  );
+  const persisted = JSON.parse(localStorage.getItem(KEY) as string);
+  assert.equal(
+    persisted.playlists.some((playlist: object) => "url" in playlist),
+    false,
+  );
+});
+
+test("a malformed legacy address remains editable after migration", async () => {
+  const malformed = "  provider.example/list with spaces.m3u  ";
+  localStorage.setItem(
+    KEY,
+    JSON.stringify({
+      playlists: [
+        {
+          id: "legacy-malformed",
+          name: "Needs fixing",
+          url: malformed,
+          hiddenCategories: ["News"],
+          hiddenCategoryMode: "search",
+          categoryCount: 7,
+        },
+      ],
+      activePlaylistId: "legacy-malformed",
+    }),
+  );
+
+  const { useSettings } = await load();
+  assert.deepEqual(useSettings.getState().playlists, [
+    {
+      id: "legacy-malformed",
+      name: "Needs fixing",
+      source: { kind: "m3u", url: malformed },
+      sourceVersion: 1,
+      hiddenCategories: ["News"],
+      hiddenCategoryMode: "search",
+      categoryCount: 7,
+    },
+  ]);
+  assert.equal(useSettings.getState().activePlaylist()?.id, "legacy-malformed");
+  const persisted = JSON.parse(localStorage.getItem(KEY) as string);
+  assert.equal("url" in persisted.playlists[0], false);
+  assert.deepEqual(persisted.playlists[0].source, { kind: "m3u", url: malformed });
+
+  const reloaded = await load();
+  assert.deepEqual(reloaded.useSettings.getState().playlists[0].source, {
+    kind: "m3u",
+    url: malformed,
+  });
+});
+
+test("every source change increments its version and clears the category count", async () => {
+  const { useSettings } = await load();
+  useSettings.getState().addPlaylist("Provider", {
+    kind: "xtream",
+    server: "https://provider.example",
+    username: "viewer",
+    password: "secret",
+    output: "ts",
+  });
+  const original = useSettings.getState().playlists[0];
+  useSettings.getState().setPlaylistCategoryCount(original.id, 12);
+
+  useSettings.getState().updatePlaylist(original.id, "Renamed", { ...original.source });
+  let playlist = useSettings.getState().playlists[0];
+  assert.equal(playlist.sourceVersion, 1);
+  assert.equal(playlist.categoryCount, 12);
+
+  useSettings
+    .getState()
+    .updatePlaylist(original.id, "Renamed", { ...original.source, password: "replacement" });
+  playlist = useSettings.getState().playlists[0];
+  assert.equal(playlist.sourceVersion, 2);
+  assert.equal(playlist.categoryCount, undefined);
+});
+
+test("account replacement clears hidden categories after the source version changes", async () => {
+  const { useSettings } = await load();
+  useSettings.getState().addPlaylist("Provider", {
+    kind: "xtream",
+    server: "https://provider.example",
+    username: "viewer",
+    password: "secret",
+    output: "ts",
+  });
+  const original = useSettings.getState().playlists[0];
+  useSettings.getState().setHiddenCategories(original.id, ["live:1", "movie:2"]);
+
+  useSettings.getState().updatePlaylist(original.id, "Provider", {
+    ...original.source,
+    username: "replacement",
+  });
+
+  const replaced = useSettings.getState().playlists[0];
+  expect(replaced.sourceVersion).toBe(2);
+  expect(replaced.hiddenCategories).toEqual([]);
 });

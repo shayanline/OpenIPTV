@@ -219,16 +219,7 @@ export function SmartRemote() {
         {/* Power. The set owns it, so it is drawn and does nothing. */}
         <div className="remote-top">
           <span className="rk-power" aria-hidden="true">
-            <svg
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-            >
-              <path d="M12 3.5v8" />
-              <path d="M6.6 6.6a7.5 7.5 0 1 0 10.8 0" />
-            </svg>
+            <Icon name="power" />
           </span>
         </div>
 
@@ -253,10 +244,7 @@ export function SmartRemote() {
             MIC
           </span>
           <span className="rk-mic" aria-hidden="true">
-            <svg viewBox="0 0 24 24" fill="currentColor">
-              <rect x="9" y="3" width="6" height="11" rx="3" />
-              <path d="M6 11.5a6 6 0 0 0 12 0h1.6a7.6 7.6 0 0 1-6.8 7.55V22h-1.6v-2.95A7.6 7.6 0 0 1 4.4 11.5Z" />
-            </svg>
+            <Icon name="mic" />
           </span>
         </div>
 
@@ -264,48 +252,28 @@ export function SmartRemote() {
             so the chevrons here stay faint until the pointer finds them. */}
         <div className="dpad">
           <button type="button" className="dp up" {...key(KEY.UP)} aria-label="Up">
-            <i className="chev" />
+            <Icon name="chevronUp" />
           </button>
           <button type="button" className="dp right" {...key(KEY.RIGHT)} aria-label="Right">
-            <i className="chev" />
+            <Icon name="chevronRight" />
           </button>
           <button type="button" className="dp down" {...key(KEY.DOWN)} aria-label="Down">
-            <i className="chev" />
+            <Icon name="chevronDown" />
           </button>
           <button type="button" className="dp left" {...key(KEY.LEFT)} aria-label="Left">
-            <i className="chev" />
+            <Icon name="chevronLeft" />
           </button>
           <button type="button" className="dp ok" {...okKey} aria-label="Select" />
         </div>
 
         <div className="remote-trio">
           <button type="button" className="rk-round" {...key(KEY.BACK)} aria-label="Return">
-            <svg
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.9"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <path d="M9 6.5L4.5 11 9 15.5" />
-              <path d="M4.5 11h9a6 6 0 0 1 0 12h-2" />
-            </svg>
+            <Icon name="return" />
           </button>
           {/* Home returns to the Smart Hub. The television does that itself, and an app
               that put a confirmation in the way of it would be wrong. */}
           <span className="rk-round inert" aria-hidden="true">
-            <svg
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.9"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <path d="M3.5 10.5L12 3.5l8.5 7" />
-              <path d="M5.5 9.6V20h13V9.6" />
-            </svg>
+            <Icon name="home" />
           </span>
           <button
             type="button"
@@ -313,11 +281,7 @@ export function SmartRemote() {
             {...key(KEY.PLAY_PAUSE)}
             aria-label="Play or pause"
           >
-            <svg viewBox="0 0 24 24" fill="currentColor">
-              <path d="M4 4.5l9 7.5-9 7.5z" />
-              <rect x="15" y="4.5" width="2.4" height="15" rx="1" />
-              <rect x="19.2" y="4.5" width="2.4" height="15" rx="1" />
-            </svg>
+            <Icon name="play" />
           </button>
         </div>
 

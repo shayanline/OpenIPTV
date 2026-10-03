@@ -11,6 +11,8 @@ import {
   press,
   settle,
   volumeChanges,
+  XTREAM_SOURCE,
+  xtreamFetch,
 } from "./support/app";
 
 /**
@@ -205,6 +207,101 @@ test("law 4: RETURN in the panel goes back to the picture rather than closing", 
   press(KEY.BACK);
   assert.ok(!panelOpen());
   assert.equal(document.querySelector(".dialog"), null);
+});
+
+test("law 4 returns from the Xtream Guide to the same live row", async () => {
+  await mountApp("", {
+    source: XTREAM_SOURCE,
+    fetchImplementation: xtreamFetch(
+      [{ category_id: "10", category_name: "News" }],
+      [{ stream_id: "1", name: "Provider One", category_id: "10", stream_type: "live" }],
+    ),
+  });
+
+  press(KEY.ENTER);
+  await settle(0);
+  press(KEY.RIGHT);
+  await settle(0);
+  expect(document.querySelector(".guide-drawer")).toBeTruthy();
+  press(KEY.BACK);
+  await settle(180);
+  expect(document.querySelector(".guide-drawer")).toBeNull();
+  expect(panelOpen()).toBe(false);
+
+  press(KEY.LEFT);
+  expect(document.querySelector(".list .row.selected .row-label")?.textContent).toBe(
+    "Provider One",
+  );
+  expect(panelOpen()).toBe(true);
+});
+
+test("law 4 remains one panel RETURN after choosing Xtream content", async () => {
+  await mountApp("", {
+    source: XTREAM_SOURCE,
+    fetchImplementation: xtreamFetch(
+      [{ category_id: "10", category_name: "News" }],
+      [
+        {
+          stream_id: "1",
+          name: "Provider One",
+          category_id: "10",
+          stream_type: "live",
+        },
+      ],
+    ),
+  });
+
+  fireEvent.click(screen.getByRole("button", { name: "Movies" }));
+  expect(screen.getByRole("button", { name: "Movies" }).getAttribute("aria-pressed")).toBe(
+    "true",
+  );
+
+  press(KEY.BACK);
+  expect(panelOpen()).toBe(false);
+  expect(document.querySelector(".dialog")).toBeNull();
+});
+
+test("law 4 removes one movie frame before it closes the panel", async () => {
+  const fetchImplementation = async (input: string | URL) => {
+    const action = new URL(String(input)).searchParams.get("action") ?? "authenticate";
+    const body: Record<string, unknown> = {
+      authenticate: {
+        user_info: { auth: 1, status: "Active" },
+        server_info: { server_protocol: "http", url: "provider.example" },
+      },
+      get_live_categories: [{ category_id: "1", category_name: "Live" }],
+      get_vod_categories: [{ category_id: "10", category_name: "Cinema" }],
+      get_series_categories: [],
+      get_live_streams: [{ stream_id: "1", category_id: "1", name: "Live One" }],
+      get_vod_streams: [
+        { stream_id: "100", category_id: "10", name: "Film", container_extension: "mp4" },
+      ],
+      get_vod_info: {
+        info: { name: "Film", plot: "Plot" },
+        movie_data: { stream_id: "100", category_id: "10", container_extension: "mp4" },
+      },
+    };
+    return { ok: true, status: 200, json: async () => body[action] };
+  };
+  await mountApp("", { source: XTREAM_SOURCE, fetchImplementation });
+  fireEvent.click(screen.getByRole("button", { name: "Movies" }));
+  await settle(0);
+  fireEvent.click(screen.getAllByText("Cinema")[0].closest("button")!);
+  await settle(0);
+  fireEvent.click(
+    screen
+      .getAllByText("Film")
+      .find((item) => item.closest("button"))!
+      .closest("button")!,
+  );
+  await settle(0);
+
+  press(KEY.BACK);
+  expect(panelOpen()).toBe(true);
+  expect(screen.getByText("Film")).toBeTruthy();
+
+  press(KEY.BACK);
+  expect(panelOpen()).toBe(false);
 });
 
 test("RETURN closes the channel panel before offering to exit when nothing is playing", async () => {

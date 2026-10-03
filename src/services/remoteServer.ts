@@ -68,7 +68,11 @@ function publish(change: Partial<RemoteAccessState>): void {
 }
 
 function json(status: number, value: unknown): RemoteResponse {
-  return { status, contentType: "application/json; charset=utf-8", body: JSON.stringify(value) };
+  return {
+    status,
+    contentType: "application/json; charset=utf-8",
+    body: JSON.stringify(value),
+  };
 }
 
 function parseJson(body: string): unknown {
@@ -195,13 +199,11 @@ export async function routeRemoteRequest(request: RemoteRequest): Promise<Remote
     ) {
       return json(400, { error: "invalidRequest" });
     }
-    const paired = await pairDevice(
-      {
-        name: values.name,
-        ...(typeof values.secret === "string" ? { secret: values.secret } : {}),
-        ...(typeof values.code === "string" ? { code: values.code } : {}),
-      },
-    );
+    const paired = await pairDevice({
+      name: values.name,
+      ...(typeof values.secret === "string" ? { secret: values.secret } : {}),
+      ...(typeof values.code === "string" ? { code: values.code } : {}),
+    });
     if (!paired.ok) {
       if (!hasPairingSession()) cancelPairing(true);
       return json(paired.reason === "expired" ? 410 : 401, { error: paired.reason });
@@ -283,7 +285,8 @@ export function startDevelopmentRemoteAccess(): Promise<void> {
   developmentStart = (async () => {
     try {
       const response = await fetch("/__openiptv/remote/info", { cache: "no-store" });
-      if (!response.ok) throw new Error(`bridge information failed with HTTP ${response.status}`);
+      if (!response.ok)
+        throw new Error(`bridge information failed with HTTP ${response.status}`);
       const info = (await response.json()) as {
         address: string;
         port: number;
@@ -380,14 +383,21 @@ export function startRemoteAccess(): void {
   try {
     worker = new Worker("./wasm/management-socket.worker.js");
   } catch (error) {
-    publish({ status: "unavailable", error: error instanceof Error ? error.message : String(error) });
+    publish({
+      status: "unavailable",
+      error: error instanceof Error ? error.message : String(error),
+    });
     return;
   }
   worker.onerror = ({ message }) => failWorker(message);
   worker.onmessage = ({ data }) => {
     const message = data as Record<string, unknown>;
     if (message.type === "listening") {
-      publish({ status: "listening", address: String(message.address), port: Number(message.port) });
+      publish({
+        status: "listening",
+        address: String(message.address),
+        port: Number(message.port),
+      });
     } else if (message.type === "error") {
       failWorker(String(message.reason));
     } else if (message.type === "stopped") {

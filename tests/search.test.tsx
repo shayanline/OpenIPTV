@@ -2,7 +2,15 @@ import { afterEach, beforeEach, test, vi } from "vitest";
 import assert from "node:assert/strict";
 import { act, cleanup, fireEvent } from "@testing-library/react";
 import { KEY } from "../src/hooks/useRemote";
-import { mountApp, panelOpen, played, press, settle } from "./support/app";
+import {
+  mountApp,
+  panelOpen,
+  played,
+  press,
+  settle,
+  XTREAM_SOURCE,
+  xtreamFetch,
+} from "./support/app";
 
 /**
  * Searching for a channel by name, from the remote.
@@ -38,6 +46,7 @@ const rows = () =>
 const selected = () =>
   document.querySelector(".list .row.selected .row-label")?.textContent ?? "";
 const searchKeyOn = () => !!document.querySelector(".panel-key.on");
+const fieldKey = (keyCode: number) => fireEvent.keyDown(field()!, { keyCode });
 /** The rail row the cursor is on, which moves on the press rather than after it. */
 const cursorOn = () =>
   document.querySelector(".rail .row.selected .row-label")?.textContent ?? "";
@@ -72,7 +81,18 @@ async function type(text: string) {
  */
 async function openSearch() {
   for (let i = 0; i < 4 && !document.querySelector(".rail.focused"); i++) press(KEY.LEFT);
-  for (let i = 0; i < 4 && !document.querySelector(".panel-key.selected"); i++) press(KEY.UP);
+  for (
+    let i = 0;
+    i < 4 && !document.querySelector(".panel-key.selected, .content-selector.focused");
+    i++
+  )
+    press(KEY.UP);
+  for (
+    let i = 0;
+    i < 4 && document.querySelector(".panel-key.selected")?.textContent !== "Search";
+    i++
+  )
+    press(KEY.RIGHT);
   press(KEY.ENTER);
   await settle();
 }
@@ -117,6 +137,48 @@ test("results come from the whole playlist, not the category that was showing", 
   assert.deepEqual(rows(), ["Gamma Sport", "Alpha Sport"]);
 });
 
+test("Xtream search includes channels from every live category", async () => {
+  await mountApp("", {
+    source: XTREAM_SOURCE,
+    fetchImplementation: xtreamFetch(
+      [
+        { category_id: "first", category_name: "News" },
+        { category_id: "second", category_name: "Sport" },
+      ],
+      [
+        { stream_id: 1, name: "Morning News", category_id: "first", num: 1 },
+        { stream_id: 2, name: "Night Sport", category_id: "second", num: 22 },
+      ],
+    ),
+  });
+  await openSearch();
+  await type("night");
+
+  assert.deepEqual(rows(), ["Night Sport"]);
+});
+
+test("number entry finds an Xtream channel outside the first category", async () => {
+  await mountApp("", {
+    source: XTREAM_SOURCE,
+    fetchImplementation: xtreamFetch(
+      [
+        { category_id: "first", category_name: "News" },
+        { category_id: "second", category_name: "Sport" },
+      ],
+      [
+        { stream_id: 1, name: "Morning News", category_id: "first", num: 1 },
+        { stream_id: 2, name: "Night Sport", category_id: "second", num: 22 },
+      ],
+    ),
+  });
+
+  press(50);
+  press(50);
+  press(KEY.ENTER);
+
+  assert.deepEqual(played, ["http://provider.example/live/viewer/secret/2.m3u8"]);
+});
+
 test("hidden categories are absent from search by default", async () => {
   await mountApp(PLAYLIST, { hiddenCategories: ["News"] });
   await openSearch();
@@ -141,7 +203,7 @@ test("down leaves the field for the results, and up comes back to it", async () 
   await openSearch();
   await type("alpha");
 
-  press(KEY.DOWN);
+  fieldKey(KEY.DOWN);
   assert.equal(selected(), "Alpha News", "down goes to the first result");
   assert.notEqual(document.activeElement, field(), "and the keyboard goes away with it");
 
@@ -159,7 +221,7 @@ test("OK on a result plays it", async () => {
   await openSearch();
   await type("gamma");
 
-  press(KEY.DOWN);
+  fieldKey(KEY.DOWN);
   press(KEY.ENTER);
   await settle();
 
@@ -179,7 +241,7 @@ test("choosing a result takes the rail to that channel's category", async () => 
   await mountApp(PLAYLIST);
   await openSearch();
   await type("gamma");
-  press(KEY.DOWN);
+  fieldKey(KEY.DOWN);
   press(KEY.ENTER);
   await settle();
 
@@ -248,12 +310,13 @@ test("walking to a category while a search is showing puts the categories back",
   await type("alpha");
   assert.deepEqual(rows(), ["Alpha News", "Alpha Sport"]);
 
-  press(KEY.DOWN); // out of the field, into the results
+  fieldKey(KEY.DOWN); // out of the field, into the results
   press(KEY.LEFT); // and into the rail, which is where it was left: on the title bar
   // Down until the cursor is on Sport, rather than a fixed number of presses. The rail keeps the
   // position it had when the search was opened, which is the title bar, so how far Sport is
   // depends on where the viewer came from and is not something a test should assume.
   for (let i = 0; i < 6 && !cursorOn().includes("Sport"); i++) press(KEY.DOWN);
+  press(KEY.RIGHT);
   await settle();
 
   assert.equal(!!field(), false, "the search is gone");
@@ -269,7 +332,7 @@ test("left on an empty field goes to the categories rather than nowhere", async 
   await mountApp(PLAYLIST);
   await openSearch();
 
-  press(KEY.LEFT);
+  fieldKey(KEY.LEFT);
   await settle(0);
 
   assert.ok(document.querySelector(".rail.focused"), "the rail has the cursor");

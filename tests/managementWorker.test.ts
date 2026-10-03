@@ -14,7 +14,10 @@ interface Harness {
 }
 
 function harness(): Harness {
-  const source = readFileSync(join(process.cwd(), "public/wasm/management-socket.worker.js"), "utf8");
+  const source = readFileSync(
+    join(process.cwd(), "public/wasm/management-socket.worker.js"),
+    "utf8",
+  );
   const messages: unknown[] = [];
   const responses: string[] = [];
   const requests: string[] = [];
@@ -206,9 +209,7 @@ describe("management socket worker", () => {
     await worker.queueRequest(`GET / HTTP/1.1\r\nX-Large: ${"x".repeat(8 * 1024)}\r\n\r\n`);
     expect(worker.responses[0]).toContain("431 Request Header Fields Too Large");
 
-    await worker.queueRequest(
-      "POST /api/v1/pair HTTP/1.1\r\nContent-Length: 65537\r\n\r\n",
-    );
+    await worker.queueRequest("POST /api/v1/pair HTTP/1.1\r\nContent-Length: 65537\r\n\r\n");
     expect(worker.responses[1]).toContain("413 Payload Too Large");
   });
 

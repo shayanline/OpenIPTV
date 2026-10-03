@@ -3,7 +3,15 @@ import assert from "node:assert/strict";
 import { act, cleanup, screen } from "@testing-library/react";
 import { KEY } from "../src/hooks/useRemote";
 import { groupByCategory } from "../src/services/m3u";
-import { mountApp, panelOpen, played, press, settle } from "./support/app";
+import {
+  mountApp,
+  panelOpen,
+  played,
+  press,
+  settle,
+  XTREAM_SOURCE,
+  xtreamFetch,
+} from "./support/app";
 
 /**
  * Coming back to what was on last time.
@@ -57,6 +65,34 @@ test("the remembered channel plays and the panel never opens", async () => {
 
   assert.deepEqual(played, ["http://example.invalid/c.m3u8"]);
   assert.ok(!panelOpen(), "the channel list was shown over a channel the viewer chose");
+  const { usePersonal } = await import("../src/stores/personal");
+  assert.deepEqual(usePersonal.getState().lastPlayed, {
+    playlistId: "pl-1",
+    kind: "live",
+    itemKey: "c",
+    categoryKey: "Sport",
+  });
+  assert.equal(localStorage.getItem("openiptv.last"), null);
+});
+
+test("an Xtream channel outside the first provider category resumes", async () => {
+  await mountApp("", {
+    source: XTREAM_SOURCE,
+    resume: "xtream:pl-1:live:2",
+    fetchImplementation: xtreamFetch(
+      [
+        { category_id: "first", category_name: "First" },
+        { category_id: "second", category_name: "Second" },
+      ],
+      [
+        { stream_id: 1, name: "First channel", category_id: "first", num: 1 },
+        { stream_id: 2, name: "Second channel", category_id: "second", num: 22 },
+      ],
+    ),
+  });
+
+  assert.deepEqual(played, ["http://provider.example/live/viewer/secret/2.m3u8"]);
+  assert.equal(panelOpen(), false);
 });
 
 test("a hidden remembered channel does not resume", async () => {
@@ -114,7 +150,10 @@ test("a playlist refresh keeps the resumed channel selected", async () => {
   const { useChannels } = await import("../src/stores/channels");
   const refreshed = useChannels.getState().channels.map((channel) => ({ ...channel }));
   await act(async () => {
-    useChannels.setState({ channels: refreshed, categories: groupByCategory(refreshed) });
+    useChannels.setState({
+      channels: refreshed,
+      categories: groupByCategory(refreshed).map((item) => ({ key: item.name, ...item })),
+    });
     await Promise.resolve();
   });
 

@@ -1,9 +1,11 @@
 import { afterEach, beforeEach, test, vi } from "vitest";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { act, cleanup, renderHook } from "@testing-library/react";
+import { act, cleanup, render, renderHook, screen } from "@testing-library/react";
 import { KEY } from "../src/hooks/useRemote";
 import { useChrome } from "../src/hooks/useChrome";
+import { PlaybackBanner } from "../src/components/PlaybackBanner";
+import type { PlaybackTarget } from "../src/types";
 import { mountApp, press, settle } from "./support/app";
 
 /**
@@ -47,39 +49,65 @@ const bannerUp = () => !!document.querySelector(".pb-stack");
  * the channel list stays open, and the banner has always had its own eight.
  */
 const past = async () => {
-  await act(async () => { await vi.advanceTimersByTimeAsync(8600); });
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(8600);
+  });
 };
 
-beforeEach(() => { vi.useFakeTimers({ shouldAdvanceTime: true }); });
-afterEach(() => { cleanup(); localStorage.clear(); vi.useRealTimers(); });
+beforeEach(() => {
+  vi.useFakeTimers({ shouldAdvanceTime: true });
+});
+afterEach(() => {
+  cleanup();
+  localStorage.clear();
+  vi.useRealTimers();
+});
 
 // ---- the contract, at the hook ----------------------------------------------------------
 
 test("a raised banner counts itself down", () => {
   const { result } = renderHook(() => useChrome());
-  act(() => { result.current.raiseBanner(); });
+  act(() => {
+    result.current.raiseBanner();
+  });
   assert.equal(result.current.banner, true);
 
-  act(() => { vi.advanceTimersByTime(8600); });
+  act(() => {
+    vi.advanceTimersByTime(8600);
+  });
   assert.equal(result.current.banner, false);
 });
 
 test("a held banner stays up, because a channel still joining should keep saying which it is", () => {
   const { result } = renderHook(() => useChrome());
-  act(() => { result.current.holdBanner(); });
+  act(() => {
+    result.current.holdBanner();
+  });
 
-  act(() => { vi.advanceTimersByTime(30000); });
-  assert.equal(result.current.banner, true, "a held banner must not time out while it is holding");
+  act(() => {
+    vi.advanceTimersByTime(30000);
+  });
+  assert.equal(
+    result.current.banner,
+    true,
+    "a held banner must not time out while it is holding",
+  );
 });
 
 test("settling a held banner gives it the count it never had", () => {
   // The fix. Whatever ends the waiting starts the five seconds, rather than only a picture arriving.
   const { result } = renderHook(() => useChrome());
-  act(() => { result.current.holdBanner(); });
-  act(() => { result.current.settleBanner(); });
+  act(() => {
+    result.current.holdBanner();
+  });
+  act(() => {
+    result.current.settleBanner();
+  });
 
   assert.equal(result.current.banner, true, "settling must not hide it immediately");
-  act(() => { vi.advanceTimersByTime(8600); });
+  act(() => {
+    vi.advanceTimersByTime(8600);
+  });
   assert.equal(result.current.banner, false, "a settled banner stayed up for ever");
 });
 
@@ -90,9 +118,17 @@ test("settling does not raise a banner that is down", () => {
    * and since OK dismisses an arrival, OK could not get past it to open the channel list.
    */
   const { result } = renderHook(() => useChrome());
-  act(() => { result.current.lowerBanner(); });
-  act(() => { result.current.settleBanner(); });
-  assert.equal(result.current.banner, false, "it resurrected a banner the viewer had dismissed");
+  act(() => {
+    result.current.lowerBanner();
+  });
+  act(() => {
+    result.current.settleBanner();
+  });
+  assert.equal(
+    result.current.banner,
+    false,
+    "it resurrected a banner the viewer had dismissed",
+  );
 });
 
 // ---- and in the application, on a channel that takes a moment to arrive -----------------
@@ -116,6 +152,13 @@ test("a Farsi only channel title stays aligned with the LTR banner", async () =>
   assert.equal(title.textContent, "شبکه سه");
   assert.equal(title.getAttribute("dir"), "auto");
   assert.equal(getComputedStyle(title).textAlign, "left");
+});
+
+test("the live banner shows only the category name", async () => {
+  await mountApp(PLAYLIST);
+  press(KEY.ENTER);
+
+  assert.equal(document.querySelector(".pb-group")?.textContent, "News");
 });
 
 test("the banner goes away on its own after a channel starts", async () => {
@@ -160,4 +203,51 @@ test("the banner goes away while a channel remains paused", async () => {
   assert.equal(bannerUp(), true, "pausing did not show the channel banner");
   await past();
   assert.equal(bannerUp(), false, "paused state kept the expired banner visible");
+});
+
+const finiteTarget: PlaybackTarget = {
+  id: "movie-1",
+  playlistId: "playlist-1",
+  mode: "finite",
+  kind: "movie",
+  name: "Feature film",
+  group: "Cinema",
+  logo: "",
+  url: "http://example.invalid/movie.mp4",
+};
+
+test("finite playback shows elapsed and total time", () => {
+  render(<PlaybackBanner target={finiteTarget} elapsed={65} duration={3600} />);
+  assert.ok(screen.getByText("1:05 of 1:00:00"));
+});
+
+test("live playback does not show finite timing", () => {
+  render(
+    <PlaybackBanner
+      target={{ ...finiteTarget, mode: "live", kind: "live" }}
+      elapsed={65}
+      duration={3600}
+    />,
+  );
+  assert.equal(document.body.textContent?.includes("1:05 of 1:00:00"), false);
+});
+
+test("a live banner shows current and next programme names when available", () => {
+  render(
+    <PlaybackBanner
+      channel={{
+        id: "channel-1",
+        name: "News",
+        logo: "",
+        group: "News",
+        url: "http://example.invalid/live.m3u8",
+        quality: "",
+        number: 1,
+      }}
+      programme={{ current: "News at Noon", next: "Weather" }}
+    />,
+  );
+
+  assert.ok(screen.getByText("Now: News at Noon"));
+  assert.ok(screen.getByText("Next: Weather"));
 });

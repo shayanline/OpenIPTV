@@ -1,8 +1,5 @@
 import { beforeEach, expect, test, vi } from "vitest";
-import {
-  choosePrivateAddress,
-  createRemoteRelay,
-} from "../scripts/dev-remote-bridge.mjs";
+import { choosePrivateAddress, createRemoteRelay } from "../scripts/dev-remote-bridge.mjs";
 
 const request = (change: Record<string, unknown> = {}) => ({
   method: "GET",
@@ -60,9 +57,9 @@ test("relays one remote request and resolves the laptop response", async () => {
       body: "",
     },
   ]);
-  expect(
-    relay.respond(1, { status: 200, contentType: "application/json", body: "{}" }),
-  ).toBe(true);
+  expect(relay.respond(1, { status: 200, contentType: "application/json", body: "{}" })).toBe(
+    true,
+  );
   await expect(pending).resolves.toEqual({
     status: 200,
     contentType: "application/json",

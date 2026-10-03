@@ -19,7 +19,8 @@ beforeEach(() => {
   releaseDecode = [];
   decodeCalls = 0;
   vi.stubGlobal("fetch", () =>
-    Promise.resolve({ ok: true, blob: () => Promise.resolve(new Blob()) }));
+    Promise.resolve({ ok: true, blob: () => Promise.resolve(new Blob()) }),
+  );
   vi.stubGlobal("createImageBitmap", () => {
     decodeCalls += 1;
     return new Promise((resolve) => {
@@ -114,7 +115,10 @@ test("warmChain stops when told to, and cancels with the right timer function", 
   const { warmChain } = await load();
   const cancelIdle = vi.fn();
   const clearTimer = vi.fn();
-  vi.stubGlobal("requestIdleCallback", (fn: () => void) => { void fn; return 4242; });
+  vi.stubGlobal("requestIdleCallback", (fn: () => void) => {
+    void fn;
+    return 4242;
+  });
   vi.stubGlobal("cancelIdleCallback", cancelIdle);
   const realClear = window.clearTimeout;
   window.clearTimeout = clearTimer as unknown as typeof window.clearTimeout;

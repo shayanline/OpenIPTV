@@ -38,7 +38,7 @@ export const ROW_BASE = 76;
  * channel name fits on one line and making every row in the app tall enough for two would
  * cost three channels off the bottom of the list to solve a problem the list does not have.
  */
-export const RAIL_ROW_BASE = 96;
+export const RAIL_ROW_BASE = 84;
 
 /** Rows kept either side of the view, so a press never waits on a row being created. */
 const OVERSCAN = 3;
@@ -94,8 +94,15 @@ export function windowOf(
   const start = Math.max(0, first - OVERSCAN);
   const end = Math.min(count, first + visible + OVERSCAN);
 
-  return { start, end, offset: first * row, visible, first, row,
-           slots: visible + OVERSCAN * 2 };
+  return {
+    start,
+    end,
+    offset: first * row,
+    visible,
+    first,
+    row,
+    slots: visible + OVERSCAN * 2,
+  };
 }
 
 export function useWindowed(
@@ -104,13 +111,15 @@ export function useWindowed(
   viewportHeight: number,
   scale: number,
   rowBase?: number,
+  followCursor = false,
 ): Window {
   // Where the list sits is carried between renders rather than recomputed, because that
   // is the whole difference between the list holding still and the list chasing the
   // cursor. A ref rather than state: it is derived during render and never on its own
   // causes one.
   const first = useRef(0);
-  const win = windowOf(count, cursor, viewportHeight, scale, first.current, rowBase);
+  const previousFirst = followCursor ? cursor : first.current;
+  const win = windowOf(count, cursor, viewportHeight, scale, previousFirst, rowBase);
   first.current = win.first;
   return win;
 }

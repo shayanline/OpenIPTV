@@ -32,6 +32,7 @@ import { KEY } from "./useRemote";
 const FOCUSABLE = [
   "button:not([hidden]):not([tabindex='-1'])",
   "input:not([hidden]):not([tabindex='-1'])",
+  "select:not([hidden]):not([tabindex='-1'])",
   "[tabindex]:not([tabindex='-1'])",
 ].join(", ");
 

@@ -14,18 +14,18 @@
 
 /* Vazirmatn is bundled for every platform so the application has one consistent font. */
 @font-face {
-   font-family: "Vazirmatn";
-   font-style: normal;
-   font-weight: 400;
-   font-display: swap;
-   src: url("/fonts/Vazirmatn-Regular.ttf") format("truetype");
+  font-family: "Vazirmatn";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/fonts/Vazirmatn-Regular.ttf") format("truetype");
 }
 @font-face {
-   font-family: "Vazirmatn";
-   font-style: normal;
-   font-weight: 600;
-   font-display: swap;
-   src: url("/fonts/Vazirmatn-SemiBold.ttf") format("truetype");
+  font-family: "Vazirmatn";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("/fonts/Vazirmatn-SemiBold.ttf") format("truetype");
 }
 
 :root {
@@ -44,7 +44,7 @@
    * the transparent hole the video plane shows through, so there is nothing there to blur.
    */
   --bg: #000000;
-  --surface-1: rgba(24, 24, 28, 0.90);
+  --surface-1: rgba(24, 24, 28, 0.9);
   --surface-2: rgba(40, 40, 46, 0.94);
   --surface-3: rgba(56, 56, 62, 0.94);
   --over-video: rgba(13, 13, 15, 0.92);
@@ -58,7 +58,7 @@
    * With a hairline inside it, because a shadow is darkness and half of live television is a
    * dark picture: over a night scene the card had no edge at all and appeared to be a hole.
    */
-  --lift: 0 24px 60px rgba(0, 0, 0, 0.5), inset 0 0 0 1px rgba(255, 255, 255, 0.10);
+  --lift: 0 24px 60px rgba(0, 0, 0, 0.5), inset 0 0 0 1px rgba(255, 255, 255, 0.1);
 
   /*
    * The stack, named rather than numbered at each use site, so the order is something you
@@ -105,8 +105,8 @@
      only one that shifts by theme, and this app is dark, so it takes the dark value.
      Focus is deliberately not blue: white is the focus, blue means state, and keeping
      them apart stops the two competing for the eye. */
-  --accent: #3e91ff;          /* primary dark, dark theme: emphasis and sub text */
-  --control-on: #3e91ff;      /* control activated: toggles and checkboxes */
+  --accent: #3e91ff; /* primary dark, dark theme: emphasis and sub text */
+  --control-on: #3e91ff; /* control activated: toggles and checkboxes */
   --accent-dim: rgba(62, 145, 255, 0.18);
   --focus: #ffffff;
   --danger: #ff6b6b;
@@ -198,8 +198,7 @@
       * The final families cover platforms that do not load the bundled Latin subset for another
       * script.
    */
-   --font: "Vazirmatn", system-ui,
-      -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font: "Vazirmatn", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 
   /*
    * Motion, from the One UI motion guidance.
@@ -212,7 +211,7 @@
    * guidance says anything else looks forced. Durations must clear 100ms to be noticed
    * and stay under 500ms so they never hold the viewer up.
    */
-  --ease: cubic-bezier(0.22, 0.25, 0.00, 1.00);
+  --ease: cubic-bezier(0.22, 0.25, 0, 1);
   --ease-enter: cubic-bezier(0, 0, 0.2, 1);
   --ease-exit: cubic-bezier(0.4, 0, 1, 1);
   --t-fast: 150ms;
@@ -228,9 +227,18 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  :root { --t-fast: 0ms; --t-med: 0ms; --t-panel: 0ms; }
+  :root {
+    --t-fast: 0ms;
+    --t-med: 0ms;
+    --t-panel: 0ms;
+  }
   /* Durations only cover transitions. The two things that animate on their own have to be
      stopped by name, and the pulse settles to the plain dot it decorates. */
-  .playing-dot.live::after { animation: none; opacity: 0; }
-  .spinner { animation: none; }
+  .playing-dot.live::after {
+    animation: none;
+    opacity: 0;
+  }
+  .spinner {
+    animation: none;
+  }
 }

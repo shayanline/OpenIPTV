@@ -51,9 +51,26 @@ const DIST = join(ROOT, "dist");
  * pixel wider in a newer engine is a font shaping improvement, not a bug in this app.
  */
 const LAYOUT = [
-  ".app", ".panel", ".panel-cols", ".rail", ".list", ".pane-head", ".viewport",
-  ".window", ".row", ".sheet", ".sheet-rail", ".sheet-body", ".dialog", ".splash",
-  ".hints", ".actions", ".field", ".pl", ".pad", ".panel-hints",
+  ".app",
+  ".panel",
+  ".panel-cols",
+  ".rail",
+  ".list",
+  ".pane-head",
+  ".viewport",
+  ".window",
+  ".row",
+  ".sheet",
+  ".sheet-rail",
+  ".sheet-body",
+  ".dialog",
+  ".splash",
+  ".hints",
+  ".actions",
+  ".field",
+  ".pl",
+  ".pad",
+  ".panel-hints",
 ];
 
 /**
@@ -95,88 +112,110 @@ const VARIES_BY_ENGINE = new Set(["settings.diagnostics"]);
  * empty page with a confusing geometry diff.
  */
 async function attempt(tv, binary, pinned, port) {
-  return withBrowser(binary, [
-    "--headless=new", "--window-size=1920,1080", "--force-device-scale-factor=1",
-    "--lang=en-US", "--no-first-run", "--no-default-browser-check", "--disable-web-security",
-    "--autoplay-policy=no-user-gesture-required", "--hide-scrollbars",
-    /*
-     * The sandbox off, and it is the old engines that need it rather than a convenience.
-     * A 2020 set's Chromium predates the current macOS sandbox, so on this machine every
-     * renderer it starts dies at once with "Check failed: Seatbelt::IsSandboxed", leaving
-     * a browser that answers the debugger and can never draw anything. Linux runners want
-     * it too, for the ordinary reason that they have no user namespaces.
-     *
-     * Safe here in a way it would not be anywhere else: these engines are years old and
-     * unpatched, they run for ninety seconds against a fixture on localhost, and they are
-     * never pointed at anything a stranger wrote.
-     */
-    "--no-sandbox",
-    // Software rendering, so the two engines are compared on layout rather than on a
-    // decade of difference in how they talk to this particular GPU.
-    "--disable-gpu",
-    "about:blank",
-  ], `openiptv-engine-${tv.tizen}-`, async (cdp) => {
-    const complaints = [];
-    await cdp.send("Runtime.enable");
-    await cdp.send("Page.enable");
-    await cdp.send("Log.enable").catch(() => {});
+  return withBrowser(
+    binary,
+    [
+      "--headless=new",
+      "--window-size=1920,1080",
+      "--force-device-scale-factor=1",
+      "--lang=en-US",
+      "--no-first-run",
+      "--no-default-browser-check",
+      "--disable-web-security",
+      "--autoplay-policy=no-user-gesture-required",
+      "--hide-scrollbars",
+      /*
+       * The sandbox off, and it is the old engines that need it rather than a convenience.
+       * A 2020 set's Chromium predates the current macOS sandbox, so on this machine every
+       * renderer it starts dies at once with "Check failed: Seatbelt::IsSandboxed", leaving
+       * a browser that answers the debugger and can never draw anything. Linux runners want
+       * it too, for the ordinary reason that they have no user namespaces.
+       *
+       * Safe here in a way it would not be anywhere else: these engines are years old and
+       * unpatched, they run for ninety seconds against a fixture on localhost, and they are
+       * never pointed at anything a stranger wrote.
+       */
+      "--no-sandbox",
+      // Software rendering, so the two engines are compared on layout rather than on a
+      // decade of difference in how they talk to this particular GPU.
+      "--disable-gpu",
+      "about:blank",
+    ],
+    `openiptv-engine-${tv.tizen}-`,
+    async (cdp) => {
+      const complaints = [];
+      await cdp.send("Runtime.enable");
+      await cdp.send("Page.enable");
+      await cdp.send("Log.enable").catch(() => {});
 
-    /*
-     * Ask the browser which engine it is, rather than trusting the file it came from.
-     *
-     * Nothing did, and several things could quietly make it the wrong one: a stale lock entry,
-     * a `snapshotNear` that points at the neighbouring milestone, a nearest-snapshot search
-     * that crossed a branch point, or a cached download from a position that has since been
-     * relocked. Every one of those ends the same way, with the gate announcing it tested
-     * Chromium 69 having tested something else, and passing.
-     */
-    const { product } = await cdp.send("Browser.getVersion");
-    const major = Number(/Chrom(?:e|ium)\/(\d+)/.exec(product ?? "")?.[1]);
-    if (pinned && major !== tv.chromium) {
-      throw new Error(
-        `Expected Chromium ${tv.chromium} for Tizen ${tv.tizen} and got ${product}. `
-        + "The lock, the snapshot hint or the cached download disagree with platforms.json.",
-      );
-    }
-    if (!pinned) console.log(`    (standing in with ${product})`);
-    // The set's user agent, so any code that sniffs it takes the path it would on the TV.
-    await cdp.send("Emulation.setUserAgentOverride", { userAgent: tv.userAgent });
-    /*
-     * The viewport, forced rather than asked for.
-     *
-     * --window-size is a request about a window, and what a headless browser then gives the
-     * page has changed over the years: the two engines here disagreed by 177 pixels of
-     * height, which is not a layout bug but was reported as three hundred of them. Every
-     * Samsung TV runs the application at exactly 1920x1080 whatever the panel is, so it is
-     * set to that on both sides and the comparison is about the stylesheet again.
-     */
-    await cdp.send("Emulation.setDeviceMetricsOverride", {
-      width: 1920, height: 1080, deviceScaleFactor: 1, mobile: false,
-    });
-
-    cdp.on("Runtime.exceptionThrown", ({ exceptionDetails }) => {
-      complaints.push(`threw: ${exceptionDetails.exception?.description
-        ?? exceptionDetails.text ?? "unknown"}`);
-    });
-    cdp.on("Runtime.consoleAPICalled", ({ type, args }) => {
-      if (type !== "error") return;
-      complaints.push(`console.error: ${args.map((a) => a.value ?? a.description ?? "").join(" ")}`);
-    });
-    cdp.on("Log.entryAdded", ({ entry }) => {
-      // A 404 for a stream from example.invalid is the fixture, not the app.
-      if (entry.level === "error" && !entry.text.includes("example.invalid")) {
-        complaints.push(`${entry.source}: ${entry.text}`);
+      /*
+       * Ask the browser which engine it is, rather than trusting the file it came from.
+       *
+       * Nothing did, and several things could quietly make it the wrong one: a stale lock entry,
+       * a `snapshotNear` that points at the neighbouring milestone, a nearest-snapshot search
+       * that crossed a branch point, or a cached download from a position that has since been
+       * relocked. Every one of those ends the same way, with the gate announcing it tested
+       * Chromium 69 having tested something else, and passing.
+       */
+      const { product } = await cdp.send("Browser.getVersion");
+      const major = Number(/Chrom(?:e|ium)\/(\d+)/.exec(product ?? "")?.[1]);
+      if (pinned && major !== tv.chromium) {
+        throw new Error(
+          `Expected Chromium ${tv.chromium} for Tizen ${tv.tizen} and got ${product}. ` +
+            "The lock, the snapshot hint or the cached download disagree with platforms.json.",
+        );
       }
-    });
+      if (!pinned) console.log(`    (standing in with ${product})`);
+      // The set's user agent, so any code that sniffs it takes the path it would on the TV.
+      await cdp.send("Emulation.setUserAgentOverride", { userAgent: tv.userAgent });
+      /*
+       * The viewport, forced rather than asked for.
+       *
+       * --window-size is a request about a window, and what a headless browser then gives the
+       * page has changed over the years: the two engines here disagreed by 177 pixels of
+       * height, which is not a layout bug but was reported as three hundred of them. Every
+       * Samsung TV runs the application at exactly 1920x1080 whatever the panel is, so it is
+       * set to that on both sides and the comparison is about the stylesheet again.
+       */
+      await cdp.send("Emulation.setDeviceMetricsOverride", {
+        width: 1920,
+        height: 1080,
+        deviceScaleFactor: 1,
+        mobile: false,
+      });
 
-    const shots = await walk(cdp, port, LAYOUT);
-    // The app has to have actually got somewhere. Every box agreeing because both engines
-    // rendered nothing is the failure mode this gate would otherwise be blind to.
-    const rows = await cdp.send("Runtime.evaluate", {
-      expression: "document.querySelectorAll('.list .row').length", returnByValue: true,
-    }).then((r) => r.result.value);
-    return { shots, complaints, rows };
-  });
+      cdp.on("Runtime.exceptionThrown", ({ exceptionDetails }) => {
+        complaints.push(
+          `threw: ${
+            exceptionDetails.exception?.description ?? exceptionDetails.text ?? "unknown"
+          }`,
+        );
+      });
+      cdp.on("Runtime.consoleAPICalled", ({ type, args }) => {
+        if (type !== "error") return;
+        complaints.push(
+          `console.error: ${args.map((a) => a.value ?? a.description ?? "").join(" ")}`,
+        );
+      });
+      cdp.on("Log.entryAdded", ({ entry }) => {
+        // A 404 for a stream from example.invalid is the fixture, not the app.
+        if (entry.level === "error" && !entry.text.includes("example.invalid")) {
+          complaints.push(`${entry.source}: ${entry.text}`);
+        }
+      });
+
+      const shots = await walk(cdp, port, LAYOUT);
+      // The app has to have actually got somewhere. Every box agreeing because both engines
+      // rendered nothing is the failure mode this gate would otherwise be blind to.
+      const rows = await cdp
+        .send("Runtime.evaluate", {
+          expression: "document.querySelectorAll('.list .row').length",
+          returnByValue: true,
+        })
+        .then((r) => r.result.value);
+      return { shots, complaints, rows };
+    },
+  );
 }
 
 /**
@@ -194,21 +233,24 @@ async function attempt(tv, binary, pinned, port) {
  * green light for a test that did not run. So that one fails instead.
  */
 async function inEngine(tv, port) {
-  const brokenMacSnapshot = tv.chromium === 120 && process.platform === "darwin"
-    && Number.parseInt(release(), 10) >= 25;
+  const brokenMacSnapshot =
+    tv.chromium === 120 &&
+    process.platform === "darwin" &&
+    Number.parseInt(release(), 10) >= 25;
   const pinned = brokenMacSnapshot ? null : await ensureEngine(tv);
   try {
     if (!pinned) {
-      throw Object.assign(new Error("Chromium 120 snapshots crash on macOS 26 or newer"),
-        { launch: true });
+      throw Object.assign(new Error("Chromium 120 snapshots crash on macOS 26 or newer"), {
+        launch: true,
+      });
     }
-    return { ...await attempt(tv, pinned, true, port), pinned: true };
+    return { ...(await attempt(tv, pinned, true, port)), pinned: true };
   } catch (e) {
     if (tv.floor) {
       throw new Error(
         `The floor engine, Chromium ${tv.chromium}, would not start: ${e.message}\n` +
-        "Nothing may stand in for it, because comparing two modern engines and finding " +
-        "them alike is not a test. Run this leg on Linux.",
+          "Nothing may stand in for it, because comparing two modern engines and finding " +
+          "them alike is not a test. Run this leg on Linux.",
       );
     }
     // Only a launch failure. Anything else is the gate doing its job and must not be papered
@@ -219,7 +261,7 @@ async function inEngine(tv, port) {
     console.log(`\n  ! Chromium ${tv.chromium} would not start here (${e.message}).`);
     console.log("    Falling back to the installed Chrome, which is a modern engine and so");
     console.log("    stands in for the ceiling. CI pins it properly.\n   ");
-    return { ...await attempt(tv, local, false, port), pinned: false };
+    return { ...(await attempt(tv, local, false, port)), pinned: false };
   }
 }
 
@@ -236,9 +278,13 @@ async function main() {
 
   console.log("Engine parity");
   console.log(`  against  ${source}`);
-  console.log(`  engines  ${wanted.map((p) => `Tizen ${p.tizen} / M${p.chromium}`).join(", ")}`);
-  console.log(`  baseline Tizen ${reference.tizen}, Chromium ${reference.chromium}, `
-    + "the oldest engine a supported set runs\n");
+  console.log(
+    `  engines  ${wanted.map((p) => `Tizen ${p.tizen} / M${p.chromium}`).join(", ")}`,
+  );
+  console.log(
+    `  baseline Tizen ${reference.tizen}, Chromium ${reference.chromium}, ` +
+      "the oldest engine a supported set runs\n",
+  );
 
   const hosted = await serve(DIST);
   let failures = 0;
@@ -247,15 +293,19 @@ async function main() {
     for (const tv of wanted) {
       process.stdout.write(`  Tizen ${tv.tizen} (M${tv.chromium})  `);
       const result = await inEngine(tv, hosted.port);
-      console.log(`${result.rows} rows drawn, ${result.complaints.length} complaints`
-        + `${result.pinned ? "" : ", NOT the pinned engine"}`);
+      console.log(
+        `${result.rows} rows drawn, ${result.complaints.length} complaints` +
+          `${result.pinned ? "" : ", NOT the pinned engine"}`,
+      );
       runs.push({ tv, ...result });
     }
 
     for (const run of runs) {
       if (!run.rows) {
-        console.error(`\nTizen ${run.tv.tizen} drew no channel rows at all. `
-          + "The app did not reach a usable state on that engine.");
+        console.error(
+          `\nTizen ${run.tv.tizen} drew no channel rows at all. ` +
+            "The app did not reach a usable state on that engine.",
+        );
         failures += 1;
       }
       for (const complaint of run.complaints) {
@@ -271,8 +321,10 @@ async function main() {
         labels: [`M${reference.chromium}`, `M${run.tv.chromium}`],
         skip: VARIES_BY_ENGINE,
       });
-      console.log(`  ${boxes} boxes across ${screens} screens, ${differing} differing`
-        + `${VARIES_BY_ENGINE.size ? `, ${[...VARIES_BY_ENGINE].join(", ")} not compared` : ""}`);
+      console.log(
+        `  ${boxes} boxes across ${screens} screens, ${differing} differing` +
+          `${VARIES_BY_ENGINE.size ? `, ${[...VARIES_BY_ENGINE].join(", ")} not compared` : ""}`,
+      );
       failures += differing;
     }
 

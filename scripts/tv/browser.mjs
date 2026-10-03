@@ -10,10 +10,14 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 export async function devToolsPort(profile, browser, stderr, tries = 120) {
   for (let i = 0; i < tries; i++) {
     if (browser.exitCode !== null) {
-      throw new Error(`Chrome exited with code ${browser.exitCode} before opening DevTools:\n${stderr().trim()}`);
+      throw new Error(
+        `Chrome exited with code ${browser.exitCode} before opening DevTools:\n${stderr().trim()}`,
+      );
     }
     try {
-      const port = Number(readFileSync(join(profile, "DevToolsActivePort"), "utf8").split("\n", 1)[0]);
+      const port = Number(
+        readFileSync(join(profile, "DevToolsActivePort"), "utf8").split("\n", 1)[0],
+      );
       if (Number.isInteger(port) && port > 0) return port;
     } catch (error) {
       if (error.code !== "ENOENT") throw error;
@@ -37,7 +41,7 @@ export async function stopBrowser(browser, timeout = 5000) {
     browser.once("exit", done);
   });
   browser.kill();
-  if (await exited || browser.exitCode !== null) return;
+  if ((await exited) || browser.exitCode !== null) return;
   const forced = once(browser, "exit");
   browser.kill("SIGKILL");
   await forced;
@@ -67,13 +71,15 @@ export async function closeBrowser(cdp, browser) {
 export async function withBrowser(binary, args, prefix, run) {
   const profile = mkdtempSync(join(tmpdir(), prefix));
   let stderr = "";
-  const browser = spawn(binary, [
-    "--remote-debugging-port=0",
-    `--user-data-dir=${profile}`,
-    ...args,
-  ], { stdio: ["ignore", "ignore", "pipe"] });
+  const browser = spawn(
+    binary,
+    ["--remote-debugging-port=0", `--user-data-dir=${profile}`, ...args],
+    { stdio: ["ignore", "ignore", "pipe"] },
+  );
   browser.stderr.setEncoding("utf8");
-  browser.stderr.on("data", (chunk) => { stderr += chunk; });
+  browser.stderr.on("data", (chunk) => {
+    stderr += chunk;
+  });
 
   let cdp;
   try {
@@ -84,8 +90,10 @@ export async function withBrowser(binary, args, prefix, run) {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       const output = stderr.trim();
-      throw Object.assign(new Error(output && !message.includes(output) ? `${message}\n${output}` : message),
-        { launch: true });
+      throw Object.assign(
+        new Error(output && !message.includes(output) ? `${message}\n${output}` : message),
+        { launch: true },
+      );
     }
     return await run(cdp);
   } finally {

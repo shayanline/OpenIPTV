@@ -50,7 +50,10 @@ test("whitespace only is the same as empty, because it is what a keyboard produc
 
 test("matching is case insensitive and anywhere in the name", () => {
   const { matches } = searchChannels(LIST, "news");
-  assert.deepEqual(matches.map((c) => c.name), ["Sky News", "BBC News"]);
+  assert.deepEqual(
+    matches.map((c) => c.name),
+    ["Sky News", "BBC News"],
+  );
 });
 
 test("names that start with the query come first, and keep playlist order within that", () => {
@@ -60,14 +63,19 @@ test("names that start with the query come first, and keep playlist order within
    * ignoring what was typed. Starts-with first is the shortest rule that fixes it.
    */
   const { matches } = searchChannels(LIST, "bbc");
-  assert.deepEqual(matches.map((c) => c.name), ["BBC One", "BBC Two", "BBC News"]);
+  assert.deepEqual(
+    matches.map((c) => c.name),
+    ["BBC One", "BBC Two", "BBC News"],
+  );
 
   const mixed = searchChannels(
     [channel(1, "Sky Sports Cricket"), channel(2, "Cricket 24"), channel(3, "BT Cricket")],
     "cricket",
   );
-  assert.deepEqual(mixed.matches.map((c) => c.name),
-    ["Cricket 24", "Sky Sports Cricket", "BT Cricket"]);
+  assert.deepEqual(
+    mixed.matches.map((c) => c.name),
+    ["Cricket 24", "Sky Sports Cricket", "BT Cricket"],
+  );
 });
 
 test("a bilingual name is searchable in either of its scripts", () => {
@@ -78,7 +86,10 @@ test("a bilingual name is searchable in either of its scripts", () => {
 
 test("the group is not searched, so a query answers with what it looks like", () => {
   const list = [channel(1, "Alpha", "News"), channel(2, "News at Ten", "General")];
-  assert.deepEqual(searchChannels(list, "news").matches.map((c) => c.name), ["News at Ten"]);
+  assert.deepEqual(
+    searchChannels(list, "news").matches.map((c) => c.name),
+    ["News at Ten"],
+  );
 });
 
 test("results are capped, and the total says how many there really were", () => {

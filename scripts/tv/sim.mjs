@@ -46,6 +46,8 @@ import { fileURLToPath } from "node:url";
 import { cpus, arch, loadavg } from "node:os";
 import { connect, findChrome, arg, has, factor } from "./cdp.mjs";
 import { LAUNCH_MARKS, LAUNCH_DEADLINE_MS, launchWatcher } from "./launch-marks.mjs";
+import { XTREAM_FIXTURE, xtreamFixtureResponse } from "../present.mjs";
+import { createXtreamJourneyTracker, XTREAM_JOURNEYS } from "./harness.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const read = (name) => JSON.parse(readFileSync(join(here, name), "utf8"));
@@ -76,7 +78,10 @@ const engine = existsSync(enginePath) ? readFileSync(enginePath, "utf8") : null;
 
 const floor = has("floor");
 const profile = floor
-  ? { ...read("floor.json"), cpuThrottle: reference.cpuThrottle * read("floor.json").slowerThanReference }
+  ? {
+      ...read("floor.json"),
+      cpuThrottle: reference.cpuThrottle * read("floor.json").slowerThanReference,
+    }
   : reference;
 
 /**
@@ -156,7 +161,14 @@ const spawnChild = (command, args) => {
   children.push(proc);
   return proc;
 };
-const killChildren = () => children.forEach((c) => { try { c.kill(); } catch { /* gone */ } });
+const killChildren = () =>
+  children.forEach((c) => {
+    try {
+      c.kill();
+    } catch {
+      /* gone */
+    }
+  });
 process.on("exit", killChildren);
 /* Interrupted is not passed. Exiting zero here meant Ctrl+C, or a cancelled CI job, reported a
    clean benchmark; 130 is the conventional code for terminated by SIGINT. */
@@ -183,16 +195,16 @@ if (!url && existsSync(join(dist, "index.html"))) {
 if (!url) {
   console.error(
     "Nothing is serving the app, and there is no build to serve.\n\n" +
-    "  npm run build     then try again\n",
+      "  npm run build     then try again\n",
   );
   process.exit(1);
 }
 if (measuring && url === DEV) {
   console.error(
     "\nRefusing to measure the dev server.\n\n" +
-    "React validates every element in a development build, which came to half the main\n" +
-    "thread last time and tells you nothing about the app. Build first:\n\n" +
-    "  npm run build && npm run preview\n",
+      "React validates every element in a development build, which came to half the main\n" +
+      "thread last time and tells you nothing about the app. Build first:\n\n" +
+      "  npm run build && npm run preview\n",
   );
   process.exit(1);
 }
@@ -205,8 +217,10 @@ if (measuring && url === DEV) {
  */
 const wantedPlaylist = arg("playlist") ?? BENCHMARK_PLAYLIST;
 const cachedFrom = `${PLAYLIST_CACHE}.from`;
-const held = existsSync(PLAYLIST_CACHE) && existsSync(cachedFrom)
-  && readFileSync(cachedFrom, "utf8") === wantedPlaylist;
+const held =
+  existsSync(PLAYLIST_CACHE) &&
+  existsSync(cachedFrom) &&
+  readFileSync(cachedFrom, "utf8") === wantedPlaylist;
 const stale = !held || Date.now() - statSync(PLAYLIST_CACHE).mtimeMs > PLAYLIST_TTL_MS;
 
 if (stale) {
@@ -293,19 +307,28 @@ function png(size, hue) {
   const ihdr = Buffer.alloc(13);
   ihdr.writeUInt32BE(size, 0);
   ihdr.writeUInt32BE(size, 4);
-  ihdr[8] = 8;            // bit depth
-  ihdr[9] = 2;            // truecolour
+  ihdr[8] = 8; // bit depth
+  ihdr[9] = 2; // truecolour
   // Three flat bands in a colour of its own, plus a corner block, so twelve of these are
   // obviously twelve different pictures at a glance and none of them is a grey placeholder.
   const wheel = [
-    [230, 60, 60], [230, 140, 40], [220, 200, 50], [140, 200, 60],
-    [60, 190, 110], [50, 190, 200], [60, 130, 220], [90, 90, 230],
-    [160, 80, 220], [220, 70, 180], [120, 120, 130], [40, 60, 80],
+    [230, 60, 60],
+    [230, 140, 40],
+    [220, 200, 50],
+    [140, 200, 60],
+    [60, 190, 110],
+    [50, 190, 200],
+    [60, 130, 220],
+    [90, 90, 230],
+    [160, 80, 220],
+    [220, 70, 180],
+    [120, 120, 130],
+    [40, 60, 80],
   ][hue % LOGO_HUES];
   const raw = Buffer.alloc(size * (1 + size * 3));
   for (let y = 0; y < size; y++) {
     const row = y * (1 + size * 3);
-    raw[row] = 0;         // no filter, so the encoder stays this short
+    raw[row] = 0; // no filter, so the encoder stays this short
     const band = Math.floor((y / size) * 3);
     for (let x = 0; x < size; x++) {
       const at = row + 1 + x * 3;
@@ -360,6 +383,16 @@ const logoFor = (size, hue) => {
  */
 let benchText = playlistText;
 const fixture = createServer((request, response) => {
+  const xtream = xtreamFixtureResponse(request.url ?? "/");
+  if (xtream) {
+    response.writeHead(xtream.status, {
+      "content-type": xtream.type,
+      "access-control-allow-origin": "*",
+      "cache-control": "no-store",
+    });
+    response.end(xtream.body);
+    return;
+  }
   // The set's own fetch is granted its origins in config.xml rather than asked for them, so a
   // browser refusing either of these would be the simulator being unfaithful. --cors leaves the
   // browser's rules in force, and then the header is what keeps the fixture reachable.
@@ -384,7 +417,8 @@ await new Promise((settle) => {
   fixture.once("error", () => fixture.listen(0, "127.0.0.1", settle));
   fixture.listen(4174, "127.0.0.1", settle);
 });
-const playlist = `http://localhost:${fixture.address().port}/playlist.m3u`;
+const fixtureOrigin = `http://127.0.0.1:${fixture.address().port}`;
+const playlist = `${fixtureOrigin}/playlist.m3u`;
 process.on("exit", () => fixture.close());
 
 /*
@@ -491,8 +525,12 @@ const fit = has("fit") || arg("fit") !== undefined;
  * scale a gate is to change the gate.
  */
 if (fit && (measuring || has("budget"))) {
-  console.error("\n--fit lays the app out for this screen rather than the set's 1920x1080, which");
-  console.error("changes both the pixels per frame and how many rows a column holds, so it cannot");
+  console.error(
+    "\n--fit lays the app out for this screen rather than the set's 1920x1080, which",
+  );
+  console.error(
+    "changes both the pixels per frame and how many rows a column holds, so it cannot",
+  );
   console.error("be combined with a measurement. Drop one of them.\n");
   process.exit(2);
 }
@@ -500,8 +538,10 @@ if (fit && (measuring || has("budget"))) {
    now means nothing. Said out loud rather than ignored, or `--fit=0.8` looks like it did something
    and the header is the only thing that would have disagreed. */
 if (arg("fit") !== undefined) {
-  console.log(`  note       --fit takes no value any more; ${arg("fit")} ignored, the window is `
-    + "whatever this display allows");
+  console.log(
+    `  note       --fit takes no value any more; ${arg("fit")} ignored, the window is ` +
+      "whatever this display allows",
+  );
 }
 
 const NETWORKS = {
@@ -597,60 +637,71 @@ if (measuring) {
    * reading them can judge. Said in the verdict as well as the header, since by then the header
    * has scrolled away.
    */
-  busyWarning = load > cpus().length / 4
-    ? `the machine was busy throughout (load ${load.toFixed(1)} of ${cpus().length} cores), `
-      + "so read these as noise rather than as a regression"
-    : null;
+  busyWarning =
+    load > cpus().length / 4
+      ? `the machine was busy throughout (load ${load.toFixed(1)} of ${cpus().length} cores), ` +
+        "so read these as noise rather than as a regression"
+      : null;
 }
 
 // A stable profile, so a playlist added once stays added, the way it would on the set.
 const userDir = join(tmpdir(), "openiptv-tv-sim");
 mkdirSync(userDir, { recursive: true });
-const child = spawn(chrome, [
-  `--remote-debugging-port=${port}`,
-  `--user-data-dir=${userDir}`,
-  /* Sized to the set when the set's resolution is being simulated, and left to fill the display
+const child = spawn(
+  chrome,
+  [
+    `--remote-debugging-port=${port}`,
+    `--user-data-dir=${userDir}`,
+    /* Sized to the set when the set's resolution is being simulated, and left to fill the display
      when it is not: a 1920 wide window on a 1512 wide screen is exactly what --fit is for
      getting rid of. */
-  ...(fit ? ["--start-maximized"] : [`--window-size=${profile.width},${profile.height}`]),
-  // The set's own JS heap ceiling. Overrun it here and it would overrun there.
-  `--js-flags=--max-old-space-size=${heapMB}`,
-  "--no-first-run",
-  "--no-default-browser-check",
-  "--autoplay-policy=no-user-gesture-required",
-  "--hide-scrollbars",
-  // Linux runners have no unprivileged user namespaces, so the sandbox refuses to start and
-  // the budget job cannot run at all. Safe here: a local fixture, for ninety seconds.
-  "--no-sandbox",
-  // No window at all when measuring, so nothing on the desktop can decide the result. See
-  // `headless` above for why that is a correctness matter rather than a convenience.
-  ...(headless ? ["--headless=new"] : []),
-  /*
-   * And keep animating even with a window, for the headful case.
-   *
-   * requestAnimationFrame stops dead for a window the compositor believes is occluded, and
-   * it believes that whenever this window is behind the terminal that launched it. These
-   * three do not flatter anything: the work still happens on the same throttled main thread
-   * and the frames are still real, they are simply still produced when the window is not on
-   * top. Kept alongside headless rather than instead of it, because --headful is still a
-   * supported way to measure and it has the same problem.
-   */
-  "--disable-backgrounding-occluded-windows",
-  "--disable-renderer-backgrounding",
-  "--disable-features=CalculateNativeWinOcclusion",
-  // The set's player fetches streams itself and knows nothing about the same origin
-  // policy, so a browser refusing a playlist on CORS grounds is the simulator being
-  // unfaithful rather than the app being wrong. Safe enough with a profile of its own,
-  // and --cors puts it back for anyone who wants to see what a real browser would do.
-  ...(has("cors") ? [] : ["--disable-web-security"]),
-  // Software rasterising, for when the question is how expensive the painting is. A TV
-  // GPU is far weaker than a laptop's, and this is the bluntest way to stop the laptop
-  // flattering shadows, large repaints and anything else that is fill rate bound.
-  ...(has("software") ? ["--disable-gpu", "--disable-gpu-compositing"] : []),
-  "about:blank",
-], { stdio: "ignore", detached: false });
+    ...(fit ? ["--start-maximized"] : [`--window-size=${profile.width},${profile.height}`]),
+    // The set's own JS heap ceiling. Overrun it here and it would overrun there.
+    `--js-flags=--max-old-space-size=${heapMB}`,
+    "--no-first-run",
+    "--no-default-browser-check",
+    "--autoplay-policy=no-user-gesture-required",
+    "--hide-scrollbars",
+    // Linux runners have no unprivileged user namespaces, so the sandbox refuses to start and
+    // the budget job cannot run at all. Safe here: a local fixture, for ninety seconds.
+    "--no-sandbox",
+    // No window at all when measuring, so nothing on the desktop can decide the result. See
+    // `headless` above for why that is a correctness matter rather than a convenience.
+    ...(headless ? ["--headless=new"] : []),
+    /*
+     * And keep animating even with a window, for the headful case.
+     *
+     * requestAnimationFrame stops dead for a window the compositor believes is occluded, and
+     * it believes that whenever this window is behind the terminal that launched it. These
+     * three do not flatter anything: the work still happens on the same throttled main thread
+     * and the frames are still real, they are simply still produced when the window is not on
+     * top. Kept alongside headless rather than instead of it, because --headful is still a
+     * supported way to measure and it has the same problem.
+     */
+    "--disable-backgrounding-occluded-windows",
+    "--disable-renderer-backgrounding",
+    "--disable-features=CalculateNativeWinOcclusion",
+    // The set's player fetches streams itself and knows nothing about the same origin
+    // policy, so a browser refusing a playlist on CORS grounds is the simulator being
+    // unfaithful rather than the app being wrong. Safe enough with a profile of its own,
+    // and --cors puts it back for anyone who wants to see what a real browser would do.
+    ...(has("cors") ? [] : ["--disable-web-security"]),
+    // Software rasterising, for when the question is how expensive the painting is. A TV
+    // GPU is far weaker than a laptop's, and this is the bluntest way to stop the laptop
+    // flattering shadows, large repaints and anything else that is fill rate bound.
+    ...(has("software") ? ["--disable-gpu", "--disable-gpu-compositing"] : []),
+    "about:blank",
+  ],
+  { stdio: "ignore", detached: false },
+);
 
-process.on("exit", () => { try { child.kill(); } catch { /* already gone */ } });
+process.on("exit", () => {
+  try {
+    child.kill();
+  } catch {
+    /* already gone */
+  }
+});
 
 const cdp = await connect(port);
 
@@ -670,8 +721,8 @@ const cdp = await connect(port);
 if (child.exitCode !== null) {
   console.error(
     "\nAnother Chrome is already using the simulator's profile, so this one exited and\n" +
-    "handed over to it. None of the TV constraints are in force on that browser.\n\n" +
-    "  Close any other `npm run tv` first, or wait for it to finish.\n",
+      "handed over to it. None of the TV constraints are in force on that browser.\n\n" +
+      "  Close any other `npm run tv` first, or wait for it to finish.\n",
   );
   process.exit(2);
 }
@@ -728,11 +779,11 @@ if (!video) {
  */
 await cdp.send("Page.addScriptToEvaluateOnNewDocument", {
   /*
-  * `showClock` defaults on and re-renders every second, which is work arriving during `resting`,
-  * whose whole job is to be the number everything else is read against. It is overridden only
-  * when measuring. Someone working in `npm run tv` wants the application's real defaults, clock
-  * included. `panelTimeout` remains in the seed for settings compatibility, but the channel panel
-  * does not use it to close itself.
+   * `showClock` defaults on and re-renders every second, which is work arriving during `resting`,
+   * whose whole job is to be the number everything else is read against. It is overridden only
+   * when measuring. Someone working in `npm run tv` wants the application's real defaults, clock
+   * included. `panelTimeout` remains in the seed for settings compatibility, but the channel panel
+   * does not use it to close itself.
    *
    * The last channel is forgotten once per run, and once is what `sessionStorage` buys: it
    * survives the navigations within a run and is empty in the next browser. Every phase below
@@ -762,7 +813,13 @@ await cdp.send("Page.addScriptToEvaluateOnNewDocument", {
     var active = (settings.playlists || []).filter(function (p) {
       return p.id === settings.activePlaylistId;
     })[0];
-    if (!active || (${measuring} && active.url !== url)) {
+    var fixtureServer = ${JSON.stringify(fixtureOrigin)};
+    var xtreamJourney = false;
+    try { xtreamJourney = sessionStorage.getItem("sim.xtreamJourney") === "1"; } catch (e) {}
+    var benchmarkSource = active && (active.url === url ||
+      (xtreamJourney && active.source && active.source.kind === "xtream" &&
+        active.source.server === fixtureServer));
+    if (!active || (${measuring} && !benchmarkSource)) {
       settings.playlists = [{ id: "sim", name: "Simulator", url: url }];
       settings.activePlaylistId = "sim";
     }
@@ -806,34 +863,57 @@ const trust = !profile.calibrated
     ? `calibrated on a different machine, ${profile.calibratedMachine}`
     : `calibrated ${profile.calibratedOn}`;
 
-console.log(`TV simulator  ${profile.model}`
-  + `${harsh > 1 ? `, divided by a further ${harsh}` : ""}`
-  + `${quick ? ", quick sample" : ""}`);
-console.log(`  engine     ${profile.platform}, Chromium ${profile.chromium}`
-  + `${floor ? " (spoofed, the engine here is whatever Chrome is installed)" : ""}`);
+console.log(
+  `TV simulator  ${profile.model}` +
+    `${harsh > 1 ? `, divided by a further ${harsh}` : ""}` +
+    `${quick ? ", quick sample" : ""}`,
+);
+console.log(
+  `  engine     ${profile.platform}, Chromium ${profile.chromium}` +
+    `${floor ? " (spoofed, the engine here is whatever Chrome is installed)" : ""}`,
+);
 
 // Spelled out against what the set actually reports, because a bare throttle figure reads
 // like a multiple of the TV when it is a multiple of this laptop.
-console.log(`  cpu        ${cpu}x slower per core than this machine`
-  + `${floor ? `, ie ${profile.slowerThanReference}x slower than the reference set` : ""} (${trust})`);
+console.log(
+  `  cpu        ${cpu}x slower per core than this machine` +
+    `${floor ? `, ie ${profile.slowerThanReference}x slower than the reference set` : ""} (${trust})`,
+);
 console.log(`  heap       ${heapMB}MB${harsh > 1 ? ` of ${profile.jsHeapLimitMB}MB` : ""}`);
-console.log(`  cores      ${cores}${harsh > 1 ? ` of ${profile.cores}` : ""}`
-  + `, though only the main thread is slowed`);
+console.log(
+  `  cores      ${cores}${harsh > 1 ? ` of ${profile.cores}` : ""}` +
+    `, though only the main thread is slowed`,
+);
 console.log(`  memory     ${memoryGB}GB${harsh > 1 ? ` of ${profile.deviceMemoryGB}GB` : ""}`);
-console.log(`  network    ${netProfile ? `${netProfile.mbps.toFixed(1)}Mbps, ${netProfile.latency}ms` : "unthrottled, as the set's wifi effectively is"}`);
-console.log(`  screen     ${fit
-  ? "this display, not the set's 1920x1080, so the layout is not the set's either"
-  : `${profile.width}x${profile.height}`}`
-  + `${headless ? ", headless" : ""}${has("software") ? ", software rendering" : ""}`);
-console.log(`  player     ${video
-  ? "the app's own browser path, Tizen paths skipped"
-  : `AVPlay carried out by hls.js, Tizen paths live${engine ? "" : ", no engine found so no decode"}`}`);
-console.log(`  playlist   ${shape.channels} channels, ${shape.categories} categories, `
-  + `${shape.logos} logos, ${Math.round(playlistText.length / 1024)}KB`);
+console.log(
+  `  network    ${netProfile ? `${netProfile.mbps.toFixed(1)}Mbps, ${netProfile.latency}ms` : "unthrottled, as the set's wifi effectively is"}`,
+);
+console.log(
+  `  screen     ${
+    fit
+      ? "this display, not the set's 1920x1080, so the layout is not the set's either"
+      : `${profile.width}x${profile.height}`
+  }` + `${headless ? ", headless" : ""}${has("software") ? ", software rendering" : ""}`,
+);
+console.log(
+  `  player     ${
+    video
+      ? "the app's own browser path, Tizen paths skipped"
+      : `AVPlay carried out by hls.js, Tizen paths live${engine ? "" : ", no engine found so no decode"}`
+  }`,
+);
+console.log(
+  `  playlist   ${shape.channels} channels, ${shape.categories} categories, ` +
+    `${shape.logos} logos, ${Math.round(playlistText.length / 1024)}KB`,
+);
 console.log(`             ${wantedPlaylist}`);
-console.log(`             ${measuring && !has("real-logos")
-  ? "artwork served locally at 400 to 1200px, since most of the real hosts are gone"
-  : "artwork from the playlist's own hosts, so the network is in every figure below"}`);
+console.log(
+  `             ${
+    measuring && !has("real-logos")
+      ? "artwork served locally at 400 to 1200px, since most of the real hosts are gone"
+      : "artwork from the playlist's own hosts, so the network is in every figure below"
+  }`,
+);
 // The address it is actually served at, because 4174 may already be held and the fallback is
 // silent. Without this line there is no way to tell which server answered a question about it.
 console.log(`             served to the app at ${playlist}`);
@@ -847,11 +927,15 @@ await cdp.send("Page.navigate", { url });
 if (has("bench") || has("profile")) {
   const ev = async (expression) => {
     try {
-      return (await cdp.send("Runtime.evaluate", {
-        expression, returnByValue: true, awaitPromise: true,
-      })).result.value;
+      return (
+        await cdp.send("Runtime.evaluate", {
+          expression,
+          returnByValue: true,
+          awaitPromise: true,
+        })
+      ).result.value;
     } catch {
-      return null;   // navigating, so there is no context to ask yet
+      return null; // navigating, so there is no context to ask yet
     }
   };
   /*
@@ -870,9 +954,10 @@ if (has("bench") || has("profile")) {
    * ordinary one, measured at the end.
    */
   const readyAt = Date.now();
-  const isReady = async () => await ev(
-    `document.querySelectorAll(".rail .row").length > 0 && !document.querySelector(".onboard")`,
-  );
+  const isReady = async () =>
+    await ev(
+      `document.querySelectorAll(".rail .row").length > 0 && !document.querySelector(".onboard")`,
+    );
   let ready = false;
   while (!ready && Date.now() - readyAt < 90000) {
     await new Promise((r) => setTimeout(r, 250));
@@ -896,14 +981,16 @@ if (has("bench") || has("profile")) {
   if (!ready) {
     console.error(
       "\nNothing to measure: the app never showed a channel rail.\n\n" +
-      "Either the playlist could not be loaded, or ninety seconds was not enough to load\n" +
-      "it, which for a playlist this size on this profile would itself be the finding.\n\n" +
-      `  ${wantedPlaylist}\n  served at ${playlist}\n`,
+        "Either the playlist could not be loaded, or ninety seconds was not enough to load\n" +
+        "it, which for a playlist this size on this profile would itself be the finding.\n\n" +
+        `  ${wantedPlaylist}\n  served at ${playlist}\n`,
     );
     child.kill();
     process.exit(2);
   }
-  console.log(`\n  first launch, nothing cached: ${(firstLaunchMs / 1000).toFixed(1)}s to a rail`);
+  console.log(
+    `\n  first launch, nothing cached: ${(firstLaunchMs / 1000).toFixed(1)}s to a rail`,
+  );
 
   await ev(readFileSync(join(here, "bench.js"), "utf8"));
 
@@ -920,12 +1007,16 @@ if (has("bench") || has("profile")) {
    * left on the same app for hours: what matters is whether walking the interface for two
    * minutes leaves anything behind, and only a before and an after can say.
    */
-  await cdp.send("HeapProfiler.enable").catch(() => { /* older protocol, no forced GC */ });
+  await cdp.send("HeapProfiler.enable").catch(() => {
+    /* older protocol, no forced GC */
+  });
   const heapState = async () => {
-    await cdp.send("HeapProfiler.collectGarbage").catch(() => { /* report what V8 says */ });
+    await cdp.send("HeapProfiler.collectGarbage").catch(() => {
+      /* report what V8 says */
+    });
     return JSON.parse(await ev("JSON.stringify(window.__bench.state())"));
   };
-  const settled = await heapState();
+  let settled = await heapState();
 
   /**
    * Real key events, through the browser's own input pipeline.
@@ -935,15 +1026,23 @@ if (has("bench") || has("profile")) {
    * this reported a clean run on a build that was stuttering visibly.
    */
   const KEYS = {
-    down: [40, "ArrowDown"], up: [38, "ArrowUp"], left: [37, "ArrowLeft"],
-    right: [39, "ArrowRight"], enter: [13, "Enter"],
+    down: [40, "ArrowDown"],
+    up: [38, "ArrowUp"],
+    left: [37, "ArrowLeft"],
+    right: [39, "ArrowRight"],
+    enter: [13, "Enter"],
+    back: [27, "Escape"],
   };
   let sent = 0;
   const press = async (name) => {
     const [code, key] = KEYS[name];
     for (const type of ["rawKeyDown", "keyUp"]) {
       await cdp.send("Input.dispatchKeyEvent", {
-        type, windowsVirtualKeyCode: code, nativeVirtualKeyCode: code, key, code: key,
+        type,
+        windowsVirtualKeyCode: code,
+        nativeVirtualKeyCode: code,
+        key,
+        code: key,
       });
     }
     sent += 1;
@@ -1023,10 +1122,12 @@ if (has("bench") || has("profile")) {
    */
   const inputDrained = async () => {
     for (let i = 0; i < 40; i++) {
-      const state = JSON.parse(await ev(`JSON.stringify({
+      const state = JSON.parse(
+        await ev(`JSON.stringify({
         delivered: window.__bench.delivered,
         quiet: window.__bench.quietFor()
-      })`));
+      })`),
+      );
       if (state && state.delivered >= sent && state.quiet > 400) return true;
       await new Promise((r) => setTimeout(r, 250));
     }
@@ -1063,10 +1164,12 @@ if (has("bench") || has("profile")) {
     }
     results.push({ label, ...r });
     const dash = (v) => (v === null ? "-" : String(v));
-    console.log(`  ${label.padEnd(22)}${String(r.median).padStart(7)}${String(r.p95).padStart(7)}`
-      + `${String(r.stalls).padStart(7)}${dash(r.lag).padStart(7)}${dash(r.worstLag).padStart(7)}`
-      + `${(r.lag === null ? "-" : String(r.slow)).padStart(6)}`
-      + `${(r.presses && r.hadCursor ? `${r.moves}/${r.presses}` : "-").padStart(8)}`);
+    console.log(
+      `  ${label.padEnd(22)}${String(r.median).padStart(7)}${String(r.p95).padStart(7)}` +
+        `${String(r.stalls).padStart(7)}${dash(r.lag).padStart(7)}${dash(r.worstLag).padStart(7)}` +
+        `${(r.lag === null ? "-" : String(r.slow)).padStart(6)}` +
+        `${(r.presses && r.hadCursor ? `${r.moves}/${r.presses}` : "-").padStart(8)}`,
+    );
     return r;
   };
 
@@ -1119,10 +1222,12 @@ if (has("bench") || has("profile")) {
    * applying the day a mark is renamed. The same rule the journey allowances are held to
    * below, and the reason both exist is that a gate which cannot fail is not a gate.
    */
-  const marksWithoutAllowance = Object.keys(LAUNCH_MARKS)
-    .filter((label) => LAUNCH_ALLOWED[label] === undefined);
-  const allowancesWithoutMark = Object.keys(LAUNCH_ALLOWED)
-    .filter((label) => LAUNCH_MARKS[label] === undefined);
+  const marksWithoutAllowance = Object.keys(LAUNCH_MARKS).filter(
+    (label) => LAUNCH_ALLOWED[label] === undefined,
+  );
+  const allowancesWithoutMark = Object.keys(LAUNCH_ALLOWED).filter(
+    (label) => LAUNCH_MARKS[label] === undefined,
+  );
   if (marksWithoutAllowance.length || allowancesWithoutMark.length) {
     console.error("The launch marks and their allowances have drifted apart:");
     if (marksWithoutAllowance.length) {
@@ -1172,7 +1277,11 @@ if (has("bench") || has("profile")) {
    */
   const launch = async () => {
     const quiet = async (expression) => {
-      try { return await ev(expression); } catch { return null; }   // navigating
+      try {
+        return await ev(expression);
+      } catch {
+        return null;
+      } // navigating
     };
     await cdp.send("Page.addScriptToEvaluateOnNewDocument", { source: watcher });
 
@@ -1189,9 +1298,13 @@ if (has("bench") || has("profile")) {
      * else in it, so about:blank first, and then the launch being measured is a launch.
      */
     await cdp.send("Page.navigate", { url: "about:blank" });
-    for (let i = 0; i < 120
-      && !(await quiet("location.href === 'about:blank' && document.readyState === 'complete'"));
-      i++) await new Promise((r) => setTimeout(r, 25));
+    for (
+      let i = 0;
+      i < 120 &&
+      !(await quiet("location.href === 'about:blank' && document.readyState === 'complete'"));
+      i++
+    )
+      await new Promise((r) => setTimeout(r, 25));
 
     await cdp.send("Page.navigate", { url });
 
@@ -1200,7 +1313,9 @@ if (has("bench") || has("profile")) {
       await new Promise((r) => setTimeout(r, 250));
       if (await quiet("!!(window.__launch && window.__launch.done)")) break;
     }
-    return JSON.parse(await quiet("JSON.stringify((window.__launch || {}).marks || {})") ?? "{}");
+    return JSON.parse(
+      (await quiet("JSON.stringify((window.__launch || {}).marks || {})")) ?? "{}",
+    );
   };
 
   await cdp.send("Page.bringToFront");
@@ -1274,10 +1389,11 @@ if (has("bench") || has("profile")) {
    * So the assertion uses the cursor, which is what the presses drive and what proves the
    * keys landed in the rail rather than in the channel list. `showing` is only reported.
    */
-  const where = async () => (await ev(`JSON.stringify({
+  const where = async () =>
+    await ev(`JSON.stringify({
     cursor: (document.querySelector('.rail .row.selected .row-label')||{}).textContent,
     showing: (document.querySelector('.rail .row.showing .row-label')||{}).textContent,
-  })`));
+  })`);
 
   /*
    * Frame times first, then the two columns that say whether the remote was answered.
@@ -1288,9 +1404,11 @@ if (has("bench") || has("profile")) {
    * after. The frame worst has gone, because between the 95th percentile and the stall count it
    * was never the number anybody read, and these two are worth the width.
    */
-  console.log(`\n  ${"journey".padEnd(22)}${"frame".padStart(7)}${"p95".padStart(7)}`
-    + `${"stalls".padStart(7)}${"lag".padStart(7)}${"worst".padStart(7)}${"slow".padStart(6)}`
-    + `${"keys".padStart(8)}`);
+  console.log(
+    `\n  ${"journey".padEnd(22)}${"frame".padStart(7)}${"p95".padStart(7)}` +
+      `${"stalls".padStart(7)}${"lag".padStart(7)}${"worst".padStart(7)}${"slow".padStart(6)}` +
+      `${"keys".padStart(8)}`,
+  );
 
   await phase("resting", [], 1);
 
@@ -1326,7 +1444,9 @@ if (has("bench") || has("profile")) {
   const mustWalk = (label, r) => {
     if (!r || r.moves === r.presses) return;
     console.error(`\n${label}: ${r.presses} presses moved the highlight ${r.moves} times, so`);
-    console.error("this phase did not walk the journey it is named after. Either the keys went");
+    console.error(
+      "this phase did not walk the journey it is named after. Either the keys went",
+    );
     console.error("somewhere else, or the interface dropped them.");
     child.kill();
     process.exit(2);
@@ -1364,10 +1484,11 @@ if (has("bench") || has("profile")) {
    * Pressing up rather than down puts it back to the rows just walked, whatever the category's
    * length, and takes the internet out of the phase that is meant to be about the interface.
    */
-  mustWalk("holding down a category",
-    await phase("holding down a category", ["down"], quick ? 15 : 40));
-  mustWalk("the same rows again",
-    await phase("the same rows again", ["up"], quick ? 15 : 40));
+  mustWalk(
+    "holding down a category",
+    await phase("holding down a category", ["down"], quick ? 15 : 40),
+  );
+  mustWalk("the same rows again", await phase("the same rows again", ["up"], quick ? 15 : 40));
 
   await press("enter");
   await settle(quick ? 1500 : 4000);
@@ -1380,8 +1501,215 @@ if (has("bench") || has("profile")) {
    * sample: open it, look at a few rows, choose one. The earlier version opened and shut the
    * panel eight times in a row with nothing in between, which measured a thing nobody does.
    */
-  await phase("open, browse, choose", ["left", "down", "down", "down", "enter"],
-    quick ? 2 : 5, 450);
+  await phase(
+    "open, browse, choose",
+    ["left", "down", "down", "down", "enter"],
+    quick ? 2 : 5,
+    450,
+  );
+
+  const waitUntil = async (expression, timeout = 30000) => {
+    const deadline = Date.now() + timeout;
+    while (Date.now() < deadline) {
+      if (await ev(expression)) return true;
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    return false;
+  };
+  const journey = async (label, action, ready) => {
+    await settle();
+    if (!(await inputDrained())) {
+      console.error(`\n${label}: input did not settle before the journey.`);
+      child.kill();
+      process.exit(2);
+    }
+    await ev("window.__bench.start()");
+    await action();
+    if (ready && !(await waitUntil(ready))) {
+      console.error(`\n${label}: the expected screen did not appear.`);
+      child.kill();
+      process.exit(2);
+    }
+    await new Promise((r) => setTimeout(r, 600));
+    const result = await ev("JSON.stringify(window.__bench.stop())").then(JSON.parse);
+    if (!result || !result.of || result.hidden) {
+      unmeasured.push(label);
+      return result;
+    }
+    results.push({ label, ...result });
+    console.log(
+      `  ${label.padEnd(22)}${String(result.median).padStart(7)}` +
+        `${String(result.p95).padStart(7)}${String(result.stalls).padStart(7)}` +
+        `${"-".padStart(7)}${"-".padStart(7)}${"-".padStart(6)}${"-".padStart(8)}`,
+    );
+    return result;
+  };
+  const clickNamed = (name) =>
+    ev(`(() => {
+    var button = Array.prototype.slice.call(document.querySelectorAll("button")).filter(function (item) {
+      return item.textContent.trim() === ${JSON.stringify(name)};
+    })[0];
+    if (!button) return false;
+    button.click();
+    return true;
+  })()`);
+
+  const xtreamJourneys = createXtreamJourneyTracker();
+  await ev('sessionStorage.setItem("sim.xtreamJourney", "1")');
+  await cdp.send("Page.addScriptToEvaluateOnNewDocument", {
+    source: `(() => {
+      if (location.protocol === "about:" || location.protocol === "data:") return;
+      localStorage.setItem("openiptv.settings", JSON.stringify({
+        playlists: [{
+          id: "sim-xtream",
+          name: "Xtream fixture",
+          source: {
+            kind: "xtream",
+            server: ${JSON.stringify(fixtureOrigin)},
+            username: ${JSON.stringify(XTREAM_FIXTURE.username)},
+            password: ${JSON.stringify(XTREAM_FIXTURE.password)},
+            output: "m3u8"
+          },
+          sourceVersion: 1,
+          hiddenCategories: [],
+          hiddenCategoryMode: "exclude"
+        }],
+        activePlaylistId: "sim-xtream",
+        resumeLast: true,
+        panelTimeout: 0,
+        showClock: false
+      }));
+      localStorage.setItem("openiptv.personal", JSON.stringify({
+        favourites: [],
+        lastPlayed: {
+          playlistId: "sim-xtream",
+          kind: "live",
+          itemKey: "xtream:sim-xtream:live:live-1",
+          categoryKey: "live:live-large"
+        },
+        progress: []
+      }));
+      localStorage.removeItem("openiptv.last");
+    })();`,
+  });
+  const xtreamLaunchAt = Date.now();
+  await cdp.send("Page.reload", { ignoreCache: true });
+  if (
+    !(await waitUntil(
+      `(() => {
+    var row = document.querySelector(".list .row-label");
+    return row && row.textContent === "Live Channel 0001";
+  })()`,
+      90000,
+    ))
+  ) {
+    const diagnosis = await ev(`(() => {
+      var settings = {};
+      try { settings = JSON.parse(localStorage.getItem("openiptv.settings")) || {}; } catch (e) {}
+      var active = (settings.playlists || []).filter(function (item) {
+        return item.id === settings.activePlaylistId;
+      })[0] || {};
+      return JSON.stringify({
+        sourceKind: active.source && active.source.kind,
+        server: active.source && active.source.server,
+        rows: document.querySelectorAll(".list .row-label").length,
+        categories: document.querySelectorAll(".rail .row-label").length,
+        screen: document.body.textContent.slice(0, 300)
+      });
+    })()`);
+    console.error(
+      "\nThe Xtream fixture did not reach its first live row within ninety seconds.",
+    );
+    console.error(`  ${diagnosis}`);
+    child.kill();
+    process.exit(2);
+  }
+  const xtreamLaunchMs = Date.now() - xtreamLaunchAt;
+  console.log(`\n  ${XTREAM_JOURNEYS.liveLaunch}: ${xtreamLaunchMs}ms`);
+  xtreamJourneys.complete(XTREAM_JOURNEYS.liveLaunch);
+  await ev(readFileSync(join(here, "bench.js"), "utf8"));
+  sent = 0;
+  settled = await heapState();
+  await ensurePane("rail");
+  mustWalk(
+    XTREAM_JOURNEYS.heldRailWalk,
+    await phase(XTREAM_JOURNEYS.heldRailWalk, ["down"], 18),
+  );
+  xtreamJourneys.complete(XTREAM_JOURNEYS.heldRailWalk);
+  await journey(
+    XTREAM_JOURNEYS.firstCategoryLoad,
+    async () => clickNamed("Movies"),
+    `(() => {
+      var row = document.querySelector(".media-list .row-label");
+      return row && row.textContent === "Movie 0001";
+    })()`,
+  );
+  xtreamJourneys.complete(XTREAM_JOURNEYS.firstCategoryLoad);
+  await ensurePane("rail");
+  await journey(
+    XTREAM_JOURNEYS.cachedCategoryRevisit,
+    async () => {
+      await press("down");
+      await waitUntil(`(() => {
+        var row = document.querySelector(".media-list .row-label");
+        return row && row.textContent === "Movie 0601";
+      })()`);
+      await press("up");
+    },
+    `(() => {
+      var row = document.querySelector(".media-list .row-label");
+      return row && row.textContent === "Movie 0001";
+    })()`,
+  );
+  xtreamJourneys.complete(XTREAM_JOURNEYS.cachedCategoryRevisit);
+  await ensurePane("list");
+  await journey(
+    XTREAM_JOURNEYS.movieDetail,
+    async () => press("enter"),
+    `(() => {
+      var detail = document.querySelector(".media-details");
+      return detail && detail.textContent.indexOf("Movie details for movie-1") >= 0;
+    })()`,
+  );
+  xtreamJourneys.complete(XTREAM_JOURNEYS.movieDetail);
+  await press("back");
+  await waitUntil("!!document.querySelector('.media-list')");
+  await journey(
+    XTREAM_JOURNEYS.episodeNavigation,
+    async () => {
+      await clickNamed("Series");
+      await waitUntil(`(() => {
+        var row = document.querySelector(".media-list .row-label");
+        return row && row.textContent === "Series 0001";
+      })()`);
+      await press("enter");
+      await waitUntil(`(() => {
+        var row = document.querySelector(".media-list .row-label");
+        return row && row.textContent === "Season 1";
+      })()`);
+      await press("enter");
+    },
+    `(() => {
+      var row = document.querySelector(".media-list .row-label");
+      return row && row.textContent === "Episode 1.1";
+    })()`,
+  );
+  xtreamJourneys.complete(XTREAM_JOURNEYS.episodeNavigation);
+  await clickNamed("Live");
+  await journey(
+    XTREAM_JOURNEYS.liveSearch,
+    async () => {
+      await clickNamed("Search");
+      for (const ch of "3199") {
+        await cdp.send("Input.dispatchKeyEvent", { type: "char", text: ch });
+      }
+    },
+    `(() => {
+      var row = document.querySelector(".list .row-label");
+      return row && row.textContent === "Live Channel 3199";
+    })()`,
+  );
+  xtreamJourneys.complete(XTREAM_JOURNEYS.liveSearch);
 
   /*
    * Where the rail ended up, read from the highlight rather than from the column.
@@ -1395,10 +1723,14 @@ if (has("bench") || has("profile")) {
   const state = await heapState();
   // Against the set's ceiling rather than V8's, which reports the old space cap plus the
   // other spaces and so says 216MB when it has been given 120.
-  console.log(`\n  ${state.nodes} nodes, ${state.rows} rows, `
-    + `${state.heapMB}MB heap of the set's ${heapMB}MB`
-    + `, ${state.heapMB - settled.heapMB >= 0 ? "+" : ""}${state.heapMB - settled.heapMB}MB `
-    + "over the run");
+  console.log(
+    `\n  ${XTREAM_JOURNEYS.heapGrowth}: ${state.nodes} nodes, ${state.rows} rows, ` +
+      `${state.heapMB}MB heap of the set's ${heapMB}MB` +
+      `, ${state.heapMB - settled.heapMB >= 0 ? "+" : ""}${state.heapMB - settled.heapMB}MB ` +
+      "over the run",
+  );
+  xtreamJourneys.complete(XTREAM_JOURNEYS.heapGrowth);
+  xtreamJourneys.assertComplete();
   console.log("  stalls counts frames past 100ms, the point the guidance says a viewer");
   console.log("  must be told something is happening.");
 
@@ -1432,10 +1764,14 @@ if (has("bench") || has("profile")) {
         q.onsuccess = function () { ok(q.result); };
         q.onerror = function () { ok([]); };
       });
-      return keys.filter(function (k) { return String(k).indexOf("playlist:") === 0; }).length > 0;
+      return keys.filter(function (k) {
+        var key = String(k);
+        return key.indexOf("playlist:") === 0 ||
+          (key.indexOf("xtream:") === 0 && key.slice(-5) === ":live");
+      }).length > 0;
     } catch (e) { return false; }
   })()`);
-  console.log(`\n  playlist cached for the next launch: ${cached ? "yes" : "no"}`);
+  console.log(`\n  active catalogue cached for the next launch: ${cached ? "yes" : "no"}`);
 
   if (!has("budget")) {
     child.kill();
@@ -1493,6 +1829,12 @@ if (has("bench") || has("profile")) {
      */
     "surfing channels": { stalls: 24 },
     "open, browse, choose": { stalls: 34, lag: 90, slow: 5 },
+    [XTREAM_JOURNEYS.heldRailWalk]: { stalls: 4, lag: 60, slow: 2 },
+    [XTREAM_JOURNEYS.firstCategoryLoad]: { stalls: 34 },
+    [XTREAM_JOURNEYS.cachedCategoryRevisit]: { stalls: 30 },
+    [XTREAM_JOURNEYS.movieDetail]: { stalls: 34 },
+    [XTREAM_JOURNEYS.episodeNavigation]: { stalls: 34 },
+    [XTREAM_JOURNEYS.liveSearch]: { stalls: 34 },
   };
   /** Of the set's own ceiling. Well clear, because a playlist can be far larger than this one. */
   const HEAP_SHARE = 0.5;
@@ -1539,7 +1881,8 @@ if (has("bench") || has("profile")) {
     if (!(label in ALLOWED)) failures.push(`${label}: no allowance for this phase`);
   }
   for (const label of Object.keys(ALLOWED)) {
-    if (!measured.has(label)) failures.push(`${label}: an allowance for a phase that never ran`);
+    if (!measured.has(label))
+      failures.push(`${label}: an allowance for a phase that never ran`);
   }
   for (const result of results) {
     const allowed = ALLOWED[result.label];
@@ -1557,8 +1900,10 @@ if (has("bench") || has("profile")) {
     if (allowed.lag !== undefined && result.lag === null) {
       failures.push(`${result.label}: nothing answered a press, so no latency was measured`);
     } else if (allowed.lag !== undefined && result.lag > allowed.lag) {
-      failures.push(`${result.label}: ${result.lag}ms from press to highlight, `
-        + `${allowed.lag}ms allowed`);
+      failures.push(
+        `${result.label}: ${result.lag}ms from press to highlight, ` +
+          `${allowed.lag}ms allowed`,
+      );
     }
     /*
      * Slow presses counted, not the slowest one measured.
@@ -1570,8 +1915,10 @@ if (has("bench") || has("profile")) {
      * still printed, because it is the number a person wants to see.
      */
     if (allowed.slow !== undefined && result.slow > allowed.slow) {
-      failures.push(`${result.label}: ${result.slow} of ${result.presses} presses waited longer `
-        + `than 100ms, ${allowed.slow} allowed`);
+      failures.push(
+        `${result.label}: ${result.slow} of ${result.presses} presses waited longer ` +
+          `than 100ms, ${allowed.slow} allowed`,
+      );
     }
   }
   /*
@@ -1582,8 +1929,15 @@ if (has("bench") || has("profile")) {
    * time, forever. The app is right not to shout about it, so this is where it gets said.
    */
   if (!cached) {
-    failures.push("the playlist was not cached, so every launch fetches it over the network "
-      + `again (${Math.round(playlistText.length / 1024)}KB)`);
+    failures.push(
+      "the active catalogue was not cached, so every launch fetches it over the network again",
+    );
+  }
+  if (xtreamLaunchMs > LAUNCH_ALLOWED["the channel rows"]) {
+    failures.push(
+      `${XTREAM_JOURNEYS.liveLaunch}: ${xtreamLaunchMs}ms into launch, ` +
+        `${LAUNCH_ALLOWED["the channel rows"]}ms allowed`,
+    );
   }
   /*
    * The launch, mark by mark.
@@ -1596,8 +1950,10 @@ if (has("bench") || has("profile")) {
   for (const [label, allowed] of Object.entries(LAUNCH_ALLOWED)) {
     const at = marks[label];
     if (at === undefined) {
-      failures.push(`${label}: never happened within ${LAUNCH_DEADLINE_MS / 1000}s, `
-        + "so the launch was not measured");
+      failures.push(
+        `${label}: never happened within ${LAUNCH_DEADLINE_MS / 1000}s, ` +
+          "so the launch was not measured",
+      );
     } else if (at > allowed) {
       failures.push(`${label}: ${at}ms into the launch, ${allowed}ms allowed`);
     }
@@ -1614,13 +1970,16 @@ if (has("bench") || has("profile")) {
   if (state.heapMB) {
     const allowed = Math.round(heapMB * HEAP_SHARE);
     if (state.heapMB > allowed) {
-      failures.push(`heap: ${state.heapMB}MB against the set's ${heapMB}MB ceiling, `
-        + `${allowed}MB allowed`);
+      failures.push(
+        `heap: ${state.heapMB}MB against the set's ${heapMB}MB ceiling, ` +
+          `${allowed}MB allowed`,
+      );
     }
     const grew = state.heapMB - settled.heapMB;
     if (grew > HEAP_GROWTH_MB) {
-      failures.push(`heap: grew ${grew}MB over one walk of the interface, `
-        + `${HEAP_GROWTH_MB}MB allowed`);
+      failures.push(
+        `heap: grew ${grew}MB over one walk of the interface, ` + `${HEAP_GROWTH_MB}MB allowed`,
+      );
     }
   }
 
@@ -1670,7 +2029,9 @@ if (!measuring) {
   const currentBundle = () => {
     try {
       const html = readFileSync(join(dist, "index.html"), "utf8");
-      const named = [...html.matchAll(/(?:src|href)="\.?\/?(assets\/[^"]+)"/g)].map((m) => m[1]);
+      const named = [...html.matchAll(/(?:src|href)="\.?\/?(assets\/[^"]+)"/g)].map(
+        (m) => m[1],
+      );
       return named.every((f) => existsSync(join(dist, f))) ? named.join(" ") : null;
     } catch {
       return null;
@@ -1683,12 +2044,16 @@ if (!measuring) {
     clearTimeout(pending);
     pending = setTimeout(async () => {
       const bundle = currentBundle();
-      if (!bundle || bundle === last) return;   // half written, or nothing actually changed
+      if (!bundle || bundle === last) return; // half written, or nothing actually changed
       last = bundle;
       try {
         await cdp.send("Page.reload", { ignoreCache: true });
-        console.log(`  reloaded  ${new Date().toLocaleTimeString()}  ${bundle.split("/").pop()}`);
-      } catch { /* the window has gone */ }
+        console.log(
+          `  reloaded  ${new Date().toLocaleTimeString()}  ${bundle.split("/").pop()}`,
+        );
+      } catch {
+        /* the window has gone */
+      }
     }, 900);
   });
 }

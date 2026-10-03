@@ -1,9 +1,12 @@
-import { afterEach, beforeEach, expect, test } from "vitest";
+import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { act, fireEvent, render, screen, cleanup } from "@testing-library/react";
 import { Onboarding } from "../src/components/Onboarding";
+import { KEY } from "../src/hooks/useRemote";
+import { press } from "./support/app";
 import { useSettings } from "../src/stores/settings";
 import { useSetup } from "../src/stores/setup";
 import type { RemoteAccessState } from "../src/services/remoteServer";
+import type { PlaylistSource } from "../src/services/playlistUrl";
 
 beforeEach(() => {
   localStorage.clear();
@@ -33,7 +36,7 @@ test("device setup typing and language mirror onto the player welcome form", () 
   act(() => {
     useSetup.getState().set({
       name: "Device playlist",
-      url: "http://example.com/device.m3u",
+      source: { kind: "m3u", url: "http://example.com/device.m3u" },
     });
     useSettings.getState().set("locale", "fa");
   });
@@ -46,13 +49,61 @@ test("device setup typing and language mirror onto the player welcome form", () 
   );
 });
 
-test("M3U stays the default and Xtream login builds a playlist address", () => {
-  const added: { name: string; url: string }[] = [];
-  render(<Onboarding onAdd={(name, url) => added.push({ name, url })} onExit={() => {}} />);
+test("M3U setup keeps the specific address guidance", () => {
+  const onAdd = vi.fn();
+  render(<Onboarding onAdd={onAdd} onExit={() => {}} />);
 
-  expect(screen.getByRole("button", { name: "M3U playlist" }).getAttribute("aria-pressed")).toBe(
-    "true",
+  fireEvent.change(screen.getByLabelText("Playlist address"), {
+    target: { value: "example.com/list.m3u" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Add a playlist" }));
+
+  expect(screen.getByRole("alert").textContent).toBe(
+    "Start the address with http:// or https://",
   );
+  expect(onAdd).not.toHaveBeenCalled();
+});
+
+test("source buttons own physical arrow navigation on the welcome screen", () => {
+  render(<Onboarding onAdd={() => {}} onExit={() => {}} />);
+  const m3u = screen.getByRole("button", { name: "M3U playlist" });
+  const xtream = screen.getByRole("button", { name: "Xtream login" });
+
+  m3u.focus();
+  fireEvent.keyDown(m3u, { keyCode: KEY.RIGHT });
+  expect(document.activeElement).toBe(xtream);
+  fireEvent.keyDown(xtream, { keyCode: KEY.ENTER });
+  expect(screen.getByLabelText("Server address")).toBeTruthy();
+  fireEvent.keyDown(screen.getByRole("button", { name: "Xtream login" }), {
+    keyCode: KEY.DOWN,
+  });
+  expect(document.activeElement).toBe(screen.getByLabelText("Server address"));
+
+  for (const label of ["Username", "Password", "Stream format", "Name it (optional)"]) {
+    fireEvent.keyDown(document.activeElement!, { keyCode: KEY.DOWN });
+    expect(document.activeElement).toBe(screen.getByLabelText(label));
+  }
+  fireEvent.keyDown(document.activeElement!, { keyCode: KEY.DOWN });
+  expect(document.activeElement).toBe(
+    screen.getByRole("button", { name: "Language, English" }),
+  );
+  fireEvent.keyDown(document.activeElement!, { keyCode: KEY.DOWN });
+  expect(document.activeElement).toBe(screen.getByRole("button", { name: "Xtream login" }));
+  fireEvent.keyDown(document.activeElement!, { keyCode: KEY.UP });
+  expect(document.activeElement).toBe(
+    screen.getByRole("button", { name: "Language, English" }),
+  );
+});
+
+test("M3U stays the default and Xtream login submits a typed source", () => {
+  const added: { name: string; source: PlaylistSource }[] = [];
+  render(
+    <Onboarding onAdd={(name, source) => added.push({ name, source })} onExit={() => {}} />,
+  );
+
+  expect(
+    screen.getByRole("button", { name: "M3U playlist" }).getAttribute("aria-pressed"),
+  ).toBe("true");
   expect(screen.getByLabelText("Playlist address")).toBeTruthy();
   expect(screen.queryByLabelText("Server address")).toBeNull();
 
@@ -67,9 +118,71 @@ test("M3U stays the default and Xtream login builds a playlist address", () => {
   expect(added).toEqual([
     {
       name: "provider.example",
-      url: "https://provider.example:8443/get.php?username=viewer&password=secret&type=m3u_plus&output=m3u8",
+      source: {
+        kind: "xtream",
+        server: "https://provider.example:8443",
+        username: "viewer",
+        password: "secret",
+        output: "m3u8",
+      },
     },
   ]);
+});
+
+test("the Xtream stream format closes when focus moves to the password", () => {
+  render(<Onboarding onAdd={() => {}} onExit={() => {}} />);
+  fireEvent.click(screen.getByRole("button", { name: "Xtream login" }));
+
+  const output = screen.getByLabelText("Stream format");
+  output.focus();
+  fireEvent.click(output);
+  expect(screen.getByRole("listbox", { name: "Stream format" })).toBeTruthy();
+  expect(output.getAttribute("aria-expanded")).toBe("true");
+
+  act(() => screen.getByLabelText("Password").focus());
+
+  expect(screen.queryByRole("listbox", { name: "Stream format" })).toBeNull();
+  expect(output.getAttribute("aria-expanded")).toBe("false");
+});
+
+test("remote navigation reaches the Xtream stream format", () => {
+  vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function () {
+    const top =
+      {
+        "ob-server": 100,
+        "ob-username": 200,
+        "ob-password": 300,
+        "ob-output": 400,
+        "ob-name": 500,
+      }[this.id] ?? 0;
+    return {
+      left: 0,
+      right: 100,
+      top,
+      bottom: top + 40,
+      width: 100,
+      height: 40,
+      x: 0,
+      y: top,
+    } as DOMRect;
+  });
+  render(<Onboarding onAdd={() => {}} onExit={() => {}} />);
+  fireEvent.click(screen.getByRole("button", { name: "Xtream login" }));
+  const password = screen.getByLabelText("Password");
+  const output = screen.getByLabelText("Stream format");
+  password.focus();
+
+  press(KEY.DOWN);
+  expect(document.activeElement).toBe(output);
+
+  press(KEY.ENTER);
+  expect(screen.getByRole("listbox", { name: "Stream format" })).toBeTruthy();
+  const mpegTs = screen.getByRole("option", { name: "MPEG TS" });
+  mpegTs.focus();
+  press(KEY.ENTER);
+
+  expect(screen.queryByRole("listbox", { name: "Stream format" })).toBeNull();
+  expect(output.getAttribute("aria-label")).toBe("Stream format, MPEG TS");
 });
 
 test("the welcome screen keeps manual setup beside device setup", () => {
@@ -83,10 +196,10 @@ test("the welcome screen keeps manual setup beside device setup", () => {
     connectedDevice: "",
     error: "",
   };
-  const added: string[] = [];
+  const added: { name: string; source: PlaylistSource }[] = [];
   render(
     <Onboarding
-      onAdd={(name, url) => added.push(`${name}:${url}`)}
+      onAdd={(name, source) => added.push({ name, source })}
       onExit={() => {}}
       remoteAccess={management}
       showRemoteSetup
@@ -99,5 +212,7 @@ test("the welcome screen keeps manual setup beside device setup", () => {
     target: { value: "http://example.com/list.m3u" },
   });
   fireEvent.click(screen.getByRole("button", { name: "Add a playlist" }));
-  expect(added).toEqual(["list:http://example.com/list.m3u"]);
+  expect(added).toEqual([
+    { name: "list", source: { kind: "m3u", url: "http://example.com/list.m3u" } },
+  ]);
 });

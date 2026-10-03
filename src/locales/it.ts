@@ -2,7 +2,19 @@ import type { MessageKey, MessageValues } from "../services/locale";
 
 export default {
   "common.search": "Cerca",
+  "common.guide": "Guida",
   "common.settings": "Impostazioni",
+  "content.live": "Diretta",
+  "content.movies": "Film",
+  "content.series": "Serie",
+  "library.loading": "Caricamento…",
+  "library.failed": "Impossibile caricare questo contenuto.",
+  "library.retry": "Riprova",
+  "library.details": "Dettagli",
+  "library.resume": "Riprendi",
+  "library.season": ({ number }) => `Stagione ${number}`,
+  "library.episode": ({ number }) => `Episodio ${number}`,
+  "library.searchScope": ({ kind }) => `La ricerca include le categorie ${kind} caricate.`,
   "common.move": "Sposta",
   "common.open": "Apri",
   "common.closeSettings": "Chiudi impostazioni",
@@ -167,6 +179,13 @@ export default {
   "app.hiddenFavouriteUnavailable":
     "Rendi visibile questa categoria prima di aggiungere preferiti.",
   "banner.position": ({ at, of, list }) => `${at} di ${of} in ${list}`,
+  "banner.finiteTime": ({ elapsed, duration }) => `${elapsed} / ${duration}`,
+  "banner.now": ({ title }) => `Ora: ${title}`,
+  "banner.next": ({ title }) => `Successivo: ${title}`,
+  "guide.title": ({ category }) => `Guida programmi: ${category}`,
+  "guide.playFromStart": "Riproduci dall’inizio",
+  "guide.empty": "Nessuna informazione sui programmi disponibile.",
+  "guide.failed": "Impossibile caricare le informazioni sui programmi.",
   "guide.addIt": "Aggiungilo",
   "guide.showMatches": "Mostra corrispondenze",
   "guide.clear": "Cancella",
@@ -186,8 +205,7 @@ export default {
   "channel.unnamed": "Senza nome",
   "channel.hidden": "Nascosta",
   "channel.noCategories": "Nessuna categoria.",
-  "channel.allCategoriesHidden":
-    "Tutte le categorie sono nascoste.",
+  "channel.allCategoriesHidden": "Tutte le categorie sono nascoste.",
   "channel.nothingInCategory": "Niente in questa categoria.",
   "channel.noMatches": ({ query }) => `Nessun canale corrisponde a “${query}”.`,
   "channel.typeName": "Digita il nome di un canale.",
@@ -254,6 +272,8 @@ export default {
   "playlist.refreshFailed": ({ detail }) =>
     `Impossibile aggiornare: ${detail}. Viene mostrata l’ultima copia salvata.`,
   "playlist.loadFailed": ({ detail }) => `Impossibile caricare la playlist: ${detail}`,
+  "playlist.browserTransportFailed":
+    "Il browser non ha potuto raggiungere il provider tramite HTTPS. Il provider deve supportare HTTPS e CORS.",
   "playlist.loadingActive": "Caricamento della playlist attiva…",
   "playlist.loadedActive": ({ count }) =>
     `${count} canal${count === 1 ? "e" : "i"} caricati dalla playlist attiva.`,
@@ -351,7 +371,8 @@ export default {
   "about.qrAlt": ({ url }) => `Codice QR che rimanda a ${url}`,
   "settings.remoteAccess": "Accesso remoto",
   "remote.setupTitle": "Configura con il dispositivo",
-  "remote.setupBody": "Scansiona il codice QR per aggiungere playlist e scegliere le impostazioni più facilmente.",
+  "remote.setupBody":
+    "Scansiona il codice QR per aggiungere playlist e scegliere le impostazioni più facilmente.",
   "remote.addressHint": "Se non puoi scansionare, apri questo indirizzo",
   "remote.codeHint": "Poi inserisci questo codice",
   "remote.waiting": "In attesa della connessione di un dispositivo",
@@ -359,7 +380,8 @@ export default {
   "remote.connected": ({ name }) => `${name} connesso`,
   "remote.unavailable": "La configurazione dal dispositivo non è disponibile su questa rete.",
   "remote.manualFallback": "Puoi comunque inserire la playlist a sinistra.",
-  "remote.pairedHint": "I dispositivi possono gestire playlist e impostazioni mentre OpenIPTV è in esecuzione.",
+  "remote.pairedHint":
+    "I dispositivi possono gestire playlist e impostazioni mentre OpenIPTV è in esecuzione.",
   "remote.noDevices": "Nessun dispositivo associato.",
   "remote.thisDevice": "Questo dispositivo",
   "remote.lastUsed": ({ when }) => `Ultimo utilizzo ${when}`,
@@ -374,19 +396,42 @@ export default {
   "remote.setupCompleteBody": ({ count }) =>
     `${count} canali trovati e aggiunti a OpenIPTV. Continua sul televisore oppure apri qui le impostazioni per gestire playlist e preferenze.`,
   "remote.setupFailedTitle": "Impossibile aggiungere questa playlist",
-  "remote.setupLoadFailed": "Nessun canale trovato a questo indirizzo. Controlla l’indirizzo e riprova.",
+  "remote.setupLoadFailed":
+    "Nessun canale trovato a questo indirizzo. Controlla l’indirizzo e riprova.",
   "remote.deviceName": "Nome del dispositivo",
   "remote.renameAria": ({ name }) => `Rinomina ${name}`,
   "remote.revokeAria": ({ name }) => `Revoca l’accesso di ${name}`,
   "remote.revokeQuestion": ({ name }) => `Revocare l’accesso di ${name}?`,
-  "remote.revokeBody": "Questo dispositivo dovrà scansionare un nuovo codice QR prima di potersi riconnettere.",
-  "remote.revokeSelfBody": "Questo è il dispositivo in uso. Revocando l’accesso verrà disconnesso e dovrà essere associato di nuovo.",
+  "remote.revokeBody":
+    "Questo dispositivo dovrà scansionare un nuovo codice QR prima di potersi riconnettere.",
+  "remote.revokeSelfBody":
+    "Questo è il dispositivo in uso. Revocando l’accesso verrà disconnesso e dovrà essere associato di nuovo.",
   "remote.remotePlayPause": "Riproduci/Pausa",
   "remote.revoke": "Revoca",
   "remote.qrAlt": "Codice QR per la configurazione locale del dispositivo",
-  "remote.conflict": "Le impostazioni sono cambiate su un altro dispositivo. Controllale e riprova.",
-  "remote.tvUnavailable": "Il televisore non è disponibile. Mantieni OpenIPTV aperto e riprova.",
+  "remote.conflict":
+    "Le impostazioni sono cambiate su un altro dispositivo. Controllale e riprova.",
+  "remote.tvUnavailable":
+    "Il televisore non è disponibile. Mantieni OpenIPTV aperto e riprova.",
   "remote.revoked": "Questo dispositivo non ha più accesso.",
+  "remote.trustedNetwork":
+    "Questa connessione HTTP locale è destinata solo a una rete privata attendibile. Credenziali e indirizzi degli stream non vengono mai mostrati.",
+  "playlist.accountActive": "Attivo",
+  "playlist.accountInactive": "Inattivo",
+  "playlist.accountExpired": "Scaduto",
+  "playlist.accountTrial": "prova",
+  "playlist.accountExpiryUnknown": "Scadenza sconosciuta",
+  "playlist.accountExpires": ({ date }) => `Scade il ${date}`,
+  "playlist.accountConnections": ({ active, maximum }) =>
+    `${active} connessioni attive su ${maximum}`,
+  "guide.seek": "Sposta di dieci secondi",
+  "search.mediaName": "Nome del film o della serie",
+  "search.mediaAria": "Cerca film o serie per nome",
+  "error.seekUnavailable": "Non è possibile spostarsi in questo video sul dispositivo.",
+  "error.continueOrTryFormat": "Continua dalla posizione attuale o prova un altro formato.",
+  "error.finiteFormatUnsupported":
+    "Questo video usa un formato che il lettore non può decodificare.",
+  "error.tryTelevisionOrVideo": "Provalo sul televisore o scegli un altro video.",
   "exit.question": "Chiudere OpenIPTV?",
   "exit.body": "Puoi riaprirlo dalla riga delle app.",
 } satisfies Partial<Record<MessageKey, string | ((values: MessageValues) => string)>>;

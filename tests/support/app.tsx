@@ -1,6 +1,7 @@
 import { act, render } from "@testing-library/react";
 import { afterEach, vi } from "vitest";
 import type { LocalePreference } from "../../src/services/locale";
+import type { PlaylistSource } from "../../src/services/playlistUrl";
 
 afterEach(() => vi.useRealTimers());
 
@@ -19,8 +20,51 @@ afterEach(() => vi.useRealTimers());
 
 /** What the player was asked to play, in order, so a channel change can be observed. */
 export let played: string[] = [];
+export let playCalls: unknown[][] = [];
+export let seekChanges: number[] = [];
 export let muted = false;
 export let volumeChanges: number[] = [];
+let playbackPosition = 0;
+let playbackDuration = 120;
+let playbackEvent: ((event: unknown) => void) | null = null;
+
+export function setPlaybackTime(position: number, duration = 120) {
+  playbackPosition = position;
+  playbackDuration = duration;
+}
+
+export function finishPlayback() {
+  act(() => playbackEvent?.({ type: "ended" }));
+}
+
+export const XTREAM_SOURCE: PlaylistSource = {
+  kind: "xtream",
+  server: "http://provider.example",
+  username: "viewer",
+  password: "secret",
+  output: "m3u8",
+};
+
+export const xtreamFetch =
+  (
+    categories: Array<{ category_id: string; category_name: string }>,
+    streams: Array<Record<string, unknown>>,
+  ) =>
+  async (input: string | URL) => {
+    const action = new URL(String(input)).searchParams.get("action");
+    const body =
+      action === "get_live_categories"
+        ? categories
+        : action === "get_live_streams"
+          ? streams
+          : action === "get_vod_categories" || action === "get_series_categories"
+            ? []
+            : {
+                user_info: { auth: 1, status: "Active" },
+                server_info: { server_protocol: "http", url: "provider.example" },
+              };
+    return { ok: true, status: 200, json: async () => body };
+  };
 
 /** Presses a key the way the remote does, by keyCode, which is what the app listens for. */
 function keyEvent(type: "keydown" | "keyup", code: number) {
@@ -97,9 +141,12 @@ export interface MountOptions {
   slowPicture?: number;
   playbackStats?: boolean;
   faultPicture?: boolean;
+  seekFails?: boolean;
   locale?: LocalePreference;
   hiddenCategories?: string[];
   hiddenCategoryMode?: "exclude" | "search";
+  source?: PlaylistSource;
+  fetchImplementation?: (input: string | URL, init?: RequestInit) => Promise<unknown>;
 }
 
 export async function mountApp(
@@ -110,27 +157,50 @@ export async function mountApp(
     slowPicture = 0,
     playbackStats = false,
     faultPicture = false,
+    seekFails = false,
     locale,
     hiddenCategories = [],
     hiddenCategoryMode = "exclude",
+    source,
+    fetchImplementation,
   }: MountOptions = {},
 ) {
   if (!vi.isFakeTimers()) vi.useFakeTimers();
   vi.resetModules();
   played = [];
+  playCalls = [];
+  seekChanges = [];
   muted = false;
   volumeChanges = [];
+  playbackPosition = 0;
+  playbackDuration = 120;
+  playbackEvent = null;
 
   vi.doMock("../../src/services/player", () => ({
     onTizen: () => false,
     Player: class {
-      constructor(public emit: (e: unknown) => void) {}
+      constructor(public emit: (e: unknown) => void) {
+        playbackEvent = emit;
+      }
       attach() {}
       detach() {}
       stop() {}
       hide() {}
       show() {}
       pause() {}
+      resumePlayback() {}
+      getPosition() {
+        return playbackPosition;
+      }
+      getDuration() {
+        return playbackDuration;
+      }
+      seekBy(delta: number) {
+        seekChanges.push(delta);
+        if (seekFails) return Promise.resolve(false);
+        playbackPosition = Math.max(0, Math.min(playbackDuration, playbackPosition + delta));
+        return Promise.resolve(true);
+      }
       setMuted(value: boolean) {
         muted = value;
       }
@@ -157,16 +227,20 @@ export async function mountApp(
           switches: 2,
         };
       }
-      play(url: string) {
+      play(url: string, ...options: unknown[]) {
         played.push(url);
+        playCalls.push([url, ...options]);
         // A picture arrives at once, so the tests are about the interface rather than about
         // waiting, unless a test has asked for a channel that takes a moment to join.
         if (faultPicture) this.emit({ type: "error", code: "TEST_FAILURE" });
         else if (slowPicture) setTimeout(() => this.emit({ type: "playing" }), slowPicture);
         else this.emit({ type: "playing" });
       }
-      resume(url: string) {
+      resumeLive(url: string) {
         this.play(url);
+      }
+      resume(url: string) {
+        this.resumeLive(url);
       }
     },
   }));
@@ -178,7 +252,7 @@ export async function mountApp(
         {
           id: "pl-1",
           name: "Test",
-          url: "http://list.invalid/a.m3u",
+          ...(source ? { source, sourceVersion: 1 } : { url: "http://list.invalid/a.m3u" }),
           hiddenCategories,
           hiddenCategoryMode,
         },
@@ -193,7 +267,12 @@ export async function mountApp(
   // first render by reading this. That is the whole point of it: deciding later meant the
   // panel opened and was then closed again, in front of the viewer.
   if (resume) localStorage.setItem("openiptv.last", resume);
-  vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, text: async () => playlist }));
+  vi.stubGlobal(
+    "fetch",
+    fetchImplementation
+      ? vi.fn(fetchImplementation)
+      : vi.fn().mockResolvedValue({ ok: true, text: async () => playlist }),
+  );
 
   const { default: App } = await import("../../src/App");
   const view = render(<App />);

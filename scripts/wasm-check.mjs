@@ -107,9 +107,13 @@ for (const name of REQUIRED_EXPORTS) {
 }
 
 const asked = new Set(
-  [...glue.matchAll(/__wasm_[a-z_]+/g)].map(([name]) => name).filter((n) => !NOT_A_HOST_BINDING.has(n)),
+  [...glue.matchAll(/__wasm_[a-z_]+/g)]
+    .map(([name]) => name)
+    .filter((n) => !NOT_A_HOST_BINDING.has(n)),
 );
-const supplied = new Set([...worker.matchAll(/__wasm_[a-z_]+:/g)].map(([match]) => match.slice(0, -1)));
+const supplied = new Set(
+  [...worker.matchAll(/__wasm_[a-z_]+:/g)].map(([match]) => match.slice(0, -1)),
+);
 
 for (const name of asked) {
   if (!supplied.has(name)) {
@@ -119,11 +123,14 @@ for (const name of asked) {
 for (const name of supplied) {
   // Not a failure. A binding nothing asks for is dead weight rather than a fault, and saying so is
   // cheaper than someone later wondering whether it is load bearing.
-  if (!asked.has(name)) console.log(`  note: ${WORKER} supplies ${name}, which the module never asks for`);
+  if (!asked.has(name))
+    console.log(`  note: ${WORKER} supplies ${name}, which the module never asks for`);
 }
 
 const managementExports = new Set(
-  compiledManagement ? WebAssembly.Module.exports(compiledManagement).map(({ name }) => name) : [],
+  compiledManagement
+    ? WebAssembly.Module.exports(compiledManagement).map(({ name }) => name)
+    : [],
 );
 const requiredManagementExports = [
   "start_server",
@@ -133,7 +140,8 @@ const requiredManagementExports = [
   "stop_server",
 ];
 for (const name of requiredManagementExports) {
-  if (!managementExports.has(name)) complaints.push(`${MANAGEMENT_MODULE} no longer exports ${name}`);
+  if (!managementExports.has(name))
+    complaints.push(`${MANAGEMENT_MODULE} no longer exports ${name}`);
 }
 const managementAsked = new Set(
   compiledManagement
@@ -157,12 +165,14 @@ for (const name of managementAsked) {
 if (complaints.length) {
   console.error("The committed WebAssembly does not hold together:\n");
   for (const complaint of complaints) console.error(`  ${complaint}`);
-  console.error("\nRebuild it with the recipe in docs/testing.md, or restore the committed files.");
+  console.error(
+    "\nRebuild it with the recipe in docs/testing.md, or restore the committed files.",
+  );
   process.exit(1);
 }
 
 console.log(
-  `WebAssembly is consistent: ${module_.length + managementModule.length} bytes compile, `
-    + `${REQUIRED_EXPORTS.length + requiredManagementExports.length} exports present, `
-    + `${asked.size + managementAsked.size} host socket functions asked for and all supplied.`,
+  `WebAssembly is consistent: ${module_.length + managementModule.length} bytes compile, ` +
+    `${REQUIRED_EXPORTS.length + requiredManagementExports.length} exports present, ` +
+    `${asked.size + managementAsked.size} host socket functions asked for and all supplied.`,
 );

@@ -1,3 +1,4 @@
+import type { FavouriteSnapshot } from "../stores/personal";
 import type { HiddenCategoryMode } from "../stores/settings";
 import type { Channel } from "../types";
 
@@ -43,6 +44,7 @@ export function stepColumn(index: number, delta: number, count: number, withFiel
 }
 
 export interface ChannelList {
+  key: string;
   name: string;
   channels: Channel[];
   synthetic?: "favourites";
@@ -72,7 +74,7 @@ const VISIBLE: Visibility = { hiddenCategories: [], hiddenCategoryMode: "exclude
 export function lineupOf(
   channels: Channel[],
   categories: ChannelList[],
-  favourites: string[],
+  favourites: readonly (string | FavouriteSnapshot)[],
   visibility: Visibility = VISIBLE,
 ): {
   lists: ChannelList[];
@@ -81,17 +83,24 @@ export function lineupOf(
 } {
   const hidden = new Set(visibility.hiddenCategories);
   const browsableChannels = hidden.size
-    ? channels.filter((channel) => !hidden.has(channel.group))
+    ? channels.filter((channel) => !hidden.has(channel.xtream?.categoryKey ?? channel.group))
     : channels;
   const visibleCategories = hidden.size
-    ? categories.filter((category) => !hidden.has(category.name))
+    ? categories.filter((category) => !hidden.has(category.key))
     : categories;
   const searchableChannels =
     visibility.hiddenCategoryMode === "search" ? channels : browsableChannels;
-  const wanted = new Set(favourites);
+  const wanted = new Set(
+    favourites.map((favourite) =>
+      typeof favourite === "string" ? favourite : favourite.itemKey,
+    ),
+  );
   const mine = searchableChannels.filter((channel) => wanted.has(channel.id));
   const lists: ChannelList[] = mine.length
-    ? [{ name: FAVOURITES, channels: mine, synthetic: "favourites" }, ...visibleCategories]
+    ? [
+        { key: "favourites", name: FAVOURITES, channels: mine, synthetic: "favourites" },
+        ...visibleCategories,
+      ]
     : visibleCategories;
   return { lists, browsableChannels, searchableChannels };
 }

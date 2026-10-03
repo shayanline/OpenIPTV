@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { Player, onTizen, type PlayerEvent } from "../src/services/player";
 
 interface FakeHlsInstance {
+  source: string;
   emit(event: string, data: unknown): void;
 }
 
@@ -37,10 +38,19 @@ vi.mock("hls.js", () => {
       },
     ];
     handlers = new Map<string, HlsHandler>();
-    constructor() { hlsMock.instance = this; }
-    on(event: string, handler: HlsHandler) { this.handlers.set(event, handler); }
-    emit(event: string, data: unknown) { this.handlers.get(event)?.(event, data); }
-    loadSource() {}
+    source = "";
+    constructor() {
+      hlsMock.instance = this;
+    }
+    on(event: string, handler: HlsHandler) {
+      this.handlers.set(event, handler);
+    }
+    emit(event: string, data: unknown) {
+      this.handlers.get(event)?.(event, data);
+    }
+    loadSource(url: string) {
+      this.source = url;
+    }
     attachMedia() {}
     startLoad() {}
     recoverMediaError() {}
@@ -68,17 +78,49 @@ function fakeAVPlay() {
   const calls: string[] = [];
   let state = "NONE";
   let currentTime = 0;
+  let duration = 120_000;
   const av = {
     listener: null as null | Record<string, (arg?: unknown) => void>,
     prepared: null as null | { ok: () => void; fail: (e: unknown) => void },
     calls,
-    open: (url: string) => { calls.push(`open:${url}`); state = "IDLE"; },
-    close: () => { calls.push("close"); state = "NONE"; },
-    stop: () => { calls.push("stop"); state = "IDLE"; },
-    play: () => { calls.push("play"); state = "PLAYING"; },
-    pause: () => { calls.push("pause"); state = "PAUSED"; },
+    open: (url: string) => {
+      calls.push(`open:${url}`);
+      state = "IDLE";
+    },
+    close: () => {
+      calls.push("close");
+      state = "NONE";
+    },
+    stop: () => {
+      calls.push("stop");
+      state = "IDLE";
+    },
+    play: () => {
+      calls.push("play");
+      state = "PLAYING";
+    },
+    pause: () => {
+      calls.push("pause");
+      state = "PAUSED";
+    },
     getState: () => state,
     getCurrentTime: () => currentTime,
+    getDuration: () => duration,
+    seekTo: (ms: number, ok: () => void, _fail: (e: unknown) => void) => {
+      calls.push(`seekTo:${ms}`);
+      currentTime = ms;
+      ok();
+    },
+    jumpForward: (ms: number, ok: () => void, _fail: (e: unknown) => void) => {
+      calls.push(`jumpForward:${ms}`);
+      currentTime = Math.min(duration, currentTime + ms);
+      ok();
+    },
+    jumpBackward: (ms: number, ok: () => void, _fail: (e: unknown) => void) => {
+      calls.push(`jumpBackward:${ms}`);
+      currentTime = Math.max(0, currentTime - ms);
+      ok();
+    },
     getCurrentStreamInfo: () => [
       {
         index: 0,
@@ -98,24 +140,50 @@ function fakeAVPlay() {
       },
     ],
     getStreamingProperty: (key: string) =>
-      key === "CURRENT_BANDWIDTH" ? "4500000" : key === "AVAILABLE_BITRATE" ? "1500000|3000000|4500000" : "",
+      (
+        ({
+          CURRENT_BANDWIDTH: "6200000",
+          AVAILABLE_BITRATE: "1500000|3000000|4500000",
+          CURRENT_LEVEL: "3",
+          BUFFER_AHEAD: "5.5",
+          FRAME_RATE: "49.9",
+          TOTAL_FRAMES: "100",
+          DROPPED_FRAMES: "2",
+        }) as Record<string, string>
+      )[key] ?? "",
     getVideoSeamlessInfo: () => ({ scan_type: 1, rotation_degree: 0 }),
     setDisplayRect: () => calls.push("setDisplayRect"),
     setDisplayMethod: (m: string) => calls.push(`setDisplayMethod:${m}`),
     // The value as well as the key, since what is asked for matters as much as when.
-    setStreamingProperty: (k: string, v: string) => calls.push(`setStreamingProperty:${k}=${v}`),
+    setStreamingProperty: (k: string, v: string) =>
+      calls.push(`setStreamingProperty:${k}=${v}`),
     setTimeoutForBuffering: (s: number) => calls.push(`setTimeoutForBuffering:${s}`),
     setBufferingParam: (option: string, unit: string, amount: number) =>
       calls.push(`setBufferingParam:${option},${unit},${amount}`),
     suspend: () => calls.push("suspend"),
     restore: () => calls.push("restore"),
-    setListener: (l: Record<string, (arg?: unknown) => void>) => { av.listener = l; },
+    setListener: (l: Record<string, (arg?: unknown) => void>) => {
+      av.listener = l;
+    },
     prepareAsync: (ok: () => void, fail: (e: unknown) => void) => {
       calls.push("prepareAsync");
-      av.prepared = { ok: () => { state = "READY"; ok(); }, fail };
+      av.prepared = {
+        ok: () => {
+          state = "READY";
+          ok();
+        },
+        fail,
+      };
     },
-    advance: (by: number) => { currentTime += by; },
-    setTime: (t: number) => { currentTime = t; },
+    advance: (by: number) => {
+      currentTime += by;
+    },
+    setTime: (t: number) => {
+      currentTime = t;
+    },
+    setDuration: (ms: number) => {
+      duration = ms;
+    },
   };
   return av;
 }
@@ -137,7 +205,9 @@ beforeEach(() => {
   (window as unknown as { tizen: unknown }).tizen = {
     tvaudiocontrol: {
       isMute: () => tvMuted,
-      setMute: (mute: boolean) => { tvMuted = mute; },
+      setMute: (mute: boolean) => {
+        tvMuted = mute;
+      },
     },
   };
   events = [];
@@ -207,7 +277,10 @@ test("buffering progress is passed on, and is absent when the engine says nothin
    */
   assert.equal(buffering.find((e) => e.percent !== undefined)?.percent, 42);
   // A start that said nothing about progress must not read as nought per cent.
-  assert.ok(buffering.some((e) => e.percent === undefined), "the start invented a figure");
+  assert.ok(
+    buffering.some((e) => e.percent === undefined),
+    "the start invented a figure",
+  );
 });
 
 test("AVPlay statistics normalize current engine values without using playlist labels", () => {
@@ -222,7 +295,12 @@ test("AVPlay statistics normalize current engine values without using playlist l
     videoCodec: "H264",
     audioCodec: "AAC",
     bitrate: 4_500_000,
-    frameRate: 50,
+    bandwidth: 6_200_000,
+    bufferSeconds: 5.5,
+    frameRate: 49.9,
+    droppedFrames: 2,
+    totalFrames: 100,
+    level: 3,
     levels: 3,
     switches: 0,
   });
@@ -391,7 +469,7 @@ test("a picture that keeps moving is never called stalled", () => {
   player.play("http://example.invalid/a.m3u8");
   av.prepared?.ok();
   for (let i = 0; i < 20; i++) {
-    av.advance(3000);              // three seconds of programme per tick
+    av.advance(3000); // three seconds of programme per tick
     vi.advanceTimersByTime(3_000);
   }
   assert.deepEqual(codes(), []);
@@ -511,7 +589,11 @@ test("an abort the app caused itself is not reported as a fault", async () => {
   video.canPlayType = () => "probably";
   let refuse: (e: unknown) => void = () => {};
   let asked = 0;
-  video.play = () => new Promise<void>((_, reject) => { asked += 1; refuse = reject; });
+  video.play = () =>
+    new Promise<void>((_, reject) => {
+      asked += 1;
+      refuse = reject;
+    });
   browser.attach(video);
 
   browser.play("http://example.invalid/a.m3u8");
@@ -519,8 +601,8 @@ test("an abort the app caused itself is not reported as a fault", async () => {
   assert.equal(asked, 1, "the element was never asked to play, so nothing is being tested");
   const aborted = refuse;
 
-  await vi.advanceTimersByTimeAsync(30_000);      // the watchdog names the real reason
-  browser.play("http://example.invalid/a.m3u8");  // the automatic retry, which tears it down
+  await vi.advanceTimersByTimeAsync(30_000); // the watchdog names the real reason
+  browser.play("http://example.invalid/a.m3u8"); // the automatic retry, which tears it down
   aborted(new DOMException("interrupted by a new load request", "AbortError"));
   await vi.advanceTimersByTimeAsync(0);
 
@@ -544,8 +626,14 @@ test("how much to buffer before starting is asked for while the player will stil
     "setBufferingParam:PLAYER_BUFFER_FOR_PLAY,PLAYER_BUFFER_SIZE_IN_SECOND,6",
   );
   assert.ok(asked !== -1, `never asked: ${av.calls.join(" ")}`);
-  assert.ok(av.calls.findIndex((c) => c.startsWith("open")) < asked, "asked before the stream was open");
-  assert.ok(asked < av.calls.indexOf("prepareAsync"), "asked once it was too late to be accepted");
+  assert.ok(
+    av.calls.findIndex((c) => c.startsWith("open")) < asked,
+    "asked before the stream was open",
+  );
+  assert.ok(
+    asked < av.calls.indexOf("prepareAsync"),
+    "asked once it was too late to be accepted",
+  );
 });
 
 test("a longer diagnosed segment can raise the initial buffer", () => {
@@ -553,7 +641,9 @@ test("a longer diagnosed segment can raise the initial buffer", () => {
   av.prepared?.ok();
 
   assert.ok(
-    av.calls.includes("setBufferingParam:PLAYER_BUFFER_FOR_PLAY,PLAYER_BUFFER_SIZE_IN_SECOND,11"),
+    av.calls.includes(
+      "setBufferingParam:PLAYER_BUFFER_FOR_PLAY,PLAYER_BUFFER_SIZE_IN_SECOND,11",
+    ),
     "the diagnosed buffer was not passed to AVPlay",
   );
 });
@@ -571,6 +661,173 @@ test("firmware without the optional calls does not stop a channel starting", () 
   const events2: PlayerEvent[] = [];
   const p = new Player((e) => events2.push(e));
   assert.doesNotThrow(() => p.play("http://example.invalid/a.m3u8"));
-  assert.deepEqual(events2.filter((e) => e.type === "error"), []);
+  assert.deepEqual(
+    events2.filter((e) => e.type === "error"),
+    [],
+  );
   p.stop();
+});
+
+test("finite AVPlay reports position and duration in seconds", () => {
+  player.play("http://example.invalid/movie/1.mp4", false, 6, "finite");
+  av.prepared?.ok();
+  av.setTime(12_500);
+  av.setDuration(90_000);
+
+  assert.equal(player.getPosition(), 12.5);
+  assert.equal(player.getDuration(), 90);
+});
+
+test("finite AVPlay applies a positive initial seek in IDLE before prepare", () => {
+  player.play("http://example.invalid/movie/1.mp4", false, 6, "finite", 35);
+
+  const seek = av.calls.indexOf("seekTo:35000");
+  assert.ok(seek > av.calls.findIndex((call) => call.startsWith("open:")));
+  assert.ok(seek < av.calls.indexOf("prepareAsync"));
+});
+
+test("finite AVPlay continues from zero when initial seek is unavailable", () => {
+  delete (av as Partial<typeof av>).seekTo;
+  player.play("http://example.invalid/movie/1.mp4", false, 6, "finite", 35);
+
+  assert.ok(av.calls.includes("prepareAsync"));
+  assert.deepEqual(codes(), []);
+  assert.equal(player.getResumeLimitation(), "SEEK_UNSUPPORTED");
+  av.prepared?.ok();
+  assert.ok(av.calls.includes("play"));
+});
+
+test("finite AVPlay continues from zero when initial seek is rejected", () => {
+  av.seekTo = (_ms: number, _ok: () => void, fail: (error: unknown) => void) => {
+    av.calls.push("seekTo:rejected");
+    fail({ name: "InvalidStateError" });
+  };
+  player.play("http://example.invalid/movie/1.mp4", false, 6, "finite", 35);
+
+  assert.ok(av.calls.includes("prepareAsync"));
+  assert.deepEqual(codes(), []);
+  assert.match(player.getResumeLimitation() ?? "", /SEEK_FAILED InvalidStateError/);
+  av.prepared?.ok();
+  assert.ok(av.calls.includes("play"));
+});
+
+test("finite AVPlay seeks forward and backward by ten seconds with clamping", async () => {
+  player.play("http://example.invalid/movie/1.mp4", false, 6, "finite");
+  av.prepared?.ok();
+  av.setTime(115_000);
+
+  assert.equal(await player.seekBy(10), true);
+  assert.equal(player.getPosition(), 120);
+  assert.equal(await player.seekBy(-10), true);
+  assert.equal(player.getPosition(), 110);
+});
+
+test("unsupported finite AVPlay seeking is nonfatal and does not change position", async () => {
+  delete (av as Partial<typeof av>).seekTo;
+  delete (av as Partial<typeof av>).jumpForward;
+  delete (av as Partial<typeof av>).jumpBackward;
+  player.play("http://example.invalid/movie/1.mp4", false, 6, "finite");
+  av.prepared?.ok();
+  av.setTime(20_000);
+
+  assert.equal(await player.seekBy(10), false);
+  assert.equal(player.getPosition(), 20);
+  assert.deepEqual(codes(), []);
+});
+
+test("rejected finite AVPlay seeking is nonfatal and playback can continue", async () => {
+  av.jumpForward = (_ms: number, _ok: () => void, fail: (error: unknown) => void) => {
+    av.calls.push("jumpForward:rejected");
+    fail({ name: "InvalidStateError" });
+  };
+  player.play("http://example.invalid/movie/1.mp4", false, 6, "finite");
+  av.prepared?.ok();
+  av.setTime(20_000);
+
+  assert.equal(await player.seekBy(10), false);
+  assert.equal(player.getPosition(), 20);
+  assert.deepEqual(codes(), []);
+  assert.equal(av.getState(), "PLAYING");
+});
+
+test("finite pause resumes in place while live resume opens the live edge", () => {
+  player.play("http://example.invalid/movie/1.mp4", false, 6, "finite");
+  av.prepared?.ok();
+  player.pause();
+  av.calls.length = 0;
+  player.resumePlayback();
+  assert.deepEqual(av.calls, ["play"]);
+
+  player.resumeLive("http://example.invalid/live.m3u8");
+  assert.ok(av.calls.some((call) => call.startsWith("open:http://example.invalid/live.m3u8")));
+});
+
+test("a pending finite seek suspends the stall watchdog", async () => {
+  let finish = () => {};
+  av.jumpForward = (ms: number, ok: () => void) => {
+    av.calls.push(`jumpForward:${ms}`);
+    finish = ok;
+  };
+  player.play("http://example.invalid/movie/1.mp4", false, 6, "finite");
+  av.prepared?.ok();
+  const seeking = player.seekBy(10);
+
+  vi.advanceTimersByTime(60_000);
+  assert.deepEqual(codes(), []);
+  finish();
+  assert.equal(await seeking, true);
+});
+
+test("browser finite MP4 uses native video and exposes media timing", async () => {
+  delete (window as unknown as { webapis?: unknown }).webapis;
+  hlsMock.supported = true;
+  const browserEvents: PlayerEvent[] = [];
+  const browser = new Player((event) => browserEvents.push(event));
+  const video = document.createElement("video");
+  video.play = vi.fn().mockResolvedValue(undefined);
+  Object.defineProperties(video, {
+    currentTime: { configurable: true, writable: true, value: 0 },
+    duration: { configurable: true, value: 95 },
+  });
+  browser.attach(video);
+  browser.play("http://example.invalid/movie/1.mp4", false, 6, "finite", 15);
+  await vi.advanceTimersByTimeAsync(0);
+
+  assert.equal(hlsMock.instance, null);
+  assert.match(video.src, /movie\/1\.mp4$/);
+  assert.equal(browser.getPosition(), 15);
+  assert.equal(browser.getDuration(), 95);
+  assert.equal(await browser.seekBy(100), true);
+  assert.equal(browser.getPosition(), 95);
+  browser.stop();
+});
+
+test("browser finite HLS still uses hls.js", async () => {
+  delete (window as unknown as { webapis?: unknown }).webapis;
+  hlsMock.supported = true;
+  const browser = new Player(() => {});
+  const video = document.createElement("video");
+  browser.attach(video);
+  browser.play("http://example.invalid/catchup/1.m3u8", false, 6, "finite");
+  await vi.advanceTimersByTimeAsync(0);
+
+  assert.equal(hlsMock.instance?.source, "http://example.invalid/catchup/1.m3u8");
+  browser.stop();
+});
+
+test("browser finite unsupported containers report the media element failure", async () => {
+  delete (window as unknown as { webapis?: unknown }).webapis;
+  const browserEvents: PlayerEvent[] = [];
+  const browser = new Player((event) => browserEvents.push(event));
+  const video = document.createElement("video");
+  video.play = vi.fn().mockRejectedValue({ name: "NotSupportedError" });
+  browser.attach(video);
+  browser.play("http://example.invalid/movie/1.mkv", false, 6, "finite");
+  await vi.advanceTimersByTimeAsync(0);
+
+  assert.deepEqual(
+    browserEvents.filter((event) => event.type === "error").map((event) => event.code),
+    ["NotSupportedError"],
+  );
+  browser.stop();
 });

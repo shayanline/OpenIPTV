@@ -69,7 +69,10 @@
      * top of the screen, and a 24px black strip along the bottom that looked like the player
      * failing to fill the height.
      */
-    v.setAttribute("style", "position:absolute;top:0;left:0;width:100%;height:100%;object-fit:contain;background:#000;");
+    v.setAttribute(
+      "style",
+      "position:absolute;top:0;left:0;width:100%;height:100%;object-fit:contain;background:#000;",
+    );
     host.appendChild(v);
     return v;
   };
@@ -125,12 +128,25 @@
   let listener = {};
   let source = "";
   let hls = null;
+  let frameSample = null;
 
   /** Give back the decoder, whichever engine happens to be driving it. */
   const release = () => {
-    if (hls) { try { hls.destroy(); } catch { /* already gone */ } hls = null; }
+    frameSample = null;
+    if (hls) {
+      try {
+        hls.destroy();
+      } catch {
+        /* already gone */
+      }
+      hls = null;
+    }
     const v = document.getElementById("tv-video-el");
-    if (v) { v.pause(); v.removeAttribute("src"); v.load(); }
+    if (v) {
+      v.pause();
+      v.removeAttribute("src");
+      v.load();
+    }
   };
 
   const guard = (name) => {
@@ -150,11 +166,21 @@
         release();
         source = url;
         state = "IDLE";
-        hidePlugin();   // the surface is created just before this, on the first channel
+        hidePlugin(); // the surface is created just before this, on the first channel
         log("open", url);
       },
-      close() { guard("close"); release(); state = "NONE"; log("close"); },
-      stop() { guard("stop"); release(); state = "IDLE"; log("stop"); },
+      close() {
+        guard("close");
+        release();
+        state = "NONE";
+        log("close");
+      },
+      stop() {
+        guard("stop");
+        release();
+        state = "IDLE";
+        log("stop");
+      },
       setDisplayRect(x, y, w, h) {
         guard("setDisplayRect");
         /*
@@ -173,17 +199,34 @@
         const el = plane();
         if (el) {
           Object.assign(el.style, {
-            left: `${x * sx}px`, top: `${y * sy}px`,
-            width: `${w * sx}px`, height: `${h * sy}px`,
+            left: `${x * sx}px`,
+            top: `${y * sy}px`,
+            width: `${w * sx}px`,
+            height: `${h * sy}px`,
           });
         }
         log("setDisplayRect", x, y, w, h);
       },
-      setDisplayMethod(m) { guard("setDisplayMethod"); log("setDisplayMethod", m); },
-      setStreamingProperty(k, v) { guard("setStreamingProperty"); log("setStreamingProperty", k, v); },
-      setListener(l) { listener = l || {}; log("setListener"); },
-      suspend() { guard("suspend"); log("suspend"); },
-      restore() { guard("restore"); log("restore"); },
+      setDisplayMethod(m) {
+        guard("setDisplayMethod");
+        log("setDisplayMethod", m);
+      },
+      setStreamingProperty(k, v) {
+        guard("setStreamingProperty");
+        log("setStreamingProperty", k, v);
+      },
+      setListener(l) {
+        listener = l || {};
+        log("setListener");
+      },
+      suspend() {
+        guard("suspend");
+        log("suspend");
+      },
+      restore() {
+        guard("restore");
+        log("restore");
+      },
       /**
        * Join the stream for real, and report it the way the set would.
        *
@@ -193,7 +236,10 @@
       prepareAsync(ok, fail) {
         guard("prepareAsync");
         const v = video();
-        if (!v) { fail?.("PLAYER_ERROR_INVALID_STATE"); return; }
+        if (!v) {
+          fail?.("PLAYER_ERROR_INVALID_STATE");
+          return;
+        }
 
         listener.onbufferingstart?.();
         let settled = false;
@@ -202,19 +248,34 @@
           settled = true;
           state = "READY";
           listener.onbufferingcomplete?.();
-          try { ok?.(); } catch (e) { console.error(e); }
+          try {
+            ok?.();
+          } catch (e) {
+            console.error(e);
+          }
         };
         const failed = (why) => {
           if (settled) return;
           settled = true;
           log("prepare failed", why);
           listener.onerror?.(why);
-          try { fail?.(why); } catch { /* the app reports it */ }
+          try {
+            fail?.(why);
+          } catch {
+            /* the app reports it */
+          }
         };
 
         if (window.Hls && window.Hls.isSupported()) {
           hls = new window.Hls({ backBufferLength: 0, maxMaxBufferLength: 30 });
           hls.on(window.Hls.Events.MANIFEST_PARSED, ready);
+          hls.on(window.Hls.Events.LEVEL_SWITCHED, (_event, data) => {
+            const level = hls.levels[data.level];
+            listener.onevent?.(
+              "PLAYER_MSG_BITRATE_CHANGE",
+              String(level?.bitrate ?? data.level),
+            );
+          });
           hls.on(window.Hls.Events.ERROR, (_e, d) => {
             // Only a fatal error is a failure. Live playlists produce plenty that are not.
             if (d.fatal) failed(String(d.details));
@@ -224,7 +285,9 @@
         } else {
           v.src = source;
           v.addEventListener("loadedmetadata", ready, { once: true });
-          v.addEventListener("error", () => failed("PLAYER_ERROR_NOT_SUPPORTED_FILE"), { once: true });
+          v.addEventListener("error", () => failed("PLAYER_ERROR_NOT_SUPPORTED_FILE"), {
+            once: true,
+          });
         }
         v.addEventListener("waiting", () => listener.onbufferingstart?.());
         v.addEventListener("playing", () => listener.onbufferingcomplete?.());
@@ -233,16 +296,79 @@
       play() {
         guard("play");
         state = "PLAYING";
-        void video()?.play().catch((e) => log("play refused", e && e.name));
+        void video()
+          ?.play()
+          .catch((e) => log("play refused", e && e.name));
         log("play");
       },
-      pause() { guard("pause"); video()?.pause(); state = "PAUSED"; log("pause"); },
-      getCurrentTime() { return Math.round((video()?.currentTime ?? 0) * 1000); },
-      getDuration() { return Math.round((video()?.duration ?? 0) * 1000); },
-      seekTo(ms) { const v = video(); if (v) v.currentTime = ms / 1000; },
-      jumpForward(ms) { const v = video(); if (v) v.currentTime += ms / 1000; },
-      jumpBackward(ms) { const v = video(); if (v) v.currentTime -= ms / 1000; },
-      setTimeoutForBuffering(s) { log("setTimeoutForBuffering", s); },
+      pause() {
+        guard("pause");
+        video()?.pause();
+        state = "PAUSED";
+        log("pause");
+      },
+      getCurrentTime() {
+        return Math.round((video()?.currentTime ?? 0) * 1000);
+      },
+      getDuration() {
+        return Math.round((video()?.duration ?? 0) * 1000);
+      },
+      getCurrentStreamInfo() {
+        const v = video();
+        const levelIndex = hls ? Math.max(0, hls.currentLevel, hls.loadLevel) : -1;
+        const level = levelIndex >= 0 ? hls?.levels[levelIndex] : null;
+        const codecs = String(level?.attrs?.CODECS ?? "")
+          .split(",")
+          .map((codec) => codec.trim());
+        const videoCodec =
+          level?.videoCodec ??
+          codecs.find((codec) => /^(avc|hvc|hev|vp0|av01)/i.test(codec)) ??
+          "";
+        const audioCodec =
+          level?.audioCodec ??
+          codecs.find((codec) => /^(mp4a|ac-3|ec-3|opus)/i.test(codec)) ??
+          "";
+        const tracks = [];
+        if (v?.videoWidth || level?.width) {
+          tracks.push({
+            index: 0,
+            type: "VIDEO",
+            extra_info: JSON.stringify({
+              Width: v?.videoWidth || level?.width,
+              Height: v?.videoHeight || level?.height,
+              FourCC: videoCodec,
+              Bit_rate: level?.bitrate,
+              Frame_rate: level?.frameRate,
+            }),
+          });
+        }
+        if (audioCodec) {
+          tracks.push({
+            index: 1,
+            type: "AUDIO",
+            extra_info: JSON.stringify({ FourCC: audioCodec }),
+          });
+        }
+        return tracks;
+      },
+      getVideoSeamlessInfo() {
+        return { scan_type: 1, rotation_degree: 0 };
+      },
+      seekTo(ms) {
+        const v = video();
+        if (v) v.currentTime = ms / 1000;
+      },
+      jumpForward(ms) {
+        const v = video();
+        if (v) v.currentTime += ms / 1000;
+      },
+      jumpBackward(ms) {
+        const v = video();
+        if (v) v.currentTime -= ms / 1000;
+      },
+      setTimeoutForBuffering(s) {
+        log("setTimeoutForBuffering", s);
+      },
       /** Enough of the read only properties for the app's live timeline to work. */
       getStreamingProperty(key) {
         const v = video();
@@ -253,6 +379,41 @@
           return `${Math.round(seekable.start(0) * 1000)}|${Math.round(seekable.end(seekable.length - 1) * 1000)}`;
         }
         if (key === "CURRENT_BANDWIDTH") return String(hls?.bandwidthEstimate ?? 0);
+        if (key === "AVAILABLE_BITRATE")
+          return (hls?.levels ?? [])
+            .map((level) => level.bitrate)
+            .filter(Boolean)
+            .join("|");
+        if (key === "CURRENT_LEVEL")
+          return hls?.currentLevel >= 0 ? String(hls.currentLevel + 1) : "";
+        if (key === "BUFFER_AHEAD") {
+          if (!v) return "";
+          for (let index = 0; index < v.buffered.length; index += 1) {
+            if (
+              v.buffered.start(index) <= v.currentTime &&
+              v.buffered.end(index) >= v.currentTime
+            )
+              return String(Math.max(0, v.buffered.end(index) - v.currentTime));
+          }
+          return "";
+        }
+        if (key === "FRAME_RATE") {
+          const quality = v?.getVideoPlaybackQuality?.();
+          const total = quality?.totalVideoFrames ?? v?.webkitDecodedFrameCount;
+          const now = performance.now();
+          const rate =
+            frameSample && total >= frameSample.total && now > frameSample.at
+              ? ((total - frameSample.total) * 1000) / (now - frameSample.at)
+              : 0;
+          if (Number.isFinite(total)) frameSample = { total, at: now };
+          return rate > 0 ? rate.toFixed(1) : "";
+        }
+        if (key === "TOTAL_FRAMES" || key === "DROPPED_FRAMES") {
+          const quality = v?.getVideoPlaybackQuality?.();
+          if (key === "TOTAL_FRAMES")
+            return String(quality?.totalVideoFrames ?? v?.webkitDecodedFrameCount ?? "");
+          return String(quality?.droppedVideoFrames ?? v?.webkitDroppedFrameCount ?? "");
+        }
         return "";
       },
     },
@@ -270,7 +431,9 @@
       isMute: () => audioMuted,
     },
     tvinputdevice: {
-      registerKey: (name) => { registered.add(name); },
+      registerKey: (name) => {
+        registered.add(name);
+      },
       getKey: (name) => ({ name }),
     },
     application: {
@@ -282,6 +445,9 @@
     hidePlugin();
     plane();
     // After the app has mounted and asked for its keys, not before.
-    setTimeout(() => log(`ready. ${registered.size} remote keys:`, [...registered].join(", ")), 1500);
+    setTimeout(
+      () => log(`ready. ${registered.size} remote keys:`, [...registered].join(", ")),
+      1500,
+    );
   });
 })();
