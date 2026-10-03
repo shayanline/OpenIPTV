@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { useLocale } from "../hooks/useLocale";
 import { useSettings } from "../stores/settings";
 import { useSetup } from "../stores/setup";
@@ -53,10 +53,12 @@ export function Onboarding({
   onOpenPairing?: () => PairingSessionView | null;
   showRemoteSetup?: boolean;
 }) {
-  const { t } = useLocale();
+  const { t, direction } = useLocale();
   const settings = useSettings();
   const box = useRef<HTMLDivElement>(null);
   const first = useRef<HTMLInputElement>(null);
+  const m3uButton = useRef<HTMLButtonElement>(null);
+  const xtreamButton = useRef<HTMLButtonElement>(null);
   const { move } = useSpatialNav(box, true);
   const { name, source, set: setSetup } = useSetup();
   const [problem, setProblem] = useState<MessageKey | "">("");
@@ -69,6 +71,23 @@ export function Onboarding({
   useEffect(() => {
     first.current?.focus();
   }, []);
+
+  const moveFromSource = (event: ReactKeyboardEvent<HTMLButtonElement>) => {
+    const inlineStart = direction === "rtl" ? KEY.RIGHT : KEY.LEFT;
+    const inlineEnd = direction === "rtl" ? KEY.LEFT : KEY.RIGHT;
+    if (event.keyCode === inlineStart || event.keyCode === inlineEnd) {
+      event.preventDefault();
+      event.stopPropagation();
+      if (event.keyCode === inlineStart) m3uButton.current?.focus();
+      else xtreamButton.current?.focus();
+      return;
+    }
+    if (event.keyCode === KEY.DOWN) {
+      event.preventDefault();
+      event.stopPropagation();
+      box.current?.querySelector<HTMLInputElement>("#ob-url, #ob-server")?.focus();
+    }
+  };
 
   const submit = () => {
     if (source.kind === "m3u") {
@@ -140,9 +159,11 @@ export function Onboarding({
             <div className="form">
               <div className="playlist-source-options">
                 <button
+                  ref={m3uButton}
                   type="button"
                   className="btn tonal"
                   aria-pressed={source.kind === "m3u"}
+                  onKeyDown={moveFromSource}
                   onClick={() => {
                     setSetup({ name, source: { kind: "m3u", url: "" } });
                     setProblem("");
@@ -151,9 +172,11 @@ export function Onboarding({
                   <span>{t("onboarding.m3uPlaylist")}</span>
                 </button>
                 <button
+                  ref={xtreamButton}
                   type="button"
                   className="btn tonal"
                   aria-pressed={source.kind === "xtream"}
+                  onKeyDown={moveFromSource}
                   onClick={() => {
                     setSetup({
                       name,

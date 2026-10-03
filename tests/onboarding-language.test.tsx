@@ -64,6 +64,22 @@ test("M3U setup keeps the specific address guidance", () => {
   expect(onAdd).not.toHaveBeenCalled();
 });
 
+test("source buttons own physical arrow navigation on the welcome screen", () => {
+  render(<Onboarding onAdd={() => {}} onExit={() => {}} />);
+  const m3u = screen.getByRole("button", { name: "M3U playlist" });
+  const xtream = screen.getByRole("button", { name: "Xtream login" });
+
+  m3u.focus();
+  fireEvent.keyDown(m3u, { keyCode: KEY.RIGHT });
+  expect(document.activeElement).toBe(xtream);
+  fireEvent.keyDown(xtream, { keyCode: KEY.ENTER });
+  expect(screen.getByLabelText("Server address")).toBeTruthy();
+  fireEvent.keyDown(screen.getByRole("button", { name: "Xtream login" }), {
+    keyCode: KEY.DOWN,
+  });
+  expect(document.activeElement).toBe(screen.getByLabelText("Server address"));
+});
+
 test("M3U stays the default and Xtream login submits a typed source", () => {
   const added: { name: string; source: PlaylistSource }[] = [];
   render(
