@@ -2809,24 +2809,6 @@ export default function App() {
     [pickChannel, pickResult],
   );
 
-  /**
-   * Where the playing channel sits in the list channel up and down walks.
-   *
-   * On the banner, so the scope of the next press is visible rather than something to be
-   * discovered by pressing it. "4 of 23 in Satellite - News" also answers why channel up
-   * came back round to the first channel instead of going to the next number.
-   */
-  const position = useMemo(() => {
-    const shown = tuner.shown;
-    if (!shown) return undefined;
-    const at = visible.findIndex((c) => c.id === shown.id);
-    if (at === -1) return undefined;
-    return {
-      at: at + 1,
-      of: visible.length,
-      list: displayListName(lists[category]),
-    };
-  }, [tuner.shown, visible, lists, category, t]);
   const bannerChannel =
     tuner.shown?.mode === "live"
       ? channels.find((channel) => channel.id === tuner.shown?.id)
@@ -2939,7 +2921,6 @@ export default function App() {
         ) : bannerChannel ? (
           <PlaybackBanner
             channel={bannerChannel}
-            position={position}
             programme={{
               current: bannerGuide?.current?.title,
               next: bannerGuide?.next?.title,

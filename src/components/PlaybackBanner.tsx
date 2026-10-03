@@ -44,8 +44,6 @@ export const clock = (seconds: number): string => {
 };
 
 type PlaybackBannerProps = {
-  /** Where this channel sits in the list channel up and down walks. */
-  position?: { at: number; of: number; list: string };
   elapsed?: number | null;
   duration?: number | null;
   programme?: { current?: string; next?: string };
@@ -54,12 +52,11 @@ type PlaybackBannerProps = {
 export function PlaybackBanner({
   channel,
   target,
-  position,
   elapsed,
   duration,
   programme,
 }: PlaybackBannerProps) {
-  const { t, number, direction } = useLocale();
+  const { t, direction } = useLocale();
   const item = target ?? channel;
   const finite = target?.mode === "finite";
   const inlineEndArrow = direction === "rtl" ? "←" : "→";
@@ -82,22 +79,11 @@ export function PlaybackBanner({
           <Text value={displayName} className="pb-title" />
           <span className="pb-meta">
             {channel?.quality && <span className="pb-quality">{channel.quality}</span>}
-            {/* The list channel up and down walks, and where in it this channel is, so the
-                scope of the next press is stated rather than discovered. */}
             {finite && elapsed !== null && elapsed !== undefined && duration ? (
               <Text
                 value={t("banner.finiteTime", {
                   elapsed: clock(elapsed),
                   duration: clock(duration),
-                })}
-                className="pb-group"
-              />
-            ) : position ? (
-              <Text
-                value={t("banner.position", {
-                  at: number(position.at),
-                  of: number(position.of),
-                  list: position.list,
                 })}
                 className="pb-group"
               />

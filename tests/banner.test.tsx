@@ -154,6 +154,13 @@ test("a Farsi only channel title stays aligned with the LTR banner", async () =>
   assert.equal(getComputedStyle(title).textAlign, "left");
 });
 
+test("the live banner shows only the category name", async () => {
+  await mountApp(PLAYLIST);
+  press(KEY.ENTER);
+
+  assert.equal(document.querySelector(".pb-group")?.textContent, "News");
+});
+
 test("the banner goes away on its own after a channel starts", async () => {
   await mountApp(PLAYLIST, { slowPicture: 300 });
   press(KEY.ENTER);
