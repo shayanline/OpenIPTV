@@ -56,6 +56,7 @@ export function Onboarding({
   const { t, direction } = useLocale();
   const settings = useSettings();
   const box = useRef<HTMLDivElement>(null);
+  const manual = useRef<HTMLElement>(null);
   const first = useRef<HTMLInputElement>(null);
   const m3uButton = useRef<HTMLButtonElement>(null);
   const xtreamButton = useRef<HTMLButtonElement>(null);
@@ -72,6 +73,29 @@ export function Onboarding({
     first.current?.focus();
   }, []);
 
+  const moveWelcomeVertical = (code: number) => {
+    const container = manual.current;
+    if (!container) return false;
+    const sources = Array.from(
+      container.querySelectorAll<HTMLButtonElement>(".playlist-source-options button"),
+    );
+    const selectedSource =
+      sources.find((button) => button.getAttribute("aria-pressed") === "true") ?? sources[0];
+    const active = document.activeElement as HTMLElement | null;
+    const sourceFocus = sources.includes(active as HTMLButtonElement) ? active : selectedSource;
+    const remaining = Array.from(
+      container.querySelectorAll<HTMLElement>(
+        "button:not([hidden]):not([disabled]):not([tabindex='-1']), input:not([hidden]):not([disabled]):not([tabindex='-1'])",
+      ),
+    ).filter((element) => !sources.includes(element as HTMLButtonElement));
+    const ordered = sourceFocus ? [sourceFocus, ...remaining] : remaining;
+    if (!ordered.length) return false;
+    const current = Math.max(0, ordered.indexOf(active as HTMLElement));
+    const delta = code === KEY.DOWN ? 1 : -1;
+    ordered[(current + delta + ordered.length) % ordered.length].focus();
+    return true;
+  };
+
   const moveFromSource = (event: ReactKeyboardEvent<HTMLButtonElement>) => {
     const inlineStart = direction === "rtl" ? KEY.RIGHT : KEY.LEFT;
     const inlineEnd = direction === "rtl" ? KEY.LEFT : KEY.RIGHT;
@@ -85,7 +109,7 @@ export function Onboarding({
     if (event.keyCode === KEY.DOWN) {
       event.preventDefault();
       event.stopPropagation();
-      box.current?.querySelector<HTMLInputElement>("#ob-url, #ob-server")?.focus();
+      moveWelcomeVertical(KEY.DOWN);
     }
   };
 
@@ -142,6 +166,15 @@ export function Onboarding({
       return;
     }
     if (typing && code !== KEY.UP && code !== KEY.DOWN) return;
+    if (
+      (code === KEY.UP || code === KEY.DOWN) &&
+      active instanceof HTMLElement &&
+      manual.current?.contains(active)
+    ) {
+      event.preventDefault();
+      moveWelcomeVertical(code);
+      return;
+    }
     if ([KEY.UP, KEY.DOWN, KEY.LEFT, KEY.RIGHT].includes(code as never)) {
       event.preventDefault();
       move(code);
@@ -152,7 +185,7 @@ export function Onboarding({
     <div className="onboard">
       <div className="onboard-box" ref={box}>
         <div className={showRemoteSetup ? "onboard-split" : "onboard-single"}>
-          <section className="onboard-manual">
+          <section className="onboard-manual" ref={manual}>
             <h1>OpenIPTV</h1>
             <p className="lead">{t("onboarding.description")}</p>
 

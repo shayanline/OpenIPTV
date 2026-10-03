@@ -78,6 +78,21 @@ test("source buttons own physical arrow navigation on the welcome screen", () =>
     keyCode: KEY.DOWN,
   });
   expect(document.activeElement).toBe(screen.getByLabelText("Server address"));
+
+  for (const label of ["Username", "Password", "Stream format", "Name it (optional)"]) {
+    fireEvent.keyDown(document.activeElement!, { keyCode: KEY.DOWN });
+    expect(document.activeElement).toBe(screen.getByLabelText(label));
+  }
+  fireEvent.keyDown(document.activeElement!, { keyCode: KEY.DOWN });
+  expect(document.activeElement).toBe(
+    screen.getByRole("button", { name: "Language, English" }),
+  );
+  fireEvent.keyDown(document.activeElement!, { keyCode: KEY.DOWN });
+  expect(document.activeElement).toBe(screen.getByRole("button", { name: "Xtream login" }));
+  fireEvent.keyDown(document.activeElement!, { keyCode: KEY.UP });
+  expect(document.activeElement).toBe(
+    screen.getByRole("button", { name: "Language, English" }),
+  );
 });
 
 test("M3U stays the default and Xtream login submits a typed source", () => {
