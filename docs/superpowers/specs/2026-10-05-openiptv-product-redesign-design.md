@@ -106,9 +106,11 @@ Guide, Audio, Subtitles and More drawers keep all direction input inside the dra
 
 ### VOD browsing
 
-The VOD header, category rail and poster grid each own one cursor. Inline start from the first poster enters the category rail. Inline end from the category rail enters the remembered grid position. Physical directions mirror in right to left layouts. Up from the first grid row enters the shared header. Down returns from the header to the selected category rather than an uncommitted rail cursor.
+The VOD header, category rail and poster grid each own one cursor. Category selection follows the rail cursor, so each Up or Down movement updates the selected category immediately without requiring OK. The category highlight moves on the key press, while catalogue loading and grid replacement follow after the existing 150 millisecond settle interval. Holding a direction therefore selects only the category where movement stops.
 
-OK on a category selects it and enters its grid when that category contains posters. An empty category keeps focus on its rail row and presents a nonfocus empty message in the catalogue region. A failed category keeps focus on the rail and exposes Retry as the only focusable item in the failed region. OK on a poster opens details. Back from details restores the exact origin surface and item, including search results. Back from search restores the previous category and poster. Back from the VOD root returns to the Live picture.
+Inline start from the first poster enters the selected category row. Inline end or OK from the category rail enters the remembered grid position when that category contains posters. Physical directions mirror in right to left layouts. Up from the first grid row enters the shared header. Down returns from the header to the selected category.
+
+An empty category keeps focus on its rail row and presents a nonfocus empty message in the catalogue region. A failed category keeps focus on the rail and exposes Retry as the only focusable item in the failed region. OK on a poster opens details. Back from details restores the exact origin surface and item, including search results. Back from search restores the previous category and poster. Back from the VOD root returns to the Live picture.
 
 Every VOD action is also available through pointer click. Pointer movement does not steal remote focus until a control is clicked. Wheel movement changes grid rows or episode rows through the same cursor state and cannot bypass windowing.
 
@@ -138,7 +140,7 @@ The core roles remain:
 --line: rgba(255, 255, 255, 0.09);
 ```
 
-Focus uses a solid white surface or white outline and a visible halo appropriate to the control. Selected state never substitutes for focus. A selected category uses accent tint and a blue marker while the focused poster uses a white outline.
+Focus uses a solid white surface or white outline and a visible halo appropriate to the control. Selected state never substitutes for focus. A selected VOD category uses accent tint without a second leading marker, while the focused poster uses a white outline.
 
 No text appears below the existing twenty pixel television caption floor at 1920 by 1080. The implementation uses the existing font scale and available 400 and 600 weights. Text line spacing stays between 1.2 and 1.4 times the font size.
 
