@@ -7,9 +7,10 @@ import {
   checkPlaylistUrl,
   m3uSource,
   nameFromUrl,
-  parseXtreamPlaylistUrl,
+  parseXtreamTemplateUrl,
   sourceDisplay,
   type XtreamOutput,
+  xtreamFromServerField,
   xtreamSource,
 } from "../../services/playlistUrl";
 import type { MessageKey } from "../../services/locale";
@@ -471,7 +472,7 @@ export function Playlists({
   const [problem, setProblem] = useState<MessageKey | "">("");
   const [dismissedXtreamUrl, setDismissedXtreamUrl] = useState("");
   const suggestedXtream =
-    source === "m3u" && url !== dismissedXtreamUrl ? parseXtreamPlaylistUrl(url, "m3u8") : null;
+    source === "m3u" && url !== dismissedXtreamUrl ? parseXtreamTemplateUrl(url, "m3u8") : null;
   /** Which playlist has been asked about but not yet confirmed for removal. */
   const [confirming, setConfirming] = useState("");
   const [managing, setManaging] = useState("");
@@ -726,9 +727,12 @@ export function Playlists({
                 spellCheck={false}
                 dir="ltr"
                 onChange={(event) => {
-                  const parsed = parseXtreamPlaylistUrl(event.target.value, "m3u8");
-                  if (parsed) applyXtream(parsed);
-                  else setServer(event.target.value);
+                  applyXtream(
+                    xtreamFromServerField(
+                      { kind: "xtream", server, username, password, output },
+                      event.target.value,
+                    ),
+                  );
                 }}
               />
               <label htmlFor="pl-username">{t("onboarding.username")}</label>

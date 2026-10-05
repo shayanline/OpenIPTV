@@ -1,6 +1,7 @@
 import { useRef, useState } from "react";
 import { useLocale } from "../hooks/useLocale";
 import { KEY, sendKey } from "../hooks/useRemote";
+import { readJSON, write } from "../services/store";
 import { Icon } from "./Icon";
 
 /**
@@ -29,9 +30,27 @@ const EDGE = 56;
 const WIDTH = 208;
 const HEIGHT = 284;
 
+const limit = (value: number, span: number, max: number) =>
+  Math.max(EDGE, Math.min(value, max - span - EDGE));
+
+/**
+ * Where the pad was left last time, from localStorage rather than settings: a remembered
+ * position is not a choice the viewer made. It is clamped against the window as it is now,
+ * since it can be smaller than when the position was written, and a pad parked off screen
+ * is worse than one back at its default edge.
+ */
+function restored(): { x: number; y: number } | null {
+  const at = readJSON<{ x?: unknown; y?: unknown } | null>("openiptv.pad", null);
+  if (typeof at?.x !== "number" || typeof at?.y !== "number") return null;
+  return {
+    x: limit(at.x, WIDTH, window.innerWidth),
+    y: limit(at.y, HEIGHT, window.innerHeight),
+  };
+}
+
 export function PointerPad({ shown }: { shown: boolean }) {
   const { t } = useLocale();
-  const [at, setAt] = useState<{ x: number; y: number } | null>(null);
+  const [at, setAt] = useState<{ x: number; y: number } | null>(restored);
   const drag = useRef<{ dx: number; dy: number } | null>(null);
   const shell = useRef<HTMLDivElement>(null);
 
@@ -46,8 +65,6 @@ export function PointerPad({ shown }: { shown: boolean }) {
 
   const move = (e: React.PointerEvent) => {
     if (!drag.current) return;
-    const limit = (value: number, span: number, max: number) =>
-      Math.max(EDGE, Math.min(value, max - span - EDGE));
     setAt({
       x: limit(e.clientX - drag.current.dx, WIDTH, window.innerWidth),
       y: limit(e.clientY - drag.current.dy, HEIGHT, window.innerHeight),
@@ -55,8 +72,12 @@ export function PointerPad({ shown }: { shown: boolean }) {
   };
 
   const end = (e: React.PointerEvent) => {
+    // A pointerup that was never a drag, such as a button press on the pad, is not worth
+    // a write.
+    if (!drag.current) return;
     drag.current = null;
     shell.current?.releasePointerCapture(e.pointerId);
+    if (at) write("openiptv.pad", JSON.stringify(at));
   };
 
   if (!shown) return null;

@@ -1840,22 +1840,30 @@ html[dir="rtl"] .playback-info {
   color: var(--text-3);
   font-size: var(--t-caption);
 }
-.onboard-language {
+.onboard-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-top: var(--s3);
+  padding-bottom: var(--s2);
+  margin-bottom: var(--s3);
+  border-bottom: 1px solid var(--line);
+}
+.onboard-head h1 {
+  margin-bottom: 0;
+}
+.onboard-language {
+  display: inline-flex;
+  align-items: center;
 }
 .onboard-language-label {
+  display: inline-flex;
+  align-items: center;
+  margin-right: var(--s2);
   color: var(--text-2);
   font-size: var(--t-label);
 }
-.onboard-language-options {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: var(--s1);
-  max-width: 820px;
+.onboard-language-label .icon {
+  margin-right: var(--s1);
 }
 .option-picker {
   position: relative;
@@ -2873,6 +2881,7 @@ html[dir="rtl"] .form select {
   color: var(--text-3);
 }
 .diag-value {
+  flex: 1;
   min-width: 0;
   color: var(--text);
   text-align: end;
@@ -4284,6 +4293,14 @@ html[dir="rtl"] .onboard-manual,
 html[dir="rtl"] .remote-setup {
   direction: rtl;
 }
+html[dir="rtl"] .onboard-language-label {
+  margin-right: 0;
+  margin-left: var(--s2);
+}
+html[dir="rtl"] .onboard-language-label .icon {
+  margin-right: 0;
+  margin-left: var(--s1);
+}
 html[dir="rtl"] .remote-status.listening::before {
   margin-right: 0;
   margin-left: var(--s1);
@@ -4480,13 +4497,6 @@ html[dir="rtl"] .no-flex-gap .hints.sheet-hints > * + * {
   margin-top: var(--s1);
 }
 html[dir="rtl"] .no-flex-gap .field-control > * + * {
-  margin-left: 0;
-  margin-right: var(--s1);
-}
-.no-flex-gap .onboard-language-options > * + * {
-  margin-left: var(--s1);
-}
-html[dir="rtl"] .no-flex-gap .onboard-language-options > * + * {
   margin-left: 0;
   margin-right: var(--s1);
 }

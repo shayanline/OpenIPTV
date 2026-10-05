@@ -80,6 +80,13 @@ const paths: Record<string, React.ReactNode> = {
       <path d="M8 13h.01M12 13h.01M16 13h.01M8 17h.01M12 17h.01M16 17h.01" />
     </>
   ),
+  language: (
+    <>
+      <circle cx="12" cy="12" r="10" />
+      <path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20" />
+      <path d="M2 12h20" />
+    </>
+  ),
   more: (
     <>
       <circle cx="12" cy="12" r="1" />
