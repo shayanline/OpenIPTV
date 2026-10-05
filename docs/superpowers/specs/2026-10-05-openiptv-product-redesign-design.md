@@ -379,15 +379,23 @@ Adding a favourite updates the details action, poster badge, Favourites count an
 
 ## Series Details
 
-Series details keep the hero, metadata, synopsis and favourite action on one screen. A season selector and episode list occupy the same screen instead of creating one screen per season.
+Series details use one coordinated screen with a hero, metadata, synopsis, one series Favourite action, one Continue series shortcut, a season selector, a windowed episode list and an inline episode action tray. Episode playback actions belong to the episode selection area rather than the series hero.
 
-The series action stack, season selector and episode list each own one cursor. Inline end from the action stack enters the remembered episode. Inline start from the episode list returns to the remembered action. Up from the first episode enters the season selector. Down from a season returns to its remembered episode.
+The Continue shortcut resolves the latest resumable episode and labels it explicitly, such as Continue S1:E3, 24 min left. When the last watched episode is complete it resolves the next episode. When no progress exists it becomes Play S1:E1 or the first playable provider episode. When the complete series is watched it falls back to the first playable episode.
 
-The season selector is an ordered horizontal row. The episode list is windowed vertically and shows episode number, title, duration, progress and provider episode rating when present. Episode plot, release date and image appear in the focused episode detail region when supplied. Changing season restores the remembered episode for that season where it remains valid.
+The hero action stack, season selector, episode list and episode tray each own one cursor. Inline end from the hero enters the remembered episode. Inline start from the episode list returns to the remembered hero action. Up from the first episode enters the season selector. Down from a season returns to its remembered episode.
 
-A series with resumable progress shows Resume next episode or Resume episode as the primary action. Episode selection opens actions for Resume or Play and Start from beginning where progress exists. Favouriting applies to the parent series rather than an individual episode.
+Season focus is a preview cursor. Left and Right move the white focus without reloading episodes. OK commits the blue selected season, closes any episode tray and restores that season's remembered episode. A single unnumbered season hides the season row.
 
-Back from an episode action returns to the episode. Back from series details returns to the exact series poster or search result. No episode or season surface contains an unreachable static action.
+Episode selection follows episode focus. The current Continue target also carries a compact persistent blue Up next marker and watched progress, which remain distinct from white focus. Episode rows show number, title, duration, progress and provider rating when present. Episode plot, release date and image appear in the focused episode detail region when supplied.
+
+OK on an episode opens an inline action tray and focuses its primary action. An episode with progress shows Resume S1:E3 from 24:18 followed by Start S1:E3 from beginning. An episode without progress shows one Play S1:E4 action. Back closes the tray and restores the same episode. The highlighted episode keeps a restrained blue border while the tray owns focus.
+
+The episode reference uses `S{season}:E{episode}` when both values exist. With only episode number it uses Episode 3. With only season it uses Season 1 selected episode. With neither it uses selected episode. Missing display numbers never produce `S0:E0` and do not prevent playback when the episode has a playable provider id or valid direct source.
+
+Favouriting applies to the parent series rather than an individual episode. Back from series details returns to the exact series poster or search result. A season with no episodes keeps focus on its season pill and shows a nonfocus No episodes available message. A failed season exposes Retry in the episode region while the season row stays reachable.
+
+Series hero and tray actions use rounded tonal buttons without decorative outlines. White fill and the shared halo identify the one focused action. Buttons use the existing 8 pixel rhythm, a restrained pressed scale and no ambient animation. The episode panel uses `--over-video`, a soft surface radius, one hairline and the existing elevation rather than blur or stacked shadows. Reduced motion removes the pressed transform.
 
 ## VOD Loading and Performance
 
@@ -410,7 +418,9 @@ type ResolvedPlaybackProgress = {
   itemKey: string;
   playlistId: string;
   kind: "movie" | "episode" | "catchup";
-  providerId: string;
+  providerId?: string;
+  episodeIdentity?: string;
+  directSourceFingerprint?: string;
   categoryKey: string;
   extension?: string;
   seconds: number;
@@ -435,7 +445,9 @@ type LegacyPlaybackProgress = {
 type PlaybackProgress = ResolvedPlaybackProgress | LegacyPlaybackProgress;
 ```
 
-Progress remains bounded to 100 finite items. Continue watching renders only resolved movie or episode records. A movie or episode is resolved only when provider id, category key and container extension are available. Episode records present the parent series once and carry the provider id and extension needed to resume the latest episode directly. Catchup progress remains available from Guide while the archive target is valid and does not appear in Continue watching.
+Progress remains bounded to 100 finite items. Continue watching renders only resolved movie or episode records. A movie is resolved when provider id and category key are available. An episode is resolved when category key and either provider id or a stable direct source fingerprint are available. Container extension is optional because generated playback paths omit the dot when it is absent.
+
+Episode records present the parent series once and persist the same `episodeIdentity` fallback chain used during parsing. A record with provider id may resume directly. A record using direct source fingerprint first loads its series detail, matches the fingerprint and retrieves the current raw address before playback. An idless episode without provider id or valid direct source remains readable in the current detail session but exposes no Play action and never creates persistent progress. Catchup progress remains available from Guide while the archive target is valid and does not appear in Continue watching.
 
 Existing records become legacy entries with their persisted index as `legacyOrder`. Migration captures one base time and a resolved legacy entry receives `updatedAt = baseTime - (legacyCount - legacyOrder) * 1000`, which preserves prior order without making an old item newer than subsequent activity. Movie entries resolve when the whole movie index loads. Episode entries resolve when a loaded series detail contains the episode because the provider has no episode lookup endpoint. Unresolved entries do not render, remain bounded and are removed when their playlist is deleted, their account is replaced, application data is reset or a loaded authoritative catalogue proves the item absent.
 
