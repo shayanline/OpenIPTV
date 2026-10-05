@@ -8,12 +8,14 @@ import {
   checkPlaylistUrl,
   m3uSource,
   nameFromUrl,
-  parseXtreamPlaylistUrl,
+  parseXtreamTemplateUrl,
   type PlaylistSource,
   sourceDisplay,
+  xtreamFromServerField,
   xtreamSource,
 } from "../services/playlistUrl";
 import type { MessageKey } from "../services/locale";
+import { Icon } from "./Icon";
 import { LanguagePicker } from "./LanguagePicker";
 import { OptionPicker } from "./OptionPicker";
 import { KeyGuide } from "./KeyGuide";
@@ -68,7 +70,7 @@ export function Onboarding({
   const url = source.kind === "m3u" ? source.url : "";
   const suggestedXtream =
     source.kind === "m3u" && source.url !== dismissedXtreamUrl
-      ? parseXtreamPlaylistUrl(source.url, "m3u8")
+      ? parseXtreamTemplateUrl(source.url, "m3u8")
       : null;
   const server = source.kind === "xtream" ? source.server : "";
   const username = source.kind === "xtream" ? source.username : "";
@@ -89,12 +91,13 @@ export function Onboarding({
       sources.find((button) => button.getAttribute("aria-pressed") === "true") ?? sources[0];
     const active = document.activeElement as HTMLElement | null;
     const sourceFocus = sources.includes(active as HTMLButtonElement) ? active : selectedSource;
-    const remaining = Array.from(
+    const ordered = Array.from(
       container.querySelectorAll<HTMLElement>(
         "button:not([hidden]):not([disabled]):not([tabindex='-1']), input:not([hidden]):not([disabled]):not([tabindex='-1'])",
       ),
-    ).filter((element) => !sources.includes(element as HTMLButtonElement));
-    const ordered = sourceFocus ? [sourceFocus, ...remaining] : remaining;
+    ).filter(
+      (element) => !sources.includes(element as HTMLButtonElement) || element === sourceFocus,
+    );
     if (!ordered.length) return false;
     const current = Math.max(0, ordered.indexOf(active as HTMLElement));
     const delta = code === KEY.DOWN ? 1 : -1;
@@ -208,7 +211,19 @@ export function Onboarding({
             ref={manual}
             onKeyDownCapture={captureWelcomeVertical}
           >
-            <h1>OpenIPTV</h1>
+            <header className="onboard-head">
+              <h1>OpenIPTV</h1>
+              <div className="onboard-language">
+                <span className="onboard-language-label">
+                  <Icon name="language" />
+                  {t("settings.language")}
+                </span>
+                <LanguagePicker
+                  value={settings.locale}
+                  onChange={(id) => settings.set("locale", id)}
+                />
+              </div>
+            </header>
             <p className="lead">{t("onboarding.description")}</p>
 
             <div className="form">
@@ -300,10 +315,7 @@ export function Onboarding({
                     onChange={(event) => {
                       setSetup({
                         name,
-                        source: parseXtreamPlaylistUrl(event.target.value, "m3u8") ?? {
-                          ...source,
-                          server: event.target.value,
-                        },
+                        source: xtreamFromServerField(source, event.target.value),
                       });
                       setProblem("");
                     }}
@@ -356,16 +368,6 @@ export function Onboarding({
                 placeholder={t("onboarding.takenFromAddress")}
                 onChange={(e) => setSetup({ name: e.target.value, source })}
               />
-            </div>
-
-            <div className="onboard-language">
-              <span className="onboard-language-label">{t("settings.language")}</span>
-              <div className="onboard-language-options">
-                <LanguagePicker
-                  value={settings.locale}
-                  onChange={(id) => settings.set("locale", id)}
-                />
-              </div>
             </div>
 
             <button
