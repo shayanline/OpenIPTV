@@ -211,7 +211,7 @@ Previous and Next retain their positions in the centred finite transport group. 
 
 The leading context action is Details for finite content and Guide for Live content. Audio, Subtitles and More retain stable trailing positions across content kinds. Controls that have no supported action are omitted rather than displayed as inactive decoration, except Previous and Next whose disabled position preserves transport geometry.
 
-A subtle `--line` hairline spans the full inner width of the playback surface and separates metadata from every displayed seek bar. The seek bar has no enclosing border. Focus increases track thickness, enlarges the white thumb, adds a restrained halo and displays a floating target time. Blue remains the playback state rather than the focus colour.
+A subtle `--line` hairline spans the full inner width of the playback surface and separates metadata from the interactive region. It sits above the seek bar when one exists and above the controls when no seek bar exists. The seek bar has no enclosing border. Focus increases track thickness, enlarges the white thumb, adds a restrained halo and displays a floating target time. Blue remains the playback state rather than the focus colour.
 
 ## Audio and Subtitle Tracks
 
