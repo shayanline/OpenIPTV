@@ -2,6 +2,19 @@
 
 Notable changes, newest first, in the format of [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## 1.9.3
+
+### Changed
+
+- **Localized typography.** Each writing system now uses a font designed for it: Google Sans for the Latin, Cyrillic, Bengali and Devanagari interfaces, Vazirmatn for Arabic and Persian, and the regional Noto Sans faces for Simplified Chinese, Japanese and Korean. The family follows the interface language, so changing language changes the font without reloading.
+- **Complete Chinese, Japanese and Korean coverage.** Those three families carry their full Han, Kana and Hangul ranges rather than only the characters the translations use, so a channel or category name written in one of them renders in the same font as the interface around it. The bundled faces total 15 MB and ship inside the widget, so nothing is fetched while the application runs.
+- **Remote interface typography.** A paired device uses the same family for its language as the television does, where before it used Vazirmatn for every language.
+
+### Fixed
+
+- **Fonts served to paired devices.** The management server read each font file as text and reencoded it, which corrupted every file it sent and left the remote interface on whatever font the device already had.
+- **Headings and controls.** Section titles, labels, strong text and native controls take the selected family instead of the browser default.
+
 ## 1.9.2
 
 ### Fixed
