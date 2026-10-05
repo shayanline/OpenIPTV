@@ -61,14 +61,28 @@ OpenIPTV does not provide recording management or provider administration.
 
 OpenIPTV supports Samsung TVs from 2020 onwards, running Tizen 5.5 or later. The television and computer used for installation must share the same local network.
 
-> [!TIP]
-> **[TizenBrew Installer Desktop](#install-with-tizenbrew) is the easiest installation route.** It downloads the latest OpenIPTV release and guides you through installation.
+Two installers can put OpenIPTV on a television, and both start with [Prepare the television](#prepare-the-television).
+
+| Installer | Runs on | Worth knowing |
+|:--|:--|:--|
+| **[Apps2Samsung](#install-with-apps2samsung)** | Windows, macOS, and Linux, with an Android application as well | Signs the widget for the connected television on every supported Tizen version. You download the release yourself. |
+| **[TizenBrew Installer Desktop](#install-with-tizenbrew)** | Windows, macOS, and Linux | Reads this repository and fetches the release for you, so there is no file to find. |
 
 ### Prepare the television
 
 1. Open Apps and press `12345` on the remote.
 2. Turn Developer mode on and enter the computer's IP address.
-3. Restart the television.
+3. Restart the television. If an installer cannot reach it afterwards, unplug the television for ten to fifteen seconds, because a full power cycle is what opens the port it installs through.
+
+### Install with Apps2Samsung
+
+1. Install [Apps2Samsung](https://github.com/Apps2Samsung/Apps2Samsung/releases/latest) on the computer, open it, and let it find the television or enter the television's IP address.
+2. Download `OpenIPTV.wgt` from the [latest release](https://github.com/shayanline/OpenIPTV/releases/latest).
+3. Turn **Custom WGT** on under Advanced options, then choose the file you downloaded.
+4. Install OpenIPTV, then launch it from the television application list.
+
+> [!NOTE]
+> A retail television only accepts a widget signed for itself, so Apps2Samsung signs OpenIPTV for the connected set before installing it. It asks for a Samsung account only when it has to create a certificate, then reuses that certificate for later installations. Its Android application can run the same installation from a phone, in which case Developer mode needs the phone's IP address rather than the computer's.
 
 ### Install with TizenBrew
 
@@ -79,6 +93,12 @@ OpenIPTV supports Samsung TVs from 2020 onwards, running Tizen 5.5 or later. The
 
 > [!NOTE]
 > Tizen 7 and later can resign the released widget for the connected television. Earlier versions may need a [locally signed build](#build-and-sign-manually).
+
+### Update an installed copy
+
+Install the new release exactly as before, from the same computer and through the same installer, and the television keeps your playlists, favourites, and settings.
+
+A copy installed from a different computer, or through a different installer, carries a different author certificate, which the television refuses to install over. Remove OpenIPTV from Apps on the television first, then install again. OpenIPTV writes no backup file, so add the playlist again afterwards, which [remote access](#remote-access) makes quick from a phone.
 
 ### Build and sign manually
 
@@ -147,8 +167,9 @@ A paired device can manage playlists, ordinary settings, application data, autho
 <details>
 <summary>Common issues</summary>
 
-- **TizenBrew cannot connect.** Repeat [Prepare the television](#prepare-the-television), including the restart, and avoid guest networks that isolate devices.
-- **Installation reports certificate error 118 or -12.** Follow [Build and sign manually](#build-and-sign-manually).
+- **An installer cannot connect to the television.** Repeat [Prepare the television](#prepare-the-television), including the restart, and avoid guest networks that isolate devices. Some televisions store the address in reverse, so enter your IP address backwards if the installer still cannot find the set.
+- **Installation reports certificate error 118 or -12.** The widget was not signed for your television. [Apps2Samsung](#install-with-apps2samsung) signs it for the connected set on any supported version, [TizenBrew](#install-with-tizenbrew) does so from Tizen 7 onwards, and otherwise follow [Build and sign manually](#build-and-sign-manually).
+- **Installation reports that the author certificate does not match.** An earlier copy was signed by a different computer or installer, so [update an installed copy](#update-an-installed-copy) explains what to remove first.
 - **A playlist address is refused.** Review the supported details under [Add playlists](#add-playlists).
 - **An Xtream stream will not play.** Try the other live stream format under [Add playlists](#add-playlists). The packaged television app retries eligible HTTPS connection failures once over HTTP. Local development and the TV simulator route that retry through a same origin relay so Chromium cannot upgrade it through HSTS, while the hosted HTTPS demo cannot downgrade because browsers block mixed content.
 - **A channel shows one frame and stops.** Turn on Compatibility mode under Settings, then Playback.
