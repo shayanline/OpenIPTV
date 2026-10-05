@@ -102,7 +102,7 @@ The Live title banner remains a report only surface for channel changes and keep
 
 ### Playback drawer
 
-Guide, Audio, Subtitles and More drawers keep all direction input inside the drawer. Drawers do not close on a timer because viewers need time to read and choose options. Opening a drawer cancels the deck timer. Back closes one drawer, restores the originating deck action and starts a fresh five second deck interval.
+Guide, Audio, Subtitles and More drawers keep all direction input inside the drawer. Each drawer title is vertically centred inside one fixed header region above its options. Drawers do not close on a timer because viewers need time to read and choose options. Opening a drawer cancels the deck timer. Back closes one drawer, restores the originating deck action and starts a fresh five second deck interval.
 
 ### VOD browsing
 
@@ -211,7 +211,7 @@ Previous and Next retain their positions in the centred finite transport group. 
 
 The leading context action is Details for finite content and Guide for Live content. Audio, Subtitles and More retain stable trailing positions across content kinds. Controls that have no supported action are omitted rather than displayed as inactive decoration, except Previous and Next whose disabled position preserves transport geometry.
 
-The seek bar has no enclosing border. Focus increases track thickness, enlarges the white thumb, adds a restrained halo and displays a floating target time. Blue remains the playback state rather than the focus colour.
+A subtle `--line` hairline separates metadata from every displayed seek bar. The seek bar has no enclosing border. Focus increases track thickness, enlarges the white thumb, adds a restrained halo and displays a floating target time. Blue remains the playback state rather than the focus colour.
 
 ## Audio and Subtitle Tracks
 
