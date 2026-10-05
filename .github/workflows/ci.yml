@@ -14,9 +14,22 @@ on:
   # pushing something, and so a documentation commit can still be checked on purpose.
   workflow_dispatch:
 
-# A second push to the same branch makes the first run pointless.
+# A second push to a pull request branch makes the first run pointless, so those runs share a group
+# and the older one is cancelled. A second commit on master is a state nobody has checked yet, so a
+# push keys on the commit instead and every one of them runs alone.
+#
+# Both halves of that are load bearing. Sharing one group across master meant a release, or a row of
+# Dependabot merges, cancelled the run for the commit before it, and 16 of the 73 master runs here
+# ended cancelled rather than finishing, against 13 that genuinely failed. GitHub draws a cancelled
+# run as a red "failing" README badge (actions/runner#4047) and caches that image for five minutes,
+# so the badge reported a broken build on commits whose checks had all passed. Keying on the commit
+# also means a commit on master keeps the verification it used to lose to whatever landed next.
+#
+# `cancel-in-progress: false` is not enough on its own, because at most one run may be pending per
+# group and a third arrival cancels whichever one was waiting, so the cancelled run becomes the one
+# queued rather than the one running.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
   cancel-in-progress: true
 
 # Nothing here writes to the repository, so nothing here needs to be able to. Stated explicitly
