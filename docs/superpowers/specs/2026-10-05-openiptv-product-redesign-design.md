@@ -211,7 +211,7 @@ Previous and Next retain their positions in the centred finite transport group. 
 
 The leading context action is Details for finite content and Guide for Live content. Audio, Subtitles and More retain stable trailing positions across content kinds. Controls that have no supported action are omitted rather than displayed as inactive decoration, except Previous and Next whose disabled position preserves transport geometry.
 
-A subtle `--line` hairline separates metadata from every displayed seek bar. The seek bar has no enclosing border. Focus increases track thickness, enlarges the white thumb, adds a restrained halo and displays a floating target time. Blue remains the playback state rather than the focus colour.
+A subtle `--line` hairline spans the full inner width of the playback surface and separates metadata from every displayed seek bar. The seek bar has no enclosing border. Focus increases track thickness, enlarges the white thumb, adds a restrained halo and displays a floating target time. Blue remains the playback state rather than the focus colour.
 
 ## Audio and Subtitle Tracks
 
@@ -281,6 +281,37 @@ Buffer size changes require on set measurement. The redesign does not raise or l
 
 Movies and Series use a full screen opaque shell with a shared header, a 424 pixel category rail and a six column poster grid at the default scale.
 
+Xtream summary ratings appear in a compact neutral pill on movie and series posters when the provider supplies a valid value. The rating uses a zero to ten scale with one decimal place. `rating` is preferred, while `rating_5based` converts to the same scale only when `rating` is absent. Missing or invalid ratings leave no empty pill.
+
+Movie and series details normalize provider metadata without external lookups:
+
+```ts
+type VodMetadata = {
+  backdrops: string[];
+  rating: string;
+  cast: string[];
+  director: string;
+  genre: string;
+  releaseDate: string;
+  country: string;
+  ageRating: string;
+};
+
+type EpisodeMetadata = {
+  rating: string;
+  plot: string;
+  releaseDate: string;
+  image: string;
+  durationSeconds?: number;
+};
+```
+
+Movie details read `backdrop_path`, `movie_image`, `cover_big`, `cast` or `actors`, `director`, `country`, `age` or `mpaa_rating`, `genre`, release date, duration and rating where present. Series details read `backdrop_path`, `cover`, cast, director, genre, release date, episode run time and rating. Episode details read rating, plot, release date, image and duration from each episode `info` record.
+
+A detail screen uses the first valid provider backdrop as a full width background and keeps the poster as a separate portrait image. The active backdrop decodes to at most 1280 by 720, is released when details close and is not added to the multi item poster memory cache. When no backdrop exists or loading fails, the screen uses a restrained tonal fallback derived from the poster colours without making another network request.
+
+Cast, director, country, age rating and episode metadata appear only when nonempty. The layout removes absent rows rather than showing Unknown labels. OpenIPTV does not call TMDB, YouTube or another metadata service to fill provider gaps.
+
 The category rail contains Continue watching when nonempty, Favourites when nonempty, All, then provider categories in provider order. Empty personal categories do not create apology rows.
 
 Continue watching orders items by the latest progress activity. It includes finite movies and episodes with retained progress. A completed item leaves Continue watching. Series progress resolves to the latest resumable episode and presents the parent series once.
@@ -303,7 +334,7 @@ No result state names the query and leaves the search field focused. Loading and
 
 ## Movie Details
 
-Movie details use a full screen hero with metadata, synopsis, poster art, watched progress and a vertical action stack.
+Movie details use a full screen hero with provider backdrop, separate poster art, rating, metadata, synopsis, cast, director, watched progress and a vertical action stack. Rating sits with year, duration and genre. Cast and director use quiet single line rows beneath the synopsis and truncate after the available width.
 
 A movie with progress shows Resume from the saved time first, Start from beginning second and Add to Favourites or Remove from Favourites third. A new movie shows Play first and the favourite action second.
 
@@ -315,7 +346,7 @@ Adding a favourite updates the details action, poster badge, Favourites count an
 
 Series details keep the hero, metadata, synopsis and favourite action on one screen. A season selector and episode list occupy the same screen instead of creating one screen per season.
 
-The season selector is an ordered horizontal row reached from the episode list. The episode list is windowed vertically and shows episode number, title, duration and progress. Changing season restores the remembered episode for that season where it remains valid.
+The season selector is an ordered horizontal row reached from the episode list. The episode list is windowed vertically and shows episode number, title, duration, progress and provider episode rating when present. Episode plot, release date and image appear in the focused episode detail region when supplied. Changing season restores the remembered episode for that season where it remains valid.
 
 A series with resumable progress shows Resume next episode or Resume episode as the primary action. Episode selection opens actions for Resume or Play and Start from beginning where progress exists. Favouriting applies to the parent series rather than an individual episode.
 
@@ -629,7 +660,7 @@ After all tasks in one subsystem pass, a whole subsystem review checks interface
 
 ## Excluded Work
 
-The redesign does not add recording management, provider administration, reseller actions, account purchasing, external subtitle downloads, cloud synchronization, recommendations based on inferred taste, autoplay previews, analytics, advertising or bundled media.
+The redesign does not add recording management, provider administration, reseller actions, account purchasing, external subtitle downloads, cloud synchronization, recommendations based on inferred taste, autoplay previews, external trailer playback, analytics, advertising or bundled media.
 
 A provider may expose a category called Recently added. OpenIPTV does not invent recency where the provider supplies no timestamp.
 
