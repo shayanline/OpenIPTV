@@ -9,6 +9,8 @@ import {
   panelOpen,
   played,
   press,
+  pressDown,
+  release,
   settle,
   volumeChanges,
   XTREAM_SOURCE,
@@ -170,6 +172,23 @@ test("holding OK toggles playback information while a stream is loading", async 
     JSON.parse(localStorage.getItem("openiptv.settings") ?? "{}").showPlaybackStats,
     true,
   );
+});
+
+test("opening Settings while OK is held cancels the picture action", async () => {
+  await mount();
+  press(KEY.ENTER);
+  press(KEY.BACK);
+
+  pressDown(KEY.ENTER);
+  press(KEY.YELLOW);
+  release(KEY.ENTER);
+  await settle(500);
+
+  expect(document.querySelector(".sheet")).toBeTruthy();
+  expect(panelOpen()).toBe(false);
+  expect(
+    JSON.parse(localStorage.getItem("openiptv.settings") ?? "{}").showPlaybackStats,
+  ).not.toBe(true);
 });
 
 test("the clock remains visible everywhere except Settings", async () => {

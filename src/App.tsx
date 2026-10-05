@@ -31,6 +31,7 @@ import {
 import { UNCATEGORISED } from "./services/m3u";
 import { searchChannels } from "./services/search";
 import { KEY, registerRemoteKeys, useRemote } from "./hooks/useRemote";
+import { useLongPress } from "./hooks/useLongPress";
 import { ChannelList } from "./components/ChannelList";
 import { Sidebar } from "./components/Sidebar";
 import {
@@ -60,7 +61,11 @@ import { useRemoteAccess } from "./hooks/useRemoteAccess";
 import { useBrowseStack, type BrowseFrame } from "./hooks/useBrowseStack";
 import { developmentRemoteAccess } from "./services/remoteServer";
 import { hasPairedDevices, subscribePairedDevices } from "./services/deviceAccess";
-import { activeSurface, type SurfaceStack } from "./services/surfaceStack";
+import {
+  activeSurface,
+  type SurfaceId,
+  type SurfaceStack,
+} from "./services/surfaceStack";
 import type { Channel, PlaybackTarget } from "./types";
 import {
   formatXtreamRating,
@@ -1336,82 +1341,43 @@ export default function App() {
     favouriteIds,
   ]);
 
-  const redContextRef = useRef({
-    configured,
-    showSettings,
-    showExit,
-    revealHiddenCategories,
-    toggleCategoryVisibility,
-  });
-  redContextRef.current = {
-    configured,
-    showSettings,
-    showExit,
-    revealHiddenCategories,
-    toggleCategoryVisibility,
-  };
+  const modalSurface = showSettings
+    ? "settings"
+    : showExit
+      ? "exit"
+      : !configured
+        ? "onboarding"
+        : null;
+  const surfaceStack = useMemo<SurfaceStack>(
+    () => ({
+      picture: "picture",
+      primary: view === "panel" ? "panel" : null,
+      drawer: guideChannelId ? "guide" : null,
+      modal: modalSurface,
+      popup: settingsPopupOpen ? "confirmation" : null,
+    }),
+    [guideChannelId, modalSurface, settingsPopupOpen, view],
+  );
+  const inputSurface: SurfaceId = activeSurface(surfaceStack);
+  const redEnabled =
+    configured &&
+    (inputSurface === "picture" || inputSurface === "panel" || inputSurface === "guide");
 
-  useEffect(() => {
-    let timer: number | undefined;
-    let long = false;
-    const onDown = (event: KeyboardEvent) => {
-      if (event.keyCode !== KEY.RED) return;
-      const context = redContextRef.current;
-      if (!context.configured || context.showSettings || context.showExit) return;
-      event.preventDefault();
-      event.stopImmediatePropagation();
-      if (searchingRef.current) return;
-      if (event.repeat) {
-        window.clearTimeout(timer);
-        timer = undefined;
-        if (!long) {
-          long = true;
-          context.revealHiddenCategories();
-        }
-        return;
-      }
-      if (timer === undefined && !long) {
-        timer = window.setTimeout(() => {
-          timer = undefined;
-          long = true;
-          redContextRef.current.revealHiddenCategories();
-        }, 500);
-      }
-    };
-    const onUp = (event: KeyboardEvent) => {
-      if (event.keyCode !== KEY.RED) return;
-      const context = redContextRef.current;
-      if (!context.configured || context.showSettings || context.showExit) {
-        window.clearTimeout(timer);
-        timer = undefined;
-        long = false;
-        return;
-      }
-      event.preventDefault();
-      event.stopImmediatePropagation();
-      if (timer !== undefined) {
-        window.clearTimeout(timer);
-        timer = undefined;
-        if (!searchingRef.current) context.toggleCategoryVisibility();
-      }
-      long = false;
-    };
-    window.addEventListener("keydown", onDown);
-    window.addEventListener("keyup", onUp);
-    return () => {
-      window.clearTimeout(timer);
-      window.removeEventListener("keydown", onDown);
-      window.removeEventListener("keyup", onUp);
-    };
-  }, []);
-
-  const okContextRef = useRef({
-    eligible: false,
-    shortPress: revealPanel,
+  useLongPress({
+    code: KEY.RED,
+    enabled: redEnabled,
+    onShortPress: () => {
+      if (inputSurface === "panel" && !searchingRef.current) toggleCategoryVisibility();
+    },
+    onLongPress: () => {
+      if (inputSurface === "panel" && !searchingRef.current) revealHiddenCategories();
+    },
   });
-  okContextRef.current = {
-    eligible: configured && !showSettings && !showExit,
-    shortPress: () => {
+
+  useLongPress({
+    code: KEY.ENTER,
+    enabled: configured && inputSurface === "picture",
+    onShortPress: () => {
       if (chrome.digits) {
         jump(Number(chrome.commitDigits()));
         return;
@@ -1422,66 +1388,11 @@ export default function App() {
       }
       revealPanel();
     },
-  };
-
-  useEffect(() => {
-    let timer: number | undefined;
-    let long = false;
-    let pressed = false;
-    const togglePlaybackInfo = () => {
+    onLongPress: () => {
       const state = useSettings.getState();
       state.set("showPlaybackStats", !state.showPlaybackStats);
-    };
-    const onDown = (event: KeyboardEvent) => {
-      const panelClosed = document.querySelector(".panel")?.classList.contains("away");
-      const guideOpen = !!document.querySelector(".guide-drawer");
-      if (
-        event.keyCode !== KEY.ENTER ||
-        !okContextRef.current.eligible ||
-        !panelClosed ||
-        guideOpen
-      )
-        return;
-      event.preventDefault();
-      event.stopImmediatePropagation();
-      pressed = true;
-      if (event.repeat) {
-        window.clearTimeout(timer);
-        timer = undefined;
-        if (!long) {
-          long = true;
-          togglePlaybackInfo();
-        }
-        return;
-      }
-      if (timer === undefined && !long) {
-        timer = window.setTimeout(() => {
-          timer = undefined;
-          long = true;
-          togglePlaybackInfo();
-        }, 500);
-      }
-    };
-    const onUp = (event: KeyboardEvent) => {
-      if (event.keyCode !== KEY.ENTER || !pressed) return;
-      event.preventDefault();
-      event.stopImmediatePropagation();
-      if (timer !== undefined) {
-        window.clearTimeout(timer);
-        timer = undefined;
-        okContextRef.current.shortPress();
-      }
-      pressed = false;
-      long = false;
-    };
-    window.addEventListener("keydown", onDown);
-    window.addEventListener("keyup", onUp);
-    return () => {
-      window.clearTimeout(timer);
-      window.removeEventListener("keydown", onDown);
-      window.removeEventListener("keyup", onUp);
-    };
-  }, []);
+    },
+  });
 
   const openSettings = useCallback(() => setShowSettings(true), []);
 
@@ -2650,25 +2561,6 @@ export default function App() {
   );
 
   useRemote(onKey);
-
-  const modalSurface = showSettings
-    ? "settings"
-    : showExit
-      ? "exit"
-      : !configured
-        ? "onboarding"
-        : null;
-  const surfaceStack = useMemo<SurfaceStack>(
-    () => ({
-      picture: "picture",
-      primary: view === "panel" ? "panel" : null,
-      drawer: guideChannelId ? "guide" : null,
-      modal: modalSurface,
-      popup: settingsPopupOpen ? "confirmation" : null,
-    }),
-    [guideChannelId, modalSurface, settingsPopupOpen, view],
-  );
-  const inputSurface = activeSurface(surfaceStack);
 
   // Which layer is on top decides what everything below it is allowed to draw.
   const modal =

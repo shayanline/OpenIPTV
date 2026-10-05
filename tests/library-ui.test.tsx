@@ -9,6 +9,8 @@ import {
   playCalls,
   played,
   press,
+  pressDown,
+  release,
   seekChanges,
   setPlaybackTime,
   settle,
@@ -256,6 +258,21 @@ test("library Red short press ignores its synthetic favourites row", async () =>
   press(KEY.LEFT);
   press(KEY.RED);
 
+  const saved = JSON.parse(localStorage.getItem("openiptv.settings") ?? "{}");
+  expect(saved.playlists[0].hiddenCategories).toEqual([]);
+});
+
+test("opening Settings while Red is held cancels the category action", async () => {
+  await mountLibrary();
+  await chooseContent("Movies");
+  press(KEY.LEFT);
+
+  pressDown(KEY.RED);
+  press(KEY.YELLOW);
+  release(KEY.RED);
+  await settle(500);
+
+  expect(document.querySelector(".sheet")).toBeTruthy();
   const saved = JSON.parse(localStorage.getItem("openiptv.settings") ?? "{}");
   expect(saved.playlists[0].hiddenCategories).toEqual([]);
 });
