@@ -10,6 +10,7 @@
     "preview": "vite preview",
     "icon": "node scripts/icon.mjs",
     "package": "./scripts/package.sh",
+    "simulator": "npm run package && arch -x86_64 \"$HOME/.tizen-extension-platform/server/sdktools/data/tools/sec-tv-simulator/nwjs.app/Contents/MacOS/nwjs\" --platform samsung-tv --tizentvversion 10.0 --resolution 1920x1080 --file \"$PWD/build/OpenIPTV.wgt\"",
     "deploy": "./scripts/deploy.sh",
     "tv": "node scripts/tv/sim.mjs",
     "tv:bench": "node scripts/tv/sim.mjs --bench",
