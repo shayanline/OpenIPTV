@@ -36,9 +36,15 @@ var ASSETS = {
   "/remote.css": { path: "../remote/remote.css", type: "text/css; charset=utf-8" },
   "/remote.js": { path: "../remote/remote.js", type: "text/javascript; charset=utf-8" },
   "/icon.svg": { path: "../icon.svg", type: "image/svg+xml; charset=utf-8" },
-  "/fonts/Vazirmatn-Regular.ttf": { path: "../fonts/Vazirmatn-Regular.ttf", type: "font/ttf" },
-  "/fonts/Vazirmatn-SemiBold.ttf": { path: "../fonts/Vazirmatn-SemiBold.ttf", type: "font/ttf" },
 };
+
+function assetForPath(path) {
+  if (ASSETS[path]) return ASSETS[path];
+  if (!/^\/fonts\/[A-Za-z0-9.-]+\.(css|ttf|woff2)$/.test(path)) return null;
+  var extension = path.slice(path.lastIndexOf(".") + 1);
+  var types = { css: "text/css; charset=utf-8", ttf: "font/ttf", woff2: "font/woff2" };
+  return { path: ".." + path, type: types[extension] };
+}
 var api = null;
 var queue = [];
 var timer = null;
@@ -78,20 +84,24 @@ function bindHostSockets() {
 }
 
 function response(status, contentType, body) {
-  var text = String(body || "");
-  var length = new TextEncoder().encode(text).length;
-  return (
+  var bytes = body instanceof Uint8Array ? body : new TextEncoder().encode(String(body || ""));
+  var header = new TextEncoder().encode(
     "HTTP/1.1 " + status + " " + STATUS[status] + "\r\n" +
     "Content-Type: " + contentType + "\r\n" +
-    "Content-Length: " + length + "\r\n" +
+    "Content-Length: " + bytes.length + "\r\n" +
     "Cache-Control: no-store\r\n" +
     "X-Content-Type-Options: nosniff\r\n" +
-    "Connection: close\r\n\r\n" + text
+    "Connection: close\r\n\r\n"
   );
+  var result = new Uint8Array(header.length + bytes.length);
+  result.set(header);
+  result.set(bytes, header.length);
+  return result;
 }
 
 function send(status, contentType, body) {
-  if (api.sendResponse(response(status, contentType, body)) !== 0) {
+  var bytes = response(status, contentType, body);
+  if (api.sendResponse(bytes, bytes.length) !== 0) {
     fail("could not send a management response");
   }
   waiting = 0;
@@ -133,7 +143,7 @@ async function handleRequest(raw) {
     send(request.error, "text/plain; charset=utf-8", STATUS[request.error]);
     return;
   }
-  var asset = ASSETS[request.path];
+  var asset = assetForPath(request.path);
   if (asset) {
     if (request.method !== "GET") {
       send(405, "text/plain; charset=utf-8", STATUS[405]);
@@ -142,7 +152,7 @@ async function handleRequest(raw) {
     try {
       var result = await fetch(asset.path);
       if (!result.ok) throw new Error("asset unavailable");
-      send(200, asset.type, await result.text());
+      send(200, asset.type, new Uint8Array(await result.arrayBuffer()));
     } catch (error) {
       send(500, "text/plain; charset=utf-8", error && error.message ? error.message : error);
     }
@@ -229,7 +239,7 @@ var Module = {
       startServer: Module.cwrap("start_server", "number", ["string", "number"]),
       receiveRequest: Module.cwrap("receive_request", "number", []),
       requestText: Module.cwrap("request_text", "string", []),
-      sendResponse: Module.cwrap("send_response", "number", ["string"]),
+      sendResponse: Module.cwrap("send_response", "number", ["bytes", "number"]),
       stopServer: Module.cwrap("stop_server", null, []),
     };
     var held = queue;

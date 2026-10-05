@@ -179,6 +179,8 @@ test("loads device assets relative to either the TV root or build preview path",
   expect(html).toContain('src="remote.js"');
   expect(html).toContain('src="/icon.svg"');
   expect(html).not.toContain('<main id="app" aria-live');
+  expect(css).toContain('@import url("/fonts/fonts.css")');
+  expect(css).toContain("font-family: var(--font)");
   expect(css).toContain("@media (max-width: 680px)");
   expect(css).toContain("@media (max-width: 380px)");
   expect(css).toContain("env(safe-area-inset-bottom)");
