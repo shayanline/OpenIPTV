@@ -112,7 +112,7 @@ Inline start from the first poster enters the selected category row. Inline end 
 
 An empty category keeps focus on its rail row and presents a nonfocus empty message in the catalogue region. A failed category keeps focus on the rail and exposes Retry as the only focusable item in the failed region. OK on a poster opens details. Back from details restores the exact origin surface and item, including search results. Back from search restores the previous category and poster. Back from the VOD root returns to the Live picture.
 
-Every VOD action is also available through pointer click. Pointer movement does not steal remote focus until a control is clicked. Wheel movement changes grid rows or episode rows through the same cursor state and cannot bypass windowing.
+Every VOD action is also available through pointer click. Pointer movement does not steal remote focus until a control is clicked. Each accepted vertical wheel gesture moves one movie, series or episode through linear catalogue order. Passing the final poster in a row reaches the first poster in the next row. A 120 millisecond guard prevents one physical gesture from skipping several items. Wheel movement uses the same cursor state and cannot bypass windowing.
 
 ### Live browsing
 
