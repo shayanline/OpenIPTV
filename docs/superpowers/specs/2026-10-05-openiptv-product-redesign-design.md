@@ -381,23 +381,27 @@ Adding a favourite updates the details action, poster badge, Favourites count an
 
 ## Series Details
 
-Series details use one coordinated screen with a hero, metadata, synopsis, one series Favourite action, one Continue series shortcut, a season selector, a windowed episode list and an inline episode action tray. Episode playback actions belong to the episode selection area rather than the series hero.
+Series uses two clear pages. Series details contains the hero, provider metadata, synopsis, one Continue shortcut, one Start current episode from beginning action when progress exists, an Episodes action and the parent series Favourite action. A dedicated Episodes page contains its own Back button, series title, committed season name, season selector, windowed episode list and inline episode action tray.
 
-The Continue shortcut resolves the latest resumable episode and labels it explicitly, such as Continue S1:E3, 24 min left. When the last watched episode is complete it resolves the next episode. When no progress exists it becomes Play S1:E1 or the first playable provider episode. When the complete series is watched it falls back to the first playable episode.
+The Continue shortcut resolves the latest resumable episode and labels it explicitly, such as Continue S1:E3, 24 min left. When the last watched episode is complete it resolves the next episode. When no progress exists it becomes Play S1:E1 or the first playable provider episode. When the complete series is watched it falls back to the first playable episode. The adjacent restart label uses the same episode reference, such as Start S1:E3 from beginning.
 
-The hero action stack, season selector, episode list and episode tray each own one cursor. Inline end from the hero enters the remembered episode. Inline start from the episode list returns to the remembered hero action. Up from the first episode enters the season selector. Down from a season returns to its remembered episode.
+Every Movie details, Series details and Episodes page has a visible Back button in the inline start corner. Entry focus remains on the primary content action or resume target rather than Back. Up from the topmost content element reaches Back, and Down returns to that content. The Back button and remote Back perform the same transition.
 
-Season focus is a preview cursor. Left and Right move the white focus without reloading episodes. OK commits the blue selected season, closes any episode tray and restores that season's remembered episode. A single unnumbered season hides the season row.
+On Series details, action order is Continue or Play, Start current episode from beginning when progress exists, Episodes, then Add to Favourites or Remove from Favourites. Selecting Episodes opens the Episodes page focused on the current Continue target. Back from Episodes returns to Series details with Episodes focused. Back from Series details returns to the exact poster or search result.
+
+The Episodes page season selector, episode list and episode tray each own one cursor. Up from the first episode enters the season selector. Up from the season selector enters Back. Down returns through the same path. The episode list receives the full page height rather than sharing space with the series hero.
+
+Season focus is a preview cursor. Left and Right move the white focus without reloading episodes. OK commits the blue selected season, closes any episode tray and restores that season's remembered episode. A single unnumbered season hides the season row, and Up from the first episode then reaches Back.
 
 Episode selection follows episode focus. The current Continue target also carries a compact persistent blue Up next marker and watched progress, which remain distinct from white focus. Episode rows show number, title, duration, progress and provider rating when present. Episode plot, release date and image appear in the focused episode detail region when supplied.
 
-OK on an episode opens an inline action tray and focuses its primary action. An episode with progress shows Resume S1:E3 from 24:18 followed by Start S1:E3 from beginning. An episode without progress shows one Play S1:E4 action. Back closes the tray and restores the same episode. The highlighted episode keeps a restrained blue border while the tray owns focus.
+OK on an episode opens an inline action tray and focuses its primary action. An episode with progress shows Resume S1:E3 from 24:18 followed by Start S1:E3 from beginning. An episode without progress shows one Play S1:E4 action. Up from the first tray action, inline start or Back closes the tray and restores the same episode. The highlighted episode keeps a restrained blue border while the tray owns focus.
 
 The episode reference uses `S{season}:E{episode}` when both values exist. With only episode number it uses Episode 3. With only season it uses Season 1 selected episode. With neither it uses selected episode. Missing display numbers never produce `S0:E0` and do not prevent playback when the episode has a playable provider id or valid direct source.
 
-Favouriting applies to the parent series rather than an individual episode. Back from series details returns to the exact series poster or search result. A season with no episodes keeps focus on its season pill and shows a nonfocus No episodes available message. A failed season exposes Retry in the episode region while the season row stays reachable.
+Favouriting applies to the parent series rather than an individual episode. A season with no episodes keeps focus on its season pill and shows a nonfocus No episodes available message. A failed season exposes Retry in the episode region while the season row and page Back remain reachable.
 
-Series hero and tray actions use rounded tonal buttons without decorative outlines. White fill and the shared halo identify the one focused action. Buttons use the existing 8 pixel rhythm, a restrained pressed scale and no ambient animation. The episode panel uses `--over-video`, a soft surface radius, one hairline and the existing elevation rather than blur or stacked shadows. Reduced motion removes the pressed transform.
+Series hero and tray actions use rounded tonal buttons without decorative outlines. White fill and the shared halo identify the one focused action. Buttons use the existing 8 pixel rhythm, a restrained pressed scale and no ambient animation. The Episodes surface uses `--over-video`, a soft surface radius, one hairline and the existing elevation rather than blur or stacked shadows. Reduced motion removes the pressed transform.
 
 ## VOD Loading and Performance
 
