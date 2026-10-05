@@ -321,7 +321,7 @@ Cast, director, country, age rating and episode metadata appear only when nonemp
 
 Every provider string is trimmed and rendered as text through `Text` or an equivalent element with `dir="auto"`. Empty titles use a translated Untitled label. Empty category names use the translated Uncategorised label. Provider strings are never cut in JavaScript because code unit slicing can split emoji, combining marks and joined glyphs on Chromium 69. CSS performs visual truncation.
 
-Poster, series, episode and category titles use a fixed two line region rather than single line ellipsis. The focused item may use the existing marquee only after focus settles, and reduced motion disables that animation. Long category names reserve a fixed count pill and wrap to two lines without moving neighbouring rows.
+VOD poster titles, Movie and Series detail titles and episode titles use one fixed line with the existing `Text` teleprompter measurement. A focused poster or episode starts the horizontal animation after the existing 1.2 second delay. An overflowing detail title animates while its detail page is active. Each pass scrolls to the measured logical end, pauses and returns to the start. Right to left movement follows the measured text direction. Reduced motion keeps the first portion stationary and clipped. Long category names keep a fixed count pill and wrap to two lines without moving neighbouring rows.
 
 Ratings accept `rating` only when the numeric value is greater than zero and no greater than ten. When `rating` is absent, zero, malformed or out of range, `rating_5based` is accepted only when greater than zero and no greater than five, then converts to the ten point scale. Every displayed value has one decimal place. Invalid values, placeholders and out of range values produce no rating pill. Rating controls and poster labels receive a translated accessible label such as Rating 8.4 out of 10.
 
@@ -387,7 +387,7 @@ The Continue action is the only episode resume path. It resolves the latest resu
 
 Selecting Episodes replaces the poster region with a season selector and windowed episode list. The hero column and title row never move. The panel enters from inline end with an opacity and position transition no longer than 180 milliseconds. Reduced motion removes translation and uses an immediate state change. Focus moves to the Continue target immediately rather than waiting for animation completion.
 
-While the panel is open, inline end from the hero enters the remembered episode and inline start from the list returns to the remembered hero action. Back or the title row Back button closes the panel and restores Episodes focus. With the panel closed, Back returns to the exact poster or search result. Up from the top hero action enters the title row at Back. Left and Right move between Back and Favourite, and Down returns to the top hero action.
+While the panel is open, inline end from the hero enters the remembered episode and inline start from the list returns to the remembered hero action without closing the panel. The Episodes action changes to Hide episodes and explicitly toggles the panel. Remote Back and the title row Back button always leave Series details for the exact poster or search result, whether the panel is open or closed. Up from the top hero action enters the title row at Back. Left and Right move between Back and Favourite, and Down returns to the top hero action.
 
 Favourite is an icon toggle rather than a text action. An outline star means not saved and an accent state means saved. The fixed size toggle stays immediately beside the title. When it receives focus, a short Add to Favourites or In Favourites label appears beneath it without shifting the row. Its accessible name uses Add or Remove wording. Toggling never closes or reflows the episode panel.
 
@@ -624,7 +624,7 @@ Motion is short, functional and disabled by the existing reduced motion rule. Th
 
 Every provider string renders with `dir="auto"`. Application labels are translated through the existing locale service. Episode prefixes and numbers use translated messages and locale number formatting rather than a hardcoded Latin `E`. Breadcrumb chevrons use mirrored icons rather than text glyphs. Poster titles, track languages, categories, programme data, management forms and subtitle text receive right to left review.
 
-Provider strings are never truncated in JavaScript. Two line CSS regions and the reduced motion aware marquee preserve emoji, flag pairs, joined emoji and combining marks on Chromium 69 without relying on unavailable grapheme segmentation APIs.
+Provider strings are never truncated in JavaScript. Single line teleprompter regions for content titles and two line CSS regions for categories preserve emoji, flag pairs, joined emoji and combining marks on Chromium 69 without relying on unavailable grapheme segmentation APIs.
 
 Subtitle placement avoids controls and television safe areas. Text size, edge treatment and line count remain readable over bright and dark pictures.
 
@@ -670,7 +670,7 @@ The television harness gains journeys for:
 - Right to left movement between header, rail, grid, details, season and episode zones.
 - Missing artwork and metadata, long bidirectional names, emoji names, empty categories and malformed ratings.
 
-Xtream normalization tests cover rating scales, backdrop shapes, artwork precedence, cast and director shapes, release date variants, duration formats, missing episode numbers, season union, episode sorting, duplicate identifiers and size limits. Cache tests prove category revalidation, stale empty refresh and catalogue response bounds. Component tests assert `dir="auto"`, translated episode labels, rating semantics, two line provider titles and reduced motion behavior.
+Xtream normalization tests cover rating scales, backdrop shapes, artwork precedence, cast and director shapes, release date variants, duration formats, missing episode numbers, season union, episode sorting, duplicate identifiers and size limits. Cache tests prove category revalidation, stale empty refresh and catalogue response bounds. Component tests assert `dir="auto"`, translated episode labels, rating semantics, measured single line teleprompters and reduced motion behavior.
 
 Migration tests seed every previous local storage shape, malformed partial values and interrupted migrations. Reconciliation tests cover moved M3U duplicates, unavailable references, category rename and explicit removal. Protocol tests apply each management mutation through television state and phone commands, then compare durable personalisation and the affected paged query.
 
