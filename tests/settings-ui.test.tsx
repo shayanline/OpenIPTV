@@ -420,6 +420,22 @@ test("remote navigation reaches the Categories action in a playlist row", async 
   );
 });
 
+test("a Settings confirmation owns directional input", async () => {
+  await mountApp(CATEGORIES);
+  press(KEY.YELLOW);
+  fireEvent.click(screen.getByRole("button", { name: "Playlists" }));
+  fireEvent.click(screen.getByRole("button", { name: "Remove Test" }));
+
+  const section = document.querySelector(".sheet-rail .row.selected")?.textContent;
+  const panelRow = document.querySelector(".panel .row.selected")?.textContent;
+  press(KEY.RIGHT);
+
+  expect(document.querySelector(".dialog")).toBeTruthy();
+  expect(document.querySelector(".sheet-rail .row.selected")?.textContent).toBe(section);
+  expect(document.querySelector(".panel .row.selected")?.textContent).toBe(panelRow);
+  expect(document.activeElement?.closest(".dialog")).toBeTruthy();
+});
+
 test("Categories is a Settings detail screen with hierarchical RETURN", async () => {
   await mountApp(CATEGORIES);
   press(KEY.YELLOW);

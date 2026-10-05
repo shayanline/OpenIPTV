@@ -1,4 +1,4 @@
-import { useCallback, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useLocale } from "../hooks/useLocale";
 import { KEY, useRemote } from "../hooks/useRemote";
 import { useSpatialNav } from "../hooks/useSpatialNav";
@@ -65,10 +65,12 @@ export function moveWithinPlaylistRow(
 
 export function Settings({
   onClose,
+  onPopupChange,
   remoteAccess,
   showRemoteAccess = false,
 }: {
   onClose: () => void;
+  onPopupChange?: (open: boolean) => void;
   remoteAccess: RemoteAccessControl;
   showRemoteAccess?: boolean;
 }) {
@@ -94,6 +96,17 @@ export function Settings({
    * The child raises this while it is asking, and this stands aside.
    */
   const [asking, setAsking] = useState(false);
+  const onPopupChangeRef = useRef(onPopupChange);
+  onPopupChangeRef.current = onPopupChange;
+  useEffect(() => {
+    onPopupChange?.(asking);
+  }, [asking, onPopupChange]);
+  useEffect(
+    () => () => {
+      onPopupChangeRef.current?.(false);
+    },
+    [],
+  );
   const [okGuide, setOkGuide] = useState(() => t("common.select"));
   // Every control in the body has to be reachable with the four directional buttons,
   // which the browser will not do on its own. Checklist items 2.2 and 3.2.

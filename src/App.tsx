@@ -60,6 +60,7 @@ import { useRemoteAccess } from "./hooks/useRemoteAccess";
 import { useBrowseStack, type BrowseFrame } from "./hooks/useBrowseStack";
 import { developmentRemoteAccess } from "./services/remoteServer";
 import { hasPairedDevices, subscribePairedDevices } from "./services/deviceAccess";
+import { activeSurface, type SurfaceStack } from "./services/surfaceStack";
 import type { Channel, PlaybackTarget } from "./types";
 import {
   formatXtreamRating,
@@ -222,6 +223,7 @@ export default function App() {
   const activePlaylist = settings.activePlaylist();
   const { locale, direction, t, number } = useLocale();
   const [showSettings, setShowSettings] = useState(false);
+  const [settingsPopupOpen, setSettingsPopupOpen] = useState(false);
   const configured = settings.playlists.length > 0;
   const developmentRemoteAccessEnabled = developmentRemoteAccess();
   const remoteAccessSupported = onTizen() || developmentRemoteAccessEnabled;
@@ -2649,9 +2651,32 @@ export default function App() {
 
   useRemote(onKey);
 
+  const modalSurface = showSettings
+    ? "settings"
+    : showExit
+      ? "exit"
+      : !configured
+        ? "onboarding"
+        : null;
+  const surfaceStack = useMemo<SurfaceStack>(
+    () => ({
+      picture: "picture",
+      primary: view === "panel" ? "panel" : null,
+      drawer: guideChannelId ? "guide" : null,
+      modal: modalSurface,
+      popup: settingsPopupOpen ? "confirmation" : null,
+    }),
+    [guideChannelId, modalSurface, settingsPopupOpen, view],
+  );
+  const inputSurface = activeSurface(surfaceStack);
+
   // Which layer is on top decides what everything below it is allowed to draw.
-  const modal = showSettings || showExit || !configured; // layer 4
-  const panelOpen = view === "panel"; // layer 3
+  const modal =
+    inputSurface === "confirmation" ||
+    inputSurface === "settings" ||
+    inputSurface === "exit" ||
+    inputSurface === "onboarding"; // layer 4
+  const panelOpen = surfaceStack.primary === "panel"; // layer 3
   const covered = modal || view !== "watch"; // anything above the player
   const atPlayer = !covered; // layer 2 may show
 
@@ -3175,6 +3200,7 @@ export default function App() {
       {showSettings && (
         <Settings
           onClose={closeSettings}
+          onPopupChange={setSettingsPopupOpen}
           remoteAccess={remoteAccess}
           showRemoteAccess={remoteAccessSupported}
         />
