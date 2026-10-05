@@ -371,37 +371,35 @@ No result state names the query and leaves the search field focused. Loading and
 
 ## Movie Details
 
-Movie details use a full screen hero with provider backdrop, separate poster art, rating, metadata, synopsis, cast, director, watched progress and a vertical action stack. Rating sits with year, duration and genre. Cast and director use quiet single line rows beneath the synopsis and truncate after the available width.
+Movie details use a full screen hero with provider backdrop, separate poster art, rating, metadata, synopsis, cast, director, watched progress and a vertical action stack. A shared title row contains Back, the provider title and the same compact Favourite toggle used by Series. Rating sits with year, duration and genre. Cast and director use quiet single line rows beneath the synopsis and truncate after the available width.
 
-A movie with progress shows Resume from the saved time first, Start from beginning second and Add to Favourites or Remove from Favourites third. A new movie shows Play first and the favourite action second.
+A movie with progress shows Resume from the saved time followed by Start from beginning. A new movie shows one Play action. Favourite is not duplicated in the action stack. Up from the top action enters the title row at Back, Left and Right move between Back and Favourite, and Down returns to the top action.
 
 Selecting Resume passes the saved position. Selecting Start from beginning passes zero and replaces saved progress once playback advances. Returning from playback restores the details action and poster origin.
 
-Adding a favourite updates the details action, poster badge, Favourites count and category visibility immediately. The green key may remain an optional shortcut but is never the only path.
+Toggling Favourite updates the title toggle, poster badge, Favourites count and category visibility immediately. The focused star expands its short state label, and the green key may remain an optional shortcut but is never the only path.
 
 ## Series Details
 
-Series uses two clear pages. Series details contains the hero, provider metadata, synopsis, one Continue shortcut, one Start current episode from beginning action when progress exists, an Episodes action and the parent series Favourite action. A dedicated Episodes page contains its own Back button, series title, committed season name, season selector, windowed episode list and inline episode action tray.
+Series details remains one spatially stable page. A shared title row contains Back at inline start, the large provider title and a compact star Favourite toggle at the trailing edge. The hero contains metadata, synopsis, cast, director, watched progress and three text actions: Continue or Play, Start the current Continue episode from beginning when progress exists, and Episodes.
 
-The Continue shortcut resolves the latest resumable episode and labels it explicitly, such as Continue S1:E3, 24 min left. When the last watched episode is complete it resolves the next episode. When no progress exists it becomes Play S1:E1 or the first playable provider episode. When the complete series is watched it falls back to the first playable episode. The adjacent restart label uses the same episode reference, such as Start S1:E3 from beginning.
+The Continue action is the only episode resume path. It resolves the latest resumable episode and labels it explicitly, such as Continue S1:E3, 24 min left. When the last watched episode is complete it resolves the next episode. When no progress exists it becomes Play S1:E1 or the first playable provider episode. When the complete series is watched it falls back to the first playable episode. The adjacent restart label uses the same episode reference, such as Start S1:E3 from beginning.
 
-Every Movie details, Series details and Episodes page has a visible Back button in the inline start corner. Entry focus remains on the primary content action or resume target rather than Back. Up from the topmost content element reaches Back, and Down returns to that content. The Back button and remote Back perform the same transition.
+Selecting Episodes replaces the poster region with a season selector and windowed episode list. The hero column and title row never move. The panel enters from inline end with an opacity and position transition no longer than 180 milliseconds. Reduced motion removes translation and uses an immediate state change. Focus moves to the Continue target immediately rather than waiting for animation completion.
 
-On Series details, action order is Continue or Play, Start current episode from beginning when progress exists, Episodes, then Add to Favourites or Remove from Favourites. Selecting Episodes opens the Episodes page focused on the current Continue target. Back from Episodes returns to Series details with Episodes focused. Back from Series details returns to the exact poster or search result.
+While the panel is open, inline end from the hero enters the remembered episode and inline start from the list returns to the remembered hero action. Back or the title row Back button closes the panel and restores Episodes focus. With the panel closed, Back returns to the exact poster or search result. Up from the top hero action enters the title row at Back. Left and Right move between Back and Favourite, and Down returns to the top hero action.
 
-The Episodes page season selector, episode list and episode tray each own one cursor. Up from the first episode enters the season selector. Up from the season selector enters Back. Down returns through the same path. The episode list receives the full page height rather than sharing space with the series hero.
+Favourite is an icon toggle rather than a text action. An outline star means not saved and an accent state means saved. When the toggle receives focus it expands a short Add to Favourites or In Favourites label, and its accessible name uses Add or Remove wording. Toggling never closes or reflows the episode panel.
 
-Season focus is a preview cursor. Left and Right move the white focus without reloading episodes. OK commits the blue selected season, closes any episode tray and restores that season's remembered episode. A single unnumbered season hides the season row, and Up from the first episode then reaches Back.
+Season focus is a preview cursor. Left and Right move white focus without reloading episodes. OK commits the blue selected season and restores that season's remembered episode. A single unnumbered season hides the season row. Up from the first episode then remains at the list boundary, while the title row remains reachable from the hero actions.
 
-Episode selection follows episode focus. The current Continue target also carries a compact persistent blue Up next marker and watched progress, which remain distinct from white focus. Episode rows show number, title, duration, progress and provider rating when present. Episode plot, release date and image appear in the focused episode detail region when supplied.
+Episode selection follows focus. The current Continue target carries a compact persistent blue Up next marker and watched progress, which remain distinct from white focus. Episode rows show number, title, duration, progress and provider rating when present. Episode plot, release date and image appear in the focused episode detail region when supplied.
 
-OK on an episode opens an inline action tray and focuses its primary action. An episode with progress shows Resume S1:E3 from 24:18 followed by Start S1:E3 from beginning. An episode without progress shows one Play S1:E4 action. Up from the first tray action, inline start or Back closes the tray and restores the same episode. The highlighted episode keeps a restrained blue border while the tray owns focus.
+OK or pointer click on an episode always starts that manually selected episode from the beginning, even when saved episode progress exists. Manual episode selection never resumes. The Series Continue action remains the only resume path. The episode reference uses `S{season}:E{episode}` when both values exist, Episode 3 with only episode number, Season 1 selected episode with only season and selected episode with neither. Missing display numbers never produce `S0:E0` and do not prevent playback when the episode has a playable provider id or valid direct source.
 
-The episode reference uses `S{season}:E{episode}` when both values exist. With only episode number it uses Episode 3. With only season it uses Season 1 selected episode. With neither it uses selected episode. Missing display numbers never produce `S0:E0` and do not prevent playback when the episode has a playable provider id or valid direct source.
+A season with no episodes keeps focus on its season pill and shows a nonfocus No episodes available message. A failed season exposes Retry in the episode region while the season row and title row Back remain reachable.
 
-Favouriting applies to the parent series rather than an individual episode. A season with no episodes keeps focus on its season pill and shows a nonfocus No episodes available message. A failed season exposes Retry in the episode region while the season row and page Back remain reachable.
-
-Series hero and tray actions use rounded tonal buttons without decorative outlines. White fill and the shared halo identify the one focused action. Buttons use the existing 8 pixel rhythm, a restrained pressed scale and no ambient animation. The Episodes surface uses `--over-video`, a soft surface radius, one hairline and the existing elevation rather than blur or stacked shadows. Reduced motion removes the pressed transform.
+Hero actions use rounded tonal buttons without decorative outlines. White fill and the shared halo identify the one focused action. Buttons use the existing 8 pixel rhythm, a restrained pressed scale and no ambient animation. The episode panel uses `--over-video`, a soft surface radius, one hairline and the existing elevation rather than blur or stacked shadows. Reduced motion removes transforms.
 
 ## VOD Loading and Performance
 
