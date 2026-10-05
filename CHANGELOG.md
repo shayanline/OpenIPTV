@@ -2,6 +2,22 @@
 
 Notable changes, newest first, in the format of [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## 1.10.0
+
+### Added
+
+- **The on screen pad stays where it is put.** A pad dragged clear of whatever it covered comes back in the same place next time the application opens, moved inside the window if the window has since become smaller.
+
+### Changed
+
+- **Language leads the welcome screen.** The first screen opens with the title and the language picker side by side under a rule, with a globe beside the label, so choosing a language comes before filling in the playlist form rather than in the middle of it. Up and down follow what is on screen from top to bottom.
+- **Dropdown navigation.** Opening a list puts the cursor on the current choice. Up and down move between the options and stop at the ends, left or right closes the list, and Return still closes it, so the directional buttons never walk out of a list that is still showing. This covers the language and the stream format lists alike.
+
+### Fixed
+
+- **Xtream addresses that were refused.** A `get.php` address is recognised when the username and password are left blank, which is how a provider hands one out to be filled in, and when it carries a watermark in front of the host, which the address parser reads as a login of its own. An address asking for `type=m3u` counts as an Xtream login too. Playlists saved by an older version are untouched by that last part, because nothing converts them without being asked.
+- **Pasting over a server address.** An address pasted into the server field no longer takes the username and password already typed with it, and it leaves the chosen stream format alone when the address names none.
+
 ## 1.9.3
 
 ### Changed
