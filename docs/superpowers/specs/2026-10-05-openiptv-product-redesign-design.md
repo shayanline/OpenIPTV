@@ -371,13 +371,13 @@ No result state names the query and leaves the search field focused. Loading and
 
 ## Movie Details
 
-Movie details use a full screen hero with provider backdrop, separate poster art, rating, metadata, synopsis, cast, director, watched progress and a vertical action stack. A shared title row contains Back, the provider title and the same compact Favourite toggle used by Series. Rating sits with year, duration and genre. Cast and director use quiet single line rows beneath the synopsis and truncate after the available width.
+Movie details use a full screen hero with provider backdrop, separate poster art, rating, metadata, synopsis, cast, director, watched progress and a vertical action stack. A shared title row contains Back, the provider title and the same compact Favourite toggle used by Series. The active Movies or Series mode already supplies content type context, so details do not repeat a Movie or Series label beneath the title. Rating sits with year, duration and genre. Cast and director use quiet single line rows beneath the synopsis and truncate after the available width.
 
 A movie with progress shows Resume from the saved time followed by Start from beginning. A new movie shows one Play action. Favourite is not duplicated in the action stack. Up from the top action enters the title row at Back, Left and Right move between Back and Favourite, and Down returns to the top action.
 
 Selecting Resume passes the saved position. Selecting Start from beginning passes zero and replaces saved progress once playback advances. Returning from playback restores the details action and poster origin.
 
-Toggling Favourite updates the title toggle, poster badge, Favourites count and category visibility immediately. The focused star expands its short state label, and the green key may remain an optional shortcut but is never the only path.
+Toggling Favourite updates the title toggle, poster badge, Favourites count and category visibility immediately. The fixed size star shows a short state label beneath it while focused, and the green key may remain an optional shortcut but is never the only path.
 
 ## Series Details
 
@@ -389,7 +389,7 @@ Selecting Episodes replaces the poster region with a season selector and windowe
 
 While the panel is open, inline end from the hero enters the remembered episode and inline start from the list returns to the remembered hero action. Back or the title row Back button closes the panel and restores Episodes focus. With the panel closed, Back returns to the exact poster or search result. Up from the top hero action enters the title row at Back. Left and Right move between Back and Favourite, and Down returns to the top hero action.
 
-Favourite is an icon toggle rather than a text action. An outline star means not saved and an accent state means saved. When the toggle receives focus it expands a short Add to Favourites or In Favourites label, and its accessible name uses Add or Remove wording. Toggling never closes or reflows the episode panel.
+Favourite is an icon toggle rather than a text action. An outline star means not saved and an accent state means saved. The fixed size toggle stays immediately beside the title. When it receives focus, a short Add to Favourites or In Favourites label appears beneath it without shifting the row. Its accessible name uses Add or Remove wording. Toggling never closes or reflows the episode panel.
 
 Season focus is a preview cursor. Left and Right move white focus without reloading episodes. OK commits the blue selected season and restores that season's remembered episode. A single unnumbered season hides the season row. Up from the first episode then remains at the list boundary, while the title row remains reachable from the hero actions.
 
