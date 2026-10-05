@@ -342,6 +342,11 @@ test("legacy playlist addresses migrate atomically to typed sources", async () =
           url: "https://provider.example/get.php?username=user&password=pass&type=m3u&output=ts",
         },
         {
+          id: "foreign-type",
+          name: "Other API",
+          url: "https://provider.example/get.php?username=user&password=pass&type=enigma22&output=ts",
+        },
+        {
           id: "unsupported-output",
           name: "Odd output",
           url: "https://provider.example/get.php?username=user&password=pass&type=m3u_plus&output=rtmp",
@@ -366,6 +371,9 @@ test("legacy playlist addresses migrate atomically to typed sources", async () =
     [
       m3u("https://provider.example/get.php?username=user&password=pass&type=m3u&output=ts"),
       m3u(
+        "https://provider.example/get.php?username=user&password=pass&type=enigma22&output=ts",
+      ),
+      m3u(
         "https://provider.example/get.php?username=user&password=pass&type=m3u_plus&output=rtmp",
       ),
       m3u("https://example.com/custom?token=a%2Bb"),
@@ -373,11 +381,11 @@ test("legacy playlist addresses migrate atomically to typed sources", async () =
   );
   assert.deepEqual(
     playlists.map((playlist) => playlist.sourceVersion),
-    [1, 1, 1, 1],
+    [1, 1, 1, 1, 1],
   );
   assert.deepEqual(
     playlists.map((playlist) => playlist.id),
-    ["xtream-defaults", "unsupported-type", "unsupported-output", "plain"],
+    ["xtream-defaults", "unsupported-type", "foreign-type", "unsupported-output", "plain"],
   );
   const persisted = JSON.parse(localStorage.getItem(KEY) as string);
   assert.equal(
