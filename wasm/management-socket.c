@@ -195,9 +195,9 @@ const char *request_text(void) {
 }
 
 EMSCRIPTEN_KEEPALIVE
-int send_response(const char *response) {
+int send_response(const char *response, size_t length) {
   if (client < 0 || !response) return -1;
-  int outcome = send_all(client, response, strlen(response));
+  int outcome = send_all(client, response, length);
   close_client();
   return outcome;
 }

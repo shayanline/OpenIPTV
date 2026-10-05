@@ -249,6 +249,7 @@ export function driver(cdp, port) {
           && rows[0].textContent === "Channel Alpha News"
           && rows[1].textContent === "Channel Beta With A Much Longer Name Than Fits";
       })()`);
+      await evaluate("document.fonts ? document.fonts.ready.then(() => true) : true");
       await evaluate(`(() => {
         const style = document.createElement("style");
         style.textContent = "*{transition:none!important;animation:none!important}";
@@ -271,6 +272,7 @@ export function driver(cdp, port) {
           && rows[0].textContent === "Live Channel 0001"
           && rows[1].textContent === "Live Channel 0002";
       })()`);
+      await evaluate("document.fonts ? document.fonts.ready.then(() => true) : true");
       await evaluate(`(() => {
         const style = document.createElement("style");
         style.textContent = "*{transition:none!important;animation:none!important}";

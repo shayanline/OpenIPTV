@@ -9,12 +9,13 @@
  * aligned in grids rather than diagonally, because four directional navigation across a
  * diagonal layout leaves the viewer guessing where the next press will land.
  *
- * The application font is one bundled Vazirmatn token, so Samsung devices and browsers use the same
- * face without needing a network request.
+ * The application fonts are bundled by writing system, so Samsung devices and browsers use the same
+ * faces without needing a network request.
  */
 
 * {
   box-sizing: border-box;
+  font-family: inherit;
 }
 
 html,
