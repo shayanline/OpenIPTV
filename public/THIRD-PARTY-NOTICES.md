@@ -29,9 +29,11 @@ Text in [licenses/react.txt](licenses/react.txt), which covers both packages.
 
 **uqr**, version 0.1.3, MIT, Copyright Project Nayuki and Anthony Fu. It generates pairing QR codes locally so no setup information leaves the television. Text in [licenses/uqr.txt](licenses/uqr.txt).
 
-**Vazirmatn**, Regular and SemiBold fonts, SIL Open Font License 1.1, Copyright 2015 The Vazirmatn
-Project Authors. The fonts are bundled for the application font in `src/styles/tokens.css`. The licence
-text is in [licenses/OFL.txt](licenses/OFL.txt).
+**Google Sans**, Regular and SemiBold script subsets, SIL Open Font License 1.1, Copyright 2025 The Google Sans Project Authors. The fonts provide the Latin, Cyrillic, Bengali and Devanagari interfaces in `src/styles/tokens.css`. The licence text is in [licenses/OFL-Google-Sans.txt](licenses/OFL-Google-Sans.txt).
+
+**Vazirmatn**, Regular and SemiBold fonts, SIL Open Font License 1.1, Copyright 2015 The Vazirmatn Project Authors. The fonts provide the Arabic and Persian interfaces in `src/styles/tokens.css`. The licence text is in [licenses/OFL.txt](licenses/OFL.txt).
+
+**Noto Sans CJK**, Regular and SemiBold interface subsets for Simplified Chinese, Japanese and Korean, SIL Open Font License 1.1, Copyright 2014 to 2021 Adobe, with Reserved Font Name Source. The licence text is in [licenses/OFL-Noto-Sans-CJK.txt](licenses/OFL-Noto-Sans-CJK.txt).
 
 **Emscripten**, MIT and University of Illinois NCSA, Copyright the Emscripten authors. The file `wasm/manifest-socket.js` is generated glue, and rather than being compiled output in the way a binary is, most of it is copied from Emscripten's own JavaScript libraries, so its licence follows it here. It was produced by Samsung's fork of Emscripten, whose Tizen extensions carry the same two licences. The management module is compiled by current Emscripten and uses a small project owned loader. Both build recipes are in [the testing documentation](../docs/testing.md).
 
