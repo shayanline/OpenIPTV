@@ -217,6 +217,39 @@ test("the Settings Xtream stream format closes when focus moves to the password"
   expect(output.getAttribute("aria-expanded")).toBe("false");
 });
 
+test("an open language list in Settings keeps the arrow keys inside it", async () => {
+  await mountApp(PLAYLIST);
+  press(KEY.YELLOW);
+
+  const trigger = screen.getByRole("button", { name: "Language, System" });
+  trigger.focus();
+  press(KEY.ENTER);
+
+  const list = screen.getByRole("listbox", { name: "Language" });
+  const start = document.activeElement as HTMLElement;
+  expect(start.getAttribute("aria-selected")).toBe("true");
+
+  press(KEY.DOWN);
+  const moved = document.activeElement as HTMLElement;
+  expect(moved).not.toBe(start);
+  expect(list.contains(moved)).toBe(true);
+
+  /* Right closes the list without moving the body navigation underneath it. */
+  press(KEY.RIGHT);
+  expect(screen.queryByRole("listbox", { name: "Language" })).toBeNull();
+  expect(document.activeElement).toBe(trigger);
+
+  press(KEY.ENTER);
+  const reopened = screen.getByRole("listbox", { name: "Language" });
+  const refocused = document.activeElement as HTMLElement;
+  expect(reopened.contains(refocused)).toBe(true);
+  expect(refocused.getAttribute("aria-selected")).toBe("true");
+
+  press(KEY.BACK);
+  expect(screen.queryByRole("listbox", { name: "Language" })).toBeNull();
+  expect(document.activeElement).toBe(trigger);
+});
+
 test("playlist settings add Xtream credentials while keeping M3U as the default", async () => {
   await mountApp(PLAYLIST);
   press(KEY.YELLOW);
