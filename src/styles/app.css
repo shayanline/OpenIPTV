@@ -2881,6 +2881,7 @@ html[dir="rtl"] .form select {
   color: var(--text-3);
 }
 .diag-value {
+  flex: 1;
   min-width: 0;
   color: var(--text);
   text-align: end;
