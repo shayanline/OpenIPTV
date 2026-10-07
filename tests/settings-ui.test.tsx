@@ -3,8 +3,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { act, cleanup, fireEvent, screen } from "@testing-library/react";
 import { KEY } from "../src/hooks/useRemote";
-import { moveWithinPlaylistRow } from "../src/components/Settings";
-import { mountApp, press, settle, XTREAM_SOURCE } from "./support/app";
+import { mountApp, press, settle } from "./support/app";
 import {
   createPairingSession,
   listPairedDevices,
@@ -32,17 +31,6 @@ http://example.invalid/a.m3u8
 #EXTINF:-1 tvg-id="b" group-title="Sport",Beta
 http://example.invalid/b.m3u8`;
 
-const LONG_PLAYLIST_NAME = "📺 قائمة تشغيل طويلة جداً | Family channels and more";
-const MIXED_CATEGORY = "📡 أخبار المساء | Evening News and Headlines";
-const MIXED_CATEGORIES = `#EXTM3U
-#EXTINF:-1 tvg-id="mixed" group-title="${MIXED_CATEGORY}",Mixed Channel
-http://example.invalid/mixed.m3u8`;
-const MANY_CATEGORIES = `#EXTM3U\n${Array.from(
-  { length: 21 },
-  (_, index) =>
-    `#EXTINF:-1 tvg-id="${index}" group-title="Category ${index + 1}",Channel ${index + 1}\nhttp://example.invalid/${index}.m3u8`,
-).join("\n")}`;
-
 test("settings uses clear sections and concise labels", async () => {
   await mountApp(PLAYLIST);
   press(KEY.YELLOW);
@@ -58,7 +46,6 @@ test("settings uses clear sections and concise labels", async () => {
   expect(screen.getByRole("button", { name: "Show channel logos" })).toBeTruthy();
   expect(screen.getByRole("button", { name: "Show clock" })).toBeTruthy();
   expect(screen.getByRole("button", { name: "Text size, Medium" })).toBeTruthy();
-  expect(screen.getByText("Sort channels alphabetically")).toBeTruthy();
   expect(Boolean(screen.queryByText("Hide the channel list after"))).toBe(false);
 
   await act(async () => {
@@ -70,7 +57,7 @@ test("settings uses clear sections and concise labels", async () => {
   );
   expect(screen.getByText("Screen fit")).toBeTruthy();
   expect(screen.getByText("Resume last channel")).toBeTruthy();
-  expect(screen.getByRole("button", { name: "Playback information" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Continuous reconnect" })).toBeTruthy();
   expect(screen.getByText("Compatibility mode")).toBeTruthy();
   expect(screen.getByText(/additional data while repairing/)).toBeTruthy();
 
@@ -113,7 +100,9 @@ test("settings uses clear sections and concise labels", async () => {
 
 test("form selects use the same inset chevron spacing as other controls", () => {
   const css = readFileSync(join(process.cwd(), "src/styles/app.css"), "utf8");
-  const rule = css.match(/\.form select \{([^}]*)\}/)?.[1] ?? "";
+  const matches = [...css.matchAll(/\.form select \{([^}]*)\}/g)];
+  const rule =
+    matches.map((match) => match[1]).find((value) => value.includes("appearance: none")) ?? "";
 
   expect(rule).toContain("appearance: none");
   expect(rule).toContain("background-position: right var(--s3) center");
@@ -217,6 +206,39 @@ test("the Settings Xtream stream format closes when focus moves to the password"
   expect(output.getAttribute("aria-expanded")).toBe("false");
 });
 
+test("an open language list in Settings keeps the arrow keys inside it", async () => {
+  await mountApp(PLAYLIST);
+  press(KEY.YELLOW);
+
+  const trigger = screen.getByRole("button", { name: "Language, System" });
+  trigger.focus();
+  press(KEY.ENTER);
+
+  const list = screen.getByRole("listbox", { name: "Language" });
+  const start = document.activeElement as HTMLElement;
+  expect(start.getAttribute("aria-selected")).toBe("true");
+
+  press(KEY.DOWN);
+  const moved = document.activeElement as HTMLElement;
+  expect(moved).not.toBe(start);
+  expect(list.contains(moved)).toBe(true);
+
+  /* Right closes the list without moving the body navigation underneath it. */
+  press(KEY.RIGHT);
+  expect(screen.queryByRole("listbox", { name: "Language" })).toBeNull();
+  expect(document.activeElement).toBe(trigger);
+
+  press(KEY.ENTER);
+  const reopened = screen.getByRole("listbox", { name: "Language" });
+  const refocused = document.activeElement as HTMLElement;
+  expect(reopened.contains(refocused)).toBe(true);
+  expect(refocused.getAttribute("aria-selected")).toBe("true");
+
+  press(KEY.BACK);
+  expect(screen.queryByRole("listbox", { name: "Language" })).toBeNull();
+  expect(document.activeElement).toBe(trigger);
+});
+
 test("playlist settings add Xtream credentials while keeping M3U as the default", async () => {
   await mountApp(PLAYLIST);
   press(KEY.YELLOW);
@@ -271,6 +293,7 @@ test("playlist settings add Xtream credentials while keeping M3U as the default"
     target: { value: "http://new-provider.example:8080" },
   });
   fireEvent.click(screen.getByRole("button", { name: "Save" }));
+  await settle(0);
   expect(useSettings.getState().playlists[1]).toMatchObject({
     source: {
       kind: "xtream",
@@ -381,43 +404,231 @@ test("saved Xtream status supports unknown expiry, inactive and expired accounts
   expect(screen.getAllByText("Expired").length).toBeGreaterThan(0);
 });
 
-test("remote navigation reaches the Categories action in a playlist row", async () => {
-  const box = (left: number, width: number): DOMRect =>
-    ({
-      left,
-      right: left + width,
-      top: 100,
-      bottom: 180,
-      width,
-      height: 80,
-      x: left,
-      y: 100,
-    }) as DOMRect;
-  vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function () {
-    if (this.classList.contains("pl-main")) return box(500, 360);
-    if (this.closest(".pl") && this instanceof HTMLButtonElement) {
-      const buttons = Array.from(this.parentElement?.children ?? []);
-      return box(870 + buttons.indexOf(this) * 130, 120);
-    }
-    if (this.closest(".sheet-body")) return box(500, 200);
-    return box(0, 100);
-  });
+test("the lineup detail exposes channel and category management scopes", async () => {
   await mountApp(CATEGORIES);
   press(KEY.YELLOW);
-  await settle(0);
   fireEvent.click(screen.getByRole("button", { name: "Playlists" }));
-  await settle(0);
-  const playlistRow = document.querySelector<HTMLButtonElement>(".pl-main");
-  act(() => playlistRow?.focus());
-  expect(document.activeElement).toBe(playlistRow);
+  fireEvent.click(screen.getByRole("button", { name: "Lineup, Test" }));
+  expect(screen.getByRole("heading", { level: 3, name: "Lineup" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Channels" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Categories" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Reveal hidden" })).toBeTruthy();
+  expect(screen.getByRole("combobox", { name: "Channel order" })).toBeTruthy();
+});
 
-  expect(moveWithinPlaylistRow(document.activeElement, KEY.RIGHT, KEY.LEFT, KEY.RIGHT)).toBe(
+test("channel edits persist effective name, number, visibility and membership", async () => {
+  await mountApp(CATEGORIES, {
+    personalLineup: {
+      version: 1,
+      revision: 1,
+      personalisation: {
+        personalCategories: [{ id: "mine", name: "Mine", channels: [] }],
+      },
+    },
+  });
+  press(KEY.YELLOW);
+  fireEvent.click(screen.getByRole("button", { name: "Playlists" }));
+  fireEvent.click(screen.getByRole("button", { name: "Lineup, Test" }));
+  fireEvent.click(screen.getByRole("button", { name: /AlphaVisible/ }));
+  fireEvent.change(screen.getByLabelText("Custom name"), { target: { value: "My Alpha" } });
+  fireEvent.change(screen.getByLabelText("Channel number"), { target: { value: "801" } });
+  fireEvent.click(screen.getByRole("checkbox", { name: "Mine" }));
+  fireEvent.click(screen.getByRole("button", { name: "Visible" }));
+  fireEvent.click(screen.getByRole("button", { name: "Save" }));
+  await settle(2500);
+  const { useLineup } = await import("../src/stores/lineup");
+  const channel = useLineup
+    .getState()
+    .managedChannels.find((item) => item.effective.id === "a");
+  expect(channel?.effective.name).toBe("My Alpha");
+  expect(channel?.effective.number).toBe(801);
+  expect(channel?.hidden).toBe(true);
+  expect(
+    useLineup.getState().categories.find((item) => item.key === "personal:mine")?.channels[0]
+      .id,
+  ).toBe("a");
+});
+
+test("channel number collisions keep the editor and durable record unchanged", async () => {
+  await mountApp(CATEGORIES);
+  press(KEY.YELLOW);
+  fireEvent.click(screen.getByRole("button", { name: "Playlists" }));
+  fireEvent.click(screen.getByRole("button", { name: "Lineup, Test" }));
+  fireEvent.click(screen.getByRole("button", { name: /AlphaVisible/ }));
+  fireEvent.change(screen.getByLabelText("Channel number"), { target: { value: "2" } });
+  fireEvent.click(screen.getByRole("button", { name: "Save" }));
+  await settle(700);
+  expect(screen.getByText("Another channel already uses this number.")).toBeTruthy();
+  const { useLineup } = await import("../src/stores/lineup");
+  expect(useLineup.getState().channels[0].number).toBe(1);
+});
+
+test("persistence failure keeps the channel draft and shows Retry", async () => {
+  await mountApp(CATEGORIES, {
+    personalWrite: async () => {
+      throw new Error("quota");
+    },
+  });
+  press(KEY.YELLOW);
+  fireEvent.click(screen.getByRole("button", { name: "Playlists" }));
+  fireEvent.click(screen.getByRole("button", { name: "Lineup, Test" }));
+  fireEvent.click(screen.getByRole("button", { name: /AlphaVisible/ }));
+  fireEvent.change(screen.getByLabelText("Custom name"), { target: { value: "Retained" } });
+  fireEvent.click(screen.getByRole("button", { name: "Save" }));
+  await settle(700);
+  expect((screen.getByLabelText("Custom name") as HTMLInputElement).value).toBe("Retained");
+  expect(screen.getByRole("button", { name: "Try again" })).toBeTruthy();
+});
+
+test("personal category 129 keeps the creation draft and shows the limit", async () => {
+  await mountApp(CATEGORIES, {
+    personalLineup: {
+      version: 1,
+      revision: 4,
+      personalisation: {
+        personalCategories: Array.from({ length: 128 }, (_, index) => ({
+          id: String(index),
+          name: `Personal ${index}`,
+          channels: [],
+        })),
+      },
+    },
+  });
+  press(KEY.YELLOW);
+  fireEvent.click(screen.getByRole("button", { name: "Playlists" }));
+  fireEvent.click(screen.getByRole("button", { name: "Lineup, Test" }));
+  fireEvent.click(screen.getByRole("button", { name: "Categories" }));
+  fireEvent.change(screen.getByLabelText("Personal category name"), {
+    target: { value: "One too many" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Create category" }));
+  await settle(0);
+  expect(
+    screen.getByText("A playlist can contain up to 128 personal categories."),
+  ).toBeTruthy();
+  expect((screen.getByLabelText("Personal category name") as HTMLInputElement).value).toBe(
+    "One too many",
+  );
+});
+
+test("personal categories can be created, renamed and deleted with confirmation", async () => {
+  await mountApp(CATEGORIES);
+  press(KEY.YELLOW);
+  fireEvent.click(screen.getByRole("button", { name: "Playlists" }));
+  fireEvent.click(screen.getByRole("button", { name: "Lineup, Test" }));
+  fireEvent.click(screen.getByRole("button", { name: "Categories" }));
+  fireEvent.change(screen.getByLabelText("Personal category name"), {
+    target: { value: "Mine" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Create category" }));
+  await settle(700);
+  fireEvent.click(screen.getByRole("button", { name: /MineVisible/ }));
+  fireEvent.change(screen.getByLabelText("Custom name"), { target: { value: "Family" } });
+  fireEvent.click(screen.getByRole("button", { name: "Save" }));
+  await settle(1200);
+  fireEvent.click(screen.getByRole("button", { name: /FamilyVisible/ }));
+  fireEvent.click(screen.getByRole("button", { name: "Delete personal category" }));
+  fireEvent.click(screen.getByRole("button", { name: "Remove" }));
+  await settle(700);
+  expect(Boolean(screen.queryByText("Family"))).toBe(false);
+});
+
+test("unavailable records require confirmation and remove only the selected record", async () => {
+  await mountApp(CATEGORIES, {
+    personalLineup: {
+      version: 1,
+      revision: 3,
+      personalisation: {
+        channels: {
+          "m3u:0123456789abcdef": {
+            name: "Unavailable custom name",
+            sourceFingerprint: "0123456789abcdef",
+          },
+        },
+      },
+    },
+  });
+  press(KEY.YELLOW);
+  fireEvent.click(screen.getByRole("button", { name: "Playlists" }));
+  fireEvent.click(screen.getByRole("button", { name: "Lineup, Test" }));
+  expect(screen.getByText("Unavailable custom name")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Remove" }));
+  fireEvent.click(screen.getAllByRole("button", { name: "Remove" }).slice(-1)[0]);
+  await settle(700);
+  expect(Boolean(screen.queryByText("Unavailable custom name"))).toBe(false);
+});
+
+test("Sort mode restores focus and rolls back a grabbed tentative move", async () => {
+  await mountApp(`#EXTM3U
+#EXTINF:-1 tvg-id="a" group-title="News",Alpha
+http://example.invalid/a.m3u8
+#EXTINF:-1 tvg-id="b" group-title="News",Beta
+http://example.invalid/b.m3u8`);
+  press(KEY.YELLOW);
+  fireEvent.click(screen.getByRole("button", { name: "Playlists" }));
+  fireEvent.click(screen.getByRole("button", { name: "Lineup, Test" }));
+  const sort = screen.getByRole("button", { name: "Sort" });
+  sort.focus();
+  fireEvent.click(sort);
+  await settle(0);
+  const first = document.querySelector<HTMLButtonElement>(
+    ".lineup-sort-mode .lineup-manager-row",
+  );
+  expect(document.activeElement).toBe(first);
+  fireEvent.click(first!);
+  await settle(0);
+  press(KEY.DOWN);
+  press(KEY.BACK);
+  await settle(0);
+  expect(
+    document.querySelector(".lineup-sort-mode .lineup-manager-row")?.textContent,
+  ).toContain("Alpha");
+  press(KEY.BACK);
+  await settle(0);
+  const restoredSort = screen.getByRole("button", { name: "Sort" });
+  expect(document.activeElement).toBe(restoredSort);
+  fireEvent.click(restoredSort);
+  const grabbed = document.querySelector<HTMLButtonElement>(
+    ".lineup-sort-mode .lineup-manager-row",
+  );
+  fireEvent.click(grabbed!);
+  await settle(0);
+  press(KEY.DOWN);
+  await settle(0);
+  press(KEY.ENTER);
+  await settle(700);
+  const { useLineup } = await import("../src/stores/lineup");
+  expect(useLineup.getState().orderMode).toBe("custom");
+});
+
+test("category rename and bulk visibility use effective category records", async () => {
+  await mountApp(CATEGORIES);
+  press(KEY.YELLOW);
+  fireEvent.click(screen.getByRole("button", { name: "Playlists" }));
+  fireEvent.click(screen.getByRole("button", { name: "Lineup, Test" }));
+  fireEvent.click(screen.getByRole("button", { name: "Categories" }));
+  fireEvent.click(screen.getByRole("button", { name: /NewsVisible/ }));
+  fireEvent.change(screen.getByLabelText("Custom name"), { target: { value: "Headlines" } });
+  fireEvent.click(screen.getByRole("button", { name: "Save" }));
+  await settle(1200);
+  expect(screen.getAllByText("Headlines").length).toBeGreaterThan(0);
+  fireEvent.click(screen.getByRole("button", { name: "Hide all" }));
+  await settle(700);
+  const { useLineup } = await import("../src/stores/lineup");
+  expect(useLineup.getState().managedCategories.every((category) => category.hidden)).toBe(
     true,
   );
+});
 
-  expect(document.activeElement).toBe(
-    screen.getByRole("button", { name: "Manage categories for Test" }),
-  );
+test("Settings blocks panel movement while it owns input", async () => {
+  await mountApp(CATEGORIES);
+  const selected = document.querySelector(".panel .row.selected")?.textContent;
+
+  press(KEY.YELLOW);
+  press(KEY.DOWN);
+
+  expect(document.querySelector(".sheet")).toBeTruthy();
+  expect(document.querySelector(".panel .row.selected")?.textContent).toBe(selected);
 });
 
 test("a Settings confirmation owns directional input", async () => {
@@ -436,42 +647,6 @@ test("a Settings confirmation owns directional input", async () => {
   expect(document.activeElement?.closest(".dialog")).toBeTruthy();
 });
 
-test("Categories is a Settings detail screen with hierarchical RETURN", async () => {
-  await mountApp(CATEGORIES);
-  press(KEY.YELLOW);
-  fireEvent.click(screen.getByRole("button", { name: "Playlists" }));
-  const opener = screen.getByRole("button", { name: "Manage categories for Test" });
-  fireEvent.click(opener);
-
-  const back = screen.getByRole("button", { name: "Back to Playlists" });
-  const first = screen.getByRole("button", {
-    name: "Hidden category channels, Hide everywhere",
-  });
-  expect(Boolean(document.querySelector(".settings-breadcrumb"))).toBe(false);
-  expect(document.querySelector(".settings-detail-appbar")?.textContent).toContain(
-    "Categories",
-  );
-  expect(screen.getByRole("heading", { level: 3, name: "Categories" })).toBeTruthy();
-  expect(document.querySelector(".sheet-hints")?.textContent).toContain("Back");
-  await settle(0);
-  expect(document.activeElement).toBe(first);
-
-  press(KEY.UP);
-  expect(document.activeElement).toBe(back);
-  press(KEY.DOWN);
-  expect(document.activeElement).toBe(first);
-  press(KEY.LEFT);
-  expect(screen.getByRole("heading", { level: 3, name: "Categories" })).toBeTruthy();
-
-  press(KEY.BACK);
-  await settle(0);
-
-  const restored = screen.getByRole("button", { name: "Manage categories for Test" });
-  expect(document.activeElement).toBe(restored);
-  expect(screen.getByRole("heading", { level: 3, name: "Playlists" })).toBeTruthy();
-  expect(screen.getByRole("heading", { level: 2, name: "Settings" })).toBeTruthy();
-});
-
 test("playlist editors use the same detail back behavior", async () => {
   await mountApp(PLAYLIST);
   press(KEY.YELLOW);
@@ -479,273 +654,11 @@ test("playlist editors use the same detail back behavior", async () => {
   fireEvent.click(screen.getByRole("button", { name: "Edit Test" }));
 
   expect(screen.getByRole("heading", { level: 3, name: "Edit playlist" })).toBeTruthy();
-  expect(screen.getByRole("button", { name: "Back to Playlists" })).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Back to Playlists" })).toBeNull();
 
   press(KEY.BACK);
   await settle(0);
   expect(document.activeElement).toBe(screen.getByRole("button", { name: "Edit Test" }));
-});
-
-test("category search and bulk actions expand on demand", async () => {
-  await mountApp(CATEGORIES);
-  press(KEY.YELLOW);
-  fireEvent.click(screen.getByRole("button", { name: "Playlists" }));
-  fireEvent.click(screen.getByRole("button", { name: "Manage categories for Test" }));
-
-  expect(Boolean(screen.queryByRole("textbox", { name: "Search categories" }))).toBe(false);
-  expect(Boolean(screen.queryByRole("button", { name: "Hide all categories" }))).toBe(false);
-
-  fireEvent.click(screen.getByRole("button", { name: "Search categories" }));
-  expect(screen.getByRole("textbox", { name: "Search categories" })).toBeTruthy();
-
-  fireEvent.click(screen.getByRole("button", { name: "Category actions" }));
-  expect(screen.getByRole("button", { name: "Hide all categories" })).toBeTruthy();
-  expect(screen.getByRole("button", { name: "Show all categories" })).toBeTruthy();
-});
-
-test("each playlist manages its own category visibility", async () => {
-  await mountApp(CATEGORIES);
-  press(KEY.YELLOW);
-  await act(async () => {
-    fireEvent.click(screen.getByRole("button", { name: "Playlists" }));
-  });
-  const manage = screen.getByRole("button", { name: "Manage categories for Test" });
-  expect(manage.textContent).toBe("2 Categories");
-  await act(async () => {
-    fireEvent.click(manage);
-  });
-
-  expect(screen.getByRole("heading", { level: 3, name: "Categories" })).toBeTruthy();
-  expect(document.querySelector(".settings-detail-context")?.textContent).toBe("Test");
-  expect(screen.getByText("Hidden category channels")).toBeTruthy();
-  expect(
-    screen.getByText("Choose whether hidden channels also appear in Search and Favourites"),
-  ).toBeTruthy();
-  const news = screen.getByRole("button", { name: "Hide News" });
-  await act(async () => news.focus());
-  expect(document.querySelector(".sheet-hints")?.textContent).toContain("Hide category");
-  expect(document.querySelector(".sheet-hints")?.textContent).not.toContain("Hide News");
-  await act(async () => {
-    fireEvent.click(news);
-    fireEvent.click(
-      screen.getByRole("button", {
-        name: "Hidden category channels, Hide everywhere",
-      }),
-    );
-  });
-
-  const { useSettings } = await import("../src/stores/settings");
-  const playlist = useSettings.getState().playlists[0];
-  expect(playlist.hiddenCategories).toEqual(["News"]);
-  expect(playlist.hiddenCategoryMode).toBe("search");
-  expect(screen.getByRole("button", { name: "Unhide News" })).toBeTruthy();
-  expect(document.querySelector(".sheet-hints")?.textContent).toContain("Unhide category");
-  expect(document.querySelector(".sheet-hints")?.textContent).not.toContain("Unhide News");
-});
-
-test("playlist settings can hide and show every category", async () => {
-  await mountApp(CATEGORIES);
-  press(KEY.YELLOW);
-  await act(async () => {
-    fireEvent.click(screen.getByRole("button", { name: "Playlists" }));
-  });
-  await act(async () => {
-    fireEvent.click(screen.getByRole("button", { name: "Manage categories for Test" }));
-  });
-  const { useSettings } = await import("../src/stores/settings");
-
-  fireEvent.click(screen.getByRole("button", { name: "Category actions" }));
-  fireEvent.click(screen.getByRole("button", { name: "Hide all categories" }));
-  const hideAll = screen.getAllByRole("button", { name: "Hide all categories" });
-  fireEvent.click(hideAll[hideAll.length - 1]);
-  expect(useSettings.getState().playlists[0].hiddenCategories).toEqual(["News", "Sport"]);
-  expect(screen.getByRole("button", { name: "Unhide News" })).toBeTruthy();
-
-  fireEvent.click(screen.getByRole("button", { name: "Category actions" }));
-  await act(async () => {
-    fireEvent.click(screen.getByRole("button", { name: "Show all categories" }));
-  });
-  expect(useSettings.getState().playlists[0].hiddenCategories).toEqual([]);
-  expect(screen.getByRole("button", { name: "Hide News" })).toBeTruthy();
-});
-
-test("category paging recovers when a refresh returns fewer categories", async () => {
-  await mountApp(MANY_CATEGORIES);
-  press(KEY.YELLOW);
-  fireEvent.click(screen.getByRole("button", { name: "Playlists" }));
-  fireEvent.click(screen.getByRole("button", { name: "Manage categories for Test" }));
-  const rows = document.querySelectorAll<HTMLButtonElement>(".category-setting-row");
-  fireEvent.keyDown(rows[rows.length - 1], { keyCode: KEY.DOWN });
-  expect(document.activeElement).toBe(screen.getByRole("button", { name: "Next" }));
-  fireEvent.click(screen.getByRole("button", { name: "Next" }));
-  expect(screen.getByText("Category 21")).toBeTruthy();
-
-  const { useChannels } = await import("../src/stores/channels");
-  act(() => {
-    const state = useChannels.getState();
-    useChannels.setState({
-      channels: state.channels.slice(0, 1),
-      categories: state.categories.slice(0, 1),
-      managedCategories: state.managedCategories.slice(0, 1),
-    });
-  });
-
-  expect(
-    [...document.querySelectorAll(".sheet-body .category-setting-row")].some((element) =>
-      element.textContent?.includes("Category 1"),
-    ),
-  ).toBe(true);
-  expect(Boolean(screen.queryByText("No categories match this search."))).toBe(false);
-});
-
-test("an empty category manager explains that the playlist has no categories", async () => {
-  await mountApp(CATEGORIES);
-  press(KEY.YELLOW);
-  fireEvent.click(screen.getByRole("button", { name: "Playlists" }));
-  fireEvent.click(screen.getByRole("button", { name: "Manage categories for Test" }));
-  const { useChannels } = await import("../src/stores/channels");
-  act(() => useChannels.setState({ channels: [], categories: [], managedCategories: [] }));
-
-  expect(screen.getByText("This playlist has no categories.")).toBeTruthy();
-  expect(Boolean(screen.queryByText("No categories match this search."))).toBe(false);
-});
-
-test("category settings preserve arbitrary playlist content outside fixed labels", async () => {
-  await mountApp(MIXED_CATEGORIES);
-  const { useSettings } = await import("../src/stores/settings");
-  const playlist = useSettings.getState().playlists[0];
-  await act(async () => {
-    useSettings.getState().updatePlaylist(playlist.id, LONG_PLAYLIST_NAME, playlist.source);
-  });
-
-  press(KEY.YELLOW);
-  await act(async () => {
-    fireEvent.click(screen.getByRole("button", { name: "Playlists" }));
-  });
-  await act(async () => {
-    fireEvent.click(
-      screen.getByRole("button", { name: `Manage categories for ${LONG_PLAYLIST_NAME}` }),
-    );
-  });
-
-  const playlistName = document.querySelector(".settings-detail-context [dir='auto']");
-  expect(playlistName?.textContent).toBe(LONG_PLAYLIST_NAME);
-  const categoryName = document.querySelector(".sheet-body .category-setting-row [dir='auto']");
-  expect(categoryName?.textContent).toBe(MIXED_CATEGORY);
-  expect(categoryName?.getAttribute("dir")).toBe("auto");
-  expect(screen.getByRole("button", { name: `Hide ${MIXED_CATEGORY}` })).toBeTruthy();
-});
-
-test("managing an inactive playlist loads that playlist before showing its categories", async () => {
-  await mountApp(CATEGORIES);
-  const { useSettings } = await import("../src/stores/settings");
-  await act(async () => {
-    useSettings
-      .getState()
-      .addPlaylist("Second", { kind: "m3u", url: "http://list.invalid/second.m3u" });
-  });
-  vi.mocked(fetch).mockResolvedValueOnce({
-    ok: true,
-    text: async () => `#EXTM3U
-#EXTINF:-1 tvg-id="s" group-title="Second Sport",Second Channel
-http://example.invalid/s.m3u8`,
-  } as Response);
-
-  press(KEY.YELLOW);
-  await act(async () => {
-    fireEvent.click(screen.getByRole("button", { name: "Playlists" }));
-  });
-  await act(async () => {
-    fireEvent.click(screen.getByRole("button", { name: "Manage categories for Second" }));
-  });
-
-  expect(screen.getByRole("heading", { level: 3, name: "Categories" })).toBeTruthy();
-  expect(document.querySelector(".settings-detail-context")?.textContent).toBe("Second");
-  const category = screen.getByRole("button", { name: "Hide Second Sport" });
-  await act(async () => {
-    fireEvent.click(category);
-  });
-
-  const [first, second] = useSettings.getState().playlists;
-  expect(first.hiddenCategories).toEqual([]);
-  expect(second.hiddenCategories).toEqual(["Second Sport"]);
-
-  await act(async () => {
-    fireEvent.click(screen.getByRole("button", { name: "Back to Playlists" }));
-  });
-  expect(screen.getByRole("status").textContent).toBe(
-    "1 channel loaded from the active playlist.",
-  );
-});
-
-test("a failed inactive playlist load does not show categories from the active playlist", async () => {
-  await mountApp(CATEGORIES);
-  const { useSettings } = await import("../src/stores/settings");
-  await act(async () => {
-    useSettings
-      .getState()
-      .addPlaylist("Offline", { kind: "m3u", url: "http://list.invalid/offline.m3u" });
-  });
-  const first = useSettings.getState().activePlaylistId;
-  vi.mocked(fetch).mockRejectedValueOnce(new Error("offline"));
-
-  press(KEY.YELLOW);
-  await act(async () => {
-    fireEvent.click(screen.getByRole("button", { name: "Playlists" }));
-  });
-  await act(async () => {
-    fireEvent.click(screen.getByRole("button", { name: "Manage categories for Offline" }));
-  });
-
-  expect(Boolean(document.querySelector(".settings-detail-context"))).toBe(false);
-  expect(screen.getByRole("status").textContent).toContain("offline");
-  expect(useSettings.getState().activePlaylistId).toBe(first);
-});
-
-test("Xtream category management includes every content kind with visible paging controls", async () => {
-  const liveCategories = Array.from({ length: 25 }, (_, index) => ({
-    category_id: `live-${index + 1}`,
-    category_name: `Live category ${index + 1}`,
-  }));
-  const movieCategories = Array.from({ length: 25 }, (_, index) => ({
-    category_id: `movie-${index + 1}`,
-    category_name: `Movie category ${index + 1}`,
-  }));
-  const seriesCategories = Array.from({ length: 5 }, (_, index) => ({
-    category_id: `series-${index + 1}`,
-    category_name: `Series category ${index + 1}`,
-  }));
-  const fetchImplementation = async (input: string | URL) => {
-    const url = new URL(String(input));
-    const action = url.searchParams.get("action") ?? "authenticate";
-    const body: Record<string, unknown> = {
-      authenticate: {
-        user_info: { auth: 1, status: "Active" },
-        server_info: { server_protocol: "http", url: "provider.example" },
-      },
-      get_live_categories: liveCategories,
-      get_vod_categories: movieCategories,
-      get_series_categories: seriesCategories,
-      get_live_streams: [],
-    };
-    return { ok: true, status: 200, json: async () => body[action] } as Response;
-  };
-  await mountApp("", { source: XTREAM_SOURCE, fetchImplementation });
-
-  press(KEY.YELLOW);
-  fireEvent.click(screen.getByRole("button", { name: "Playlists" }));
-  expect(screen.getByRole("button", { name: "Manage categories for Test" }).textContent).toBe(
-    "55 Categories",
-  );
-  fireEvent.click(screen.getByRole("button", { name: "Manage categories for Test" }));
-
-  expect(screen.getByRole("button", { name: "Hide Live category 1" })).toBeTruthy();
-  expect(screen.queryByRole("button", { name: "Hide Live category 21" })).toBeNull();
-  fireEvent.click(screen.getByRole("button", { name: "Next" }));
-  expect(screen.getByRole("button", { name: "Hide Live category 21" })).toBeTruthy();
-  expect(screen.getByRole("button", { name: "Previous" })).toBeTruthy();
-  fireEvent.click(document.querySelectorAll(".category-kind-option")[2]);
-  expect(screen.getByRole("button", { name: "Hide Series category 5" })).toBeTruthy();
 });
 
 test("resetting application data revokes authorised devices", async () => {
@@ -759,6 +672,7 @@ test("resetting application data revokes authorised devices", async () => {
   fireEvent.click(screen.getByRole("button", { name: "Reset app data" }));
   const resetButtons = screen.getAllByRole("button", { name: "Reset app data" });
   fireEvent.click(resetButtons[resetButtons.length - 1]);
+  await settle(0);
 
   expect(listPairedDevices()).toEqual([]);
 });

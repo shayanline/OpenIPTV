@@ -1,5 +1,6 @@
-import { LOGO_BOX } from "./logos";
 import { ROW_BASE } from "../hooks/useWindowed";
+import { POSTER_BOX } from "./artwork";
+import { LOGO_BOX } from "./logos";
 
 /**
  * The measurements the code and the stylesheet both need, published from the code.
@@ -21,6 +22,8 @@ export function applyMetrics(): void {
   root.setProperty("--row-base", `${ROW_BASE}px`);
   root.setProperty("--logo-w", `${LOGO_BOX.width}px`);
   root.setProperty("--logo-h", `${LOGO_BOX.height}px`);
+  root.setProperty("--poster-w", `${POSTER_BOX.width}px`);
+  root.setProperty("--poster-h", `${POSTER_BOX.height}px`);
 }
 
 /**

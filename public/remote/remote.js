@@ -39,6 +39,30 @@
   var expandedPlaylists = false;
   var expandedDevices = false;
   var addPlaylistOpen = false;
+  var lineupSearchTimer = null;
+  var anchorSearchTimer = null;
+  var lineupRequestGeneration = 0;
+  var anchorRequestGeneration = 0;
+  var lineup = {
+    playlistId: "",
+    revision: 0,
+    scope: "categories",
+    categoryKey: "",
+    categoryName: "",
+    categoryPersonal: false,
+    membershipCategory: "",
+    query: "",
+    includeHidden: false,
+    items: [],
+    nextCursor: null,
+    total: 0,
+    loading: false,
+    error: "",
+    notice: "",
+    loaded: false,
+    editor: null,
+    anchorPicker: null,
+  };
   var fallback = {
     title: "OpenIPTV",
     pairTitle: "Connect to your TV",
@@ -70,6 +94,38 @@
     saving: "Save…",
     saved: "Settings saved.",
     playlists: "Playlists",
+    lineup: "Channels & categories",
+    lineupChannels: "Channels",
+    lineupMovies: "Movies",
+    lineupSeries: "Series",
+    lineupCategories: "Categories",
+    lineupPersonalCategories: "Personal categories",
+    lineupSearch: "Search lineup",
+    lineupRevealHidden: "Reveal hidden",
+    lineupResults: "{shown} of {total} items",
+    lineupLoadMore: "Load more",
+    lineupLoading: "Loading lineup…",
+    lineupEmpty: "No matching lineup items.",
+    lineupUnavailable: "Lineup management is unavailable until the active playlist is ready.",
+    lineupConflict: "The lineup changed on the TV. The latest page has been loaded.",
+    lineupHidden: "Hidden",
+    lineupUnavailableItem: "Unavailable",
+    lineupRestore: "Restore provider value",
+    lineupRename: "Rename",
+    lineupNumber: "Change number",
+    lineupHide: "Hide",
+    lineupShow: "Show",
+    lineupMoveBefore: "Move before",
+    lineupMoveAfter: "Move after",
+    lineupCreateCategory: "Create personal category",
+    lineupDeleteCategory: "Delete personal category",
+    lineupAddMembership: "Add to category",
+    lineupRemoveMembership: "Remove from category",
+    lineupRemoveUnavailable: "Remove unavailable record",
+    lineupMembers: "members",
+    lineupCount: "channels",
+    lineupBulkHide: "Hide all",
+    lineupBulkShow: "Show all",
     appearance: "Appearance",
     playback: "Playback",
     devices: "Devices",
@@ -123,13 +179,18 @@
     showNumbers: "Show channel numbers",
     showLogos: "Show channel logos",
     showClock: "Show clock",
-    sortAlphabetically: "Sort channels alphabetically",
+    playbackInfo: "Playback information",
+    lineupOrder: "Channel order",
+    orderProvider: "Provider order",
+    orderAlphabetical: "Alphabetical",
+    orderNumber: "Channel number",
+    orderCustom: "Custom order",
     screenFit: "Screen fit",
     fill: "Fill",
     fit: "Fit",
     stretch: "Stretch",
     compatibility: "Compatibility mode",
-    playbackInfo: "Playback information",
+    continuousReconnect: "Continuous reconnect",
     resumeLast: "Resume last channel",
     applicationData: "Application data",
     noDevices: "No devices are authorised.",
@@ -728,6 +789,498 @@
     );
   }
 
+  function lineupQueryBody(cursor) {
+    var body = {
+      playlistId: lineup.playlistId,
+      revision: lineup.revision,
+      scope: lineup.scope,
+    };
+    if (lineup.categoryKey) body.categoryKey = lineup.categoryKey;
+    if (lineup.query) body.query = lineup.query;
+    if (lineup.includeHidden) body.includeHidden = true;
+    if (cursor) body.cursor = cursor;
+    return body;
+  }
+
+  function resetLineupPage() {
+    lineup.items = [];
+    lineup.nextCursor = null;
+    lineup.total = 0;
+    lineup.loaded = false;
+    lineup.error = "";
+  }
+
+  async function loadLineupPage(append) {
+    var generation = ++lineupRequestGeneration;
+    if (!current || !current.lineup || !current.lineup.ready) {
+      lineup.error = labels().lineupUnavailable;
+      lineup.loading = false;
+      lineup.loaded = true;
+      renderManage();
+      return;
+    }
+    if (append && !lineup.nextCursor) return;
+    lineup.loading = true;
+    lineup.error = "";
+    renderManage();
+    var heldRevision = lineup.revision;
+    var response = await request("/api/v1/lineup/query", {
+      method: "POST",
+      headers: headers(true),
+      body: JSON.stringify(lineupQueryBody(append ? lineup.nextCursor : null)),
+    });
+    if (generation !== lineupRequestGeneration) return;
+    if (!response) return;
+    if (response.status === 409) {
+      if (response.body.snapshot) current = response.body.snapshot;
+      lineup.revision = response.body.revision;
+      lineup.notice = labels().lineupConflict;
+      lineup.editor = null;
+      lineup.anchorPicker = null;
+      lineup.items = [];
+      lineup.nextCursor = null;
+      lineup.loaded = false;
+      await loadLineupPage(false);
+      return;
+    }
+    if (response.status !== 200 || !response.body.page) {
+      lineup.loading = false;
+      lineup.loaded = true;
+      lineup.error = labels().changeFailed;
+      renderManage();
+      return;
+    }
+    var page = response.body.page;
+    if (append && page.revision !== heldRevision) {
+      lineup.revision = page.revision;
+      resetLineupPage();
+      await loadLineupPage(false);
+      return;
+    }
+    var items = append ? lineup.items.concat(page.items || []) : page.items || [];
+    lineup.items = items.length > 100 ? items.slice(items.length - 100) : items;
+    lineup.revision = page.revision;
+    lineup.nextCursor = page.nextCursor || null;
+    lineup.total = page.total;
+    lineup.loading = false;
+    lineup.loaded = true;
+    renderManage();
+  }
+
+  async function sendLineupMutation(mutation, source) {
+    if (!lineup.playlistId) return;
+    var returnFocus = lineup.editor?.returnFocus || lineup.anchorPicker?.returnFocus || focusDescriptor(source);
+    var id = commandId();
+    lineupRequestGeneration += 1;
+    lineup.loading = true;
+    lineup.error = "";
+    renderManage();
+    var response = await request("/api/v1/lineup/mutation", {
+      method: "POST",
+      headers: headers(true),
+      body: JSON.stringify({
+        id: id,
+        playlistId: lineup.playlistId,
+        revision: lineup.revision,
+        mutation: mutation,
+      }),
+    });
+    if (!response) return;
+    if (response.status === 409) {
+      if (response.body.snapshot) current = response.body.snapshot;
+      lineup.revision = response.body.revision;
+      lineup.loading = false;
+      lineup.notice = labels().lineupConflict;
+      lineup.editor = null;
+      lineup.anchorPicker = null;
+      resetLineupPage();
+      await loadLineupPage(false);
+      restoreFocus(returnFocus);
+      return;
+    }
+    if (response.status !== 200 || !response.body.ok) {
+      lineup.loading = false;
+      lineup.error = labels().changeFailed;
+      renderManage(lineup.error, true);
+      restoreFocus(returnFocus);
+      return;
+    }
+    lineup.revision = response.body.revision;
+    if (current.lineup) current.lineup.revision = response.body.revision;
+    lineup.editor = null;
+    lineup.anchorPicker = null;
+    lineup.notice = "";
+    resetLineupPage();
+    await loadLineupPage(false);
+    operationStatus(labels().saved, false, false);
+    restoreFocus(returnFocus);
+  }
+
+  async function loadLineupAnchors(append) {
+    var generation = ++anchorRequestGeneration;
+    var picker = lineup.anchorPicker;
+    if (!picker || (append && !picker.nextCursor)) return;
+    picker.loading = true;
+    renderManage();
+    var body = {
+      playlistId: lineup.playlistId,
+      revision: lineup.revision,
+      scope: lineup.scope,
+      includeHidden: true,
+    };
+    if (lineup.categoryKey) body.categoryKey = lineup.categoryKey;
+    if (picker.query) body.query = picker.query;
+    if (append) body.cursor = picker.nextCursor;
+    var response = await request("/api/v1/lineup/query", {
+      method: "POST",
+      headers: headers(true),
+      body: JSON.stringify(body),
+    });
+    if (generation !== anchorRequestGeneration || !response || !lineup.anchorPicker) return;
+    if (response.status === 409) {
+      if (response.body.snapshot) current = response.body.snapshot;
+      lineup.revision = response.body.revision;
+      lineup.notice = labels().lineupConflict;
+      picker.items = [];
+      picker.nextCursor = null;
+      picker.loading = false;
+      await loadLineupAnchors(false);
+      return;
+    }
+    if (response.status !== 200 || !response.body.page) {
+      picker.loading = false;
+      lineup.error = labels().changeFailed;
+      renderManage();
+      return;
+    }
+    var page = response.body.page;
+    var next = (page.items || []).filter(function (item) {
+      return item.kind !== "unavailable" && item.id !== picker.itemId;
+    });
+    var items = append ? picker.items.concat(next) : next;
+    picker.items = items.length > 100 ? items.slice(items.length - 100) : items;
+    picker.nextCursor = page.nextCursor || null;
+    picker.loading = false;
+    renderManage();
+    root.querySelector("[data-anchor-search]")?.focus();
+  }
+
+  function openLineupAnchorPicker(itemId, placement, source) {
+    lineup.anchorPicker = {
+      itemId: itemId,
+      placement: placement,
+      returnFocus: focusDescriptor(source),
+      query: "",
+      items: [],
+      nextCursor: null,
+      loading: false,
+    };
+    renderManage();
+    void loadLineupAnchors(false);
+  }
+
+  function lineupRow(item, l) {
+    if (item.kind === "unavailable") {
+      return '<li class="lineup-row unavailable"><div><strong dir="auto">' + escape(item.label) +
+        '</strong><span>' + escape(l.lineupUnavailableItem) + '</span></div><button type="button" data-lineup-action="remove-unavailable" data-key="' +
+        escape(item.key) + '" aria-label="' + escape(l.lineupRemoveUnavailable + " " + item.label) + '">' + escape(l.remove) + "</button></li>";
+    }
+    var hidden = item.hidden ? '<span class="lineup-state">' + escape(l.lineupHidden) + "</span>" : "";
+    var count = item.kind === "channel"
+      ? String(item.number)
+      : String(item.count) + " " + (item.kind === "personal-category" ? l.lineupMembers : l.lineupCount);
+    var membershipId = lineup.membershipCategory || (lineup.categoryPersonal ? lineup.categoryKey : "");
+    var membership = lineup.scope === "channels" && membershipId && item.kind === "channel"
+      ? '<button type="button" data-lineup-action="membership" data-id="' + escape(item.id) + '">' +
+        escape((item.personalCategoryIds || []).indexOf(membershipId) >= 0 ? l.lineupRemoveMembership : l.lineupAddMembership) + "</button>"
+      : "";
+    var categoryActions = item.kind === "personal-category"
+      ? '<button type="button" data-lineup-action="open-members" data-id="' + escape(item.id) + '">' + escape(l.open) + '</button><button type="button" data-lineup-action="add-members" data-id="' + escape(item.id) + '">' + escape(l.lineupAddMembership) + '</button><button type="button" data-lineup-action="rename" data-id="' + escape(item.id) + '">' + escape(l.lineupRename) + '</button><button type="button" class="danger" data-lineup-action="delete-category" data-id="' + escape(item.id) + '">' + escape(l.lineupDeleteCategory) + "</button>"
+      : '<button type="button" data-lineup-action="open-members" data-id="' + escape(item.id) + '">' + escape(l.open) + '</button><button type="button" data-lineup-action="rename" data-id="' + escape(item.id) + '">' + escape(l.lineupRename) + '</button><button type="button" data-lineup-action="visibility" data-id="' + escape(item.id) + '" data-hidden="' + String(item.hidden) + '">' + escape(item.hidden ? l.lineupShow : l.lineupHide) + "</button>";
+    var channelActions = item.kind === "channel"
+      ? '<button type="button" data-lineup-action="rename" data-id="' + escape(item.id) + '">' + escape(l.lineupRename) + '</button><button type="button" data-lineup-action="number" data-id="' + escape(item.id) + '">' + escape(l.lineupNumber) + '</button><button type="button" data-lineup-action="visibility" data-id="' + escape(item.id) + '" data-hidden="' + String(item.hidden) + '">' + escape(item.hidden ? l.lineupShow : l.lineupHide) + "</button>"
+      : categoryActions;
+    var placement = item.kind !== "channel" || lineup.categoryKey
+      ? '<button type="button" data-lineup-action="move-before" data-id="' + escape(item.id) + '" aria-label="' + escape(l.lineupMoveBefore + " " + item.name) + '">' + escape(l.lineupMoveBefore) + '</button><button type="button" data-lineup-action="move-after" data-id="' + escape(item.id) + '" aria-label="' + escape(l.lineupMoveAfter + " " + item.name) + '">' + escape(l.lineupMoveAfter) + "</button>"
+      : "";
+    return '<li class="lineup-row' + (item.hidden ? " hidden" : "") + '" data-lineup-id="' + escape(item.id) + '"><div><strong dir="auto">' +
+      escape(item.name) + '</strong><span dir="auto">' + escape(item.providerName) + '</span><span>' + escape(count) + "</span>" + hidden +
+      '</div><div class="lineup-row-actions">' + membership + channelActions + placement + "</div></li>";
+  }
+
+  function lineupEditorMarkup(l) {
+    if (!lineup.editor) return "";
+    var editor = lineup.editor;
+    var provider = editor.kind === "personal-category"
+      ? ""
+      : '<p class="lineup-provider-value"><span>' + escape(l.lineupRestore) + '</span><strong dir="auto">' + escape(editor.providerValue) + "</strong></p>";
+    var restore = editor.kind === "personal-category"
+      ? ""
+      : '<button type="button" class="quiet" data-lineup-action="restore">' + escape(l.lineupRestore) + "</button>";
+    return '<form class="lineup-editor" data-lineup-editor><label>' + escape(editor.type === "number" ? l.lineupNumber : l.lineupRename) +
+      '<input name="lineupValue" ' + (editor.type === "number" ? 'type="number" min="1" step="1" inputmode="numeric"' : 'dir="auto"') +
+      ' value="' + escape(editor.value) + '"></label>' + provider + '<div><button type="submit">' + escape(l.save) +
+      "</button>" + restore + '<button type="button" class="quiet" data-lineup-action="cancel-editor">' + escape(l.cancel) + "</button></div></form>";
+  }
+
+  function anchorPickerMarkup(l) {
+    if (!lineup.anchorPicker) return "";
+    var anchors = lineup.anchorPicker.items.map(function (item) {
+      return '<button type="button" data-lineup-anchor="' + escape(item.id) + '"><span dir="auto">' + escape(item.name) + "</span></button>";
+    }).join("");
+    return '<div class="lineup-anchor-picker" role="dialog" aria-modal="true" aria-labelledby="lineup-anchor-title"><h3 id="lineup-anchor-title">' + escape(lineup.anchorPicker.placement === "before" ? l.lineupMoveBefore : l.lineupMoveAfter) + '</h3><label>' + escape(l.lineupSearch) +
+      '<input data-anchor-search dir="auto" value="' + escape(lineup.anchorPicker.query) + '"></label><div>' + anchors +
+      '</div>' + (lineup.anchorPicker.loading ? '<p class="lineup-state">' + escape(l.lineupLoading) + "</p>" : "") +
+      (lineup.anchorPicker.nextCursor ? '<button type="button" data-anchor-more>' + escape(l.lineupLoadMore) + "</button>" : "") +
+      '<button type="button" class="quiet" data-lineup-action="cancel-anchor">' + escape(l.cancel) + "</button></div>";
+  }
+
+  function renderLineup() {
+    var l = labels();
+    var summary = current.lineup;
+    var playlists = current.playlists.map(function (playlist) {
+      return '<option dir="auto" value="' + escape(playlist.id) + '"' + (playlist.id === current.activePlaylistId ? " selected" : "") + '>' + escape(playlist.name) + "</option>";
+    }).join("");
+    var scopes = lineup.scope === "channels" && lineup.categoryKey
+      ? '<button type="button" data-lineup-scope="categories">' + escape(l.lineupCategories) + '</button><span class="lineup-category-name" dir="auto">' + escape(lineup.categoryName) + "</span>"
+      : [["categories", l.lineupCategories], ["personal-categories", l.lineupPersonalCategories]].map(function (entry) {
+          return '<button type="button" data-lineup-scope="' + entry[0] + '" aria-pressed="' + String(lineup.scope === entry[0]) + '">' + escape(entry[1]) + "</button>";
+        }).join("");
+    var rows = lineup.items.map(function (item) { return lineupRow(item, l); }).join("");
+    var status = !summary || !summary.ready
+      ? l.lineupUnavailable
+      : lineup.loading
+        ? l.lineupLoading
+        : lineup.error
+          ? lineup.error
+          : !lineup.items.length && lineup.loaded
+            ? l.lineupEmpty
+            : l.lineupResults.replace("{shown}", lineup.items.length).replace("{total}", lineup.total);
+    var notice = lineup.notice
+      ? '<p class="lineup-state notice" aria-live="polite">' + escape(lineup.notice) + "</p>"
+      : "";
+    var create = lineup.scope === "personal-categories"
+      ? '<form class="lineup-editor" data-create-category><label>' + escape(l.lineupCreateCategory) + '<input name="personalCategoryName" dir="auto" required></label><button type="submit">' + escape(l.lineupCreateCategory) + "</button></form>"
+      : "";
+    var bulk = lineup.scope === "categories"
+      ? '<div class="lineup-bulk">' + ["live", "movie", "series"].map(function (kind) {
+          var label = kind === "live" ? l.lineupChannels : kind === "movie" ? l.lineupMovies : l.lineupSeries;
+          return '<button type="button" data-lineup-bulk="' + kind + '" data-hidden="true">' + escape(l.lineupBulkHide + " " + label) + '</button><button type="button" data-lineup-bulk="' + kind + '" data-hidden="false">' + escape(l.lineupBulkShow + " " + label) + "</button>";
+        }).join("") + "</div>"
+      : "";
+    return '<section id="lineup" data-section="lineup" aria-busy="' + String(lineup.loading) + '"><h2>' + escape(l.lineup) + '</h2><div class="lineup-toolbar"><label>' +
+      escape(l.playlists) + '<select data-lineup-playlist>' + playlists + '</select></label><label>' + escape(l.lineupOrder) +
+      '<select data-lineup-order><option value="provider"' + (current.settings.lineupOrderMode === "provider" ? " selected" : "") + '>' + escape(l.orderProvider) + '</option><option value="alphabetical"' + (current.settings.lineupOrderMode === "alphabetical" ? " selected" : "") + '>' + escape(l.orderAlphabetical) +
+      '</option><option value="number"' + (current.settings.lineupOrderMode === "number" ? " selected" : "") + '>' + escape(l.orderNumber) + '</option><option value="custom"' + (current.settings.lineupOrderMode === "custom" ? " selected" : "") + '>' + escape(l.orderCustom) +
+      '</option></select></label><label>' + escape(l.lineupSearch) + '<input data-lineup-search type="search" dir="auto" value="' + escape(lineup.query) +
+      '"></label><label class="setting"><span>' + escape(l.lineupRevealHidden) + '</span><input data-lineup-hidden type="checkbox"' +
+      (lineup.includeHidden ? " checked" : "") + '></label></div><div class="lineup-scopes">' + scopes + "</div>" + bulk + create + lineupEditorMarkup(l) + notice +
+      '<p class="lineup-state" aria-live="polite">' + escape(status) + '</p><ul class="lineup-list">' + rows + '</ul><div class="lineup-pagination">' +
+      (lineup.nextCursor ? '<button type="button" data-lineup-more>' + escape(l.lineupLoadMore) + "</button>" : "") + "</div>" + anchorPickerMarkup(l) + "</section>";
+  }
+
+  function bindLineup() {
+    var summary = current.lineup;
+    if (summary && (lineup.playlistId !== summary.playlistId || lineup.revision !== summary.revision) && !lineup.loading) {
+      var changedPlaylist = lineup.playlistId !== summary.playlistId;
+      lineup.playlistId = summary.playlistId;
+      lineup.revision = summary.revision;
+      lineup.editor = null;
+      lineup.anchorPicker = null;
+      if (changedPlaylist) {
+        lineup.notice = "";
+        lineup.scope = "categories";
+        lineup.categoryKey = "";
+        lineup.categoryName = "";
+        lineup.categoryPersonal = false;
+      }
+      resetLineupPage();
+    }
+    if (lineup.loading) {
+      root.querySelectorAll("#lineup button, #lineup input, #lineup select").forEach(function (control) {
+        control.disabled = true;
+      });
+    }
+    root.querySelector("[data-lineup-playlist]")?.addEventListener("change", function (event) {
+      lineup.editor = null;
+      lineup.anchorPicker = null;
+      lineup.notice = "";
+      lineupRequestGeneration += 1;
+      anchorRequestGeneration += 1;
+      resetLineupPage();
+      void sendCommand({ type: "playlist.activate", id: event.currentTarget.value }, false, event.currentTarget);
+    });
+    root.querySelector("[data-lineup-order]")?.addEventListener("change", function (event) {
+      void sendLineupMutation({ type: "order.mode", mode: event.currentTarget.value }, event.currentTarget);
+    });
+    root.querySelectorAll("[data-lineup-scope]").forEach(function (button) {
+      button.addEventListener("click", function () {
+        lineup.scope = button.dataset.lineupScope;
+        lineup.categoryKey = "";
+        lineup.categoryName = "";
+        lineup.categoryPersonal = false;
+        lineup.membershipCategory = "";
+        lineup.query = "";
+        lineup.editor = null;
+        lineup.anchorPicker = null;
+        lineup.notice = "";
+        lineupRequestGeneration += 1;
+        resetLineupPage();
+        void loadLineupPage(false);
+      });
+    });
+    root.querySelector("[data-lineup-search]")?.addEventListener("input", function (event) {
+      lineup.query = event.currentTarget.value;
+      lineup.editor = null;
+      lineup.anchorPicker = null;
+      lineup.notice = "";
+      lineupRequestGeneration += 1;
+      if (lineupSearchTimer !== null) clearTimeout(lineupSearchTimer);
+      lineupSearchTimer = setTimeout(function () {
+        lineupSearchTimer = null;
+        resetLineupPage();
+        void loadLineupPage(false);
+      }, 250);
+    });
+    root.querySelector("[data-lineup-hidden]")?.addEventListener("change", function (event) {
+      lineup.includeHidden = event.currentTarget.checked;
+      lineup.editor = null;
+      lineup.anchorPicker = null;
+      lineup.notice = "";
+      lineupRequestGeneration += 1;
+      resetLineupPage();
+      void loadLineupPage(false);
+    });
+    root.querySelector("[data-lineup-more]")?.addEventListener("click", function () { void loadLineupPage(true); });
+    root.querySelectorAll("[data-lineup-bulk]").forEach(function (button) {
+      button.addEventListener("click", function () {
+        void sendLineupMutation({ type: "categories.visibility", contentKind: button.dataset.lineupBulk, hidden: button.dataset.hidden === "true" }, button);
+      });
+    });
+    root.querySelector("[data-create-category]")?.addEventListener("submit", function (event) {
+      event.preventDefault();
+      var value = event.currentTarget.elements.personalCategoryName.value;
+      void sendLineupMutation({ type: "personal-category.create", name: value }, event.currentTarget.querySelector("button"));
+    });
+    root.querySelectorAll("[data-lineup-action]").forEach(function (button) {
+      button.addEventListener("click", function () {
+        var action = button.dataset.lineupAction;
+        var item = lineup.items.find(function (entry) { return entry.id === button.dataset.id; });
+        if (action === "rename" && item) {
+          lineup.editor = { type: "rename", id: item.id, value: item.name, providerValue: item.providerName, kind: item.kind, returnFocus: focusDescriptor(button) };
+          renderManage();
+          root.querySelector('[name="lineupValue"]')?.focus();
+        } else if (action === "number" && item) {
+          lineup.editor = { type: "number", id: item.id, value: item.number, providerValue: item.providerNumber, kind: item.kind, returnFocus: focusDescriptor(button) };
+          renderManage();
+          root.querySelector('[name="lineupValue"]')?.focus();
+        } else if (action === "visibility" && item) {
+          var type = item.kind === "channel" ? "channel.visibility" : "category.visibility";
+          var visibility = { type: type, hidden: button.dataset.hidden !== "true" };
+          if (item.kind === "channel") visibility.channelId = item.id;
+          else visibility.categoryKey = item.id;
+          void sendLineupMutation(visibility, button);
+        } else if ((action === "move-before" || action === "move-after") && item) {
+          openLineupAnchorPicker(item.id, action === "move-before" ? "before" : "after", button);
+        } else if (action === "delete-category" && item) {
+          void sendLineupMutation({ type: "personal-category.delete", categoryId: item.id }, button);
+        } else if (action === "open-members" && item) {
+          lineup.scope = "channels";
+          lineup.categoryKey = item.id;
+          lineup.categoryName = item.name;
+          lineup.categoryPersonal = item.kind === "personal-category";
+          lineup.membershipCategory = item.kind === "personal-category" ? item.id : "";
+          resetLineupPage();
+          void loadLineupPage(false);
+        } else if (action === "add-members" && item) {
+          lineup.scope = "channels";
+          lineup.categoryKey = "";
+          lineup.categoryPersonal = false;
+          lineup.membershipCategory = item.id;
+          lineup.query = "";
+          resetLineupPage();
+          void loadLineupPage(false);
+        } else if (action === "membership" && item) {
+          var categoryId = lineup.membershipCategory || lineup.categoryKey;
+          var ids = (item.personalCategoryIds || []).slice();
+          var at = ids.indexOf(categoryId);
+          if (at >= 0) ids.splice(at, 1);
+          else ids.push(categoryId);
+          void sendLineupMutation({ type: "personal-category.memberships", channelId: item.id, categoryIds: ids }, button);
+        } else if (action === "remove-unavailable") {
+          void sendLineupMutation({ type: "unavailable.remove", key: button.dataset.key }, button);
+        } else if (action === "cancel-editor") {
+          var editorFocus = lineup.editor?.returnFocus;
+          lineup.editor = null;
+          renderManage();
+          restoreFocus(editorFocus);
+        } else if (action === "restore" && lineup.editor) {
+          var restore = lineup.editor.kind === "channel"
+            ? { type: lineup.editor.type === "number" ? "channel.number" : "channel.rename", channelId: lineup.editor.id }
+            : lineup.editor.kind === "personal-category"
+              ? null
+              : { type: "category.rename", categoryKey: lineup.editor.id };
+          if (restore) {
+            if (lineup.editor.type === "number") restore.number = null;
+            else restore.name = null;
+            void sendLineupMutation(restore, button);
+          }
+        } else if (action === "cancel-anchor") {
+          var anchorFocus = lineup.anchorPicker?.returnFocus;
+          lineup.anchorPicker = null;
+          anchorRequestGeneration += 1;
+          renderManage();
+          restoreFocus(anchorFocus);
+        }
+      });
+    });
+    root.querySelector("[data-lineup-editor]")?.addEventListener("submit", function (event) {
+      event.preventDefault();
+      var editor = lineup.editor;
+      var value = event.currentTarget.elements.lineupValue.value;
+      if (!editor) return;
+      editor.value = value;
+      var mutation;
+      if (editor.kind === "channel") {
+        mutation = editor.type === "number"
+          ? { type: "channel.number", channelId: editor.id, number: value ? Number(value) : null }
+          : { type: "channel.rename", channelId: editor.id, name: value || null };
+      } else if (editor.kind === "personal-category") {
+        mutation = { type: "personal-category.rename", categoryId: editor.id, name: value };
+      } else mutation = { type: "category.rename", categoryKey: editor.id, name: value || null };
+      void sendLineupMutation(mutation, event.currentTarget.querySelector('button[type="submit"]'));
+    });
+    root.querySelector("[data-anchor-search]")?.addEventListener("input", function (event) {
+      lineup.anchorPicker.query = event.currentTarget.value;
+      anchorRequestGeneration += 1;
+      if (anchorSearchTimer !== null) clearTimeout(anchorSearchTimer);
+      anchorSearchTimer = setTimeout(function () {
+        anchorSearchTimer = null;
+        lineup.anchorPicker.items = [];
+        lineup.anchorPicker.nextCursor = null;
+        void loadLineupAnchors(false);
+      }, 250);
+    });
+    root.querySelector("[data-anchor-more]")?.addEventListener("click", function () {
+      void loadLineupAnchors(true);
+    });
+    root.querySelectorAll("[data-lineup-anchor]").forEach(function (button) {
+      button.addEventListener("click", function () {
+        var picker = lineup.anchorPicker;
+        if (!picker) return;
+        var placement = { itemId: picker.itemId };
+        placement[picker.placement === "before" ? "beforeId" : "afterId"] = button.dataset.lineupAnchor;
+        var mutation = lineup.scope === "channels"
+          ? lineup.categoryPersonal
+            ? { type: "personal-category.place-channel", categoryId: lineup.categoryKey, placement: placement }
+            : { type: "channel.place", categoryKey: lineup.categoryKey, placement: placement }
+          : { type: "category.place", placement: placement };
+        void sendLineupMutation(mutation, button);
+      });
+    });
+    if (summary && summary.ready && !lineup.loaded && !lineup.loading) void loadLineupPage(false);
+  }
+
   function renderManage(message, failed) {
     var l = labels();
     applyLocale();
@@ -795,11 +1348,13 @@
       settingSelect("locale", l.language, (current.localeOptions || []).map(function (option) { return [option.id, option.label]; })) +
       settingSelect("fontSizeId", l.textSize, [["s", l.small], ["m", l.medium], ["l", l.large], ["xl", l.extraLarge]]) +
       settingToggle("showNumbers", l.showNumbers) + settingToggle("showLogos", l.showLogos) +
-      settingToggle("showClock", l.showClock) + settingToggle("sortAlphabetically", l.sortAlphabetically) + "</section>";
+      settingToggle("showClock", l.showClock) +
+      settingSelect("lineupOrderMode", l.lineupOrder, [["provider", l.orderProvider], ["alphabetical", l.orderAlphabetical], ["number", l.orderNumber], ["custom", l.orderCustom]]) + "</section>";
     var playback = '<section id="playback" data-section="playback"><h2>' + escape(l.playback) + "</h2>" +
       settingSelect("aspectId", l.screenFit, [["fill", l.fill], ["fit", l.fit], ["stretch", l.stretch]]) +
-      settingToggle("resumeLast", l.resumeLast) + settingToggle("compatibility", l.compatibility) +
-      settingToggle("showPlaybackStats", l.playbackInfo) + "</section>";
+      settingToggle("resumeLast", l.resumeLast) + settingToggle("showPlaybackStats", l.playbackInfo) +
+      settingToggle("compatibility", l.compatibility) +
+      settingToggle("continuousReconnect", l.continuousReconnect) + "</section>";
     var playlistToggle = current.playlists.length > 5
       ? '<button type="button" class="list-toggle" data-action="toggle-playlists">' +
         escape(expandedPlaylists ? l.close : l.open + " " + l.playlists + " (" + current.playlists.length + ")") +
@@ -825,6 +1380,7 @@
       '" aria-label="' + escape(addPlaylistOpen ? l.cancel : l.addPlaylist) +
       '">' + icon("plus") + '</button></div>' +
       addPlaylist + '<div class="stack">' + playlists + "</div>" + playlistToggle + "</section>";
+    var lineupSection = renderLineup();
     var deviceSection = '<section id="devices" data-section="devices"><h2>' + escape(l.devices) +
       '</h2><p class="trusted-network">' + escape(l.trustedNetwork) + '</p><div class="stack">' +
       devices + "</div>" + deviceToggle + "</section>";
@@ -840,13 +1396,14 @@
     shell(
       '<nav class="tabs" aria-label="' + escape(l.title) + '"><span class="tab-selection" aria-hidden="true"></span><a href="#appearance" aria-current="page">' + navIcon("appearance") + escape(l.appearance) +
         '</a><a href="#playback">' + navIcon("playback") + escape(l.playback) +
-        '</a><a href="#playlists">' + navIcon("playlists") + escape(l.playlists) + '</a><a href="#devices">' + navIcon("devices") + escape(l.devices) +
+        '</a><a href="#playlists">' + navIcon("playlists") + escape(l.playlists) + '</a><a href="#lineup">' + navIcon("playlists") + escape(l.lineup) + '</a><a href="#devices">' + navIcon("devices") + escape(l.devices) +
         '</a><a href="#about">' + navIcon("about") + escape(l.about) +
-        "</a></nav>" + appearance + playback + playlistSection + deviceSection + aboutSection + itemMenuMarkup(l) + remoteMarkup(l),
+        "</a></nav>" + appearance + playback + playlistSection + lineupSection + deviceSection + aboutSection + itemMenuMarkup(l) + remoteMarkup(l),
       message,
       !!failed,
     );
     bindManagement();
+    bindLineup();
   }
 
   function commandId() {
@@ -857,6 +1414,10 @@
     if (!source) return null;
     return {
       action: source.dataset && (source.dataset.returnAction || source.dataset.action),
+      lineupAction: source.dataset && source.dataset.lineupAction,
+      lineupScope: source.dataset && source.dataset.lineupScope,
+      lineupAnchor: source.dataset && source.dataset.lineupAnchor,
+      anchorMore: source.hasAttribute && source.hasAttribute("data-anchor-more"),
       id: source.dataset && source.dataset.id,
       setting: source.dataset && source.dataset.setting,
       name: source.name,
@@ -865,14 +1426,21 @@
 
   function restoreFocus(target) {
     if (!target) return;
-    var selector = target.setting
-      ? '[data-setting="' + target.setting + '"]'
-      : target.action
-        ? '[data-action="' + target.action + '"]' + (target.id ? '[data-id="' + target.id + '"]' : "")
-        : target.name
-          ? '[name="' + target.name + '"]'
-          : "";
-    if (selector) setTimeout(function () { root.querySelector(selector)?.focus(); }, 0);
+    setTimeout(function () {
+      var controls = Array.from(root.querySelectorAll("button, input, select"));
+      var control = controls.find(function (item) {
+        if (target.setting) return item.dataset.setting === target.setting;
+        if (target.lineupAction) {
+          return item.dataset.lineupAction === target.lineupAction && (!target.id || item.dataset.id === target.id);
+        }
+        if (target.lineupScope) return item.dataset.lineupScope === target.lineupScope;
+        if (target.lineupAnchor) return item.dataset.lineupAnchor === target.lineupAnchor;
+        if (target.anchorMore) return item.hasAttribute("data-anchor-more");
+        if (target.action) return item.dataset.action === target.action && (!target.id || item.dataset.id === target.id);
+        return target.name && item.name === target.name;
+      });
+      control?.focus();
+    }, 0);
   }
 
   function commandFailure(reason, setup) {
@@ -1438,6 +2006,14 @@
     renderPair();
   }
 
-  window.OpenIPTVRemote = { start: start, parsePairSecret: parsePairSecret };
+  window.OpenIPTVRemote = {
+    start: start,
+    parsePairSecret: parsePairSecret,
+    renderLineup: renderLineup,
+    bindLineup: bindLineup,
+    loadLineupPage: loadLineupPage,
+    sendLineupMutation: sendLineupMutation,
+    openLineupAnchorPicker: openLineupAnchorPicker,
+  };
   if (!window.__OPENIPTV_TEST__) void start();
 })();

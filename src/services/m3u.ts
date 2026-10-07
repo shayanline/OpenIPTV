@@ -19,6 +19,25 @@ const ATTRS = /([a-zA-Z0-9-]+)=("([^"]*)"|'([^']*)')/g;
 const KNOWN_TAG = /^(EXT|#)/i;
 export const UNCATEGORISED = "Uncategorised";
 
+function fnv1a(bytes: Uint8Array, seed: number) {
+  let hash = seed >>> 0;
+  for (const byte of bytes) {
+    hash ^= byte;
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  return hash.toString(16).padStart(8, "0");
+}
+
+export function sourceFingerprint(
+  tvgId: string,
+  name: string,
+  group: string,
+  url: string,
+): string {
+  const bytes = new TextEncoder().encode(`${tvgId}\0${name}\0${group}\0${url}`);
+  return `${fnv1a(bytes, 0x811c9dc5)}${fnv1a(bytes, 0x9e3779b9)}`;
+}
+
 export function parseM3U(text: string): Channel[] {
   const channels: Channel[] = [];
   const lines = text.split(/\r?\n/);
@@ -42,6 +61,7 @@ export function parseM3U(text: string): Channel[] {
    * it meant before this was fixed.
    */
   const taken = new Set<string>();
+  const fingerprints = new Map<string, number>();
   const unique = (id: string) => {
     if (!taken.has(id)) {
       taken.add(id);
@@ -102,11 +122,21 @@ export function parseM3U(text: string): Channel[] {
     if (!/^[a-z][a-z0-9+.-]*:\/\//i.test(line)) continue;
 
     if (pending) {
+      const name = pending.name || "Unnamed";
+      const categoryKey = pending.group || group || UNCATEGORISED;
+      const baseFingerprint = sourceFingerprint(pending.id || "", name, categoryKey, line);
+      const occurrence = (fingerprints.get(baseFingerprint) ?? 0) + 1;
+      fingerprints.set(baseFingerprint, occurrence);
       channels.push({
         id: unique(pending.id || `url:${line}`),
-        name: pending.name || "Unnamed",
+        name,
         logo: pending.logo || "",
-        group: pending.group || group || UNCATEGORISED,
+        group: categoryKey,
+        categoryKey,
+        sourceFingerprint:
+          occurrence === 1
+            ? baseFingerprint
+            : `${baseFingerprint}${occurrence.toString(16).padStart(8, "0")}`,
         url: line,
         quality: pending.quality || "",
         number: channels.length + 1,

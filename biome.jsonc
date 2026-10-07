@@ -1,5 +1,5 @@
 {
-  "$schema": "https://biomejs.dev/schemas/2.5.7/schema.json",
+  "$schema": "https://biomejs.dev/schemas/2.5.14/schema.json",
 
   // Biome rather than ESLint, for one blunt reason: this project is on TypeScript 7 and
   // typescript-eslint declares a peer range of >=4.8.4 <6.1.0, so the usual stack cannot be
@@ -19,7 +19,7 @@
   "linter": {
     "enabled": true,
     "rules": {
-      "recommended": true,
+      "preset": "recommended",
       "correctness": {
         "noUnusedVariables": "error",
         "noUnusedImports": "error",

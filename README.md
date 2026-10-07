@@ -49,10 +49,13 @@ Your playlists, preferences, and favourites stay on your device. OpenIPTV has no
 
 ## What you can do
 
-- Browse original playlist categories, manage their visibility, and keep Favourites.
-- Search every live channel or tune directly with channel numbers.
-- Watch Xtream live television, movies, series, episodes, programme information, and provider catchup.
+- Browse original playlist categories, rename or number channels, hide items, choose an order, create personal categories, and keep Favourites.
+- Search every live channel or tune directly with effective channel numbers.
+- Watch Xtream Live television, Movies, Series, episodes, programme information, and provider catchup.
+- Continue movies and episodes from saved progress, then find them through Continue watching or Favourites.
+- Open one playback deck for seeking, Guide, audio tracks, subtitles, diagnostics, and transport controls.
 - Resume the last channel or finite video, then pause or seek movies, episodes, and catchup in ten second steps.
+- Use the television or a paired phone to manage the same lineup without changing the provider playlist.
 - Use 17 translated interfaces, including complete right to left layouts for Arabic and Persian.
 
 OpenIPTV does not provide recording management or provider administration.
@@ -61,14 +64,28 @@ OpenIPTV does not provide recording management or provider administration.
 
 OpenIPTV supports Samsung TVs from 2020 onwards, running Tizen 5.5 or later. The television and computer used for installation must share the same local network.
 
-> [!TIP]
-> **[TizenBrew Installer Desktop](#install-with-tizenbrew) is the easiest installation route.** It downloads the latest OpenIPTV release and guides you through installation.
+Two installers can put OpenIPTV on a television, and both start with [Prepare the television](#prepare-the-television).
+
+| Installer | Runs on | Worth knowing |
+|:--|:--|:--|
+| **[Apps2Samsung](#install-with-apps2samsung)** | Windows, macOS, and Linux, with an Android application as well | Signs the widget for the connected television on every supported Tizen version. You download the release yourself. |
+| **[TizenBrew Installer Desktop](#install-with-tizenbrew)** | Windows, macOS, and Linux | Reads this repository and fetches the release for you, so there is no file to find. |
 
 ### Prepare the television
 
 1. Open Apps and press `12345` on the remote.
 2. Turn Developer mode on and enter the computer's IP address.
-3. Restart the television.
+3. Restart the television. If an installer cannot reach it afterwards, unplug the television for ten to fifteen seconds, because a full power cycle is what opens the port it installs through.
+
+### Install with Apps2Samsung
+
+1. Install [Apps2Samsung](https://github.com/Apps2Samsung/Apps2Samsung/releases/latest) on the computer, open it, and let it find the television or enter the television's IP address.
+2. Download `OpenIPTV.wgt` from the [latest release](https://github.com/shayanline/OpenIPTV/releases/latest).
+3. Turn **Custom WGT** on under Advanced options, then choose the file you downloaded.
+4. Install OpenIPTV, then launch it from the television application list.
+
+> [!NOTE]
+> A retail television only accepts a widget signed for itself, so Apps2Samsung signs OpenIPTV for the connected set before installing it. It asks for a Samsung account only when it has to create a certificate, then reuses that certificate for later installations. Its Android application can run the same installation from a phone, in which case Developer mode needs the phone's IP address rather than the computer's.
 
 ### Install with TizenBrew
 
@@ -79,6 +96,12 @@ OpenIPTV supports Samsung TVs from 2020 onwards, running Tizen 5.5 or later. The
 
 > [!NOTE]
 > Tizen 7 and later can resign the released widget for the connected television. Earlier versions may need a [locally signed build](#build-and-sign-manually).
+
+### Update an installed copy
+
+Install the new release exactly as before, from the same computer and through the same installer, and the television keeps your playlists, favourites, and settings.
+
+A copy installed from a different computer, or through a different installer, carries a different author certificate, which the television refuses to install over. Remove OpenIPTV from Apps on the television first, then install again. OpenIPTV writes no backup file, so add the playlist again afterwards, which [remote access](#remote-access) makes quick from a phone.
 
 ### Build and sign manually
 
@@ -113,29 +136,28 @@ Save several playlists and activate one at a time. Each playlist keeps its own c
 
 Remote access is available from the first run screen or Settings, then Remote access. Keep OpenIPTV open and connect a phone or tablet to the same trusted local network, then scan the QR code or enter the displayed address and pairing code.
 
-A paired device can manage playlists, ordinary settings, application data, authorised devices, and playback. [Smart Remote](#remote-button-reference) provides navigation, number, colour, channel, volume, and playback controls.
+A paired device can manage playlists, ordinary settings, application data, authorised devices, playback, and the active lineup. Lineup pages stay bounded while the phone renames, numbers, hides, orders, and groups channels through the same saved personalisation used by the television. Provider playlists remain unchanged.
+
+The interface is served by the television on its private network address. Pair only on a trusted local network because OpenIPTV has no hosted relay or cloud copy. The phone receives effective names and opaque identifiers, while provider credentials and stream addresses remain on the television. [Smart Remote](#remote-button-reference) provides navigation, number, colour, channel, volume, and playback controls.
 
 ### Remote button reference
 
 <details>
 <summary>Show remote controls</summary>
 
-| Key | Watching | Channel panel | Search |
+| Key | Live picture | Finite picture | Browsing and forms |
 |:--|:--|:--|:--|
-| <kbd>↑</kbd> <kbd>↓</kbd> | Change channel | Move through the list | Move between the field and results |
-| <kbd>←</kbd> | Open the channel panel | Move toward Categories, then close the panel | Move the caret |
-| <kbd>→</kbd> | Hide the title badge | Move toward channels, then play | Move the caret |
-| <kbd>OK</kbd> | Open the channel panel | Play the highlighted channel | Show matches, then play |
-| Hold <kbd>OK</kbd> | Toggle Playback information | No action | No action |
-| <kbd>Return</kbd> | Close the visible layer | Go back | Clear Search, then close it |
-| <kbd>Ch+</kbd> <kbd>Ch-</kbd> | Change channel | Change channel | Change channel |
-| <kbd>0</kbd> to <kbd>9</kbd> | Tune to a channel number | Tune to a channel number | Type a digit |
-| <kbd>Green</kbd> | Toggle Favourites | Toggle Favourites | Toggle Favourites |
-| <kbd>Red</kbd> | No action | Change category visibility | No action |
-| Hold <kbd>Red</kbd> | No action | Show or conceal hidden categories | No action |
+| <kbd>↑</kbd> <kbd>↓</kbd> | Change channel | No action | Move focus within the active region |
+| <kbd>←</kbd> | Open the Live browser | Seek back ten seconds | Move toward the logical previous region or move the caret |
+| <kbd>→</kbd> | Open the playback deck | Seek forward ten seconds | Move toward the logical next region or move the caret |
+| <kbd>OK</kbd> | Open the Live browser | Open the playback deck | Activate the focused item |
+| <kbd>Return</kbd> | Clear feedback, then offer exit | Return to the launching detail | Remove one visible depth |
+| <kbd>Ch+</kbd> <kbd>Ch-</kbd> | Change channel | No action | Change the Live channel when Live owns playback |
+| <kbd>0</kbd> to <kbd>9</kbd> | Tune to an effective channel number | No action | Type when a field owns input |
+| <kbd>Green</kbd> | Toggle Favourites | Use the visible favourite action | Toggle Favourites where offered |
 | <kbd>Yellow</kbd> | Open Settings | Open Settings | Open Settings |
 
-<kbd>Play</kbd>, <kbd>Pause</kbd>, <kbd>Stop</kbd>, and the track keys work throughout the app.
+<kbd>Play</kbd>, <kbd>Pause</kbd>, <kbd>Stop</kbd>, <kbd>Rewind</kbd>, <kbd>Fast Forward</kbd>, <kbd>Previous</kbd>, and <kbd>Next</kbd> keep their media meaning on every surface. Back always removes the highest visible depth before it affects playback or leaves the application.
 
 </details>
 
@@ -147,8 +169,9 @@ A paired device can manage playlists, ordinary settings, application data, autho
 <details>
 <summary>Common issues</summary>
 
-- **TizenBrew cannot connect.** Repeat [Prepare the television](#prepare-the-television), including the restart, and avoid guest networks that isolate devices.
-- **Installation reports certificate error 118 or -12.** Follow [Build and sign manually](#build-and-sign-manually).
+- **An installer cannot connect to the television.** Repeat [Prepare the television](#prepare-the-television), including the restart, and avoid guest networks that isolate devices. Some televisions store the address in reverse, so enter your IP address backwards if the installer still cannot find the set.
+- **Installation reports certificate error 118 or -12.** The widget was not signed for your television. [Apps2Samsung](#install-with-apps2samsung) signs it for the connected set on any supported version, [TizenBrew](#install-with-tizenbrew) does so from Tizen 7 onwards, and otherwise follow [Build and sign manually](#build-and-sign-manually).
+- **Installation reports that the author certificate does not match.** An earlier copy was signed by a different computer or installer, so [update an installed copy](#update-an-installed-copy) explains what to remove first.
 - **A playlist address is refused.** Review the supported details under [Add playlists](#add-playlists).
 - **An Xtream stream will not play.** Try the other live stream format under [Add playlists](#add-playlists). The packaged television app retries eligible HTTPS connection failures once over HTTP. Local development and the TV simulator route that retry through a same origin relay so Chromium cannot upgrade it through HSTS, while the hosted HTTPS demo cannot downgrade because browsers block mixed content.
 - **A channel shows one frame and stops.** Turn on Compatibility mode under Settings, then Playback.

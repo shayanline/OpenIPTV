@@ -1,6 +1,6 @@
 import { test } from "vitest";
 import assert from "node:assert/strict";
-import { FAVOURITES, lineupOf, nextChannel, wrap } from "../src/services/lineup";
+import { FAVOURITES, lineupOf, nextChannel, stepColumn, wrap } from "../src/services/lineup";
 import type { Channel } from "../src/types";
 
 /**
@@ -28,7 +28,7 @@ const news = {
   channels: [channel("a", "a", "News"), channel("b", "b", "News"), channel("c", "c", "News")],
 };
 const sport = { key: "Sport", name: "Sport", channels: [channel("d", "d", "Sport")] };
-const visible = { hiddenCategories: [], hiddenCategoryMode: "exclude" as const };
+const visible = { hiddenCategories: [] };
 const listsOf = (channels: Channel[], categories: (typeof news)[], favourites: string[]) =>
   lineupOf(channels, categories, favourites, visible).lists;
 
@@ -102,10 +102,23 @@ test("a favourite for a channel the playlist no longer carries is simply absent"
   );
 });
 
+test("effective hidden state removes categories and individual channels", () => {
+  const lineup = lineupOf(
+    [...news.channels, ...sport.channels],
+    [{ ...news, hidden: true }, sport],
+    ["a", "d"],
+    {
+      hiddenCategories: [],
+      hiddenChannels: ["d"],
+    },
+  );
+  assert.deepEqual(lineup.lists, []);
+  assert.deepEqual(lineup.browsableChannels, []);
+});
+
 test("hidden categories and their channels leave the default lineup", () => {
   const lineup = lineupOf([...news.channels, ...sport.channels], [news, sport], ["a", "d"], {
     hiddenCategories: ["News"],
-    hiddenCategoryMode: "exclude",
   });
 
   assert.deepEqual(
@@ -123,30 +136,6 @@ test("hidden categories and their channels leave the default lineup", () => {
   assert.deepEqual(
     lineup.searchableChannels.map((item) => item.id),
     ["d"],
-  );
-});
-
-test("search mode keeps hidden channels in search and explicit favourites only", () => {
-  const lineup = lineupOf([...news.channels, ...sport.channels], [news, sport], ["a"], {
-    hiddenCategories: ["News"],
-    hiddenCategoryMode: "search",
-  });
-
-  assert.deepEqual(
-    lineup.lists.map((list) => list.name),
-    [FAVOURITES, "Sport"],
-  );
-  assert.deepEqual(
-    lineup.lists[0].channels.map((item) => item.id),
-    ["a"],
-  );
-  assert.deepEqual(
-    lineup.browsableChannels.map((item) => item.id),
-    ["d"],
-  );
-  assert.deepEqual(
-    lineup.searchableChannels.map((item) => item.id),
-    ["a", "b", "c", "d"],
   );
 });
 
@@ -158,7 +147,6 @@ test("category visibility uses the playlist's exact category text", () => {
   };
   const lineup = lineupOf([...news.channels, ...upper.channels], [news, upper], [], {
     hiddenCategories: ["News"],
-    hiddenCategoryMode: "exclude",
   });
 
   assert.deepEqual(
@@ -205,4 +193,22 @@ test("wrap comes out the other side in both directions and survives an empty lis
   assert.equal(wrap(-7, 3), 2);
   // No list to wrap around, and no division by zero on the way to finding that out.
   assert.equal(wrap(5, 0), 0);
+});
+
+test("column focus clamps at both ends rather than wrapping", () => {
+  assert.equal(stepColumn(0, -1, 3, false), 0);
+  assert.equal(stepColumn(2, 1, 3, false), 2);
+  assert.equal(stepColumn(1, 1, 3, false), 2);
+  assert.equal(stepColumn(1, -1, 3, false), 0);
+});
+
+test("a searched column clamps on the field above the first row", () => {
+  assert.equal(stepColumn(-1, -1, 3, true), -1);
+  assert.equal(stepColumn(0, -1, 3, true), -1);
+  assert.equal(stepColumn(2, 1, 3, true), 2);
+});
+
+test("an empty searched column holds the field and nothing else", () => {
+  assert.equal(stepColumn(-1, 1, 0, true), -1);
+  assert.equal(stepColumn(0, 1, 0, false), 0);
 });

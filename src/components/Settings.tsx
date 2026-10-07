@@ -81,7 +81,6 @@ export function Settings({
   const inlineEndArrow = direction === "rtl" ? "←" : "→";
   const [section, setSection] = useState<Section>("appearance");
   const [inSections, setInSections] = useState(true);
-  const [closeFocused, setCloseFocused] = useState(false);
   const [details, setDetails] = useState<DetailEntry[]>([]);
   const detailsRef = useRef(details);
   detailsRef.current = details;
@@ -176,7 +175,6 @@ export function Settings({
   }, []);
 
   const enterBody = useCallback(() => {
-    setCloseFocused(false);
     setInSections(false);
     window.setTimeout(focusFirst, 0);
   }, [focusFirst]);
@@ -211,7 +209,6 @@ export function Settings({
       if (!(target instanceof HTMLElement)) return;
       let label = target.dataset.okGuide;
       if (!label && target instanceof HTMLInputElement) label = t("common.edit");
-      if (!label && target.classList.contains("settings-detail-back")) label = t("common.back");
       if (
         !label &&
         (target.classList.contains("switch") ||
@@ -225,11 +222,7 @@ export function Settings({
           target.classList.contains("pl-main"))
       )
         label = t("common.select");
-      if (
-        !label &&
-        (target.classList.contains("category-setting-row") ||
-          target.classList.contains("settings-icon-action"))
-      )
+      if (!label && target.classList.contains("settings-icon-action"))
         label = target.getAttribute("aria-label") ?? undefined;
       if (!label && target instanceof HTMLButtonElement) {
         label =
@@ -284,16 +277,6 @@ export function Settings({
       }
 
       if (inSections) {
-        if (closeFocused) {
-          if (code === KEY.DOWN) {
-            event.preventDefault();
-            setCloseFocused(false);
-          } else if (code === KEY.ENTER) {
-            event.preventDefault();
-            onClose();
-          }
-          return;
-        }
         if (code === KEY.UP || code === KEY.DOWN) {
           event.preventDefault();
           /*
@@ -304,12 +287,9 @@ export function Settings({
            * one row and stopped.
            */
           const at = sections.findIndex((item) => item.id === section);
-          if (code === KEY.UP && at === 0) setCloseFocused(true);
-          else {
-            const next =
-              code === KEY.UP ? Math.max(0, at - 1) : Math.min(sections.length - 1, at + 1);
-            setSection(sections[next].id);
-          }
+          const next =
+            code === KEY.UP ? Math.max(0, at - 1) : Math.min(sections.length - 1, at + 1);
+          setSection(sections[next].id);
         }
         if (code === KEY.ENTER) {
           event.preventDefault();
@@ -319,33 +299,6 @@ export function Settings({
       }
 
       const active = document.activeElement;
-      if (
-        detailsRef.current.length &&
-        code === KEY.DOWN &&
-        active?.classList.contains("settings-detail-back")
-      ) {
-        const first = bodyRef.current?.querySelector<HTMLElement>(
-          "[data-settings-detail-first]",
-        );
-        if (first) {
-          event.preventDefault();
-          first.focus();
-          return;
-        }
-      }
-      if (
-        detailsRef.current.length &&
-        code === KEY.UP &&
-        active?.hasAttribute("data-settings-detail-first")
-      ) {
-        const back = bodyRef.current?.querySelector<HTMLElement>(".settings-detail-back");
-        if (back) {
-          event.preventDefault();
-          back.focus();
-          return;
-        }
-      }
-
       if (moveWithinPlaylistRow(active, code, inlineStart, inlineEnd)) {
         event.preventDefault();
         return;
@@ -361,7 +314,6 @@ export function Settings({
     },
     [
       asking,
-      closeFocused,
       inSections,
       onClose,
       section,
@@ -377,23 +329,12 @@ export function Settings({
 
   useRemote(onKey);
 
-  const sectionLabel = t(
-    sections.find((item) => item.id === section)?.label ?? "settings.title",
-  );
   const detail = details[details.length - 1];
 
   return (
     <div className="sheet" dir={direction}>
       <nav className={`sheet-rail pane ${inSections ? "focused" : ""}`}>
         <div className="settings-titlebar">
-          <button
-            type="button"
-            className={`settings-close ${closeFocused ? "selected" : ""}`}
-            aria-label={t("settings.close")}
-            onClick={onClose}
-          >
-            <Icon name="back" />
-          </button>
           <h2>{t("settings.title")}</h2>
         </div>
         <div className="rail-scroll">
@@ -401,11 +342,10 @@ export function Settings({
             <button
               key={s.id}
               type="button"
-              className={`row ${s.id === section ? `showing ${closeFocused ? "" : "selected"}` : ""}`}
+              className={`row ${s.id === section ? "showing selected" : ""}`}
               aria-current={s.id === section ? "page" : undefined}
               onClick={() => {
                 if (detailsRef.current.length) clearDetails();
-                setCloseFocused(false);
                 setSection(s.id);
                 enterBody();
               }}
@@ -452,14 +392,6 @@ export function Settings({
       <div className="sheet-body" ref={bodyRef} onFocusCapture={updateOkGuide}>
         {detail && (
           <header className="settings-detail-appbar">
-            <button
-              type="button"
-              className="settings-detail-back"
-              aria-label={t("settings.backTo", { section: sectionLabel })}
-              onClick={backDetail}
-            >
-              <Icon name="back" />
-            </button>
             <h3>{detail.label}</h3>
           </header>
         )}

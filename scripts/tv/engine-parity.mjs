@@ -71,6 +71,17 @@ const LAYOUT = [
   ".pl",
   ".pad",
   ".panel-hints",
+  ".vod-screen",
+  ".vod-header",
+  ".vod-rail",
+  ".poster-grid",
+  ".poster-card",
+  ".vod-title-row",
+  ".vod-hero",
+  ".series-actions",
+  ".episode-panel",
+  ".season-row",
+  ".episode-list",
 ];
 
 /**

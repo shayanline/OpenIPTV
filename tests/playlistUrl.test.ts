@@ -5,7 +5,10 @@ import {
   m3uSource,
   nameFromUrl,
   parseXtreamPlaylistUrl,
+  parseXtreamTemplateUrl,
   sourceDisplay,
+  type XtreamSource,
+  xtreamFromServerField,
   xtreamSource,
 } from "../src/services/playlistUrl";
 
@@ -113,6 +116,42 @@ test("saved Xtream addresses are parsed into typed credentials with defaults", (
     ),
     null,
   );
+  assert.equal(
+    parseXtreamPlaylistUrl(
+      "https://provider.example/get.php?username=user&password=pass&type=enigma22",
+    ),
+    null,
+  );
+});
+
+test("a watermark in front of the host is noise, and the query login is kept", () => {
+  const watermarked =
+    "http://listshare@watermarked.example:80/get.php?username=viewer&password=secret&type=m3u";
+  const parsed = {
+    kind: "xtream",
+    server: "http://watermarked.example",
+    username: "viewer",
+    password: "secret",
+    output: "m3u8",
+  } as const;
+  assert.deepEqual(parseXtreamTemplateUrl(watermarked, "m3u8"), parsed);
+  /* This one carries type=m3u, which the silent migration refuses: it is only ever
+     offered as a question in the form. */
+  assert.equal(parseXtreamPlaylistUrl(watermarked, "m3u8"), null);
+
+  assert.deepEqual(
+    parseXtreamTemplateUrl(
+      "http://listshare@watermarked.example:8080/get.php?username=viewer&password=secret&type=m3u_plus&output=m3u8",
+      "m3u8",
+    ),
+    {
+      kind: "xtream",
+      server: "http://watermarked.example:8080",
+      username: "viewer",
+      password: "secret",
+      output: "m3u8",
+    },
+  );
 });
 
 test("typed source builders reject malformed input", () => {
@@ -148,6 +187,92 @@ test("typed sources display without exposing credentials", () => {
   assert.equal(
     sourceDisplay({ kind: "m3u", url: "https://example.com/list.m3u" }),
     "https://example.com/list.m3u",
+  );
+});
+
+test("type=m3u is offered in the form but never converted silently", () => {
+  const address =
+    "https://provider.example/get.php?username=user&password=pass&type=m3u&output=ts";
+  assert.deepEqual(parseXtreamTemplateUrl(address), {
+    kind: "xtream",
+    server: "https://provider.example",
+    username: "user",
+    password: "pass",
+    output: "ts",
+  });
+  /* The migration converts a saved playlist without being asked, and the Xtream path
+     talks only to player_api.php, so an explicit type=m3u stays cautious: a panel serving
+     get.php alone would otherwise lose a playlist that works today. */
+  assert.equal(parseXtreamPlaylistUrl(address), null);
+});
+
+test("a credential-less Xtream template parses, while the strict parse still refuses it", () => {
+  const template =
+    "http://template.example/get.php?username=&password=&type=m3u_plus&output=m3u8";
+  assert.deepEqual(parseXtreamTemplateUrl(template, "m3u8"), {
+    kind: "xtream",
+    server: "http://template.example",
+    username: "",
+    password: "",
+    output: "m3u8",
+  });
+  // Saved playlists migrate through the strict parse, which a template must not satisfy.
+  assert.equal(parseXtreamPlaylistUrl(template, "m3u8"), null);
+});
+
+test("the server field folds a pasted address in without eating typed credentials", () => {
+  const current: XtreamSource = {
+    kind: "xtream",
+    server: "https://provider.example",
+    username: "viewer",
+    password: "secret",
+    output: "ts",
+  };
+  assert.deepEqual(
+    xtreamFromServerField(
+      current,
+      "http://template.example/get.php?username=&password=&type=m3u_plus&output=m3u8",
+    ),
+    {
+      kind: "xtream",
+      server: "http://template.example",
+      username: "viewer",
+      password: "secret",
+      output: "m3u8",
+    },
+  );
+  assert.deepEqual(
+    xtreamFromServerField(
+      current,
+      "https://new.example/get.php?username=u&password=p&type=m3u_plus",
+    ),
+    {
+      kind: "xtream",
+      server: "https://new.example",
+      username: "u",
+      password: "p",
+      output: "ts",
+    },
+  );
+  assert.equal(xtreamFromServerField(current, "https://new.example/get.php").output, "ts");
+  assert.deepEqual(xtreamFromServerField(current, "not an address"), {
+    ...current,
+    server: "not an address",
+  });
+  /* A pasted address carrying a watermark and its own credentials replaces what was
+     typed. */
+  assert.deepEqual(
+    xtreamFromServerField(
+      current,
+      "http://listshare@watermarked.example/get.php?username=viewer&password=secret&type=m3u",
+    ),
+    {
+      kind: "xtream",
+      server: "http://watermarked.example",
+      username: "viewer",
+      password: "secret",
+      output: "ts",
+    },
   );
 });
 

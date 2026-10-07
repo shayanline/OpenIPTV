@@ -154,10 +154,13 @@ export function sendKey(code: number) {
   sendKeyUp(code);
 }
 
-export function useRemote(handler: (code: number, event: KeyboardEvent) => void) {
+export function useRemote(
+  handler: (code: number, event: KeyboardEvent) => void,
+  capture = false,
+) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => handler(e.keyCode, e);
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [handler]);
+    window.addEventListener("keydown", onKey, capture);
+    return () => window.removeEventListener("keydown", onKey, capture);
+  }, [capture, handler]);
 }

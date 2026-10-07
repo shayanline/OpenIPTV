@@ -1,6 +1,6 @@
 import { test } from "vitest";
 import assert from "node:assert/strict";
-import { explain } from "../src/services/errors";
+import { explain, faultPolicy } from "../src/services/errors";
 
 /**
  * Checklist 4.6 asks a failure to say why it happened and what to do about it. These pin
@@ -68,4 +68,53 @@ test("a refusal is blamed on the broadcaster rather than on the viewer's network
     !/network|could not reach/i.test(`${why} ${fix}`),
     `blamed the network: ${why} ${fix}`,
   );
+});
+
+/**
+ * faultPolicy is the recovery coordinator's reading of the same codes, so terminal here
+ * must line up with what a viewer is told cannot be fixed by waiting.
+ */
+const terminalCodes = [
+  "PLAYER_ERROR_CONNECTION_FAILED (http 401)",
+  "PLAYER_ERROR_CONNECTION_FAILED (http 403)",
+  "PLAYER_ERROR_CONNECTION_FAILED (http 451)",
+  "PLAYER_ERROR_CONNECTION_FAILED (http 404)",
+  "PLAYER_ERROR_INVALID_URI",
+  "PLAYER_ERROR_NO_SUCH_FILE",
+  "PLAYER_ERROR_NOT_SUPPORTED_FILE",
+  "manifestParsingError",
+  "manifestIncompatible",
+  "FINITE_FORMAT_UNSUPPORTED",
+];
+
+for (const code of terminalCodes) {
+  test(`${code} is terminal and earns no corrective step`, () => {
+    const policy = faultPolicy(code);
+    assert.equal(policy.terminal, true);
+    assert.equal(policy.compatibility, false);
+    assert.equal(policy.httpFallback, false);
+  });
+}
+
+const recoverableCodes = [
+  "PLAYER_ERROR_CONNECTION_FAILED",
+  "TIMEOUT",
+  "PLAYER_ERROR_CONNECTION_FAILED (http 502)",
+  "STREAM_ENDED",
+  "STALLED",
+  "fragLoadTimeOut",
+];
+
+for (const code of recoverableCodes) {
+  test(`${code} stays eligible for recovery`, () => {
+    assert.equal(faultPolicy(code).terminal, false);
+  });
+}
+
+test("HTTP fallback covers connection and decoding faults but not stalls or stream ends", () => {
+  assert.equal(faultPolicy("PLAYER_ERROR_CONNECTION_FAILED").httpFallback, true);
+  assert.equal(faultPolicy("manifestLoadError").httpFallback, true);
+  assert.equal(faultPolicy("TIMEOUT").httpFallback, true);
+  assert.equal(faultPolicy("STALLED").httpFallback, false);
+  assert.equal(faultPolicy("STREAM_ENDED").httpFallback, false);
 });

@@ -1,16 +1,25 @@
 import { create } from "zustand";
 import type { Channel } from "../types";
 import { groupByCategory, parseM3U, UNCATEGORISED } from "../services/m3u";
-import { useSettings, type Playlist } from "./settings";
+import { legacyLineupOrderMode, useSettings, type Playlist } from "./settings";
 import { usePersonal } from "./personal";
 import { keys, read, remove, write } from "../services/store";
 import * as disk from "../services/disk";
 import { whenIdle } from "../services/idle";
-import { resolveLocale, translate, type MessageKey } from "../services/locale";
+import { translate, resolveLocale, type MessageKey } from "../services/locale";
+import {
+  adoptCatalogue,
+  migrateLegacyOrder,
+  prepareLineup,
+  type PreparedLineup,
+  useLineup,
+} from "./lineup";
+import type { ProviderLineup } from "../services/lineup";
 import {
   authenticateXtream,
   loadXtreamCategories,
   loadXtreamLive,
+  XtreamRequestError,
   type XtreamAccount,
   type XtreamCategory,
 } from "../services/xtream";
@@ -28,17 +37,6 @@ const xtreamCacheKey = (playlist: Pick<Playlist, "id" | "sourceVersion">, scope:
 const xtreamStampKey = (playlist: Pick<Playlist, "id" | "sourceVersion">, scope: string) =>
   `openiptv.at.${xtreamCacheKey(playlist, scope)}`;
 const XTREAM_SCOPES = ["account", "categories", "live"] as const;
-
-let collator: Intl.Collator | null = null;
-let collatorLocale = "";
-const byName = (a: Channel, b: Channel) => {
-  const locale = resolveLocale(useSettings.getState().locale);
-  if (!collator || collatorLocale !== locale) {
-    collator = new Intl.Collator(locale, { numeric: true });
-    collatorLocale = locale;
-  }
-  return collator.compare(a.name, b.name);
-};
 
 export interface LoadResult {
   count: number;
@@ -86,7 +84,10 @@ const requestUrl = (url: string) => {
 
 const failureDetail = (error: unknown, source: PlaylistSource) => {
   const detail = error instanceof Error ? error.message : String(error);
-  if (source.kind === "xtream" && detail === "HTTP 404") {
+  if (
+    source.kind === "xtream" &&
+    (detail === "HTTP 404" || (error instanceof XtreamRequestError && error.status === 404))
+  ) {
     return "The Xtream Player API returned HTTP 404. If the provider gave you a working get.php address, add it as an M3U source.";
   }
   const address = source.kind === "xtream" ? source.server : source.url;
@@ -136,11 +137,8 @@ const accountSummary = (value: unknown): XtreamAccount | null => {
 };
 
 export const useChannels = create<State>((set, get) => {
-  const sorted = (channels: Channel[]) =>
-    useSettings.getState().sortAlphabetically ? [...channels].sort(byName) : channels;
-
   const m3uCatalogue = (text: string) => {
-    const channels = sorted(parseM3U(text));
+    const channels = parseM3U(text);
     const categories = groupByCategory(channels).map((category) => ({
       key: category.name,
       ...category,
@@ -149,6 +147,10 @@ export const useChannels = create<State>((set, get) => {
       channels,
       categories,
       managedCategories: categories.map(({ key, name }) => ({ key, name })),
+      provider: {
+        channels,
+        categories: categories.map((category) => ({ ...category, kind: "live" as const })),
+      },
     };
   };
 
@@ -156,6 +158,21 @@ export const useChannels = create<State>((set, get) => {
     usePersonal
       .getState()
       .adoptLegacyPersonal(useSettings.getState().playlists, playlist.id, channels);
+  };
+
+  const adopt = async (
+    playlist: Playlist,
+    provider: ProviderLineup,
+    prepared: Promise<PreparedLineup>,
+  ) => {
+    await adoptCatalogue(playlist, provider, prepared);
+    const effective = useLineup.getState();
+    return {
+      channels: effective.channels,
+      categories: effective.categories
+        .filter((category) => category.kind === "live")
+        .map(({ key, name, channels }) => ({ key, name, channels: channels.slice() })),
+    };
   };
 
   const owns = (attempt: AbortController, token: number) =>
@@ -189,8 +206,10 @@ export const useChannels = create<State>((set, get) => {
     return { attempt, token: requestToken };
   };
 
-  const rememberCategoryCount = (playlistId: string, count: number) => {
-    useSettings.getState().setPlaylistCategoryCount(playlistId, count);
+  const rememberCounts = (playlistId: string, categories: number, channels: number) => {
+    const settings = useSettings.getState();
+    settings.setPlaylistCategoryCount(playlistId, categories);
+    settings.setPlaylistChannelCount(playlistId, channels);
   };
 
   const reportFailure = (
@@ -215,6 +234,7 @@ export const useChannels = create<State>((set, get) => {
     known: string,
     attempt: AbortController,
     token: number,
+    prepared: Promise<PreparedLineup>,
   ): Promise<LoadResult> => {
     if (playlist.source.kind !== "m3u") return { count: 0, error: "" };
     const url = playlist.source.url;
@@ -228,24 +248,27 @@ export const useChannels = create<State>((set, get) => {
       if (!owns(attempt, token)) return { count: get().channels.length, error: "" };
       if (known && text === known) {
         write(stampKey(url), String(Date.now()));
-        rememberCategoryCount(playlist.id, get().categories.length);
+        rememberCounts(playlist.id, get().categories.length, get().channels.length);
         commit(attempt, token, { loading: false, error: "", errorKey: "", errorDetail: "" });
         return { count: get().channels.length, error: "" };
       }
       const catalogue = m3uCatalogue(text);
       if (!catalogue.channels.length) throw new Error("no channels in that playlist");
       adoptPersonal(playlist, catalogue.channels);
-      void disk.write(cacheKey(url), text);
+      const effective = await adopt(playlist, catalogue.provider, prepared);
+      if (!owns(attempt, token)) return { count: get().channels.length, error: "" };
+      void disk.write(cacheKey(url), text, "catalogue");
       write(stampKey(url), String(Date.now()));
-      rememberCategoryCount(playlist.id, catalogue.categories.length);
+      rememberCounts(playlist.id, catalogue.categories.length, effective.channels.length);
       commit(attempt, token, {
-        ...catalogue,
+        ...effective,
+        managedCategories: catalogue.managedCategories,
         loading: false,
         error: "",
         errorKey: "",
         errorDetail: "",
       });
-      return { count: catalogue.channels.length, error: "" };
+      return { count: effective.channels.length, error: "" };
     } catch (error) {
       return reportFailure(error, playlist, attempt, token);
     }
@@ -254,12 +277,10 @@ export const useChannels = create<State>((set, get) => {
   const liveCatalogue = (categories: XtreamCategory[], loaded: Channel[]) => {
     const live = categories.filter((category) => category.kind === "live");
     const names = new Map(live.map((category) => [category.key, category.name]));
-    const channels = sorted(
-      loaded.map((channel) => ({
-        ...channel,
-        group: names.get(channel.xtream?.categoryKey ?? "") ?? UNCATEGORISED,
-      })),
-    );
+    const channels = loaded.map((channel) => ({
+      ...channel,
+      group: names.get(channel.xtream?.categoryKey ?? "") ?? UNCATEGORISED,
+    }));
     const grouped = new Map<string, Channel[]>();
     for (const channel of channels) {
       const key = channel.xtream?.categoryKey ?? "live:";
@@ -275,40 +296,26 @@ export const useChannels = create<State>((set, get) => {
     for (const [key, members] of grouped) {
       if (!names.has(key)) result.push({ key, name: UNCATEGORISED, channels: members });
     }
-    return { channels, categories: result };
-  };
-
-  const migrateHiddenCategories = (
-    playlist: Playlist,
-    categories: ChannelCategory[],
-    attempt: AbortController,
-    token: number,
-  ) => {
-    const keys = new Set(categories.map((category) => category.key));
-    const migrated: string[] = [];
-    for (const saved of playlist.hiddenCategories) {
-      if (keys.has(saved) || saved.startsWith("movie:") || saved.startsWith("series:")) {
-        migrated.push(saved);
-        continue;
-      }
-      const name = saved.startsWith("Live · ") ? saved.slice(7) : "";
-      if (!name) continue;
-      const matches = categories.filter((category) => category.name === name);
-      if (matches.length === 1) migrated.push(matches[0].key);
-    }
-    if (
-      owns(attempt, token) &&
-      (migrated.length !== playlist.hiddenCategories.length ||
-        migrated.some((value, index) => value !== playlist.hiddenCategories[index]))
-    ) {
-      useSettings.getState().setHiddenCategories(playlist.id, migrated);
-    }
+    return {
+      channels,
+      categories: result,
+      provider: {
+        channels,
+        categories: categories.map((category) => ({
+          key: category.key,
+          name: category.name,
+          kind: category.kind,
+          channels: category.kind === "live" ? (grouped.get(category.key) ?? []) : [],
+        })),
+      },
+    };
   };
 
   const refreshXtream = async (
     playlist: Playlist,
     attempt: AbortController,
     token: number,
+    prepared: Promise<PreparedLineup>,
   ): Promise<LoadResult> => {
     if (playlist.source.kind !== "xtream") return { count: 0, error: "" };
     try {
@@ -325,17 +332,26 @@ export const useChannels = create<State>((set, get) => {
         throw new Error("no playable content in that Xtream account");
       const catalogue = liveCatalogue(categories, live);
       const managedCategories = categories.map(({ key, name }) => ({ key, name }));
-      migrateHiddenCategories(playlist, catalogue.categories, attempt, token);
       adoptPersonal(playlist, catalogue.channels);
-      void disk.write(xtreamCacheKey(playlist, "account"), JSON.stringify(session.account));
-      void disk.write(xtreamCacheKey(playlist, "categories"), JSON.stringify(categories));
-      void disk.write(xtreamCacheKey(playlist, "live"), JSON.stringify(live));
+      const effective = await adopt(playlist, catalogue.provider, prepared);
+      if (!owns(attempt, token)) return { count: get().channels.length, error: "" };
+      void disk.write(
+        xtreamCacheKey(playlist, "account"),
+        JSON.stringify(session.account),
+        "catalogue",
+      );
+      void disk.write(
+        xtreamCacheKey(playlist, "categories"),
+        JSON.stringify(categories),
+        "catalogue",
+      );
+      void disk.write(xtreamCacheKey(playlist, "live"), JSON.stringify(live), "catalogue");
       for (const scope of XTREAM_SCOPES) {
         write(xtreamStampKey(playlist, scope), String(Date.now()));
       }
-      rememberCategoryCount(playlist.id, managedCategories.length);
+      rememberCounts(playlist.id, managedCategories.length, catalogue.channels.length);
       commit(attempt, token, {
-        ...catalogue,
+        ...effective,
         managedCategories,
         accounts: { ...get().accounts, [playlist.id]: session.account },
         loading: false,
@@ -400,6 +416,7 @@ export const useChannels = create<State>((set, get) => {
         return { count: 0, error: "" };
       }
 
+      const prepared = prepareLineup(playlist);
       const identity =
         playlist.source.kind === "m3u" ? `m3u:${playlist.source.url}` : xtreamPrefix(playlist);
       const switching = channelSource !== identity;
@@ -420,9 +437,12 @@ export const useChannels = create<State>((set, get) => {
           const catalogue = m3uCatalogue(cached);
           if (catalogue.channels.length) {
             adoptPersonal(playlist, catalogue.channels);
-            rememberCategoryCount(playlist.id, catalogue.categories.length);
+            const effective = await adopt(playlist, catalogue.provider, prepared);
+            if (!owns(attempt, token)) return { count: get().channels.length, error: "" };
+            rememberCounts(playlist.id, catalogue.categories.length, effective.channels.length);
             commit(attempt, token, {
-              ...catalogue,
+              ...effective,
+              managedCategories: catalogue.managedCategories,
               loading: false,
               error: "",
               errorKey: "",
@@ -434,12 +454,12 @@ export const useChannels = create<State>((set, get) => {
             }
             cancelPending = whenIdle(() => {
               cancelPending = null;
-              void refreshM3U(playlist, cached, attempt, token);
+              void refreshM3U(playlist, cached, attempt, token, prepared);
             }, 4000);
             return { count: catalogue.channels.length, error: "" };
           }
         }
-        return refreshM3U(playlist, "", attempt, token);
+        return refreshM3U(playlist, "", attempt, token, prepared);
       }
 
       const cached = force
@@ -462,11 +482,12 @@ export const useChannels = create<State>((set, get) => {
       ) {
         const catalogue = liveCatalogue(categories, live);
         const managedCategories = categories.map(({ key, name }) => ({ key, name }));
-        migrateHiddenCategories(playlist, catalogue.categories, attempt, token);
         adoptPersonal(playlist, catalogue.channels);
-        rememberCategoryCount(playlist.id, managedCategories.length);
+        const effective = await adopt(playlist, catalogue.provider, prepared);
+        if (!owns(attempt, token)) return { count: get().channels.length, error: "" };
+        rememberCounts(playlist.id, managedCategories.length, catalogue.channels.length);
         commit(attempt, token, {
-          ...catalogue,
+          ...effective,
           managedCategories,
           accounts: { ...get().accounts, [playlist.id]: account },
           loading: false,
@@ -481,15 +502,26 @@ export const useChannels = create<State>((set, get) => {
         if (fresh) return { count: catalogue.channels.length, error: "" };
         cancelPending = whenIdle(() => {
           cancelPending = null;
-          void refreshXtream(playlist, attempt, token);
+          void refreshXtream(playlist, attempt, token, prepared);
         }, 4000);
         return { count: catalogue.channels.length, error: "" };
       }
-      return refreshXtream(playlist, attempt, token);
+      return refreshXtream(playlist, attempt, token, prepared);
     },
 
     async sweep(): Promise<void> {
       const playlists = useSettings.getState().playlists;
+      const legacyOrder = legacyLineupOrderMode();
+      if (legacyOrder) {
+        for (const playlist of playlists) {
+          if (playlist.id === useLineup.getState().playlistId) continue;
+          try {
+            await migrateLegacyOrder(playlist.id, legacyOrder);
+          } catch {
+            break;
+          }
+        }
+      }
       const wantedM3U = new Set(
         playlists
           .filter((playlist) => playlist.source.kind === "m3u")

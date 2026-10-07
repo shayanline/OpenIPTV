@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { useLocale } from "../hooks/useLocale";
+import { RETRY_DELAYS_MS, type RecoveryCause } from "../services/playbackRecovery";
 import type { PlaybackStats } from "../services/player";
-import { KeyGuide, SettingsPath } from "./KeyGuide";
+import { KeyGuide } from "./KeyGuide";
 
 const rate = (value?: number): string => {
   if (value === undefined) return "";
@@ -10,8 +11,17 @@ const rate = (value?: number): string => {
   return `${value} bps`;
 };
 
-export function PlaybackInfo({ read }: { read: () => PlaybackStats | null }) {
-  const { t, direction } = useLocale();
+export function PlaybackInfo({
+  read,
+  recovery,
+  visible = true,
+}: {
+  read: () => PlaybackStats | null;
+  /** What the coordinator is doing about a fault, when there is one. */
+  recovery?: { cause: RecoveryCause | null; attempt: number; continuous?: boolean };
+  visible?: boolean;
+}) {
+  const { t } = useLocale();
   const [stats, setStats] = useState(read);
 
   useEffect(() => {
@@ -20,48 +30,74 @@ export function PlaybackInfo({ read }: { read: () => PlaybackStats | null }) {
     return () => window.clearInterval(timer);
   }, [read]);
 
-  if (!stats) return null;
   const missing = t("diagnostics.notReported");
   const rows = [
-    [t("playbackInfo.engine"), stats.engine],
-    [
-      t("playbackInfo.resolution"),
-      stats.width && stats.height ? `${stats.width} × ${stats.height}` : missing,
-    ],
-    [t("playbackInfo.scan"), stats.scan ? t(`playbackInfo.${stats.scan}`) : missing],
-    [t("playbackInfo.videoCodec"), stats.videoCodec ?? missing],
-    [t("playbackInfo.audioCodec"), stats.audioCodec ?? missing],
-    [t("playbackInfo.bitrate"), rate(stats.bitrate) || missing],
-    [t("playbackInfo.bandwidth"), rate(stats.bandwidth) || missing],
-    [
-      t("playbackInfo.buffer"),
-      stats.bufferSeconds === undefined
-        ? missing
-        : `${Number(stats.bufferSeconds.toFixed(1))} s`,
-    ],
-    [
-      t("playbackInfo.frameRate"),
-      stats.frameRate === undefined ? missing : `${Number(stats.frameRate.toFixed(1))} fps`,
-    ],
-    [
-      t("playbackInfo.droppedFrames"),
-      stats.droppedFrames === undefined || stats.totalFrames === undefined
-        ? missing
-        : `${stats.droppedFrames} / ${stats.totalFrames}`,
-    ],
-    [
-      t("playbackInfo.level"),
-      stats.level === undefined || stats.levels === undefined
-        ? stats.levels === undefined
-          ? missing
-          : t("playbackInfo.autoLevels", { count: stats.levels })
-        : `${stats.level} / ${stats.levels}`,
-    ],
-    [t("playbackInfo.switches"), String(stats.switches)],
+    ...(stats
+      ? [
+          [t("playbackInfo.engine"), stats.engine],
+          [
+            t("playbackInfo.resolution"),
+            stats.width && stats.height ? `${stats.width} × ${stats.height}` : missing,
+          ],
+          [t("playbackInfo.scan"), stats.scan ? t(`playbackInfo.${stats.scan}`) : missing],
+          [t("playbackInfo.videoCodec"), stats.videoCodec ?? missing],
+          [t("playbackInfo.audioCodec"), stats.audioCodec ?? missing],
+          [t("playbackInfo.bitrate"), rate(stats.bitrate) || missing],
+          [t("playbackInfo.bandwidth"), rate(stats.bandwidth) || missing],
+          [
+            t("playbackInfo.buffer"),
+            stats.bufferSeconds === undefined
+              ? missing
+              : `${Number(stats.bufferSeconds.toFixed(1))} s`,
+          ],
+          [
+            t("playbackInfo.frameRate"),
+            stats.frameRate === undefined
+              ? missing
+              : `${Number(stats.frameRate.toFixed(1))} fps`,
+          ],
+          [
+            t("playbackInfo.droppedFrames"),
+            stats.droppedFrames === undefined || stats.totalFrames === undefined
+              ? missing
+              : `${stats.droppedFrames} / ${stats.totalFrames}`,
+          ],
+          [
+            t("playbackInfo.level"),
+            stats.level === undefined || stats.levels === undefined
+              ? stats.levels === undefined
+                ? missing
+                : t("playbackInfo.autoLevels", { count: stats.levels })
+              : `${stats.level} / ${stats.levels}`,
+          ],
+          [t("playbackInfo.switches"), String(stats.switches)],
+        ]
+      : []),
+    ...(recovery?.cause
+      ? [[t("playbackInfo.recovery"), t(`recovery.cause.${recovery.cause}`)]]
+      : []),
+    ...(recovery && recovery.attempt > 0
+      ? [
+          [
+            t("playbackInfo.attemptLabel"),
+            /* A continuous reconnect has no bound, so the attempt is reported without one. */
+            recovery.continuous
+              ? String(recovery.attempt)
+              : t("playbackInfo.attempt", {
+                  attempt: recovery.attempt,
+                  total: RETRY_DELAYS_MS.length,
+                }),
+          ],
+        ]
+      : []),
   ];
 
   return (
-    <aside className="playback-info" aria-label={t("playbackInfo.title")}>
+    <aside
+      className={`playback-info ${visible ? "visible" : ""}`.trim()}
+      aria-label={t("playbackInfo.title")}
+      data-recovery-cause={recovery?.cause ?? ""}
+    >
       <h2>{t("playbackInfo.title")}</h2>
       <dl>
         {rows.map(([label, value]) => (
@@ -77,15 +113,7 @@ export function PlaybackInfo({ read }: { read: () => PlaybackStats | null }) {
           {
             keys: ["OK"],
             beforeKeys: t("playbackInfo.hold"),
-            label: (
-              <span className="playback-info-action">
-                <span>{t("playbackInfo.hideHint")}</span>
-                <SettingsPath
-                  items={[t("settings.title"), t("settings.playback")]}
-                  direction={direction}
-                />
-              </span>
-            ),
+            label: t("playbackInfo.hideHint"),
           },
         ]}
       />

@@ -1,11 +1,11 @@
 import { afterEach, expect, test, vi } from "vitest";
 import assert from "node:assert/strict";
-import { act, cleanup, renderHook, screen } from "@testing-library/react";
+import { cleanup, screen } from "@testing-library/react";
 import { KEY } from "../src/hooks/useRemote";
-import { useBrowseStack, type BrowseFrame } from "../src/hooks/useBrowseStack";
-import { availableHeaderControls } from "../src/components/PanelHeader";
+import { availableModeControls } from "../src/components/PanelHeader";
 import {
   mountApp,
+  played,
   press,
   pressDown,
   release,
@@ -35,11 +35,14 @@ http://example.invalid/3.m3u8
 `;
 
 /** The cursor is in the title bar when one of its two keys is the selected thing. */
-const inTitleBar = () => !!document.querySelector(".panel-key.selected");
+const inTitleBar = () =>
+  !!document.querySelector(".content-option.focused, .panel-key.selected");
 
 /** Which title bar key the cursor is on, or nothing. */
 const barKey = () =>
-  document.querySelector(".panel-key.selected")?.getAttribute("aria-label") ?? "";
+  document
+    .querySelector(".content-option.focused, .panel-key.selected")
+    ?.getAttribute("aria-label") ?? "";
 
 /**
  * The channel the cursor is on, by name, and the category likewise.
@@ -70,43 +73,28 @@ const XTREAM_STREAMS = [
   },
 ];
 
-const frame = (key: string, cursor = 0): BrowseFrame<string> => ({
-  key,
-  title: key,
-  items: [`${key} item`],
-  cursor,
-  state: "loaded",
-});
-
-test("the browse stack restores its parent cursor after one frame is removed", () => {
-  const { result } = renderHook(() => useBrowseStack(frame("root", 1)));
-
-  act(() => {
-    result.current.setCursor(4);
-    result.current.push(frame("detail", 2));
-  });
-  expect(result.current.current).toMatchObject({ key: "detail", cursor: 2 });
-
-  act(() => result.current.setCursor(6));
-  expect(result.current.current.cursor).toBe(6);
-
-  act(() => result.current.pop());
-  expect(result.current.current).toMatchObject({ key: "root", cursor: 4 });
-
-  act(() => result.current.pop());
-  expect(result.current.current.key).toBe("root");
-});
-
-test("the ordered header model keeps Guide outside the global title bar", () => {
-  expect(availableHeaderControls(false, false)).toEqual(["search", "settings"]);
-  expect(availableHeaderControls(true, false)).toEqual(["content", "search", "settings"]);
-  expect(availableHeaderControls(true, true)).toEqual(["content", "search", "settings"]);
+test("the ordered header model exposes modes supported by the active source", () => {
+  expect(availableModeControls("m3u", false)).toEqual(["live", "search", "settings"]);
+  expect(availableModeControls("xtream", false)).toEqual([
+    "live",
+    "movie",
+    "series",
+    "search",
+    "settings",
+  ]);
+  expect(availableModeControls("xtream", true)).toEqual([
+    "live",
+    "movie",
+    "series",
+    "guide",
+    "search",
+    "settings",
+  ]);
 });
 
 test("the M3U header remains Search followed by Settings", async () => {
   await mountApp(PLAYLIST);
 
-  expect(document.querySelector(".content-selector")).toBeNull();
   expect(
     [...document.querySelectorAll(".panel-bar button")].map((button) =>
       button.getAttribute("aria-label"),
@@ -122,45 +110,25 @@ test("an Xtream header starts on Live and separates selection from remote focus"
 
   const live = screen.getByRole("button", { name: "Live" });
   expect(live.getAttribute("aria-pressed")).toBe("true");
-  expect(live.classList.contains("selected")).toBe(true);
-  expect(document.querySelector(".content-selector.focused")).toBeNull();
   expect(screen.queryByRole("button", { name: "Guide" })).toBeNull();
+  expect(
+    [...document.querySelectorAll(".content-selector button")].map((button) => button.textContent),
+  ).toEqual(["Live", "Movies", "Series"]);
   expect(
     [...document.querySelectorAll(".panel-bar button")].map((button) => button.textContent),
   ).toEqual(["Search", "Settings"]);
 
-  press(KEY.LEFT);
-  await settle();
   press(KEY.UP);
   await settle();
-  expect(document.querySelector(".content-selector.focused")).toBeTruthy();
-  expect(document.querySelector(".content-option.focused")?.textContent).toBe("Live");
-
+  expect(barKey()).toBe("Live");
   press(KEY.RIGHT);
-  expect(document.querySelector(".content-option.focused")?.textContent).toBe("Movies");
-  expect(screen.getByRole("button", { name: "Live" }).getAttribute("aria-pressed")).toBe(
-    "true",
-  );
-
-  press(KEY.RIGHT);
-  expect(document.querySelector(".content-option.focused")?.textContent).toBe("Series");
-  press(KEY.RIGHT);
-  expect(barKey()).toBe("Search");
-  expect(screen.getByRole("button", { name: "Live" }).getAttribute("aria-pressed")).toBe(
-    "true",
-  );
-
-  press(KEY.LEFT);
-  expect(document.querySelector(".content-option.focused")?.textContent).toBe("Series");
-  press(KEY.LEFT);
-  expect(document.querySelector(".content-option.focused")?.textContent).toBe("Movies");
+  expect(barKey()).toBe("Movies");
+  expect(live.getAttribute("aria-pressed")).toBe("true");
   press(KEY.ENTER);
   await settle();
+  expect(document.querySelector(".vod-screen[data-mode='movie']")).toBeTruthy();
   expect(screen.getByRole("button", { name: "Movies" }).getAttribute("aria-pressed")).toBe(
     "true",
-  );
-  expect(document.querySelector(".content-selector.focused .content-option.selected")).toBe(
-    screen.getByRole("button", { name: "Movies" }),
   );
 });
 
@@ -171,19 +139,17 @@ test("right to left header navigation follows the visible control order", async 
     fetchImplementation: xtreamFetch(XTREAM_CATEGORIES, XTREAM_STREAMS),
   });
 
-  press(KEY.RIGHT);
-  await settle();
   press(KEY.UP);
   await settle();
-  expect(document.querySelector(".content-selector.focused")).toBeTruthy();
+  expect(barKey()).toBe("مباشر");
 
   press(KEY.LEFT);
   await settle();
-  expect(document.querySelector(".content-option.focused")?.textContent).toBe("أفلام");
+  expect(barKey()).toBe("أفلام");
 
   press(KEY.LEFT);
   await settle();
-  expect(document.querySelector(".content-option.focused")?.textContent).toBe("مسلسلات");
+  expect(barKey()).toBe("مسلسلات");
 
   press(KEY.LEFT);
   await settle();
@@ -194,7 +160,18 @@ test("right to left header navigation follows the visible control order", async 
   expect(barKey()).toBe("الإعدادات");
 });
 
-test("up from the top of the channel list reaches Search, and down comes back to it", async () => {
+test("the panel owns directions while it is open", async () => {
+  await mountApp(PLAYLIST);
+  const started = played.length;
+
+  press(KEY.DOWN);
+  await settle();
+
+  expect(played).toHaveLength(started);
+  expect(channelUnderCursor()).toBe("Second Channel");
+});
+
+test("up from the top of the channel list reaches Live, and down comes back to it", async () => {
   await mountApp(PLAYLIST);
   const wasOn = channelUnderCursor();
   assert.notEqual(wasOn, "", "the cursor was not in the channel column to begin with");
@@ -374,6 +351,7 @@ test("vertical movement from Settings returns to the matching channel-list edge"
   press(KEY.UP);
   await settle();
   press(KEY.RIGHT);
+  press(KEY.RIGHT);
   await settle();
   assert.equal(barKey(), "Settings");
 
@@ -411,7 +389,7 @@ test("left and right still move within the bar before leaving it", async () => {
   await mountApp(PLAYLIST);
   press(KEY.UP);
   await settle();
-  assert.equal(barKey(), "Search", "the bar is entered on its first key");
+  assert.equal(barKey(), "Search", "the bar is entered on its first visible key");
 
   press(KEY.RIGHT);
   await settle();

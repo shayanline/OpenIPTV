@@ -154,3 +154,37 @@ const FALLBACK: Reason = {
 export function explain(code: string): Reason {
   return REASONS.find((r) => r.match.test(code))?.reason ?? FALLBACK;
 }
+
+/**
+ * What recovery is allowed to do with a fault, decided once beside the explanations so the
+ * two readings of an engine code can never disagree.
+ *
+ * Terminal means no retry will help: authentication and permission refusals, provider
+ * refusals, addresses that no longer point at a stream, and formats neither engine can
+ * decode. Compatibility diagnosis is worth one attempt on anything else a live target
+ * raises, because the one defect it repairs presents as an ordinary stall. The HTTP
+ * fallback stays narrow, covering the connection and decoding faults a downgraded address
+ * can actually change.
+ */
+export interface FaultPolicy {
+  terminal: boolean;
+  compatibility: boolean;
+  httpFallback: boolean;
+}
+
+const TERMINAL_REFUSAL = /http (401|403|451)|\b(401|403|451)\b|GEO/i;
+const TERMINAL_ADDRESS = /http 40[0-9]|\b404\b|INVALID_URI|NO_SUCH_FILE/i;
+const TERMINAL_FORMAT =
+  /NOT_SUPPORTED_FILE|CODEC|manifestParsing|manifestIncompatible|FINITE_FORMAT_UNSUPPORTED/i;
+const FALLBACK_ELIGIBLE =
+  /CONNECTION_FAILED|NETWORK|manifestLoad|levelLoad|fragLoad|TIMEOUT|CIPHER|CERT|NOT_SUPPORTED/i;
+
+export function faultPolicy(code: string): FaultPolicy {
+  const terminal =
+    TERMINAL_REFUSAL.test(code) || TERMINAL_ADDRESS.test(code) || TERMINAL_FORMAT.test(code);
+  return {
+    terminal,
+    compatibility: !terminal,
+    httpFallback: !terminal && FALLBACK_ELIGIBLE.test(code),
+  };
+}

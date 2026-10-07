@@ -1,11 +1,52 @@
 import { test } from "vitest";
 import assert from "node:assert/strict";
-import { UNCATEGORISED, groupByCategory, parseM3U } from "../src/services/m3u";
+import {
+  UNCATEGORISED,
+  groupByCategory,
+  parseM3U,
+  sourceFingerprint,
+} from "../src/services/m3u";
 
 /**
  * The parser is the one part of the app fed by strangers, so it is the part worth pinning
  * down. Every case here is a way a real playlist bends the format, not a hypothetical.
  */
+
+test("source fingerprints are stable lowercase hexadecimal values", () => {
+  const fingerprint = sourceFingerprint(
+    "a.tv",
+    "Channel A",
+    "News",
+    "http://example.com/a.m3u8",
+  );
+  assert.equal(
+    fingerprint,
+    sourceFingerprint("a.tv", "Channel A", "News", "http://example.com/a.m3u8"),
+  );
+  assert.match(fingerprint, /^[0-9a-f]{16}$/);
+  assert.notEqual(
+    fingerprint,
+    sourceFingerprint("a.tv", "شبکه یک", "News", "http://example.com/a.m3u8"),
+  );
+  assert.equal(fingerprint.includes("example"), false);
+});
+
+test("duplicate source fingerprints receive deterministic occurrence suffixes", () => {
+  const channels = parseM3U(`#EXTM3U
+#EXTINF:-1 tvg-id="same" group-title="News",Same
+http://user:secret@example.com/live
+#EXTINF:-1 tvg-id="same" group-title="News",Same
+http://user:secret@example.com/live`);
+  assert.match(channels[0].sourceFingerprint ?? "", /^[0-9a-f]{16}$/);
+  assert.equal(channels[1].sourceFingerprint, `${channels[0].sourceFingerprint}00000002`);
+  assert.equal(channels[1].sourceFingerprint?.includes("secret"), false);
+  const reordered = parseM3U(`#EXTM3U
+#EXTINF:-1 tvg-id="other",Other
+http://example.com/other
+#EXTINF:-1 tvg-id="same" group-title="News",Same
+http://user:secret@example.com/live`);
+  assert.equal(reordered[1].sourceFingerprint, channels[0].sourceFingerprint);
+});
 
 test("reads the attributes and the title", () => {
   const [c] = parseM3U(`#EXTM3U

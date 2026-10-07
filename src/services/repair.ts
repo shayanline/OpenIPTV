@@ -6,6 +6,7 @@ import {
   renderPlaylist,
   windowOf,
 } from "./manifest";
+import { DEFAULT_SEGMENT_SECONDS } from "./playbackRange";
 import { readJSON, write } from "./store";
 
 /**
@@ -54,6 +55,7 @@ export interface PlaybackTarget extends Repair {
   repaired: boolean;
   /** The initial AVPlay buffer required by the diagnosed segment duration. */
   bufferSeconds: number;
+  segmentSeconds: number;
   /** Whether the target came from a persisted healthy diagnosis without a playlist fetch. */
   cached?: boolean;
 }
@@ -80,6 +82,7 @@ let serving = ""; // the upstream currently being repaired
 let published: string[] = []; // the addresses in the window last served, in order
 let sequence = 0; // the number given to the first of them
 let servingBufferSeconds = initialBufferSeconds(0);
+let servingSegmentSeconds = DEFAULT_SEGMENT_SECONDS;
 let refresh: number | undefined;
 let waiting: ((port: number) => void)[] = [];
 let why = ""; // why it is unavailable, for Diagnostics
@@ -117,18 +120,25 @@ interface Diagnosis {
   key: string;
   repaired: boolean;
   bufferSeconds: number;
+  segmentSeconds: number;
   etag: string;
   lastModified: string;
 }
 
-const isDiagnosis = (value: unknown): value is Diagnosis => {
+type StoredDiagnosis = Omit<Diagnosis, "segmentSeconds"> & { segmentSeconds?: number };
+
+const isDiagnosis = (value: unknown): value is StoredDiagnosis => {
   if (!value || typeof value !== "object") return false;
-  const diagnosis = value as Partial<Diagnosis>;
+  const diagnosis = value as Partial<StoredDiagnosis>;
   return (
     typeof diagnosis.key === "string" &&
     typeof diagnosis.repaired === "boolean" &&
     typeof diagnosis.bufferSeconds === "number" &&
     Number.isFinite(diagnosis.bufferSeconds) &&
+    (diagnosis.segmentSeconds === undefined ||
+      (typeof diagnosis.segmentSeconds === "number" &&
+        Number.isFinite(diagnosis.segmentSeconds) &&
+        diagnosis.segmentSeconds > 0)) &&
     typeof diagnosis.etag === "string" &&
     typeof diagnosis.lastModified === "string"
   );
@@ -146,9 +156,22 @@ const hashAddress = (value: string): string => {
 const diagnosisKey = (sourceId: string, url: string) => `${sourceId}:${hashAddress(url)}`;
 const storedDiagnoses = readJSON<unknown>(DIAGNOSES_KEY, []);
 let diagnoses = Array.isArray(storedDiagnoses)
-  ? storedDiagnoses.filter(isDiagnosis).slice(0, DIAGNOSES_MAX)
+  ? storedDiagnoses
+      .filter(isDiagnosis)
+      .map((diagnosis) => ({
+        ...diagnosis,
+        segmentSeconds: diagnosis.segmentSeconds ?? DEFAULT_SEGMENT_SECONDS,
+      }))
+      .slice(0, DIAGNOSES_MAX)
   : [];
-if (!Array.isArray(storedDiagnoses) || diagnoses.length !== storedDiagnoses.length) {
+if (
+  !Array.isArray(storedDiagnoses) ||
+  diagnoses.length !== storedDiagnoses.length ||
+  storedDiagnoses.some(
+    (diagnosis) =>
+      !!diagnosis && typeof diagnosis === "object" && !("segmentSeconds" in diagnosis),
+  )
+) {
   write(DIAGNOSES_KEY, JSON.stringify(diagnoses));
 }
 
@@ -160,6 +183,7 @@ function rememberDiagnosis(
   key: string,
   repaired: boolean,
   bufferSeconds: number,
+  segmentSeconds: number,
   source: PlaylistSource,
 ): void {
   diagnoses = [
@@ -167,6 +191,7 @@ function rememberDiagnosis(
       key,
       repaired,
       bufferSeconds,
+      segmentSeconds,
       etag: source.etag,
       lastModified: source.lastModified,
     },
@@ -376,6 +401,7 @@ function teardown(reason: string) {
   published = [];
   sequence = 0;
   servingBufferSeconds = initialBufferSeconds(0);
+  servingSegmentSeconds = DEFAULT_SEGMENT_SECONDS;
   if (reason) {
     state = "unavailable";
     why = reason;
@@ -468,6 +494,7 @@ export async function prepare(
    */
   if (state === "unavailable") return null;
 
+  generation += 1;
   if (serving === upstream && state === "serving") {
     return {
       url: local(),
@@ -475,10 +502,10 @@ export async function prepare(
       browser: false,
       repaired: true,
       bufferSeconds: servingBufferSeconds,
+      segmentSeconds: servingSegmentSeconds,
     };
   }
 
-  generation += 1;
   const mine = generation;
   const stale = () => mine !== generation;
   const key = diagnosisKey(sourceId, upstream);
@@ -490,6 +517,7 @@ export async function prepare(
       browser: false,
       repaired: false,
       bufferSeconds: cached.bufferSeconds,
+      segmentSeconds: cached.segmentSeconds,
       cached: true,
     };
   }
@@ -509,18 +537,20 @@ export async function prepare(
   const longest = await longestSegment(source);
   if (stale()) return null;
   const bufferSeconds = initialBufferSeconds(longest);
+  const segmentSeconds = longest || DEFAULT_SEGMENT_SECONDS;
   if (!needsRepair(source.text)) {
-    rememberDiagnosis(key, false, bufferSeconds, source);
+    rememberDiagnosis(key, false, bufferSeconds, segmentSeconds, source);
     return {
       url: upstream,
       upstream,
       browser: false,
       repaired: false,
       bufferSeconds,
+      segmentSeconds,
     };
   }
 
-  rememberDiagnosis(key, true, bufferSeconds, source);
+  rememberDiagnosis(key, true, bufferSeconds, segmentSeconds, source);
   rememberNeedsRepair(upstream, sourceId);
 
   if (!onTizen()) {
@@ -533,7 +563,14 @@ export async function prepare(
       }
       browserRepairs.add(upstream);
     }
-    return { url: upstream, upstream, browser: true, repaired: true, bufferSeconds };
+    return {
+      url: upstream,
+      upstream,
+      browser: true,
+      repaired: true,
+      bufferSeconds,
+      segmentSeconds,
+    };
   }
 
   const bound = await begin();
@@ -548,13 +585,21 @@ export async function prepare(
   published = [];
   sequence = 0;
   servingBufferSeconds = bufferSeconds;
+  servingSegmentSeconds = segmentSeconds;
   publish(source.text, source.url);
   state = "serving";
 
   window.clearInterval(refresh);
   refresh = window.setInterval(() => void update(), REFRESH_MS);
 
-  return { url: local(), upstream, browser: false, repaired: true, bufferSeconds };
+  return {
+    url: local(),
+    upstream,
+    browser: false,
+    repaired: true,
+    bufferSeconds,
+    segmentSeconds,
+  };
 }
 
 /**
@@ -578,12 +623,15 @@ export function revalidate(upstream: string, sourceId = "shared"): Promise<boole
     const next = {
       repaired: needsRepair(source.text),
       bufferSeconds: initialBufferSeconds(longest),
+      segmentSeconds: longest || DEFAULT_SEGMENT_SECONDS,
     };
     if (diagnoses.find((diagnosis) => diagnosis.key === key) !== cached) return false;
 
     const changed =
-      cached.repaired !== next.repaired || cached.bufferSeconds !== next.bufferSeconds;
-    rememberDiagnosis(key, next.repaired, next.bufferSeconds, source);
+      cached.repaired !== next.repaired ||
+      cached.bufferSeconds !== next.bufferSeconds ||
+      cached.segmentSeconds !== next.segmentSeconds;
+    rememberDiagnosis(key, next.repaired, next.bufferSeconds, next.segmentSeconds, source);
     if (next.repaired) rememberNeedsRepair(upstream, sourceId);
     return changed;
   })().finally(() => {
@@ -619,8 +667,11 @@ const local = () => `http://127.0.0.1:${port}/live.m3u8`;
  */
 async function update() {
   if (state !== "serving" || !serving) return;
-  const source = await read(serving);
-  if (source === null) return;
+  const upstream = serving;
+  const mine = generation;
+  const source = await read(upstream);
+  if (source === null || state !== "serving" || serving !== upstream || generation !== mine)
+    return;
   publish(source.text, source.url);
 }
 
@@ -692,6 +743,7 @@ export function idleRepair(): void {
   published = [];
   sequence = 0;
   servingBufferSeconds = initialBufferSeconds(0);
+  servingSegmentSeconds = DEFAULT_SEGMENT_SECONDS;
   state = "listening";
 }
 

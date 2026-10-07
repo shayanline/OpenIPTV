@@ -15,8 +15,10 @@ export function ApplicationData({ onAsking }: { onAsking: (asking: boolean) => v
   const { load } = useChannels();
   const [confirming, setConfirming] = useState(false);
   const [clearing, setClearing] = useState(false);
+  const [resetError, setResetError] = useState(false);
 
   const ask = (open: boolean) => {
+    if (open) setResetError(false);
     setConfirming(open);
     onAsking(open);
   };
@@ -75,19 +77,22 @@ export function ApplicationData({ onAsking }: { onAsking: (asking: boolean) => v
       {confirming && (
         <Confirm
           title={t("settings.resetDataQuestion")}
-          body={t("settings.resetDataBody")}
-          confirmLabel={t("settings.resetData")}
+          body={`${t("settings.resetDataBody")}${resetError ? ` ${t("lineup.persistenceFailed")}` : ""}`}
+          confirmLabel={resetError ? t("remote.retry") : t("settings.resetData")}
           cancelLabel={t("common.cancel")}
           destructive
           onCancel={() => ask(false)}
-          onConfirm={() => {
+          onConfirm={async () => {
             // App data has to mean all app data. Favourites and the last played channel
             // live in the other store and used to survive a reset, so the app came back
             // claiming to be freshly installed while still remembering what you liked. The
             // cached playlists and logos are the third store and had the same problem: an
             // app with no playlists configured, holding a copy of one.
-            s.reset();
-            void forgetAll();
+            if (!(await s.reset())) {
+              setResetError(true);
+              return;
+            }
+            await forgetAll();
             // The fourth store follows the same rule, and which hosts this television cannot read
             // is a diagnosis it made rather than a fact.
             forgetRepairHosts();

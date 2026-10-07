@@ -14,6 +14,12 @@ const paths: Record<string, React.ReactNode> = {
   star: (
     <path d="M11.525 2.295a.53.53 0 0 1 .95 0l2.31 4.679a2.123 2.123 0 0 0 1.595 1.16l5.166.756a.53.53 0 0 1 .294.904l-3.736 3.638a2.123 2.123 0 0 0-.611 1.878l.882 5.14a.53.53 0 0 1-.771.56l-4.618-2.428a2.122 2.122 0 0 0-1.973 0L6.396 21.01a.53.53 0 0 1-.77-.56l.881-5.139a2.122 2.122 0 0 0-.611-1.879L2.16 9.795a.53.53 0 0 1 .294-.906l5.165-.755a2.122 2.122 0 0 0 1.597-1.16z" />
   ),
+  time: (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 7v5l3 2" />
+    </>
+  ),
   rewind: (
     <>
       <path d="M12 6a2 2 0 0 0-3.414-1.414l-6 6a2 2 0 0 0 0 2.828l6 6A2 2 0 0 0 12 18z" />
@@ -71,6 +77,35 @@ const paths: Record<string, React.ReactNode> = {
       <path d="M4 4v16" />
     </>
   ),
+  episode: (
+    <>
+      <rect x="3" y="5" width="18" height="14" rx="2" />
+      <path d="m10 9 5 3-5 3z" />
+    </>
+  ),
+  audio: (
+    <>
+      <path d="M9 18V5l12-2v13" />
+      <circle cx="6" cy="18" r="3" />
+      <circle cx="18" cy="16" r="3" />
+    </>
+  ),
+  subtitles: (
+    <>
+      <rect x="2" y="4" width="20" height="16" rx="2" />
+      <path d="M10.5 10.5a2.5 2.5 0 0 0-4.5 1.5 2.5 2.5 0 0 0 4.5 1.5" />
+      <path d="M18.5 10.5a2.5 2.5 0 0 0-4.5 1.5 2.5 2.5 0 0 0 4.5 1.5" />
+    </>
+  ),
+  live: (
+    <>
+      <circle cx="12" cy="12" r="2" />
+      <path d="M4.93 19.07a10 10 0 0 1 0-14.14" />
+      <path d="M7.76 16.24a6 6 0 0 1 0-8.49" />
+      <path d="M16.24 7.76a6 6 0 0 1 0 8.49" />
+      <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />
+    </>
+  ),
   guide: (
     <>
       <path d="M8 2v3" />
@@ -78,6 +113,13 @@ const paths: Record<string, React.ReactNode> = {
       <rect x="3" y="3" width="18" height="18" rx="2" />
       <path d="M3 9h18" />
       <path d="M8 13h.01M12 13h.01M16 13h.01M8 17h.01M12 17h.01M16 17h.01" />
+    </>
+  ),
+  language: (
+    <>
+      <circle cx="12" cy="12" r="10" />
+      <path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20" />
+      <path d="M2 12h20" />
     </>
   ),
   more: (
@@ -109,6 +151,14 @@ const paths: Record<string, React.ReactNode> = {
       <path d="M21 3v5h-5" />
       <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" />
       <path d="M8 16H3v5" />
+    </>
+  ),
+  sort: (
+    <>
+      <path d="M8 5v14" />
+      <path d="m4 9 4-4 4 4" />
+      <path d="M16 19V5" />
+      <path d="m12 15 4 4 4-4" />
     </>
   ),
   edit: (

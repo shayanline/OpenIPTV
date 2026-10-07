@@ -1,9 +1,18 @@
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import assert from "node:assert/strict";
-import { Player, onTizen, type PlayerEvent } from "../src/services/player";
+import {
+  Player,
+  onTizen,
+  type PlayerEvent,
+  type PlayerOpenRequest,
+} from "../src/services/player";
 
 interface FakeHlsInstance {
   source: string;
+  startPositions: number[];
+  mediaRecoveries: number;
+  audioTrack: number;
+  subtitleTrack: number;
   emit(event: string, data: unknown): void;
 }
 
@@ -21,10 +30,16 @@ vi.mock("hls.js", () => {
       ERROR: "error",
       LEVEL_SWITCHED: "levelSwitch",
       MANIFEST_PARSED: "manifestParsed",
+      LEVEL_LOADED: "levelLoaded",
+      SUBTITLE_TRACKS_UPDATED: "subtitleTracksUpdated",
     };
     static ErrorTypes = { NETWORK_ERROR: "networkError", MEDIA_ERROR: "mediaError" };
     currentLevel = 2;
     bandwidthEstimate = 6_200_000;
+    audioTrack = 0;
+    subtitleTrack = -1;
+    audioTracks = [{ name: "English", lang: "en", default: true }];
+    subtitleTracks = [{ name: "English SDH", lang: "en", default: false }];
     levels = [
       { width: 640, height: 360, bitrate: 800_000 },
       { width: 1280, height: 720, bitrate: 2_500_000 },
@@ -39,6 +54,8 @@ vi.mock("hls.js", () => {
     ];
     handlers = new Map<string, HlsHandler>();
     source = "";
+    startPositions: number[] = [];
+    mediaRecoveries = 0;
     constructor() {
       hlsMock.instance = this;
     }
@@ -52,8 +69,12 @@ vi.mock("hls.js", () => {
       this.source = url;
     }
     attachMedia() {}
-    startLoad() {}
-    recoverMediaError() {}
+    startLoad(position: number) {
+      this.startPositions.push(position);
+    }
+    recoverMediaError() {
+      this.mediaRecoveries += 1;
+    }
     destroy() {}
   }
   return { default: FakeHls };
@@ -63,10 +84,10 @@ vi.mock("hls.js", () => {
  * The player, which is the riskiest thing in the application and had no tests at all.
  *
  * It drives two engines that agree about nothing, and almost all of its interesting
- * behaviour is about time: how long a channel may take to start, how long a still picture is
- * allowed before it counts as frozen, and whether the timers that decide both are called off
- * when they should be. None of that can be reached by looking at the code, and all of it is
- * what the viewer actually experiences when a relay misbehaves.
+ * behaviour is about call ordering and engine state: which AVPlay calls are legal in which
+ * state, which failures are worth reporting, and which ones the app caused itself. How long
+ * a channel may take to start and how long a still picture is allowed are the recovery
+ * coordinator's questions, covered in playbackRecovery.test.ts.
  *
  * The AVPlay path is the one covered here, because it is the one that runs on a television
  * and the one whose call ordering is load bearing: several of its calls are legal in only
@@ -76,13 +97,15 @@ vi.mock("hls.js", () => {
 /** A stand in for webapis.avplay that records what it was asked to do, and in what order. */
 function fakeAVPlay() {
   const calls: string[] = [];
+  const streamingReads: string[] = [];
   let state = "NONE";
   let currentTime = 0;
   let duration = 120_000;
   const av = {
-    listener: null as null | Record<string, (arg?: unknown) => void>,
+    listener: null as null | Record<string, (...args: unknown[]) => void>,
     prepared: null as null | { ok: () => void; fail: (e: unknown) => void },
     calls,
+    streamingReads,
     open: (url: string) => {
       calls.push(`open:${url}`);
       state = "IDLE";
@@ -139,18 +162,38 @@ function fakeAVPlay() {
         extra_info: JSON.stringify({ FourCC: "AAC", Bit_rate: 192_000 }),
       },
     ],
-    getStreamingProperty: (key: string) =>
-      (
-        ({
-          CURRENT_BANDWIDTH: "6200000",
-          AVAILABLE_BITRATE: "1500000|3000000|4500000",
-          CURRENT_LEVEL: "3",
-          BUFFER_AHEAD: "5.5",
-          FRAME_RATE: "49.9",
-          TOTAL_FRAMES: "100",
-          DROPPED_FRAMES: "2",
-        }) as Record<string, string>
-      )[key] ?? "",
+    getTotalTrackInfo: () => [
+      {
+        index: 1,
+        type: "AUDIO" as const,
+        extra_info: JSON.stringify({ language: "en", label: "English", selected: true }),
+      },
+      {
+        index: 3,
+        type: "TEXT" as const,
+        extra_info: JSON.stringify({ language: "en", label: "English SDH" }),
+      },
+    ],
+    setSelectTrack: (type: string, index: number) =>
+      calls.push(`setSelectTrack:${type}:${index}`),
+    setSilentSubtitle: (silent: boolean) => calls.push(`setSilentSubtitle:${silent}`),
+    getStreamingProperty: (key: string) => {
+      streamingReads.push(key);
+      return (
+        (
+          {
+            GET_LIVE_DURATION: "10000|70000",
+            CURRENT_BANDWIDTH: "6200000",
+            AVAILABLE_BITRATE: "1500000|3000000|4500000",
+            CURRENT_LEVEL: "3",
+            BUFFER_AHEAD: "5.5",
+            FRAME_RATE: "49.9",
+            TOTAL_FRAMES: "100",
+            DROPPED_FRAMES: "2",
+          } as Record<string, string>
+        )[key] ?? ""
+      );
+    },
     getVideoSeamlessInfo: () => ({ scan_type: 1, rotation_degree: 0 }),
     setDisplayRect: () => calls.push("setDisplayRect"),
     setDisplayMethod: (m: string) => calls.push(`setDisplayMethod:${m}`),
@@ -162,7 +205,7 @@ function fakeAVPlay() {
       calls.push(`setBufferingParam:${option},${unit},${amount}`),
     suspend: () => calls.push("suspend"),
     restore: () => calls.push("restore"),
-    setListener: (l: Record<string, (arg?: unknown) => void>) => {
+    setListener: (l: Record<string, (...args: unknown[]) => void>) => {
       av.listener = l;
     },
     prepareAsync: (ok: () => void, fail: (e: unknown) => void) => {
@@ -184,6 +227,9 @@ function fakeAVPlay() {
     setDuration: (ms: number) => {
       duration = ms;
     },
+    setState: (next: string) => {
+      state = next;
+    },
   };
   return av;
 }
@@ -194,6 +240,22 @@ let player: Player;
 let tvMuted = false;
 
 const codes = () => events.filter((e) => e.type === "error").map((e) => e.code);
+const liveRequest = (
+  url = "http://example.invalid/a.m3u8",
+  overrides: Partial<PlayerOpenRequest> = {},
+): PlayerOpenRequest => ({
+  url,
+  browserRepair: false,
+  bufferSeconds: 6,
+  segmentSeconds: 3,
+  mode: "live",
+  startSeconds: 0,
+  ...overrides,
+});
+const finiteRequest = (
+  url = "http://example.invalid/movie/1.mp4",
+  overrides: Partial<PlayerOpenRequest> = {},
+): PlayerOpenRequest => ({ ...liveRequest(url), mode: "finite", ...overrides });
 
 beforeEach(() => {
   vi.useFakeTimers();
@@ -227,7 +289,7 @@ test("the TV path is taken when AVPlay is present", () => {
 });
 
 test("starting a channel calls AVPlay in the order its states require", () => {
-  player.play("http://example.invalid/a.m3u8");
+  player.play(liveRequest());
 
   // setStreamingProperty is legal in IDLE only, which is after open and before prepare.
   // Called any later it throws and the channel never starts, so the order is the behaviour.
@@ -240,7 +302,7 @@ test("starting a channel calls AVPlay in the order its states require", () => {
 });
 
 test("the status the server sent reaches the explanation, not just the engine's own name", () => {
-  player.play("http://example.invalid/a.m3u8");
+  player.play(liveRequest());
   // Two facts, in the order the TV sends them: the status through onevent, the failure through
   // onerror. Joined, because CONNECTION_FAILED alone cannot tell a refusal from a dead host.
   av.listener?.onevent?.("PLAYER_MSG_HTTP_ERROR_CODE", "403");
@@ -253,7 +315,7 @@ test("the status the server sent reaches the explanation, not just the engine's 
 });
 
 test("a failure with a message keeps both, and only reports once", () => {
-  player.play("http://example.invalid/a.m3u8");
+  player.play(liveRequest());
   av.listener?.onerrormsg?.("PLAYER_ERROR_NOT_SUPPORTED_FILE", "codec not supported");
   // The same failure arriving twice is one failure: onerror and onerrormsg describe one event,
   // and the first explanation is the one that survives.
@@ -264,27 +326,17 @@ test("a failure with a message keeps both, and only reports once", () => {
   assert.match(faults[0].code, /codec not supported/);
 });
 
-test("buffering progress is passed on, and is absent when the engine says nothing", () => {
-  player.play("http://example.invalid/a.m3u8");
+test("buffering progress is passed on without inventing progress for a start", () => {
+  player.play(liveRequest());
   av.listener?.onbufferingstart?.();
   av.listener?.onbufferingprogress?.(42);
 
-  const buffering = events.filter((e) => e.type === "buffering");
-  /*
-   * Found rather than indexed. play() reports buffering itself before the engine is even asked,
-   * so the progress report is the third of three here, and an index would be asserting the
-   * order of events that have no reason to keep one.
-   */
-  assert.equal(buffering.find((e) => e.percent !== undefined)?.percent, 42);
-  // A start that said nothing about progress must not read as nought per cent.
-  assert.ok(
-    buffering.some((e) => e.percent === undefined),
-    "the start invented a figure",
-  );
+  expect(events).toContainEqual({ type: "buffering-progress", percent: 42 });
+  expect(events.filter((event) => event.type === "buffering-start")).not.toHaveLength(0);
 });
 
 test("AVPlay statistics normalize current engine values without using playlist labels", () => {
-  player.play("http://example.invalid/a.m3u8");
+  player.play(liveRequest());
   av.prepared?.ok();
 
   expect(player.getStats()).toEqual({
@@ -309,7 +361,7 @@ test("AVPlay statistics normalize current engine values without using playlist l
 test("AVPlay statistics stay available when newer optional firmware APIs are absent", () => {
   delete (av as Partial<typeof av>).getVideoSeamlessInfo;
   delete (av as Partial<typeof av>).getStreamingProperty;
-  player.play("http://example.invalid/a.m3u8");
+  player.play(liveRequest());
   av.prepared?.ok();
 
   expect(player.getStats()).toEqual({
@@ -325,7 +377,7 @@ test("AVPlay statistics stay available when newer optional firmware APIs are abs
 });
 
 test("AVPlay counts actual adaptive bitrate changes rather than the initial selection", () => {
-  player.play("http://example.invalid/a.m3u8");
+  player.play(liveRequest());
   av.listener?.onevent?.("PLAYER_MSG_BITRATE_CHANGE", "1500000");
   av.listener?.onevent?.("PLAYER_MSG_BITRATE_CHANGE", "1500000");
   av.listener?.onevent?.("PLAYER_MSG_BITRATE_CHANGE", "4500000");
@@ -374,11 +426,15 @@ test("hls.js statistics report the rendition in use and count level changes", as
   const browser = new Player(() => {});
   const video = document.createElement("video");
   browser.attach(video);
-  browser.play("http://example.invalid/a.m3u8");
+  browser.play(liveRequest());
   await vi.advanceTimersByTimeAsync(0);
 
   const hls = hlsMock.instance;
   assert.ok(hls, "hls.js was not created");
+  hls.emit("manifestParsed", {});
+  expect(browser.getTracks().map((track) => track.kind)).toEqual(["audio", "subtitle"]);
+  expect(browser.selectTrack("subtitle", 0)).toBe(true);
+  expect(hls.subtitleTrack).toBe(0);
   hls.emit("levelSwitch", { level: 0 });
   hls.emit("levelSwitch", { level: 2 });
 
@@ -399,7 +455,7 @@ test("hls.js statistics report the rendition in use and count level changes", as
 });
 
 test("the adaptive request starts low and asks the set to skip nothing", () => {
-  player.play("http://example.invalid/a.m3u8");
+  player.play(liveRequest());
   const asked = av.calls.find((c) => c.startsWith("setStreamingProperty:ADAPTIVE_INFO"));
 
   // Starting on the lowest rendition is what makes zapping feel immediate, and the adaptive
@@ -415,8 +471,8 @@ test("the adaptive request starts low and asks the set to skip nothing", () => {
 });
 
 test("the picture is only reported once the engine says it is ready", () => {
-  player.play("http://example.invalid/a.m3u8");
-  expect(events.map((e) => e.type)).toEqual(["buffering"]);
+  player.play(liveRequest());
+  expect(events.map((e) => e.type)).toContain("buffering-start");
 
   av.prepared?.ok();
   expect(events.map((e) => e.type)).toContain("playing");
@@ -424,70 +480,15 @@ test("the picture is only reported once the engine says it is ready", () => {
 });
 
 test("the hardware surface is created once and never replaced", () => {
-  player.play("http://example.invalid/a.m3u8");
-  player.play("http://example.invalid/b.m3u8");
+  player.play(liveRequest());
+  player.play(liveRequest("http://example.invalid/b.m3u8"));
   // webapis.avplay is a singleton with nothing tying it to an element, so a second object
   // element would send the video to the wrong one.
   assert.equal(document.querySelectorAll("#avplay-surface").length, 1);
 });
 
-test("a channel that never starts is given up on after thirty seconds", () => {
-  player.play("http://example.invalid/a.m3u8");
-  vi.advanceTimersByTime(29_000);
-  assert.deepEqual(codes(), [], "gave up early on a channel that was still coming");
-
-  vi.advanceTimersByTime(2_000);
-  assert.deepEqual(codes(), ["TIMEOUT"]);
-});
-
-test("a channel that starts calls off the watchdog", () => {
-  player.play("http://example.invalid/a.m3u8");
-  av.prepared?.ok();
-  // The programme keeps running, so the only thing that could still fire is the start
-  // timeout, and it must not: the channel plainly started.
-  for (let i = 0; i < 20; i++) {
-    av.advance(3000);
-    vi.advanceTimersByTime(3_000);
-  }
-  assert.deepEqual(codes(), [], "the start timeout fired after the picture had arrived");
-});
-
-test("a picture that stops moving is reported as stalled", () => {
-  player.play("http://example.invalid/a.m3u8");
-  av.prepared?.ok();
-
-  // A frozen relay looks exactly like a playing one: no error, no buffering, no end of
-  // stream. The only evidence is a playhead that has stopped.
-  vi.advanceTimersByTime(11_000);
-  assert.deepEqual(codes(), [], "twelve seconds is the limit, not eleven");
-
-  vi.advanceTimersByTime(3_000);
-  assert.deepEqual(codes(), ["STALLED"]);
-});
-
-test("a picture that keeps moving is never called stalled", () => {
-  player.play("http://example.invalid/a.m3u8");
-  av.prepared?.ok();
-  for (let i = 0; i < 20; i++) {
-    av.advance(3000); // three seconds of programme per tick
-    vi.advanceTimersByTime(3_000);
-  }
-  assert.deepEqual(codes(), []);
-});
-
-test("a picture held on purpose is not a fault", () => {
-  player.play("http://example.invalid/a.m3u8");
-  av.prepared?.ok();
-  player.pause();
-
-  // The viewer stopped it, so the frame is still because they asked. Reporting that as a
-  // frozen channel is the app arguing with the person using it.
-  vi.advanceTimersByTime(60_000);
-  assert.deepEqual(codes(), []);
-});
-
 test("only the first explanation of a failure is kept", () => {
-  player.play("http://example.invalid/a.m3u8");
+  player.play(liveRequest());
   av.prepared?.fail({ name: "PLAYER_ERROR_CONNECTION_FAILED" });
   av.listener?.onerror?.("PLAYER_ERROR_NOT_SUPPORTED_FILE");
 
@@ -497,7 +498,7 @@ test("only the first explanation of a failure is kept", () => {
 });
 
 test("stopping clears the timers, so nothing is reported afterwards", () => {
-  player.play("http://example.invalid/a.m3u8");
+  player.play(liveRequest());
   av.prepared?.ok();
   player.stop();
   vi.advanceTimersByTime(120_000);
@@ -505,11 +506,11 @@ test("stopping clears the timers, so nothing is reported afterwards", () => {
 });
 
 test("changing channel goes through stop rather than close", () => {
-  player.play("http://example.invalid/a.m3u8");
+  player.play(liveRequest());
   av.prepared?.ok();
   av.calls.length = 0;
 
-  player.play("http://example.invalid/b.m3u8");
+  player.play(liveRequest("http://example.invalid/b.m3u8"));
   // close destroys the instance and the whole pipeline has to be rebuilt, which is the
   // wrong thing to do to a television while somebody is holding the channel key down.
   assert.ok(av.calls.includes("stop"));
@@ -521,13 +522,13 @@ test("the aspect setting reaches the engine and survives a channel change", () =
   assert.ok(av.calls.some((c) => c === "setDisplayMethod:PLAYER_DISPLAY_MODE_FULL_SCREEN"));
 
   av.calls.length = 0;
-  player.play("http://example.invalid/a.m3u8");
+  player.play(liveRequest());
   // A fresh AVPlay instance starts on its own default, so the choice has to be reapplied.
   assert.ok(av.calls.some((c) => c === "setDisplayMethod:PLAYER_DISPLAY_MODE_FULL_SCREEN"));
 });
 
 test("muting audio leaves AVPlay running and restores the prior TV mute state", () => {
-  player.play("http://example.invalid/a.m3u8");
+  player.play(liveRequest());
   av.prepared?.ok();
   av.calls.length = 0;
 
@@ -542,7 +543,7 @@ test("muting audio leaves AVPlay running and restores the prior TV mute state", 
 });
 
 test("going off screen suspends the decoder rather than pausing it", () => {
-  player.play("http://example.invalid/a.m3u8");
+  player.play(liveRequest());
   av.prepared?.ok();
   player.hide();
   // A set short of memory kills the background app holding a decoder first.
@@ -552,19 +553,19 @@ test("going off screen suspends the decoder rather than pausing it", () => {
 });
 
 test("resuming rejoins the broadcast instead of continuing from the hole", () => {
-  player.play("http://example.invalid/a.m3u8");
+  player.play(liveRequest());
   av.prepared?.ok();
   player.pause();
   av.calls.length = 0;
 
-  player.resume("http://example.invalid/a.m3u8");
+  player.play(liveRequest());
   // Live television has moved on and there is no seek bar to catch up with, so a pause is a
   // hole rather than a bookmark.
   assert.ok(av.calls.some((c) => c.startsWith("open:")));
 });
 
 test("a stream that ends is reported, and only once", () => {
-  player.play("http://example.invalid/a.m3u8");
+  player.play(liveRequest());
   av.prepared?.ok();
   av.listener?.onstreamcompleted?.();
   expect(events.filter((e) => e.type === "ended")).toHaveLength(1);
@@ -574,11 +575,9 @@ test("an abort the app caused itself is not reported as a fault", async () => {
   /*
    * The browser path, because that is where play() returns a promise at all.
    *
-   * A channel on a host that never answers is given up on by the watchdog, retried, and the
-   * retry tears the last attempt down: the pending play() then rejects with AbortError. That
-   * arrives after the new attempt has cleared the failure, so it used to win the rule that
-   * keeps the first explanation and replace "could not reach the server" with "the stream
-   * stopped unexpectedly", which is neither true nor any help.
+   * Tuning away, retrying and pausing all interrupt the element's pending play(), which then
+   * rejects with AbortError. That rejection is this application's own doing and never news:
+   * reporting it replaces a real explanation, or invents a fault where there was none.
    */
   delete (window as unknown as { webapis?: unknown }).webapis;
   const seen: PlayerEvent[] = [];
@@ -596,19 +595,18 @@ test("an abort the app caused itself is not reported as a fault", async () => {
     });
   browser.attach(video);
 
-  browser.play("http://example.invalid/a.m3u8");
+  browser.play(liveRequest());
   await vi.advanceTimersByTimeAsync(0);
   assert.equal(asked, 1, "the element was never asked to play, so nothing is being tested");
   const aborted = refuse;
 
-  await vi.advanceTimersByTimeAsync(30_000); // the watchdog names the real reason
-  browser.play("http://example.invalid/a.m3u8"); // the automatic retry, which tears it down
+  browser.play(liveRequest()); // the retune, which tears the first attempt down
   aborted(new DOMException("interrupted by a new load request", "AbortError"));
   await vi.advanceTimersByTimeAsync(0);
 
   assert.deepEqual(
     seen.filter((e) => e.type === "error").map((e) => e.code),
-    ["TIMEOUT"],
+    [],
   );
   browser.stop();
 });
@@ -619,7 +617,7 @@ test("how much to buffer before starting is asked for while the player will stil
    * channel never starts. Six seconds leaves room for a five second segment while staying below
    * the ten seconds Samsung ships.
    */
-  player.play("http://example.invalid/a.m3u8");
+  player.play(liveRequest());
   av.prepared?.ok();
 
   const asked = av.calls.indexOf(
@@ -637,7 +635,7 @@ test("how much to buffer before starting is asked for while the player will stil
 });
 
 test("a longer diagnosed segment can raise the initial buffer", () => {
-  player.play("http://example.invalid/a.m3u8", false, 11);
+  player.play(liveRequest(undefined, { bufferSeconds: 11 }));
   av.prepared?.ok();
 
   assert.ok(
@@ -660,7 +658,7 @@ test("firmware without the optional calls does not stop a channel starting", () 
 
   const events2: PlayerEvent[] = [];
   const p = new Player((e) => events2.push(e));
-  assert.doesNotThrow(() => p.play("http://example.invalid/a.m3u8"));
+  assert.doesNotThrow(() => p.play(liveRequest()));
   assert.deepEqual(
     events2.filter((e) => e.type === "error"),
     [],
@@ -669,7 +667,7 @@ test("firmware without the optional calls does not stop a channel starting", () 
 });
 
 test("finite AVPlay reports position and duration in seconds", () => {
-  player.play("http://example.invalid/movie/1.mp4", false, 6, "finite");
+  player.play(finiteRequest());
   av.prepared?.ok();
   av.setTime(12_500);
   av.setDuration(90_000);
@@ -678,22 +676,24 @@ test("finite AVPlay reports position and duration in seconds", () => {
   assert.equal(player.getDuration(), 90);
 });
 
-test("finite AVPlay applies a positive initial seek in IDLE before prepare", () => {
-  player.play("http://example.invalid/movie/1.mp4", false, 6, "finite", 35);
+test("AVPlay applies a saved finite position only after READY and before play", () => {
+  player.play(finiteRequest(undefined, { startSeconds: 35 }));
+  expect(av.calls).not.toContain("seekTo:35000");
 
+  av.prepared?.ok();
   const seek = av.calls.indexOf("seekTo:35000");
-  assert.ok(seek > av.calls.findIndex((call) => call.startsWith("open:")));
-  assert.ok(seek < av.calls.indexOf("prepareAsync"));
+  expect(seek).toBeGreaterThan(av.calls.indexOf("prepareAsync"));
+  expect(seek).toBeLessThan(av.calls.indexOf("play"));
 });
 
 test("finite AVPlay continues from zero when initial seek is unavailable", () => {
   delete (av as Partial<typeof av>).seekTo;
-  player.play("http://example.invalid/movie/1.mp4", false, 6, "finite", 35);
+  player.play(finiteRequest(undefined, { startSeconds: 35 }));
 
   assert.ok(av.calls.includes("prepareAsync"));
   assert.deepEqual(codes(), []);
-  assert.equal(player.getResumeLimitation(), "SEEK_UNSUPPORTED");
   av.prepared?.ok();
+  assert.equal(player.getResumeLimitation(), "SEEK_UNSUPPORTED");
   assert.ok(av.calls.includes("play"));
 });
 
@@ -702,80 +702,62 @@ test("finite AVPlay continues from zero when initial seek is rejected", () => {
     av.calls.push("seekTo:rejected");
     fail({ name: "InvalidStateError" });
   };
-  player.play("http://example.invalid/movie/1.mp4", false, 6, "finite", 35);
+  player.play(finiteRequest(undefined, { startSeconds: 35 }));
 
   assert.ok(av.calls.includes("prepareAsync"));
   assert.deepEqual(codes(), []);
-  assert.match(player.getResumeLimitation() ?? "", /SEEK_FAILED InvalidStateError/);
   av.prepared?.ok();
+  assert.match(player.getResumeLimitation() ?? "", /SEEK_FAILED InvalidStateError/);
   assert.ok(av.calls.includes("play"));
 });
 
 test("finite AVPlay seeks forward and backward by ten seconds with clamping", async () => {
-  player.play("http://example.invalid/movie/1.mp4", false, 6, "finite");
+  player.play(finiteRequest());
   av.prepared?.ok();
   av.setTime(115_000);
 
-  assert.equal(await player.seekBy(10), true);
+  assert.equal(await player.seekTo(120), true);
   assert.equal(player.getPosition(), 120);
-  assert.equal(await player.seekBy(-10), true);
+  assert.equal(await player.seekTo(110), true);
   assert.equal(player.getPosition(), 110);
 });
 
 test("unsupported finite AVPlay seeking is nonfatal and does not change position", async () => {
   delete (av as Partial<typeof av>).seekTo;
-  delete (av as Partial<typeof av>).jumpForward;
-  delete (av as Partial<typeof av>).jumpBackward;
-  player.play("http://example.invalid/movie/1.mp4", false, 6, "finite");
+  player.play(finiteRequest());
   av.prepared?.ok();
   av.setTime(20_000);
 
-  assert.equal(await player.seekBy(10), false);
+  assert.equal(await player.seekTo(30), false);
   assert.equal(player.getPosition(), 20);
   assert.deepEqual(codes(), []);
 });
 
 test("rejected finite AVPlay seeking is nonfatal and playback can continue", async () => {
-  av.jumpForward = (_ms: number, _ok: () => void, fail: (error: unknown) => void) => {
-    av.calls.push("jumpForward:rejected");
+  av.seekTo = (_ms: number, _ok: () => void, fail: (error: unknown) => void) => {
+    av.calls.push("seekTo:rejected");
     fail({ name: "InvalidStateError" });
   };
-  player.play("http://example.invalid/movie/1.mp4", false, 6, "finite");
+  player.play(finiteRequest());
   av.prepared?.ok();
   av.setTime(20_000);
 
-  assert.equal(await player.seekBy(10), false);
+  assert.equal(await player.seekTo(30), false);
   assert.equal(player.getPosition(), 20);
   assert.deepEqual(codes(), []);
   assert.equal(av.getState(), "PLAYING");
 });
 
 test("finite pause resumes in place while live resume opens the live edge", () => {
-  player.play("http://example.invalid/movie/1.mp4", false, 6, "finite");
+  player.play(finiteRequest());
   av.prepared?.ok();
   player.pause();
   av.calls.length = 0;
   player.resumePlayback();
   assert.deepEqual(av.calls, ["play"]);
 
-  player.resumeLive("http://example.invalid/live.m3u8");
+  player.play(liveRequest("http://example.invalid/live.m3u8"));
   assert.ok(av.calls.some((call) => call.startsWith("open:http://example.invalid/live.m3u8")));
-});
-
-test("a pending finite seek suspends the stall watchdog", async () => {
-  let finish = () => {};
-  av.jumpForward = (ms: number, ok: () => void) => {
-    av.calls.push(`jumpForward:${ms}`);
-    finish = ok;
-  };
-  player.play("http://example.invalid/movie/1.mp4", false, 6, "finite");
-  av.prepared?.ok();
-  const seeking = player.seekBy(10);
-
-  vi.advanceTimersByTime(60_000);
-  assert.deepEqual(codes(), []);
-  finish();
-  assert.equal(await seeking, true);
 });
 
 test("browser finite MP4 uses native video and exposes media timing", async () => {
@@ -790,15 +772,46 @@ test("browser finite MP4 uses native video and exposes media timing", async () =
     duration: { configurable: true, value: 95 },
   });
   browser.attach(video);
-  browser.play("http://example.invalid/movie/1.mp4", false, 6, "finite", 15);
+  browser.play(finiteRequest(undefined, { startSeconds: 15 }));
   await vi.advanceTimersByTimeAsync(0);
 
   assert.equal(hlsMock.instance, null);
   assert.match(video.src, /movie\/1\.mp4$/);
   assert.equal(browser.getPosition(), 15);
   assert.equal(browser.getDuration(), 95);
-  assert.equal(await browser.seekBy(100), true);
+  assert.equal(await browser.seekTo(95), true);
   assert.equal(browser.getPosition(), 95);
+  browser.stop();
+});
+
+test("native subtitle cues emit their text, duration and empty clearing", async () => {
+  delete (window as unknown as { webapis?: unknown }).webapis;
+  const browserEvents: PlayerEvent[] = [];
+  const browser = new Player((event) => browserEvents.push(event));
+  const video = document.createElement("video");
+  video.play = vi.fn().mockResolvedValue(undefined);
+  let cueListener = () => {};
+  const track = {
+    label: "English",
+    language: "en",
+    mode: "showing",
+    activeCues: [{ startTime: 2, endTime: 5, text: "Caption" }],
+    addEventListener: (_type: string, listener: () => void) => {
+      cueListener = listener;
+    },
+    removeEventListener: () => {},
+  };
+  Object.defineProperty(video, "textTracks", { configurable: true, value: [track] });
+  browser.attach(video);
+  browser.play(finiteRequest());
+  // Track lists and cue listeners exist only once the browser has read the metadata.
+  video.dispatchEvent(new Event("loadedmetadata"));
+  cueListener();
+  expect(browserEvents).toContainEqual({ type: "subtitle", text: "Caption", durationMs: 3000 });
+
+  track.activeCues = [];
+  cueListener();
+  expect(browserEvents).toContainEqual({ type: "subtitle", text: "", durationMs: 0 });
   browser.stop();
 });
 
@@ -808,7 +821,7 @@ test("browser finite HLS still uses hls.js", async () => {
   const browser = new Player(() => {});
   const video = document.createElement("video");
   browser.attach(video);
-  browser.play("http://example.invalid/catchup/1.m3u8", false, 6, "finite");
+  browser.play(finiteRequest("http://example.invalid/catchup/1.m3u8"));
   await vi.advanceTimersByTimeAsync(0);
 
   assert.equal(hlsMock.instance?.source, "http://example.invalid/catchup/1.m3u8");
@@ -822,7 +835,7 @@ test("browser finite unsupported containers report the media element failure", a
   const video = document.createElement("video");
   video.play = vi.fn().mockRejectedValue({ name: "NotSupportedError" });
   browser.attach(video);
-  browser.play("http://example.invalid/movie/1.mkv", false, 6, "finite");
+  browser.play(finiteRequest("http://example.invalid/movie/1.mkv"));
   await vi.advanceTimersByTimeAsync(0);
 
   assert.deepEqual(
@@ -830,4 +843,272 @@ test("browser finite unsupported containers report the media element failure", a
     ["NotSupportedError"],
   );
   browser.stop();
+});
+
+test("AVPlay never reads the Live range while IDLE or connecting", () => {
+  player.play(liveRequest());
+  player.getClock();
+  expect(av.streamingReads).not.toContain("GET_LIVE_DURATION");
+});
+
+test.each(["READY", "PLAYING", "PAUSED"])("AVPlay reads the Live range in %s", (state) => {
+  player.play(liveRequest());
+  av.setState(state);
+  expect(player.getClock()).toMatchObject({ seekableStart: 10, seekableEnd: 70 });
+  expect(av.streamingReads).toContain("GET_LIVE_DURATION");
+});
+
+test("browser clock exposes finite seekable ranges", () => {
+  delete (window as unknown as { webapis?: unknown }).webapis;
+  const browser = new Player(() => {});
+  const video = document.createElement("video");
+  Object.defineProperties(video, {
+    currentTime: { configurable: true, value: 25 },
+    duration: { configurable: true, value: 90 },
+    seekable: {
+      configurable: true,
+      value: {
+        length: 2,
+        start: (index: number) => (index ? 20 : 0),
+        end: (index: number) => (index ? 80 : 10),
+      },
+    },
+  });
+  browser.attach(video);
+
+  expect(browser.getClock()).toMatchObject({
+    position: 25,
+    duration: 90,
+    seekableStart: 0,
+    seekableEnd: 80,
+  });
+  browser.stop();
+});
+
+test("hls.js clock exposes its live edge and longest manifest segment", async () => {
+  delete (window as unknown as { webapis?: unknown }).webapis;
+  hlsMock.supported = true;
+  const browser = new Player(() => {});
+  const video = document.createElement("video");
+  video.play = vi.fn().mockResolvedValue(undefined);
+  browser.attach(video);
+  browser.play(liveRequest());
+  await vi.advanceTimersByTimeAsync(0);
+  hlsMock.instance?.emit("levelLoaded", {
+    details: { edge: 120, fragments: [{ duration: 4 }, { duration: 6 }] },
+  });
+
+  expect(browser.getClock()).toMatchObject({ engineLiveEdge: 120, segmentSeconds: 6 });
+  browser.stop();
+});
+
+test("pause support follows legal AVPlay states and a rejection does not tear playback down", () => {
+  player.play(liveRequest());
+  expect(player.canPause()).toBe(false);
+  av.prepared?.ok();
+  av.pause = () => {
+    throw new Error("rejected");
+  };
+
+  expect(player.pause()).toBe(false);
+  expect(av.calls).not.toContain("stop");
+});
+
+test("an absolute AVPlay seek resolves from delayed callbacks", async () => {
+  let complete = () => {};
+  av.seekTo = (milliseconds: number, ok: () => void) => {
+    av.calls.push(`seekTo:${milliseconds}`);
+    complete = ok;
+  };
+  player.play(finiteRequest());
+  av.prepared?.ok();
+  const pending = player.seekTo(45);
+  complete();
+
+  await expect(pending).resolves.toBe(true);
+  expect(av.calls).toContain("seekTo:45000");
+});
+
+test("an absolute AVPlay seek resolves false when the engine never calls back", async () => {
+  av.seekTo = () => {};
+  player.play(finiteRequest());
+  av.prepared?.ok();
+  const pending = player.seekTo(45);
+  await vi.advanceTimersByTimeAsync(5000);
+
+  await expect(pending).resolves.toBe(false);
+});
+
+test.each([
+  ["network", "startPositions"],
+  ["media", "mediaRecoveries"],
+] as const)("hls.js supports warm %s recovery", async (kind, field) => {
+  delete (window as unknown as { webapis?: unknown }).webapis;
+  hlsMock.supported = true;
+  const browserEvents: PlayerEvent[] = [];
+  const browser = new Player((event) => browserEvents.push(event));
+  const video = document.createElement("video");
+  Object.defineProperty(video, "currentTime", { configurable: true, value: 30 });
+  browser.attach(video);
+  browser.play(liveRequest());
+  await vi.advanceTimersByTimeAsync(0);
+  hlsMock.instance?.emit("error", {
+    fatal: true,
+    type: kind === "network" ? "networkError" : "mediaError",
+    details: `${kind} failed`,
+  });
+
+  expect(browserEvents).toContainEqual({
+    type: "error",
+    code: `${kind} failed`,
+    warmKind: kind,
+  });
+  expect(browser.warmRecover(kind)).toBe(true);
+  if (field === "startPositions") expect(hlsMock.instance?.startPositions).toEqual([30]);
+  else expect(hlsMock.instance?.mediaRecoveries).toBe(1);
+  browser.stop();
+});
+
+test.each([
+  ["READY", true],
+  ["PAUSED", true],
+  ["PLAYING", false],
+  ["IDLE", false],
+] as const)("AVPlay warm recovery from %s returns %s", (state, expected) => {
+  player.play(liveRequest());
+  av.setState(state);
+  av.calls.length = 0;
+
+  expect(player.warmRecover(null)).toBe(expected);
+  expect(av.calls.includes("play")).toBe(expected);
+});
+
+test("AVPlay track selection obeys legal states and subtitle Off clears the cue", () => {
+  player.play(liveRequest());
+  expect(player.selectTrack("audio", 1)).toBe(false);
+  av.prepared?.ok();
+  expect(player.getTracks()).toHaveLength(2);
+  expect(player.selectTrack("audio", 1)).toBe(true);
+  expect(av.calls).toContain("setSelectTrack:AUDIO:1");
+
+  av.listener?.onsubtitlechange?.(1500, "Caption");
+  expect(events).toContainEqual({ type: "subtitle", text: "Caption", durationMs: 1500 });
+  expect(player.selectTrack("subtitle", null)).toBe(true);
+  expect(av.calls).toContain("setSilentSubtitle:true");
+  expect(events).toContainEqual({ type: "subtitle", text: "", durationMs: 0 });
+});
+
+test("callbacks from a torn down target are ignored", () => {
+  player.play(liveRequest("http://example.invalid/first.m3u8"));
+  const oldPrepared = av.prepared;
+  const oldListener = av.listener;
+  player.play(liveRequest("http://example.invalid/second.m3u8"));
+  events.length = 0;
+
+  oldPrepared?.ok();
+  oldListener?.onerror?.("OLD_ERROR");
+  expect(events).toEqual([]);
+});
+
+test("native tracks are reported at loadedmetadata rather than the same tick", async () => {
+  delete (window as unknown as { webapis?: unknown }).webapis;
+  const browserEvents: PlayerEvent[] = [];
+  const browser = new Player((event) => browserEvents.push(event));
+  const video = document.createElement("video");
+  video.play = vi.fn().mockResolvedValue(undefined);
+  const track = {
+    label: "English",
+    language: "en",
+    mode: "showing",
+    activeCues: [],
+    addEventListener: () => {},
+    removeEventListener: () => {},
+  };
+  Object.defineProperty(video, "textTracks", { configurable: true, value: [track] });
+  browser.attach(video);
+
+  browser.play(finiteRequest());
+  // The list is only valid once the browser has read the metadata, so before that event
+  // the only tracks reported are the empty set teardown publishes.
+  assert.deepEqual(browser.getTracks(), []);
+
+  video.dispatchEvent(new Event("loadedmetadata"));
+  assert.deepEqual(
+    browser.getTracks().map((entry) => entry.kind),
+    ["subtitle"],
+  );
+  browser.stop();
+});
+
+test("hls.js subtitle cues reach the app when the TextTrack appears after manifest parse", async () => {
+  delete (window as unknown as { webapis?: unknown }).webapis;
+  hlsMock.supported = true;
+  const browserEvents: PlayerEvent[] = [];
+  const browser = new Player((event) => browserEvents.push(event));
+  const video = document.createElement("video");
+  video.play = vi.fn().mockResolvedValue(undefined);
+  browser.attach(video);
+  browser.play(liveRequest());
+  await vi.advanceTimersByTimeAsync(0);
+  hlsMock.instance?.emit("manifestParsed", {});
+
+  // hls.js creates the TextTrack when the subtitle track is enabled, not at parse time.
+  const track = new EventTarget() as EventTarget & {
+    label: string;
+    language: string;
+    mode: string;
+    activeCues: TextTrackCue[];
+  };
+  track.label = "English";
+  track.language = "en";
+  track.mode = "hidden";
+  track.activeCues = [{ startTime: 1, endTime: 4, text: "Late caption" } as TextTrackCue];
+  const list = new EventTarget() as EventTarget & { length: number; 0: unknown };
+  list.length = 1;
+  list[0] = track;
+  Object.defineProperty(video, "textTracks", { configurable: true, value: list });
+  hlsMock.instance?.emit("subtitleTracksUpdated", {});
+
+  track.dispatchEvent(new Event("cuechange"));
+  expect(browserEvents).toContainEqual({
+    type: "subtitle",
+    text: "Late caption",
+    durationMs: 3000,
+  });
+  browser.stop();
+});
+
+test("subtitle silence follows the choice across an audio selection and a channel change", () => {
+  player.play(liveRequest());
+  av.prepared?.ok();
+  // Opening reapplies the choice: a fresh channel with subtitles on is never silent.
+  expect(av.calls).toContain("setSilentSubtitle:false");
+
+  player.selectTrack("subtitle", null);
+  player.selectTrack("audio", 1);
+  // Selecting an audio track must not unsilence the subtitles the viewer turned off.
+  expect(av.calls.filter((c) => c === "setSilentSubtitle:true")).not.toHaveLength(0);
+  assert.equal(
+    av.calls.filter((c) => c.startsWith("setSilentSubtitle")).pop(),
+    "setSilentSubtitle:true",
+  );
+
+  av.calls.length = 0;
+  player.play(liveRequest("http://example.invalid/b.m3u8"));
+  av.prepared?.ok();
+  // The next channel starts with subtitles on, so the engine must be unsilenced again.
+  assert.equal(
+    av.calls.filter((c) => c.startsWith("setSilentSubtitle")).pop(),
+    "setSilentSubtitle:false",
+  );
+});
+
+test("a warm AVPlay recovery announces buffering like the hls.js path", () => {
+  player.play(liveRequest());
+  av.prepared?.ok();
+  av.setState("PAUSED");
+  events.length = 0;
+
+  player.warmRecover("network");
+  expect(events.map((event) => event.type)).toContain("buffering-start");
 });

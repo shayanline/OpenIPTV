@@ -39,6 +39,16 @@ export const ROW_BASE = 76;
  * cost three channels off the bottom of the list to solve a problem the list does not have.
  */
 export const RAIL_ROW_BASE = 84;
+export const POSTER_COLUMNS = 6;
+export const POSTER_OVERSCAN_ROWS = 1;
+export const POSTER_CARD_ROW_BASE = 376;
+
+export const posterColumnsForViewport = (width: number): number => {
+  if (width >= 1800) return POSTER_COLUMNS;
+  if (width >= 1600) return 5;
+  if (width >= 1440) return 4;
+  return 3;
+};
 
 /** Rows kept either side of the view, so a press never waits on a row being created. */
 const OVERSCAN = 3;
@@ -79,6 +89,7 @@ export function windowOf(
   scale: number,
   previousFirst = 0,
   rowBase = ROW_BASE,
+  overscan = OVERSCAN,
 ): Window {
   const row = rowBase * scale;
   const visible = Math.max(1, Math.floor(viewportHeight / row));
@@ -91,8 +102,8 @@ export function windowOf(
   else if (cursor > first + visible - 1) first = cursor - visible + 1;
   first = Math.max(0, Math.min(first, maxFirst));
 
-  const start = Math.max(0, first - OVERSCAN);
-  const end = Math.min(count, first + visible + OVERSCAN);
+  const start = Math.max(0, first - overscan);
+  const end = Math.min(count, first + visible + overscan);
 
   return {
     start,
@@ -101,8 +112,53 @@ export function windowOf(
     visible,
     first,
     row,
-    slots: visible + OVERSCAN * 2,
+    slots: visible + overscan * 2,
   };
+}
+
+export interface PosterWindow extends Window {
+  itemStart: number;
+  itemEnd: number;
+}
+
+export function posterWindowOf(
+  count: number,
+  cursor: number,
+  viewportHeight: number,
+  scale: number,
+  previousFirst = 0,
+  columns = POSTER_COLUMNS,
+): PosterWindow {
+  const rows = Math.ceil(count / columns);
+  const clamped = Math.max(0, Math.min(cursor, Math.max(0, count - 1)));
+  const window = windowOf(
+    rows,
+    Math.floor(clamped / columns),
+    viewportHeight,
+    scale,
+    previousFirst,
+    POSTER_CARD_ROW_BASE,
+    POSTER_OVERSCAN_ROWS,
+  );
+  return {
+    ...window,
+    itemStart: window.start * columns,
+    itemEnd: Math.min(count, window.end * columns),
+  };
+}
+
+export function wheelStep(
+  cursor: number,
+  count: number,
+  deltaY: number,
+  now: number,
+  lastAcceptedAt: number,
+): { cursor: number; lastAcceptedAt: number; accepted: boolean } {
+  if (!deltaY || !count || now - lastAcceptedAt < 120) {
+    return { cursor, lastAcceptedAt, accepted: false };
+  }
+  const next = Math.max(0, Math.min(count - 1, cursor + (deltaY > 0 ? 1 : -1)));
+  return { cursor: next, lastAcceptedAt: now, accepted: next !== cursor };
 }
 
 export function useWindowed(

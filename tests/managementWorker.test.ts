@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, test, vi } from "vitest";
 
 interface Harness {
   messages: unknown[];
+  rawResponses: Uint8Array[];
   responses: string[];
   stopped: { value: number };
   queueRequest(raw: string): Promise<void>;
@@ -19,6 +20,7 @@ function harness(): Harness {
     "utf8",
   );
   const messages: unknown[] = [];
+  const rawResponses: Uint8Array[] = [];
   const responses: string[] = [];
   const requests: string[] = [];
   const timers: (() => void)[] = [];
@@ -55,8 +57,13 @@ function harness(): Harness {
     start_server: () => 8976,
     receive_request: () => (broken ? -1 : requests.length ? 1 : 0),
     request_text: () => requests.shift() ?? "",
-    send_response: (response) => {
-      responses.push(String(response));
+    send_response: (response, length) => {
+      const view = response as Uint8Array;
+      const bytes = ArrayBuffer.isView(view)
+        ? Uint8Array.from(new Uint8Array(view.buffer, view.byteOffset, Number(length)))
+        : new TextEncoder().encode(String(response));
+      rawResponses.push(bytes);
+      responses.push(new TextDecoder().decode(bytes));
       return 0;
     },
     stop_server: () => {
@@ -66,10 +73,16 @@ function harness(): Harness {
   const context = vm.createContext({
     self: workerScope,
     tizentvwasm: { SocketsHostBindings: bindings },
-    fetch: vi.fn(async (path: string) => ({
-      ok: true,
-      text: async () => `asset:${path}`,
-    })),
+    fetch: vi.fn(async (path: string) => {
+      const bytes = path.endsWith(".woff2")
+        ? Uint8Array.from([0, 255, 128, 65])
+        : new TextEncoder().encode(`asset:${path}`);
+      return {
+        ok: true,
+        arrayBuffer: async () => bytes.buffer,
+        text: async () => new TextDecoder().decode(bytes),
+      };
+    }),
     TextEncoder,
     URL,
     setTimeout: (callback: () => void) => {
@@ -93,6 +106,7 @@ function harness(): Harness {
 
   return {
     messages,
+    rawResponses,
     responses,
     stopped,
     async start() {
@@ -138,7 +152,7 @@ describe("management socket worker", () => {
     });
   });
 
-  test("serves only the remote assets and application icon", async () => {
+  test("serves the remote shell and application icon", async () => {
     const worker = harness();
     await worker.start();
 
@@ -155,6 +169,29 @@ describe("management socket worker", () => {
     await worker.queueRequest("GET /icon.svg HTTP/1.1\r\nHost: tv\r\n\r\n");
     expect(worker.responses[3]).toContain("Content-Type: image/svg+xml");
     expect(worker.responses[3]).toContain("asset:../icon.svg");
+  });
+
+  test("serves bundled font bytes without text conversion", async () => {
+    const worker = harness();
+    await worker.start();
+
+    await worker.queueRequest("GET /fonts/NotoSansJP-000.woff2 HTTP/1.1\r\nHost: tv\r\n\r\n");
+
+    const response = worker.rawResponses[0];
+    let bodyAt = 0;
+    for (; bodyAt < response.length - 3; bodyAt += 1) {
+      if (
+        response[bodyAt] === 13 &&
+        response[bodyAt + 1] === 10 &&
+        response[bodyAt + 2] === 13 &&
+        response[bodyAt + 3] === 10
+      ) {
+        bodyAt += 4;
+        break;
+      }
+    }
+    expect(worker.responses[0]).toContain("Content-Type: font/woff2");
+    expect(Array.from(response.slice(bodyAt))).toEqual([0, 255, 128, 65]);
   });
 
   test("forwards bounded API requests to the main thread", async () => {

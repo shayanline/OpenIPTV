@@ -120,6 +120,100 @@ test("Xtream setup extracts credentials pasted into the server field", () => {
   );
 });
 
+test("a credential-less Xtream template still raises the suggestion", () => {
+  render(<Onboarding onAdd={() => {}} onExit={() => {}} />);
+
+  fireEvent.change(screen.getByLabelText("Playlist address"), {
+    target: {
+      value: "http://template.example/get.php?username=&password=&type=m3u_plus&output=m3u8",
+    },
+  });
+
+  expect(screen.getByText("This address contains an Xtream login.")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Use Xtream" }));
+
+  expect((screen.getByLabelText("Server address") as HTMLInputElement).value).toBe(
+    "http://template.example",
+  );
+  expect((screen.getByLabelText("Username") as HTMLInputElement).value).toBe("");
+  expect((screen.getByLabelText("Password") as HTMLInputElement).value).toBe("");
+  expect(screen.getByLabelText("Stream format").getAttribute("aria-label")).toBe(
+    "Stream format, HLS, recommended",
+  );
+});
+
+test("a watermarked Xtream address still raises the suggestion and converts", () => {
+  render(<Onboarding onAdd={() => {}} onExit={() => {}} />);
+
+  fireEvent.change(screen.getByLabelText("Playlist address"), {
+    target: {
+      value:
+        "http://listshare@watermarked.example:80/get.php?username=viewer&password=secret&type=m3u",
+    },
+  });
+
+  expect(screen.getByText("This address contains an Xtream login.")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Use Xtream" }));
+
+  expect((screen.getByLabelText("Server address") as HTMLInputElement).value).toBe(
+    "http://watermarked.example",
+  );
+  expect((screen.getByLabelText("Username") as HTMLInputElement).value).toBe("viewer");
+  expect((screen.getByLabelText("Password") as HTMLInputElement).value).toBe("secret");
+});
+
+test("an open stream format list keeps the arrow keys inside it", () => {
+  render(<Onboarding onAdd={() => {}} onExit={() => {}} />);
+  fireEvent.click(screen.getByRole("button", { name: "Xtream login" }));
+  const output = screen.getByLabelText("Stream format");
+  output.focus();
+
+  press(KEY.ENTER);
+  const list = screen.getByRole("listbox", { name: "Stream format" });
+  expect(document.activeElement).toBe(screen.getByRole("option", { name: "HLS, recommended" }));
+
+  press(KEY.DOWN);
+  const mpegTs = screen.getByRole("option", { name: "MPEG TS" });
+  expect(document.activeElement).toBe(mpegTs);
+  expect(list.contains(document.activeElement)).toBe(true);
+
+  /* Left is a way out rather than a sideways move: the press only closes the list, and
+     focus lands back on the trigger. */
+  press(KEY.LEFT);
+  expect(screen.queryByRole("listbox", { name: "Stream format" })).toBeNull();
+  expect(document.activeElement).toBe(output);
+  expect(output.getAttribute("aria-label")).toBe("Stream format, HLS, recommended");
+
+  press(KEY.ENTER);
+  press(KEY.DOWN);
+  press(KEY.ENTER);
+  expect(screen.queryByRole("listbox", { name: "Stream format" })).toBeNull();
+  expect(output.getAttribute("aria-label")).toBe("Stream format, MPEG TS");
+});
+
+test("an open language list keeps focus inside and Return closes it", () => {
+  render(<Onboarding onAdd={() => {}} onExit={() => {}} />);
+  const trigger = screen.getByRole("button", { name: "Language, English" });
+  trigger.focus();
+  press(KEY.ENTER);
+
+  const list = screen.getByRole("listbox", { name: "Language" });
+  const start = document.activeElement as HTMLElement;
+  expect(list.contains(start)).toBe(true);
+
+  press(KEY.DOWN);
+  const moved = document.activeElement as HTMLElement;
+  expect(list.contains(moved)).toBe(true);
+  expect(moved).not.toBe(start);
+
+  press(KEY.UP);
+  expect(document.activeElement).toBe(start);
+
+  press(KEY.BACK);
+  expect(screen.queryByRole("listbox", { name: "Language" })).toBeNull();
+  expect(document.activeElement).toBe(trigger);
+});
+
 test("source buttons own physical arrow navigation on the welcome screen", () => {
   render(<Onboarding onAdd={() => {}} onExit={() => {}} />);
   const m3u = screen.getByRole("button", { name: "M3U playlist" });
@@ -139,6 +233,8 @@ test("source buttons own physical arrow navigation on the welcome screen", () =>
     fireEvent.keyDown(document.activeElement!, { keyCode: KEY.DOWN });
     expect(document.activeElement).toBe(screen.getByLabelText(label));
   }
+  /* The language picker sits in the header above the form, so it is the last stop down
+     before the cycle wraps back to the selected source. */
   fireEvent.keyDown(document.activeElement!, { keyCode: KEY.DOWN });
   expect(document.activeElement).toBe(
     screen.getByRole("button", { name: "Language, English" }),

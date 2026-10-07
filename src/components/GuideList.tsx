@@ -3,6 +3,7 @@ import { useLocale } from "../hooks/useLocale";
 import { useViewport } from "../hooks/useViewport";
 import { useWindowed } from "../hooks/useWindowed";
 import type { ChannelGuide } from "../stores/library";
+import type { Channel } from "../types";
 import { ScrollIndicator } from "./ScrollIndicator";
 import { Text } from "./Text";
 
@@ -16,27 +17,34 @@ const programmeTime = (
     .map((value) => time(new Date(value * 1000)))
     .join(" to ");
 
+export interface GuideListProps {
+  channel: Channel;
+  guide: ChannelGuide;
+  index: number;
+  focused: boolean;
+  scale: number;
+  onMove(index: number): void;
+  onPlay(index: number): void;
+  onRetry(): void;
+  onWheel(direction: -1 | 1): void;
+}
+
+/*
+ * Drawer content and nothing more: the playback drawer owns the fixed header, the surface
+ * and Back. This is the windowed programme list itself, with current programme marking kept
+ * distinct from the white focus and the blue selection colours.
+ */
 export const GuideList = memo(function GuideList({
-  category,
+  channel,
   guide,
   index,
   focused,
   scale,
   onMove,
-  onSelect,
+  onPlay,
   onRetry,
   onWheel,
-}: {
-  category: string;
-  guide: ChannelGuide;
-  index: number;
-  focused: boolean;
-  scale: number;
-  onMove: (index: number) => void;
-  onSelect: (index: number) => void;
-  onRetry: () => void;
-  onWheel: (direction: -1 | 1) => void;
-}) {
+}: GuideListProps) {
   const { t, time } = useLocale();
   const viewport = useRef<HTMLDivElement>(null);
   const height = useViewport(viewport);
@@ -76,7 +84,7 @@ export const GuideList = memo(function GuideList({
           </span>
         </div>
         {programme.target && (
-          <button type="button" className="btn tonal guide-play" onClick={() => onSelect(i)}>
+          <button type="button" className="btn tonal guide-play" onClick={() => onPlay(i)}>
             {t("guide.playFromStart")}
           </button>
         )}
@@ -85,10 +93,10 @@ export const GuideList = memo(function GuideList({
   }
 
   return (
-    <div className={`list pane guide-list ${focused ? "focused" : ""}`}>
-      <div className="pane-head">
-        <Text value={t("guide.title", { category })} className="panel-title" />
-      </div>
+    <section
+      className={`list pane guide-list ${focused ? "focused" : ""}`}
+      aria-label={t("guide.title", { category: channel.name })}
+    >
       <div
         className="viewport"
         ref={viewport}
@@ -118,6 +126,6 @@ export const GuideList = memo(function GuideList({
         )}
         <ScrollIndicator count={guide.items.length} first={win.first} visible={win.visible} />
       </div>
-    </div>
+    </section>
   );
 });

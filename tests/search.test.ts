@@ -1,6 +1,6 @@
 import { test } from "vitest";
 import assert from "node:assert/strict";
-import { SEARCH_LIMIT, searchChannels } from "../src/services/search";
+import { SEARCH_LIMIT, searchChannels, searchVodItems } from "../src/services/search";
 import type { Channel } from "../src/types";
 
 /**
@@ -146,4 +146,28 @@ test("a playlist replaced by a different one is not answered from the old one's 
   assert.equal(searchChannels(a, "alpha").matches.length, 1);
   assert.equal(searchChannels(b, "alpha").matches.length, 0);
   assert.equal(searchChannels(b, "beta").matches.length, 1);
+});
+
+test("VOD search keeps provider order within prefix and contained ranks", () => {
+  const items = [
+    { key: "1", name: "Watch Dune" },
+    { key: "2", name: "Dune" },
+    { key: "3", name: "Dune Part Two" },
+  ];
+  const result = searchVodItems(items, "dune");
+  assert.deepEqual(
+    result.matches.map((item) => item.key),
+    ["2", "3", "1"],
+  );
+  assert.equal(result.total, 3);
+});
+
+test("VOD search reports the complete count while retaining three hundred items", () => {
+  const items = Array.from({ length: SEARCH_LIMIT + 5 }, (_, index) => ({
+    key: String(index),
+    name: `Film ${index}`,
+  }));
+  const result = searchVodItems(items, "film");
+  assert.equal(result.matches.length, SEARCH_LIMIT);
+  assert.equal(result.total, SEARCH_LIMIT + 5);
 });

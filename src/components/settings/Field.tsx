@@ -36,13 +36,15 @@ export function SettingsListHeader({
   title,
   count,
   children,
+  className = "",
 }: {
   title: string;
   count?: string;
   children?: React.ReactNode;
+  className?: string;
 }) {
   return (
-    <div className="settings-list-header">
+    <div className={`settings-list-header ${className}`.trim()}>
       <div className="settings-list-title">
         <h4>{title}</h4>
         {count && <span className="count">{count}</span>}

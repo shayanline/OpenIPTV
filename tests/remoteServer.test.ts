@@ -534,3 +534,119 @@ describe("management API", () => {
     expect(remaining.status).toBe(200);
   });
 });
+
+async function authorisation(server: Awaited<ReturnType<typeof load>>) {
+  const session = server.createPairingSession();
+  const paired = await server.pairDevice({ secret: session.secret, name: "Phone" });
+  if (!paired.ok) throw new Error("pairing failed");
+  return `Bearer ${paired.deviceId}:${paired.credential}`;
+}
+
+test("requires authentication for both lineup routes", async () => {
+  const server = await load();
+  for (const path of ["/api/v1/lineup/query", "/api/v1/lineup/mutation"]) {
+    const response = await server.routeRemoteRequest({
+      method: "POST",
+      path,
+      headers: { "content-type": "application/json" },
+      body: "{}",
+    });
+    expect(response.status).toBe(401);
+  }
+});
+
+test("rejects non JSON and unknown envelope fields", async () => {
+  const server = await load();
+  const authorization = await authorisation(server);
+  const nonJson = await server.routeRemoteRequest({
+    method: "POST",
+    path: "/api/v1/lineup/query",
+    headers: { authorization, "content-type": "text/plain" },
+    body: "{}",
+  });
+  const unknown = await server.routeRemoteRequest({
+    method: "POST",
+    path: "/api/v1/lineup/query",
+    headers: { authorization, "content-type": "application/json" },
+    body: JSON.stringify({ playlistId: "one", revision: 0, scope: "channels", admin: true }),
+  });
+  expect(nonJson.status).toBe(415);
+  expect(unknown.status).toBe(400);
+});
+
+test("maps conflict to HTTP 409", async () => {
+  const server = await load();
+  const authorization = await authorisation(server);
+  const { useLineup } = await import("../src/stores/lineup");
+  useLineup.setState({ playlistId: "one", revision: 4 });
+  const response = await server.routeRemoteRequest({
+    method: "POST",
+    path: "/api/v1/lineup/query",
+    headers: { authorization, "content-type": "application/json" },
+    body: JSON.stringify({ playlistId: "one", revision: 3, scope: "channels" }),
+  });
+  expect(response.status).toBe(409);
+  expect(JSON.parse(response.body)).toMatchObject({ reason: "conflict", revision: 4 });
+  expect(JSON.parse(response.body).items).toBeUndefined();
+  expect(JSON.parse(response.body).snapshot.lineup).toEqual({
+    playlistId: "one",
+    revision: 4,
+    ready: true,
+  });
+});
+
+test("maps unavailable to HTTP 404", async () => {
+  const server = await load();
+  const authorization = await authorisation(server);
+  const response = await server.routeRemoteRequest({
+    method: "POST",
+    path: "/api/v1/lineup/mutation",
+    headers: { authorization, "content-type": "application/json" },
+    body: JSON.stringify({
+      id: "missing",
+      playlistId: "missing",
+      revision: 0,
+      mutation: { type: "channel.rename", channelId: "missing", name: "Mine" },
+    }),
+  });
+  expect(response.status).toBe(404);
+});
+
+test("maps invalid duplicate number and limit to HTTP 400", async () => {
+  vi.doMock("../src/services/lineupProtocol", () => ({
+    queryRemoteLineup: () => ({ ok: false, reason: "invalid", revision: 0 }),
+    mutateRemoteLineup: vi
+      .fn()
+      .mockResolvedValueOnce({ ok: false, reason: "duplicate-number", revision: 0 })
+      .mockResolvedValueOnce({ ok: false, reason: "limit", revision: 0 }),
+  }));
+  const server = await load();
+  const authorization = await authorisation(server);
+  for (const id of ["duplicate", "limit"]) {
+    const response = await server.routeRemoteRequest({
+      method: "POST",
+      path: "/api/v1/lineup/mutation",
+      headers: { authorization, "content-type": "application/json" },
+      body: JSON.stringify({ id }),
+    });
+    expect(response.status).toBe(400);
+  }
+  vi.doUnmock("../src/services/lineupProtocol");
+});
+
+test("maps persistence to HTTP 500", async () => {
+  vi.doMock("../src/services/lineupProtocol", () => ({
+    queryRemoteLineup: () => ({ ok: false, reason: "invalid", revision: 0 }),
+    mutateRemoteLineup: async () => ({ ok: false, reason: "persistence", revision: 2 }),
+  }));
+  const server = await load();
+  const authorization = await authorisation(server);
+  const response = await server.routeRemoteRequest({
+    method: "POST",
+    path: "/api/v1/lineup/mutation",
+    headers: { authorization, "content-type": "application/json" },
+    body: "{}",
+  });
+  expect(response.status).toBe(500);
+  vi.doUnmock("../src/services/lineupProtocol");
+});

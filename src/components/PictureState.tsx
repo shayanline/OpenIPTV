@@ -46,9 +46,6 @@ export function PictureState({
   filling,
   waited,
   fault,
-  retryIn,
-  attempt,
-  attempts,
   finite,
 }: {
   /** The channel this is about, named only when something has gone wrong with it. */
@@ -59,12 +56,8 @@ export function PictureState({
   filling: number | null;
   /** Seconds spent waiting for this channel to start. */
   waited: number;
-  /** The engine's name for the fault, or empty when there is none. */
+  /** The engine's name for the fault, or empty when there is none. Only terminal faults reach here. */
   fault: string;
-  /** Seconds until the next automatic attempt. */
-  retryIn: number;
-  attempt: number;
-  attempts: number;
   finite: boolean;
 }) {
   const { t, number } = useLocale();
@@ -87,7 +80,6 @@ export function PictureState({
 
   if (settled) {
     const reason = explain(settled);
-    const trying = !finite && attempt < attempts;
     return (
       <div className="plate picture-state failed" role="alert">
         <span className="picture-state-mark warn">
@@ -97,22 +89,7 @@ export function PictureState({
         <p className="picture-state-word">{t(reason.whyKey)}</p>
         <p className="picture-state-note">{t(reason.fixKey)}</p>
 
-        {!finite && (
-          <p className="picture-state-doing">
-            {trying ? (
-              <>
-                <span className="spinner small" aria-hidden="true" />
-                {t("picture.tryingAgain", {
-                  seconds: retryIn,
-                  attempt,
-                  attempts,
-                })}
-              </>
-            ) : (
-              t("picture.failedAfterRetries")
-            )}
-          </p>
-        )}
+        {!finite && <p className="picture-state-doing">{t("picture.failedAfterRetries")}</p>}
 
         {/* The banner is hidden while this is up, so this is the only guide on screen and it
             has to be complete, including the way out. */}

@@ -47,7 +47,15 @@ import { cpus, arch, loadavg } from "node:os";
 import { connect, findChrome, arg, has, factor } from "./cdp.mjs";
 import { LAUNCH_MARKS, LAUNCH_DEADLINE_MS, launchWatcher } from "./launch-marks.mjs";
 import { XTREAM_FIXTURE, xtreamFixtureResponse } from "../present.mjs";
-import { createXtreamJourneyTracker, XTREAM_JOURNEYS } from "./harness.mjs";
+import {
+  benchmarkResult,
+  createJourneyTracker,
+  createXtreamJourneyTracker,
+  evaluationValue,
+  pageResult,
+  REDESIGN_JOURNEYS,
+  XTREAM_JOURNEYS,
+} from "./harness.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const read = (name) => JSON.parse(readFileSync(join(here, name), "utf8"));
@@ -382,7 +390,7 @@ const logoFor = (size, hue) => {
  * rather than the rule, for the case where something else holds 4174.
  */
 let benchText = playlistText;
-const fixture = createServer((request, response) => {
+const fixture = createServer(async (request, response) => {
   const xtream = xtreamFixtureResponse(request.url ?? "/");
   if (xtream) {
     response.writeHead(xtream.status, {
@@ -390,6 +398,7 @@ const fixture = createServer((request, response) => {
       "access-control-allow-origin": "*",
       "cache-control": "no-store",
     });
+    if (xtream.delay) await new Promise((settle) => setTimeout(settle, xtream.delay));
     response.end(xtream.body);
     return;
   }
@@ -922,20 +931,65 @@ if (measuring) {
 }
 console.log(`  ${url}`);
 
+let mainNavigation = { count: 0, url: "not observed", at: 0 };
+cdp.on("Page.frameNavigated", ({ frame }) => {
+  if (!frame.parentId) {
+    mainNavigation = { count: mainNavigation.count + 1, url: frame.url, at: Date.now() };
+  }
+});
 await cdp.send("Page.navigate", { url });
 
 if (has("bench") || has("profile")) {
-  const ev = async (expression) => {
+  let benchmarkNavigation = 0;
+  const ev = async (expression, allowContextLoss = false) => {
     try {
-      return (
-        await cdp.send("Runtime.evaluate", {
-          expression,
-          returnByValue: true,
-          awaitPromise: true,
-        })
-      ).result.value;
-    } catch {
-      return null; // navigating, so there is no context to ask yet
+      const response = await cdp.send("Runtime.evaluate", {
+        expression,
+        returnByValue: true,
+        awaitPromise: true,
+      });
+      return evaluationValue(response);
+    } catch (error) {
+      if (allowContextLoss) return null;
+      throw new Error(`Page evaluation could not run: ${error.message}`);
+    }
+  };
+  const evaluationFailure = async (error, label, expression) => {
+    const state = await ev(`({ url: location.href, readyState: document.readyState })`, true);
+    const url = state?.url ?? mainNavigation.url;
+    const readyState = state?.readyState ?? "unavailable";
+    const navigations = mainNavigation.count - benchmarkNavigation;
+    return new Error(
+      `${error.message} ${label} evaluated ${expression}. The document was ${readyState} at ${url}. The main frame navigated ${navigations} time${navigations === 1 ? "" : "s"} since the recorder was installed. The last navigation was to ${mainNavigation.url} at ${new Date(mainNavigation.at).toISOString()}.`,
+    );
+  };
+  const readPage = async (label, expression) => {
+    try {
+      return pageResult(
+        await ev(`JSON.stringify({
+          url: location.href,
+          readyState: document.readyState,
+          result: (${expression})
+        })`),
+        label,
+      );
+    } catch (error) {
+      throw await evaluationFailure(error, label, expression);
+    }
+  };
+  const readBenchmark = async (label, expression) => {
+    try {
+      return benchmarkResult(
+        await ev(`JSON.stringify({
+          url: location.href,
+          readyState: document.readyState,
+          benchmark: typeof window.__bench,
+          result: window.__bench && (${expression})
+        })`),
+        label,
+      );
+    } catch (error) {
+      throw await evaluationFailure(error, label, expression);
     }
   };
   /*
@@ -957,6 +1011,7 @@ if (has("bench") || has("profile")) {
   const isReady = async () =>
     await ev(
       `document.querySelectorAll(".rail .row").length > 0 && !document.querySelector(".onboard")`,
+      true,
     );
   let ready = false;
   while (!ready && Date.now() - readyAt < 90000) {
@@ -993,6 +1048,7 @@ if (has("bench") || has("profile")) {
   );
 
   await ev(readFileSync(join(here, "bench.js"), "utf8"));
+  benchmarkNavigation = mainNavigation.count;
 
   /**
    * The heap, after collecting, because otherwise it is a coin toss.
@@ -1014,7 +1070,7 @@ if (has("bench") || has("profile")) {
     await cdp.send("HeapProfiler.collectGarbage").catch(() => {
       /* report what V8 says */
     });
-    return JSON.parse(await ev("JSON.stringify(window.__bench.state())"));
+    return readBenchmark("heap measurement", "window.__bench.state()");
   };
   let settled = await heapState();
 
@@ -1032,10 +1088,28 @@ if (has("bench") || has("profile")) {
     right: [39, "ArrowRight"],
     enter: [13, "Enter"],
     back: [27, "Escape"],
+    playPause: [10252, "MediaPlayPause"],
+    stop: [413, "MediaStop"],
+    0: [48, "0"],
+    1: [49, "1"],
+    8: [56, "8"],
   };
   let sent = 0;
   const press = async (name) => {
     const [code, key] = KEYS[name];
+    if (code === 413) {
+      await ev(`(() => {
+        for (var type of ["keydown", "keyup"]) {
+          var event = new KeyboardEvent(type, { bubbles: true, cancelable: true });
+          Object.defineProperty(event, "keyCode", { get: function () { return 413; } });
+          Object.defineProperty(event, "which", { get: function () { return 413; } });
+          window.dispatchEvent(event);
+        }
+        return true;
+      })()`);
+      sent += 1;
+      return;
+    }
     for (const type of ["rawKeyDown", "keyUp"]) {
       await cdp.send("Input.dispatchKeyEvent", {
         type,
@@ -1122,11 +1196,12 @@ if (has("bench") || has("profile")) {
    */
   const inputDrained = async () => {
     for (let i = 0; i < 40; i++) {
-      const state = JSON.parse(
-        await ev(`JSON.stringify({
-        delivered: window.__bench.delivered,
-        quiet: window.__bench.quietFor()
-      })`),
+      const state = await readBenchmark(
+        "input queue",
+        `{
+          delivered: window.__bench.delivered,
+          quiet: window.__bench.quietFor()
+        }`,
       );
       if (state && state.delivered >= sent && state.quiet > 400) return true;
       await new Promise((r) => setTimeout(r, 250));
@@ -1147,8 +1222,8 @@ if (has("bench") || has("profile")) {
     // something to read the rest against.
     if (sequence.length) await drive(sequence, times, gap);
     else await new Promise((r) => setTimeout(r, RESTING_MS));
-    const r = await ev("JSON.stringify(window.__bench.stop())").then(JSON.parse);
-    if (!r || !r.of || r.hidden) {
+    const r = await readBenchmark(label, "window.__bench.stop()");
+    if (!r?.of || r.hidden) {
       /*
        * Nothing was measured, and that is a failure rather than a footnote.
        *
@@ -1313,9 +1388,7 @@ if (has("bench") || has("profile")) {
       await new Promise((r) => setTimeout(r, 250));
       if (await quiet("!!(window.__launch && window.__launch.done)")) break;
     }
-    return JSON.parse(
-      (await quiet("JSON.stringify((window.__launch || {}).marks || {})")) ?? "{}",
-    );
+    return readPage("launch marks", "window.__launch && window.__launch.marks");
   };
 
   await cdp.send("Page.bringToFront");
@@ -1390,10 +1463,13 @@ if (has("bench") || has("profile")) {
    * keys landed in the rail rather than in the channel list. `showing` is only reported.
    */
   const where = async () =>
-    await ev(`JSON.stringify({
-    cursor: (document.querySelector('.rail .row.selected .row-label')||{}).textContent,
-    showing: (document.querySelector('.rail .row.showing .row-label')||{}).textContent,
-  })`);
+    await readPage(
+      "category landing state",
+      `({
+        cursor: (document.querySelector('.rail .row.selected .row-label')||{}).textContent,
+        showing: (document.querySelector('.rail .row.showing .row-label')||{}).textContent,
+      })`,
+    );
 
   /*
    * Frame times first, then the two columns that say whether the remote was answered.
@@ -1454,7 +1530,7 @@ if (has("bench") || has("profile")) {
 
   mustWalk("racing the categories", await phase("racing the categories", ["down"], 18));
   mustWalk("and back up again", await phase("and back up again", ["up"], 18));
-  const landed = JSON.parse(await where());
+  const landed = await where();
 
   // Back into the channels, and hold the key down, which is how people cross a long list.
   if (!(await ensurePane("list"))) {
@@ -1511,7 +1587,7 @@ if (has("bench") || has("profile")) {
   const waitUntil = async (expression, timeout = 30000) => {
     const deadline = Date.now() + timeout;
     while (Date.now() < deadline) {
-      if (await ev(expression)) return true;
+      if (await ev(expression, true)) return true;
       await new Promise((r) => setTimeout(r, 100));
     }
     return false;
@@ -1531,8 +1607,8 @@ if (has("bench") || has("profile")) {
       process.exit(2);
     }
     await new Promise((r) => setTimeout(r, 600));
-    const result = await ev("JSON.stringify(window.__bench.stop())").then(JSON.parse);
-    if (!result || !result.of || result.hidden) {
+    const result = await readBenchmark(label, "window.__bench.stop()");
+    if (!result?.of || result.hidden) {
       unmeasured.push(label);
       return result;
     }
@@ -1545,7 +1621,7 @@ if (has("bench") || has("profile")) {
     return result;
   };
   const clickNamed = (name) =>
-    ev(`(() => {
+    waitUntil(`(() => {
     var button = Array.prototype.slice.call(document.querySelectorAll("button")).filter(function (item) {
       return item.textContent.trim() === ${JSON.stringify(name)};
     })[0];
@@ -1553,8 +1629,57 @@ if (has("bench") || has("profile")) {
     button.click();
     return true;
   })()`);
+  const setInputValue = (selector, value) =>
+    waitUntil(`(() => {
+    var input = document.querySelector(${JSON.stringify(selector)});
+    if (!input) return false;
+    var setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+    setter.call(input, ${JSON.stringify(value)});
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    return true;
+  })()`);
+  const clickVodStart = () =>
+    waitUntil(`(() => {
+      var button = document.querySelector('.vod-action');
+      if (!button) return false;
+      button.click();
+      return true;
+    })()`);
+  const resetInputBaseline = async () => {
+    await ev("window.__bench.delivered = 0; window.__bench.lastKeyAt = 0; true");
+    sent = 0;
+  };
 
   const xtreamJourneys = createXtreamJourneyTracker();
+  const redesignJourneys = createJourneyTracker([
+    REDESIGN_JOURNEYS.playbackDeckAndDrawers,
+    REDESIGN_JOURNEYS.quickSeekPlayingAndPaused,
+    REDESIGN_JOURNEYS.liveDvrAndGoLive,
+    REDESIGN_JOURNEYS.recoverySequence,
+    REDESIGN_JOURNEYS.recoveryCancellation,
+    REDESIGN_JOURNEYS.managementBudget,
+    REDESIGN_JOURNEYS.posterBudget,
+  ]);
+  await ev(`(async function () {
+    var db = await new Promise(function (resolve, reject) {
+      var request = indexedDB.open('openiptv-personal', 1);
+      request.onsuccess = function () { resolve(request.result); };
+      request.onerror = reject;
+    });
+    if (!db.objectStoreNames.contains('lineups')) {
+      db.close();
+      return true;
+    }
+    await new Promise(function (resolve, reject) {
+      var transaction = db.transaction(['lineups'], 'readwrite');
+      transaction.objectStore('lineups').delete('sim-xtream');
+      transaction.oncomplete = resolve;
+      transaction.onerror = reject;
+      transaction.onabort = reject;
+    });
+    db.close();
+    return true;
+  })()`);
   await ev('sessionStorage.setItem("sim.xtreamJourney", "1")');
   await cdp.send("Page.addScriptToEvaluateOnNewDocument", {
     source: `(() => {
@@ -1570,7 +1695,7 @@ if (has("bench") || has("profile")) {
             password: ${JSON.stringify(XTREAM_FIXTURE.password)},
             output: "m3u8"
           },
-          sourceVersion: 1,
+          sourceVersion: 2,
           hiddenCategories: [],
           hiddenCategoryMode: "exclude"
         }],
@@ -1628,6 +1753,7 @@ if (has("bench") || has("profile")) {
   console.log(`\n  ${XTREAM_JOURNEYS.liveLaunch}: ${xtreamLaunchMs}ms`);
   xtreamJourneys.complete(XTREAM_JOURNEYS.liveLaunch);
   await ev(readFileSync(join(here, "bench.js"), "utf8"));
+  benchmarkNavigation = mainNavigation.count;
   sent = 0;
   settled = await heapState();
   await ensurePane("rail");
@@ -1636,80 +1762,556 @@ if (has("bench") || has("profile")) {
     await phase(XTREAM_JOURNEYS.heldRailWalk, ["down"], 18),
   );
   xtreamJourneys.complete(XTREAM_JOURNEYS.heldRailWalk);
+  await ev(
+    "window.__openiptvTvFaults.reset(); window.__openiptvTvFaults.useControlledPlayback(); window.__openiptvTvFaults.setLiveWindow(40000, 100000); true",
+  );
+  await ev(
+    "(() => { var row = document.querySelector('.list .row'); if (!row) return false; row.click(); return true; })()",
+  );
+  await waitUntil("window.__openiptvTvFaults.snapshot().connections >= 1");
+  await ev("window.__openiptvTvFaults.completePrepare(); true");
+  await waitUntil(
+    "window.webapis.avplay.getState() === 'PLAYING' && !document.querySelector('.panel:not(.away)')",
+  );
+  await press("right");
+  await waitUntil("!!document.querySelector('.playback-deck .seekbar')");
+  await clickNamed("Go live");
+  await waitUntil("window.__openiptvTvFaults.snapshot().seeks.length === 1");
+  await clickNamed("More");
+  await waitUntil("!!document.querySelector('[data-recovery-cause]')");
+  const liveConnections = await ev("window.__openiptvTvFaults.snapshot().connections");
+  const liveCause = await ev(
+    "document.querySelector('[data-recovery-cause]').getAttribute('data-recovery-cause')",
+  );
+  if (liveConnections !== 1 || liveCause !== "")
+    throw new Error("The Live DVR journey changed recovery state or provider connections.");
+  await press("back");
+  await waitUntil(
+    "!!document.querySelector('.playback-deck') && !document.querySelector('.playback-drawer')",
+  );
+  await press("stop");
+  await waitUntil("!!document.querySelector('.panel:not(.away)')");
+  redesignJourneys.complete(REDESIGN_JOURNEYS.liveDvrAndGoLive);
+  await ev("window.__openiptvTvFaults.reset(); true");
+  await clickNamed("Search");
+  await waitUntil("!!document.querySelector('.search-field')");
+  for (const ch of "3199") await cdp.send("Input.dispatchKeyEvent", { type: "char", text: ch });
+  await waitUntil(`(() => {
+    var row = document.querySelector('.list .row-label');
+    return row && row.textContent === 'Live Channel 3199';
+  })()`);
+  await press("back");
+  await waitUntil(
+    "document.querySelector('.search-field') && document.querySelector('.search-field').value === ''",
+  );
+  await press("back");
+  await waitUntil("!document.querySelector('.search-field')");
+  xtreamJourneys.complete(XTREAM_JOURNEYS.liveSearch);
+  await resetInputBaseline();
   await journey(
     XTREAM_JOURNEYS.firstCategoryLoad,
     async () => clickNamed("Movies"),
-    `(() => {
-      var row = document.querySelector(".media-list .row-label");
-      return row && row.textContent === "Movie 0001";
-    })()`,
+    "!!document.querySelector('.vod-screen .poster-card')",
   );
   xtreamJourneys.complete(XTREAM_JOURNEYS.firstCategoryLoad);
-  await ensurePane("rail");
+  xtreamJourneys.complete(XTREAM_JOURNEYS.coldPosterGrid);
+  await press("right");
+  if (!(await waitUntil("!!document.querySelector('.poster-card.cursor')"))) {
+    throw new Error("The first VOD poster did not take focus before the grid journey.");
+  }
+  await resetInputBaseline();
+  await journey(
+    XTREAM_JOURNEYS.heldGridDirection,
+    async () => {
+      for (let index = 0; index < 12; index += 1) await press("down");
+    },
+    "!!document.querySelector('.poster-card.cursor')",
+  );
+  xtreamJourneys.complete(XTREAM_JOURNEYS.heldGridDirection);
+  redesignJourneys.complete(REDESIGN_JOURNEYS.posterBudget);
+  const rememberedPosterPosition = await ev(`(() => {
+    var cursor = document.querySelector('.poster-card.cursor');
+    return cursor ? Number(cursor.parentElement.getAttribute('aria-posinset')) : 0;
+  })()`);
+  await journey(
+    XTREAM_JOURNEYS.categoryFocusSettle,
+    async () => {
+      await press("left");
+      await press("down");
+    },
+    "!!document.querySelector('.vod-category.cursor')",
+  );
+  xtreamJourneys.complete(XTREAM_JOURNEYS.categoryFocusSettle);
   await journey(
     XTREAM_JOURNEYS.cachedCategoryRevisit,
-    async () => {
-      await press("down");
-      await waitUntil(`(() => {
-        var row = document.querySelector(".media-list .row-label");
-        return row && row.textContent === "Movie 0601";
-      })()`);
-      await press("up");
-    },
-    `(() => {
-      var row = document.querySelector(".media-list .row-label");
-      return row && row.textContent === "Movie 0001";
-    })()`,
+    async () => press("up"),
+    "!!document.querySelector('.poster-card')",
   );
+  await press("right");
+  if (!(await waitUntil("!!document.querySelector('.poster-card.cursor')"))) {
+    throw new Error("The revisited VOD category did not restore grid focus.");
+  }
+  await resetInputBaseline();
+  const restoredPoster = await ev(`(() => {
+    var cursor = document.querySelector('.poster-card.cursor');
+    return {
+      position: cursor ? Number(cursor.parentElement.getAttribute('aria-posinset')) : 0,
+      loading: !!document.querySelector('.vod-loading, .poster-skeleton')
+    };
+  })()`);
+  if (restoredPoster.position !== rememberedPosterPosition) {
+    throw new Error(
+      `The VOD category revisit restored poster ${restoredPoster.position} instead of ${rememberedPosterPosition}.`,
+    );
+  }
+  if (restoredPoster.loading)
+    throw new Error("The warm poster grid returned to a loading state.");
   xtreamJourneys.complete(XTREAM_JOURNEYS.cachedCategoryRevisit);
-  await ensurePane("list");
+  xtreamJourneys.complete(XTREAM_JOURNEYS.warmPosterGrid);
+  xtreamJourneys.complete(XTREAM_JOURNEYS.categoryPositionRestore);
+  await journey(
+    XTREAM_JOURNEYS.scopedSearchReturn,
+    async () => {
+      await clickNamed("Search");
+      for (const ch of "Movie 010")
+        await cdp.send("Input.dispatchKeyEvent", { type: "char", text: ch });
+    },
+    "!!document.querySelector('.vod-search .poster-card')",
+  );
+  xtreamJourneys.complete(XTREAM_JOURNEYS.scopedSearchReturn);
+  await press("back");
+  await press("back");
   await journey(
     XTREAM_JOURNEYS.movieDetail,
     async () => press("enter"),
-    `(() => {
-      var detail = document.querySelector(".media-details");
-      return detail && detail.textContent.indexOf("Movie details for movie-1") >= 0;
-    })()`,
+    "!!document.querySelector('.vod-details .vod-title-row')",
   );
   xtreamJourneys.complete(XTREAM_JOURNEYS.movieDetail);
+  await clickNamed("Add to Favourites");
+  await waitUntil(`(() => {
+    var button = document.querySelector('.vod-favourite');
+    return button && button.getAttribute('aria-pressed') === 'true';
+  })()`);
+  xtreamJourneys.complete(XTREAM_JOURNEYS.movieDetailsFavourite);
+
+  await ev(
+    "window.__openiptvTvFaults.reset(); window.__openiptvTvFaults.useControlledPlayback(); true",
+  );
+  await clickVodStart();
+  await waitUntil("window.__openiptvTvFaults.snapshot().connections >= 1");
+  await ev("window.__openiptvTvFaults.completePrepare(); true");
+  await waitUntil(
+    "window.webapis.avplay.getState() === 'PLAYING' && !!document.querySelector('.vod-host.hidden')",
+  );
+  const quickSeekConnectionsBefore = await ev(
+    "window.__openiptvTvFaults.snapshot().connections",
+  );
+  await press("right");
+  await waitUntil("window.__openiptvTvFaults.snapshot().seeks.length === 1");
+  await press("playPause");
+  await waitUntil("window.webapis.avplay.getState() === 'PAUSED'");
   await press("back");
-  await waitUntil("!!document.querySelector('.media-list')");
-  await journey(
-    XTREAM_JOURNEYS.episodeNavigation,
-    async () => {
-      await clickNamed("Series");
-      await waitUntil(`(() => {
-        var row = document.querySelector(".media-list .row-label");
-        return row && row.textContent === "Series 0001";
-      })()`);
-      await press("enter");
-      await waitUntil(`(() => {
-        var row = document.querySelector(".media-list .row-label");
-        return row && row.textContent === "Season 1";
-      })()`);
-      await press("enter");
-    },
-    `(() => {
-      var row = document.querySelector(".media-list .row-label");
-      return row && row.textContent === "Episode 1.1";
-    })()`,
+  await waitUntil("!document.querySelector('.playback-deck')");
+  await press("right");
+  await waitUntil(
+    "window.__openiptvTvFaults.snapshot().seeks.length === 2 && window.webapis.avplay.getState() === 'PAUSED'",
   );
+  await press("enter");
+  await waitUntil("!!document.querySelector('.playback-deck')");
+  await clickNamed("More");
+  await waitUntil("!!document.querySelector('[data-recovery-cause]')");
+  const quickSeekConnections = await ev("window.__openiptvTvFaults.snapshot().connections");
+  const quickSeekCause = await ev(
+    "document.querySelector('[data-recovery-cause]').getAttribute('data-recovery-cause')",
+  );
+  if (quickSeekConnections !== quickSeekConnectionsBefore || quickSeekCause !== "") {
+    throw new Error(
+      `The quick seek journey changed connections from ${quickSeekConnectionsBefore} to ${quickSeekConnections} with recovery cause ${quickSeekCause}.`,
+    );
+  }
+  await press("back");
+  await waitUntil(
+    "!!document.querySelector('.playback-deck') && !document.querySelector('.playback-drawer')",
+  );
+  await press("stop");
+  await waitUntil("!!document.querySelector('.vod-details')");
+  redesignJourneys.complete(REDESIGN_JOURNEYS.quickSeekPlayingAndPaused);
+  await ev(
+    "window.__openiptvTvFaults.reset(); window.__openiptvTvFaults.useControlledPlayback(); true",
+  );
+
+  await clickVodStart();
+  await waitUntil("window.__openiptvTvFaults.snapshot().connections >= 1");
+  await ev("window.__openiptvTvFaults.completePrepare(); true");
+  await waitUntil("window.webapis.avplay.getState() === 'PLAYING'");
+  const cleanStartConnections = await ev("window.__openiptvTvFaults.snapshot().connections");
+  await press("enter");
+  await waitUntil("!!document.querySelector('.playback-deck')");
+  await clickNamed("Audio");
+  await waitUntil("!!document.querySelector('.playback-drawer')");
+  await press("back");
+  await waitUntil(
+    "!!document.querySelector('.playback-deck') && !document.querySelector('.playback-drawer')",
+  );
+  await clickNamed("Subtitles");
+  await waitUntil("!!document.querySelector('.playback-drawer')");
+  await press("back");
+  await waitUntil(
+    "!!document.querySelector('.playback-deck') && !document.querySelector('.playback-drawer')",
+  );
+  await clickNamed("More");
+  await waitUntil("!!document.querySelector('[data-recovery-cause]')");
+  const cleanMoreConnections = await ev("window.__openiptvTvFaults.snapshot().connections");
+  const cleanMoreCause = await ev(
+    "document.querySelector('[data-recovery-cause]').getAttribute('data-recovery-cause')",
+  );
+  if (cleanMoreConnections !== cleanStartConnections || cleanMoreCause !== "") {
+    throw new Error(
+      "The playback drawer journey did not preserve its clean controlled origin.",
+    );
+  }
+  await press("back");
+  await waitUntil(
+    "!!document.querySelector('.playback-deck') && !document.querySelector('.playback-drawer')",
+  );
+  redesignJourneys.complete(REDESIGN_JOURNEYS.playbackDeckAndDrawers);
+  await press("stop");
+  await waitUntil("!!document.querySelector('.vod-details')");
+  await ev("window.__openiptvTvFaults.reset(); true");
+
+  await ev("window.__openiptvTvFaults.useControlledPlayback(); true");
+  await clickVodStart();
+  await waitUntil("window.__openiptvTvFaults.snapshot().connections >= 1");
+  await ev("window.__openiptvTvFaults.completePrepare(); true");
+  await waitUntil("window.webapis.avplay.getState() === 'PLAYING'");
+  const recoveryStartConnections = await ev("window.__openiptvTvFaults.snapshot().connections");
+  await ev("window.__openiptvTvFaults.emitNetworkFault(); true");
+  await waitUntil(
+    `window.__openiptvTvFaults.snapshot().connections === ${Number(recoveryStartConnections) + 1}`,
+  );
+  await ev("window.__openiptvTvFaults.completePrepare(); true");
+  await waitUntil("window.webapis.avplay.getState() === 'PLAYING'");
+  await press("enter");
+  await waitUntil("!!document.querySelector('.playback-deck')");
+  await clickNamed("More");
+  await waitUntil(
+    "(() => { var node = document.querySelector('[data-recovery-cause]'); return node && node.getAttribute('data-recovery-cause') === 'engine-network'; })()",
+  );
+  const recoveryConnections = await ev("window.__openiptvTvFaults.snapshot().connections");
+  if (recoveryConnections !== recoveryStartConnections + 1)
+    throw new Error("Sequential recovery opened an unexpected number of provider connections.");
+  await press("back");
+  await waitUntil(
+    "!!document.querySelector('.playback-deck') && !document.querySelector('.playback-drawer')",
+  );
+  await press("stop");
+  await waitUntil("!!document.querySelector('.vod-details')");
+  redesignJourneys.complete(REDESIGN_JOURNEYS.recoverySequence);
+  await ev("window.__openiptvTvFaults.reset(); true");
+
+  await ev("window.__openiptvTvFaults.useControlledPlayback(); true");
+  await clickVodStart();
+  await waitUntil("window.__openiptvTvFaults.snapshot().connections >= 1");
+  await ev("window.__openiptvTvFaults.completePrepare(); true");
+  await waitUntil("window.webapis.avplay.getState() === 'PLAYING'");
+  const cancellationStartConnections = await ev(
+    "window.__openiptvTvFaults.snapshot().connections",
+  );
+  await ev(
+    "window.__openiptvTvFaults.emitNetworkFault(); window.__openiptvTvFaults.setHidden(true); true",
+  );
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  const hiddenConnections = await ev("window.__openiptvTvFaults.snapshot().connections");
+  if (hiddenConnections !== cancellationStartConnections)
+    throw new Error("Recovery connected while the application was hidden.");
+  await ev("window.__openiptvTvFaults.setHidden(false); true");
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  const restoreNeedsPrepare = await ev(
+    "window.__openiptvTvFaults.snapshot().connections > 1 && window.webapis.avplay.getState() === 'IDLE'",
+  );
+  if (restoreNeedsPrepare) await ev("window.__openiptvTvFaults.completePrepare(); true");
+  await waitUntil("window.webapis.avplay.getState() === 'PLAYING'");
+  await press("enter");
+  await waitUntil("!!document.querySelector('.playback-deck')");
+  await clickNamed("More");
+  await waitUntil(
+    "(() => { var node = document.querySelector('[data-recovery-cause]'); return node && node.getAttribute('data-recovery-cause') === 'visibility-restore'; })()",
+  );
+  const restoredConnections = await ev("window.__openiptvTvFaults.snapshot().connections");
+  if (restoredConnections < hiddenConnections || restoredConnections > hiddenConnections + 1) {
+    throw new Error("Visibility restore opened an unexpected provider connection.");
+  }
+  await press("back");
+  await waitUntil(
+    "!!document.querySelector('.playback-deck') && !document.querySelector('.playback-drawer')",
+  );
+  await press("stop");
+  await waitUntil("!!document.querySelector('.vod-details')");
+  redesignJourneys.complete(REDESIGN_JOURNEYS.recoveryCancellation);
+  await ev("window.__openiptvTvFaults.reset(); true");
+
+  await press("back");
+  await clickNamed("Search");
+  for (const ch of "Movie 0008")
+    await cdp.send("Input.dispatchKeyEvent", { type: "char", text: ch });
+  await waitUntil("!!document.querySelector('.vod-search .poster-card')");
+  await clickNamed("Movie 0008");
+  await waitUntil("!!document.querySelector('.vod-details')");
+  const missingMetadataClean = await ev(`(() => {
+    return !document.querySelector('.vod-detail-rating, .vod-detail-meta, .vod-synopsis, .vod-credit');
+  })()`);
+  if (!missingMetadataClean)
+    throw new Error("Missing metadata journey rendered an invented row.");
+  xtreamJourneys.complete(XTREAM_JOURNEYS.missingMetadata);
+  await press("back");
+  await press("back");
+  await clickNamed("Series");
+  await waitUntil("!!document.querySelector('.vod-screen .poster-card')");
+  await press("right");
+  if (!(await waitUntil("!!document.querySelector('.poster-card.cursor')"))) {
+    throw new Error("The first Series poster did not take focus before details opened.");
+  }
+  await ev("document.querySelector('.poster-card.cursor').click(); true");
+  await waitUntil("!!document.querySelector('.series-actions button')");
+  const seriesAction = await ev("!!document.querySelector('.series-actions button')");
+  if (!seriesAction) {
+    const seriesDiagnosis = await ev(`JSON.stringify({
+      text: document.querySelector('.series-details')?.textContent,
+      classes: document.querySelector('.series-details')?.className,
+      cards: document.querySelectorAll('.poster-card').length
+    })`);
+    throw new Error(`Series journey has no playable action. ${seriesDiagnosis}`);
+  }
+  xtreamJourneys.complete(XTREAM_JOURNEYS.seriesContinue);
+  await ev("document.querySelector('.series-actions button').click(); true");
+  await waitUntil("!!document.querySelector('.episode-panel')");
   xtreamJourneys.complete(XTREAM_JOURNEYS.episodeNavigation);
-  await clickNamed("Live");
-  await journey(
-    XTREAM_JOURNEYS.liveSearch,
-    async () => {
-      await clickNamed("Search");
-      for (const ch of "3199") {
-        await cdp.send("Input.dispatchKeyEvent", { type: "char", text: ch });
-      }
-    },
-    `(() => {
-      var row = document.querySelector(".list .row-label");
-      return row && row.textContent === "Live Channel 3199";
-    })()`,
+  await clickNamed("Season 2");
+  await waitUntil(`(() => {
+    var selected = document.querySelector('.season-pill[aria-selected="true"]');
+    return selected && selected.textContent.indexOf('2') >= 0;
+  })()`);
+  xtreamJourneys.complete(XTREAM_JOURNEYS.seasonCommit);
+  await ev("window.__openiptvTvFaults.reset(); true");
+  await ev(`(() => {
+    var rows = Array.prototype.slice.call(document.querySelectorAll('.episode-row'));
+    var row = rows.filter(function (item) { return item.textContent.indexOf('Episode 2.1') >= 0; })[0];
+    if (!row) return false;
+    row.click();
+    return true;
+  })()`);
+  await waitUntil("window.__openiptvTvFaults.snapshot().connections >= 1");
+  await ev("window.__openiptvTvFaults.completePrepare(); true");
+  await waitUntil(`(() => {
+    var faults = window.__openiptvTvFaults.snapshot();
+    return document.querySelector('.vod-host.hidden') &&
+      window.webapis.avplay.getState() === 'PLAYING' && faults.seeks.length === 0;
+  })()`);
+  xtreamJourneys.complete(XTREAM_JOURNEYS.manualEpisodeStart);
+  await press("back");
+  await waitUntil("!!document.querySelector('.episode-panel')");
+  const wheelBefore = await ev(`(() => {
+    var rows = Array.prototype.slice.call(document.querySelectorAll('.episode-row'));
+    return rows.indexOf(document.querySelector('.episode-row.cursor'));
+  })()`);
+  await ev(`(() => {
+    var list = document.querySelector('.episode-list');
+    if (list) {
+      list.dispatchEvent(new WheelEvent('wheel', { deltaY: 1, bubbles: true }));
+      list.dispatchEvent(new WheelEvent('wheel', { deltaY: 1, bubbles: true }));
+    }
+    return true;
+  })()`);
+  await waitUntil(`(() => {
+    var rows = Array.prototype.slice.call(document.querySelectorAll('.episode-row'));
+    return rows.indexOf(document.querySelector('.episode-row.cursor')) === ${Number(wheelBefore) + 1};
+  })()`);
+  xtreamJourneys.complete(XTREAM_JOURNEYS.wheelGuard);
+  await ev("document.documentElement.dir = 'rtl'; true");
+  await press("right");
+  await waitUntil("!!document.querySelector('.series-actions .vod-action.cursor')");
+  await press("left");
+  await waitUntil("!!document.querySelector('.episode-row.cursor')");
+  xtreamJourneys.complete(XTREAM_JOURNEYS.rtlMovement);
+  await ev("document.documentElement.dir = 'ltr'; true");
+  await press("back");
+  await clickNamed("Movies");
+  await waitUntil("!!document.querySelector('.vod-rail')");
+  await ev(`(() => {
+    var labels = Array.prototype.slice.call(document.querySelectorAll('.vod-category-name'));
+    var label = labels.filter(function (item) { return item.textContent.trim() === 'Failed'; })[0];
+    var button = label && label.closest('button');
+    if (!button) return false;
+    button.click();
+    return true;
+  })()`);
+  await waitUntil("!!document.querySelector('.vod-retry')");
+  const retryMessage = await ev("document.querySelector('.poster-grid-region').textContent");
+  await clickNamed("Retry");
+  await waitUntil(
+    "!document.querySelector('.vod-retry') && !!document.querySelector('.poster-grid-region.loading')",
   );
-  xtreamJourneys.complete(XTREAM_JOURNEYS.liveSearch);
+  await waitUntil("!!document.querySelector('.vod-retry')");
+  const retriedRegion = await ev(`(() => {
+    var retry = document.querySelector('.vod-retry');
+    return {
+      message: document.querySelector('.poster-grid-region').textContent,
+      labelled: retry && retry.textContent.trim() === 'Retry'
+    };
+  })()`);
+  if (!retriedRegion.labelled || retriedRegion.message !== retryMessage) {
+    throw new Error("The regional retry did not complete a second failed request in place.");
+  }
+  xtreamJourneys.complete(XTREAM_JOURNEYS.regionalRetry);
+  await journey(
+    XTREAM_JOURNEYS.lineupManagement,
+    async () => {
+      await clickNamed("Settings");
+      await waitUntil("!!document.querySelector('.sheet')");
+      await clickNamed("Playlists");
+      await waitUntil("!!document.querySelector('.settings-list-body')");
+      await ev(`(() => {
+        var button = document.querySelector('[data-settings-focus="playlist-lineup-sim-xtream"]');
+        if (!button) return false;
+        button.click();
+        return true;
+      })()`);
+    },
+    "!!document.querySelector('.lineup-scope-controls')",
+  );
+  await ev(`(() => {
+    var row = document.querySelector('.lineup-manager-row');
+    if (!row) return false;
+    row.click();
+    return true;
+  })()`);
+  await setInputValue("#lineup-name", "Measured Live Channel");
+  await setInputValue("#lineup-number", "801");
+  await waitUntil(`(() => {
+    var button = document.querySelector('.lineup-edit-form > .btn.tonal');
+    if (!button) return false;
+    button.click();
+    return true;
+  })()`);
+  await clickNamed("Save");
+  await waitUntil("!!document.querySelector('.lineup-scope-controls')");
+  await clickNamed("Reveal hidden");
+  await ev(`(() => {
+    var row = Array.prototype.slice.call(document.querySelectorAll('.lineup-manager-row')).filter(function (item) {
+      return item.textContent.indexOf('Measured Live Channel') >= 0;
+    })[0];
+    if (!row) return false;
+    row.click();
+    return true;
+  })()`);
+  await waitUntil("!!document.querySelector('#lineup-number')");
+  await ev("document.querySelector('.lineup-edit-form > .btn.tonal').click(); true");
+  await clickNamed("Save");
+  await waitUntil("!!document.querySelector('.lineup-scope-controls')");
+  await clickNamed("Sort");
+  await waitUntil(`(() => {
+    var row = document.querySelector('.lineup-sort-mode .lineup-manager-row');
+    if (!row) return false;
+    row.click();
+    return true;
+  })()`);
+  await press("down");
+  await press("enter");
+  await waitUntil("!document.querySelector('.lineup-sort-mode .lineup-manager-row.grabbed')");
+  await press("back");
+  await waitUntil("!!document.querySelector('.lineup-scope-controls')");
+  await clickNamed("Categories");
+  await setInputValue(".lineup-personal-create input", "Measured channels");
+  await clickNamed("Create category");
+  await waitUntil(
+    "!![...document.querySelectorAll('.lineup-manager-row')].find(function (row) { return row.textContent.indexOf('Measured channels') >= 0; })",
+  );
+  await ev(`(() => {
+    var row = Array.prototype.slice.call(document.querySelectorAll('.lineup-manager-row')).filter(function (item) {
+      return item.textContent.indexOf('Measured channels') < 0;
+    })[0];
+    if (!row) return false;
+    row.click();
+    return true;
+  })()`);
+  await setInputValue("#lineup-name", "Measured Live Category");
+  await clickNamed("Save");
+  await waitUntil("!!document.querySelector('.lineup-scope-controls')");
+  await clickNamed("Sort");
+  await waitUntil(`(() => {
+    var row = document.querySelector('.lineup-sort-mode .lineup-manager-row');
+    if (!row) return false;
+    row.click();
+    return true;
+  })()`);
+  await press("down");
+  await press("enter");
+  await waitUntil("!document.querySelector('.lineup-sort-mode .lineup-manager-row.grabbed')");
+  await press("back");
+  await clickNamed("Channels");
+  await ev(`(() => {
+    var row = Array.prototype.slice.call(document.querySelectorAll('.lineup-manager-row')).filter(function (item) {
+      return item.textContent.indexOf('Measured Live Channel') >= 0;
+    })[0];
+    if (!row) return false;
+    row.click();
+    return true;
+  })()`);
+  await waitUntil("!!document.querySelector('.lineup-memberships')");
+  await ev(`(() => {
+    var label = Array.prototype.slice.call(document.querySelectorAll('.lineup-memberships label')).filter(function (item) {
+      return item.textContent.indexOf('Measured channels') >= 0;
+    })[0];
+    if (!label) return false;
+    label.querySelector('input').click();
+    return true;
+  })()`);
+  await clickNamed("Save");
+  await waitUntil("!!document.querySelector('.lineup-scope-controls')");
+  const personalPersisted = await ev(`(async function () {
+    try {
+      var db = await new Promise(function (resolve, reject) {
+        var request = indexedDB.open('openiptv-personal', 1);
+        request.onsuccess = function () { resolve(request.result); };
+        request.onerror = reject;
+      });
+      if (!db.objectStoreNames.contains('lineups')) return false;
+      return await new Promise(function (resolve) {
+        var request = db.transaction(['lineups'], 'readonly').objectStore('lineups').get('sim-xtream');
+        request.onsuccess = function () { resolve(!!request.result && request.result.revision > 0); };
+        request.onerror = function () { resolve(false); };
+      });
+    } catch (error) { return false; }
+  })()`);
+  if (!personalPersisted) throw new Error("The lineup journey did not persist personal state.");
+  await press("back");
+  await waitUntil("!document.querySelector('.lineup-scope-controls')");
+  await press("back");
+  await waitUntil("!document.querySelector('.sheet')");
+  await press("8");
+  await press("0");
+  await press("1");
+  await press("enter");
+  await waitUntil("(document.body.textContent || '').indexOf('Measured Live Channel') >= 0");
+  await clickNamed("Settings");
+  await waitUntil("!!document.querySelector('.sheet')");
+  await clickNamed("Playlists");
+  await waitUntil("!!document.querySelector('.settings-list-body')");
+  await ev(`(() => {
+    var button = document.querySelector('[data-settings-focus="playlist-lineup-sim-xtream"]');
+    if (!button) return false;
+    button.click();
+    return true;
+  })()`);
+  await waitUntil(`(() => {
+    var text = document.querySelector('.sheet-body').textContent || '';
+    return text.indexOf('Measured Live Channel') >= 0 &&
+      text.indexOf('Measured Live Category') >= 0 &&
+      text.indexOf('Measured channels') >= 0 &&
+      text.indexOf('Unavailable personalisation') < 0;
+  })()`);
+  xtreamJourneys.complete(XTREAM_JOURNEYS.lineupManagement);
+  redesignJourneys.complete(REDESIGN_JOURNEYS.managementBudget);
 
   /*
    * Where the rail ended up, read from the highlight rather than from the column.
@@ -1730,7 +2332,9 @@ if (has("bench") || has("profile")) {
       "over the run",
   );
   xtreamJourneys.complete(XTREAM_JOURNEYS.heapGrowth);
+  xtreamJourneys.complete(XTREAM_JOURNEYS.vodHeapGrowth);
   xtreamJourneys.assertComplete();
+  redesignJourneys.assertComplete();
   console.log("  stalls counts frames past 100ms, the point the guidance says a viewer");
   console.log("  must be told something is happening.");
 
@@ -1831,10 +2435,12 @@ if (has("bench") || has("profile")) {
     "open, browse, choose": { stalls: 34, lag: 90, slow: 5 },
     [XTREAM_JOURNEYS.heldRailWalk]: { stalls: 4, lag: 60, slow: 2 },
     [XTREAM_JOURNEYS.firstCategoryLoad]: { stalls: 34 },
+    [XTREAM_JOURNEYS.heldGridDirection]: { stalls: 15 },
+    [XTREAM_JOURNEYS.categoryFocusSettle]: { stalls: 3 },
     [XTREAM_JOURNEYS.cachedCategoryRevisit]: { stalls: 30 },
+    [XTREAM_JOURNEYS.scopedSearchReturn]: { stalls: 10 },
     [XTREAM_JOURNEYS.movieDetail]: { stalls: 34 },
-    [XTREAM_JOURNEYS.episodeNavigation]: { stalls: 34 },
-    [XTREAM_JOURNEYS.liveSearch]: { stalls: 34 },
+    [XTREAM_JOURNEYS.lineupManagement]: { stalls: 10 },
   };
   /** Of the set's own ceiling. Well clear, because a playlist can be far larger than this one. */
   const HEAP_SHARE = 0.5;

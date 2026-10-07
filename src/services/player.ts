@@ -1,6 +1,12 @@
 import type HlsType from "hls.js";
+import type { MediaTrack } from "../types";
 import { createRepairingPlaylistLoader } from "./browserRepair";
-import { DEFAULT_INITIAL_BUFFER_SECONDS } from "./manifest";
+import {
+  normalizeAvPlayTracks,
+  normalizeBrowserTracks,
+  type AVPlayStreamInfo,
+} from "./playbackTracks";
+import { parseAvPlayLiveRange, SEEK_TIMEOUT_MS } from "./playbackRange";
 
 /**
  * hls.js is fetched only when something is actually going to use it.
@@ -52,16 +58,11 @@ interface AVPlayListener {
    * than what the playlist claims.
    */
   onevent?: (id: string, data: string) => void;
+  onsubtitlechange?: (duration: number, text: string) => void;
 }
 
 /** The states AVPlay moves through. Most calls are legal in only some of them. */
 type AVPlayState = "NONE" | "IDLE" | "READY" | "PLAYING" | "PAUSED";
-
-interface AVPlayStreamInfo {
-  index: number;
-  type: "VIDEO" | "AUDIO" | "TEXT";
-  extra_info: string;
-}
 
 interface AVPlay {
   open(url: string): void;
@@ -89,6 +90,9 @@ interface AVPlay {
     failure?: (error: unknown) => void,
   ): void;
   getCurrentStreamInfo?(): AVPlayStreamInfo[];
+  getTotalTrackInfo?(): AVPlayStreamInfo[];
+  setSelectTrack?(type: "AUDIO" | "TEXT", index: number): void;
+  setSilentSubtitle?(silent: boolean): void;
   getStreamingProperty?(key: string): string;
   getVideoSeamlessInfo?(): { scan_type: number; rotation_degree: number };
   setStreamingProperty?(key: string, value: string): void;
@@ -132,14 +136,33 @@ declare global {
   }
 }
 
+export interface PlayerOpenRequest {
+  url: string;
+  browserRepair: boolean;
+  bufferSeconds: number;
+  segmentSeconds: number;
+  mode: "live" | "finite";
+  startSeconds: number;
+}
+
+export interface PlaybackClock {
+  position: number | null;
+  duration: number | null;
+  seekableStart: number | null;
+  seekableEnd: number | null;
+  engineLiveEdge: number | null;
+  segmentSeconds: number | null;
+}
+
 export type PlayerEvent =
-  /** `percent` is how full the buffer is, where the engine will say, and absent otherwise. */
-  | { type: "buffering"; percent?: number }
+  | { type: "buffering-start" }
+  | { type: "buffering-progress"; percent: number }
+  | { type: "buffering-complete" }
   | { type: "playing" }
   | { type: "ended" }
-  /** `code` is the engine's own name for the fault, which the UI turns into a cause and
-      a remedy. Checklist 4.6 asks for both, not for the raw code. */
-  | { type: "error"; code: string };
+  | { type: "error"; code: string; warmKind: "network" | "media" | null }
+  | { type: "tracks"; tracks: MediaTrack[] }
+  | { type: "subtitle"; text: string; durationMs: number };
 
 export interface PlaybackStats {
   engine: "AVPlay" | "hls.js" | "Native HLS";
@@ -159,33 +182,12 @@ export interface PlaybackStats {
   switches: number;
 }
 
-/**
- * How long a channel may take to produce a picture before it counts as broken.
- *
- * Thirty seconds, not the fifteen or twenty a desktop would allow. These are public IPTV
- * relays reached over whatever connection the television has, and a first segment can
- * genuinely take twenty seconds to arrive on a slow link. Giving up early on a channel that
- * was about to start is worse than waiting, because the viewer has no way to tell the
- * difference and will conclude the channel is dead. The wait is not silent: the banner names
- * the channel throughout and says how it is getting on.
+/*
+ * Timeouts and frozen picture detection used to live here. They moved to
+ * services/playbackRecovery, which is the one place recovery policy and its timers exist:
+ * a startup limit, a rebuffer limit, frozen playhead sampling and the retry schedule. The
+ * player reports what the engine does and leaves deciding what it means to the coordinator.
  */
-const START_TIMEOUT_MS = 30000;
-
-/**
- * How a picture that has stopped moving is noticed, and how long it is given first.
- *
- * A public relay does not usually fail cleanly. It freezes: the connection stays open, the
- * engine reports nothing wrong, and the last frame sits there indefinitely. Nothing in either
- * engine reports that, so it is found by watching the clock: if the playhead has not advanced
- * in twelve seconds and nobody pressed pause, there is no programme, whatever the engine says.
- *
- * Twelve, because a bad connection can genuinely stall for ten and recover, and a viewer who
- * has waited twelve seconds for a frozen picture would have given up on it anyway. It is
- * reported as an ordinary failure, so the automatic retry picks it up like any other.
- */
-const STALL_TICK_MS = 3000;
-const STALL_LIMIT_MS = 12000;
-
 export const onTizen = (): boolean => typeof window !== "undefined" && !!window.webapis?.avplay;
 
 /** AVPlay throws objects carrying its own error name, hls.js and the DOM throw Errors. */
@@ -275,42 +277,32 @@ export class Player {
   /** Whether this attempt has already reported why it failed. */
   private failed = false;
   private fit: Fit = "fit";
-  private watchdog: number | undefined;
   private sink: (e: PlayerEvent) => void;
   /** Whether the pause in force when the app went off screen was the viewer's own. */
   private pausedByViewer = false;
-  /** Whether the viewer is holding the picture, so a still frame is not read as a fault. */
+  /** Whether the viewer is holding the picture. */
   private held = false;
   private mode: "live" | "finite" = "live";
   private resumeLimitation = "";
-  private seeking = false;
-  private progress: number | undefined;
-  private lastPosition = -1;
-  private stalledFor = 0;
   private muted = false;
   private muteBeforeSettings: boolean | null = null;
   private switches = 0;
   private lastBitrate = "";
   private lastLevel = -1;
   private frameSample: { total: number; at: number } | null = null;
+  private generation = 0;
+  private tracks: MediaTrack[] = [];
+  private segmentSeconds: number | null = null;
+  private engineLiveEdge: number | null = null;
+  private subtitlesEnabled = true;
+  private textTrackCleanup: (() => void) | null = null;
+  private metadataCleanup: (() => void) | null = null;
 
   constructor(emit: (e: PlayerEvent) => void) {
     this.sink = emit;
   }
 
-  /** Anything conclusive, good or bad, calls off the watchdog. */
   private emit(e: PlayerEvent) {
-    if (e.type === "playing" || e.type === "ended" || e.type === "error") {
-      window.clearTimeout(this.watchdog);
-      this.watchdog = undefined;
-    }
-    if (e.type === "ended") {
-      window.clearInterval(this.progress);
-      this.progress = undefined;
-    }
-    // A picture has arrived, so from here the question stops being whether it will start and
-    // becomes whether it is still moving.
-    if (e.type === "playing") this.watchProgress();
     this.sink(e);
   }
 
@@ -339,7 +331,11 @@ export class Player {
   getDuration(): number | null {
     if (onTizen()) {
       try {
-        const value = window.webapis?.avplay?.getDuration?.();
+        const av = window.webapis?.avplay;
+        const state = av?.getState();
+        if (!av || (state !== "READY" && state !== "PLAYING" && state !== "PAUSED"))
+          return null;
+        const value = av.getDuration?.();
         return typeof value === "number" && Number.isFinite(value) ? value / 1000 : null;
       } catch {
         return null;
@@ -349,36 +345,51 @@ export class Player {
     return typeof value === "number" && Number.isFinite(value) ? value : null;
   }
 
-  /**
-   * Watch the picture keep moving, and say so when it stops.
-   *
-   * This is the one fault neither engine reports. A frozen relay looks exactly like a playing
-   * one from the outside: no error, no buffering event, no end of stream, just a picture that
-   * has stopped. Leaving the viewer to notice and press a Reload button would mean a
-   * permanent control on screen for something that happens rarely, and no help at all to
-   * anybody who did not know what the button was for.
-   */
-  private watchProgress() {
-    window.clearInterval(this.progress);
-    this.stalledFor = 0;
-    this.lastPosition = this.getPosition() ?? -1;
+  getClock(): PlaybackClock {
+    const position = this.getPosition();
+    const duration = this.getDuration();
+    let seekableStart: number | null = null;
+    let seekableEnd: number | null = null;
+    if (onTizen()) {
+      try {
+        const av = window.webapis?.avplay;
+        const state = av?.getState();
+        if (av && (state === "READY" || state === "PLAYING" || state === "PAUSED")) {
+          if (this.mode === "live") {
+            const range = parseAvPlayLiveRange(
+              av.getStreamingProperty?.("GET_LIVE_DURATION") ?? "",
+            );
+            seekableStart = range?.startSeconds ?? null;
+            seekableEnd = range?.endSeconds ?? null;
+          } else if (duration !== null) {
+            seekableStart = 0;
+            seekableEnd = duration;
+          }
+        }
+      } catch {}
+    } else if (this.video?.seekable.length) {
+      const last = this.video.seekable.length - 1;
+      seekableStart = this.video.seekable.start(0);
+      seekableEnd = this.video.seekable.end(last);
+    }
+    return {
+      position,
+      duration,
+      seekableStart,
+      seekableEnd,
+      engineLiveEdge: this.engineLiveEdge,
+      segmentSeconds: this.segmentSeconds,
+    };
+  }
 
-    this.progress = window.setInterval(() => {
-      if (this.held || this.seeking) return; // paused or seeking on purpose is not a stall
-      const now = this.getPosition();
-      if (now === null) return;
-      // A tenth of a second, so a clock that only ticks per frame still counts as moving.
-      if (now > this.lastPosition + 0.1) {
-        this.lastPosition = now;
-        this.stalledFor = 0;
-        return;
-      }
-      this.stalledFor += STALL_TICK_MS;
-      if (this.stalledFor < STALL_LIMIT_MS) return;
-      window.clearInterval(this.progress);
-      this.progress = undefined;
-      this.fail("STALLED");
-    }, STALL_TICK_MS);
+  canPause(): boolean {
+    if (!onTizen()) return !!this.video;
+    try {
+      const state = window.webapis?.avplay?.getState();
+      return state === "PLAYING" || state === "PAUSED";
+    } catch {
+      return false;
+    }
   }
 
   /**
@@ -389,12 +400,10 @@ export class Player {
    * source, and the NotSupportedError that follows would otherwise overwrite "could not
    * reach the server" with the far less useful "cannot decode this format".
    */
-  private fail(code: string) {
+  private fail(code: string, warmKind: "network" | "media" | null = null) {
     if (this.failed) return;
     this.failed = true;
-    window.clearInterval(this.progress);
-    this.progress = undefined;
-    this.emit({ type: "error", code });
+    this.emit({ type: "error", code, warmKind });
   }
 
   /**
@@ -426,18 +435,13 @@ export class Player {
   }
 
   private onPlaying = () => this.emit({ type: "playing" });
-  private onWaiting = () => this.emit({ type: "buffering" });
+  private onWaiting = () => this.emit({ type: "buffering-start" });
   private onEnded = () => this.emit({ type: "ended" });
   private onMediaError = () =>
     this.fail(this.mode === "finite" ? "FINITE_FORMAT_UNSUPPORTED" : "NOT_SUPPORTED");
 
-  play(
-    url: string,
-    browserRepair = false,
-    bufferSeconds = DEFAULT_INITIAL_BUFFER_SECONDS,
-    mode: "live" | "finite" = "live",
-    startSeconds = 0,
-  ) {
+  play(request: PlayerOpenRequest): void {
+    const { url, browserRepair, bufferSeconds, segmentSeconds, mode, startSeconds } = request;
     /*
      * Wound down, not destroyed.
      *
@@ -449,27 +453,29 @@ export class Player {
      * the only place the intent survived.
      */
     this.teardown(false);
+    const generation = this.generation;
     this.failed = false;
     this.held = false;
     this.mode = mode;
     this.resumeLimitation = "";
-    this.seeking = false;
+    this.segmentSeconds = segmentSeconds;
+    this.engineLiveEdge = null;
+    this.subtitlesEnabled = true;
     this.switches = 0;
     this.lastBitrate = "";
     this.lastLevel = -1;
     this.frameSample = null;
 
     // A hard bound on how long a channel may sit there doing nothing.
-    //
-    // Neither engine can be relied on to give up. hls.js retries a failed manifest on its
-    // own schedule and only reports a fatal error once its internal budget runs out, which
-    // can take longer than anyone will wait, and Samsung's player is documented to hang
-    // thirty seconds on a connection failure. Whatever the engine is doing, silence past
-    // this point is a failure as far as the viewer is concerned.
-    window.clearTimeout(this.watchdog);
-    this.watchdog = window.setTimeout(() => this.fail("TIMEOUT"), START_TIMEOUT_MS);
-    if (onTizen()) this.playAVPlay(url, bufferSeconds, startSeconds);
-    else void this.playBrowser(url, browserRepair, startSeconds);
+    /*
+     * Neither engine can be relied on to give up. hls.js retries a failed manifest on its
+     * own schedule and only reports a fatal error once its internal budget runs out, which
+     * can take longer than anyone will wait, and Samsung's player is documented to hang
+     * thirty seconds on a connection failure. Deciding when silence counts as failure is
+     * the coordinator's job, so this method only starts the attempt.
+     */
+    if (onTizen()) this.playAVPlay(url, bufferSeconds, startSeconds, generation);
+    else void this.playBrowser(url, browserRepair, startSeconds, generation);
   }
 
   /**
@@ -481,8 +487,9 @@ export class Player {
    * about to start on its own. So the refusal arms a one shot retry on the next input
    * instead, and the viewer sees the ordinary loading state until then.
    */
-  private tryPlay(video: HTMLVideoElement) {
-    video.play().catch((e: unknown) => {
+  private tryPlay(video: HTMLVideoElement, generation = this.generation) {
+    Promise.resolve(video.play()).catch((e: unknown) => {
+      if (generation !== this.generation) return;
       const name = (e as { name?: string })?.name;
       /*
        * An abort is this application's own doing and never news.
@@ -500,9 +507,10 @@ export class Player {
         this.fail(codeOf(e));
         return;
       }
-      this.emit({ type: "buffering" });
+      this.emit({ type: "buffering-start" });
       const retry = () => {
         this.ungate();
+        if (generation !== this.generation) return;
         /*
          * Unless the key that woke us was the viewer pausing.
          *
@@ -539,8 +547,14 @@ export class Player {
    * called from, but close destroys the instance and the pipeline has to be rebuilt, which
    * is exactly the wrong thing to do when someone is holding the channel key down.
    */
-  private playAVPlay(url: string, bufferSeconds: number, startSeconds: number) {
+  private playAVPlay(
+    url: string,
+    bufferSeconds: number,
+    startSeconds: number,
+    generation: number,
+  ) {
     const av = window.webapis!.avplay!;
+    const current = () => generation === this.generation;
     try {
       ensureSurface();
 
@@ -548,23 +562,6 @@ export class Player {
       if (state !== "NONE" && state !== "IDLE") av.stop(); // any state -> IDLE
 
       av.open(url); // NONE|IDLE -> IDLE
-      if (this.mode === "finite" && startSeconds > 0) {
-        if (av.seekTo) {
-          try {
-            av.seekTo(
-              startSeconds * 1000,
-              () => {},
-              (error) => {
-                this.resumeLimitation = `SEEK_FAILED ${codeOf(error)}`;
-              },
-            );
-          } catch (error) {
-            this.resumeLimitation = `SEEK_FAILED ${codeOf(error)}`;
-          }
-        } else {
-          this.resumeLimitation = "SEEK_UNSUPPORTED";
-        }
-      }
 
       // The rect is always in a 1920x1080 space whatever the panel or the app resolution,
       // and letterbox keeps a channel of any aspect from being stretched to fill it.
@@ -649,11 +646,21 @@ export class Player {
       let status = "";
 
       av.setListener({
-        onbufferingstart: () => this.emit({ type: "buffering" }),
-        onbufferingprogress: (percent) => this.emit({ type: "buffering", percent }),
-        onbufferingcomplete: () => this.emit({ type: "playing" }),
-        onstreamcompleted: () => this.emit({ type: "ended" }),
+        onbufferingstart: () => current() && this.emit({ type: "buffering-start" }),
+        onbufferingprogress: (percent) =>
+          current() && this.emit({ type: "buffering-progress", percent }),
+        onbufferingcomplete: () => current() && this.emit({ type: "buffering-complete" }),
+        onstreamcompleted: () => current() && this.emit({ type: "ended" }),
+        onsubtitlechange: (durationMs, text) => {
+          if (!current() || !this.subtitlesEnabled) return;
+          this.emit({
+            type: "subtitle",
+            text: String(text),
+            durationMs: Number(durationMs) || 0,
+          });
+        },
         onevent: (id, data) => {
+          if (!current()) return;
           const event = String(id);
           const value = String(data).trim();
           if (event === "PLAYER_MSG_HTTP_ERROR_CODE") status = value;
@@ -668,19 +675,40 @@ export class Player {
          * arrives first is the one the viewer sees. The message is appended rather than
          * substituted because services/errors.ts matches on the code.
          */
-        onerror: (code) => this.fail(withStatus(String(code), status)),
+        onerror: (code) => current() && this.fail(withStatus(String(code), status)),
         onerrormsg: (code, message) =>
+          current() &&
           this.fail(withStatus(`${String(code)} ${String(message)}`.trim(), status)),
       });
 
-      this.emit({ type: "buffering" });
+      this.emit({ type: "buffering-start" });
       av.prepareAsync(
         // IDLE -> READY
         () => {
+          if (!current()) return;
+          if (this.mode === "finite" && startSeconds > 0) {
+            if (av.seekTo) {
+              try {
+                av.seekTo(
+                  startSeconds * 1000,
+                  () => {},
+                  (error) => {
+                    if (current()) this.resumeLimitation = `SEEK_FAILED ${codeOf(error)}`;
+                  },
+                );
+              } catch (error) {
+                this.resumeLimitation = `SEEK_FAILED ${codeOf(error)}`;
+              }
+            } else {
+              this.resumeLimitation = "SEEK_UNSUPPORTED";
+            }
+          }
+          this.readAvPlayTracks(av);
+          this.applySubtitleSilence(av);
           av.play(); // READY -> PLAYING
           this.emit({ type: "playing" });
         },
-        (e) => this.fail(codeOf(e)),
+        (e) => current() && this.fail(codeOf(e)),
       );
     } catch (e) {
       this.fail(codeOf(e));
@@ -777,7 +805,7 @@ export class Player {
 
   show() {
     if (!onTizen()) {
-      if (!this.pausedByViewer) void this.video?.play();
+      if (!this.pausedByViewer && this.video) this.tryPlay(this.video);
       return;
     }
     const av = window.webapis!.avplay!;
@@ -788,24 +816,30 @@ export class Player {
     }
   }
 
-  private async playBrowser(url: string, browserRepair: boolean, startSeconds: number) {
+  private async playBrowser(
+    url: string,
+    browserRepair: boolean,
+    startSeconds: number,
+    generation: number,
+  ) {
     const video = this.video;
     if (!video) return;
     video.muted = this.muted;
-    this.emit({ type: "buffering" });
+    this.emit({ type: "buffering-start" });
 
     const extension = extensionOf(url);
     if (this.mode === "finite" && extension !== "m3u8") {
       video.src = url;
       if (startSeconds > 0) video.currentTime = startSeconds;
-      this.tryPlay(video);
+      this.watchLoadedMetadata(video, generation, () => this.readNativeTracks(video));
+      this.tryPlay(video, generation);
       return;
     }
 
     const Hls = await loadHls();
     // The viewer may have moved on while the engine was being fetched, and this attempt is
     // then for a channel nobody is watching.
-    if (this.video !== video || this.failed) return;
+    if (generation !== this.generation || this.video !== video || this.failed) return;
 
     // hls.js first, native second, and not the other way round. Chrome answers "maybe" to
     // canPlayType for HLS and then cannot play it, so asking the browser what it supports
@@ -815,7 +849,8 @@ export class Player {
     if (!Hls.isSupported()) {
       if (video.canPlayType("application/vnd.apple.mpegurl")) {
         video.src = url;
-        this.tryPlay(video);
+        this.watchLoadedMetadata(video, generation, () => this.readNativeTracks(video));
+        this.tryPlay(video, generation);
       } else {
         this.fail("NOT_SUPPORTED");
       }
@@ -859,38 +894,285 @@ export class Player {
     });
     this.hls = hls;
 
-    // Recovery gets a budget. A brief network stumble is worth retrying quietly, but a
-    // channel that is simply off the air must not retry for ever behind a black screen:
-    // checklist 4.6 says the viewer is told what went wrong and what to do about it.
-    let left = 3;
     hls.on(Hls.Events.ERROR, (_e, data) => {
-      if (!data.fatal) return;
-      const recoverable =
-        data.type === Hls.ErrorTypes.NETWORK_ERROR || data.type === Hls.ErrorTypes.MEDIA_ERROR;
-      if (!recoverable || left-- <= 0) {
-        this.fail(data.details);
-        return;
-      }
-      this.emit({ type: "buffering" });
-      if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
-        // Resume where the viewer was, not at the live edge. Called bare, startLoad picks
-        // the default start position, so a stumble while watching something twenty minutes
-        // back silently threw them forward to live with no way to tell what happened.
-        hls.startLoad(video.currentTime || -1);
-      } else {
-        hls.recoverMediaError();
-      }
+      if (generation !== this.generation || !data.fatal) return;
+      const warmKind =
+        data.type === Hls.ErrorTypes.NETWORK_ERROR
+          ? "network"
+          : data.type === Hls.ErrorTypes.MEDIA_ERROR
+            ? "media"
+            : null;
+      this.fail(data.details, warmKind);
     });
     hls.on(Hls.Events.LEVEL_SWITCHED, (_event, data) => {
+      if (generation !== this.generation) return;
       if (this.lastLevel >= 0 && this.lastLevel !== data.level) this.switches += 1;
       this.lastLevel = data.level;
     });
+    hls.on(Hls.Events.LEVEL_LOADED, (_event, data) => {
+      if (generation !== this.generation) return;
+      const details = data.details;
+      this.engineLiveEdge = Number.isFinite(details.edge) ? details.edge : null;
+      const durations = details.fragments.map((fragment) => fragment.duration);
+      const longest = durations.length ? Math.max(...durations) : 0;
+      if (longest > 0) this.segmentSeconds = longest;
+    });
     hls.on(Hls.Events.MANIFEST_PARSED, () => {
+      if (generation !== this.generation) return;
+      this.readHlsTracks(hls);
+      /*
+       * TextTrack objects are created asynchronously, when a subtitle track is actually
+       * enabled, so the element's own loadedmetadata is the earliest point the cue
+       * listeners can attach, and SUBTITLE_TRACKS_UPDATED the point they may need to again.
+       */
+      this.watchLoadedMetadata(video, generation, () => this.watchTextTracks(video));
       if (this.mode === "finite" && startSeconds > 0) video.currentTime = startSeconds;
-      this.tryPlay(video);
+      this.tryPlay(video, generation);
+    });
+    hls.on(Hls.Events.SUBTITLE_TRACKS_UPDATED, () => {
+      if (generation !== this.generation) return;
+      this.readHlsTracks(hls);
+      this.watchTextTracks(video);
     });
     hls.loadSource(url);
     hls.attachMedia(video);
+  }
+
+  /**
+   * Track lists are empty until the browser has read the metadata, so every native path
+   * reads them from loadedmetadata rather than the tick the address is set. The listener is
+   * generation guarded like the rest, and removed by teardown so a stale load says nothing.
+   */
+  private watchLoadedMetadata(
+    video: HTMLVideoElement,
+    generation: number,
+    onReady: () => void,
+  ): void {
+    this.metadataCleanup?.();
+    const handler = () => {
+      if (generation !== this.generation) return;
+      onReady();
+    };
+    video.addEventListener("loadedmetadata", handler);
+    this.metadataCleanup = () => video.removeEventListener("loadedmetadata", handler);
+  }
+
+  private setTracks(tracks: MediaTrack[]): void {
+    this.tracks = tracks;
+    this.emit({ type: "tracks", tracks: [...tracks] });
+  }
+
+  private readAvPlayTracks(av: AVPlay): void {
+    try {
+      const state = av.getState();
+      if (state !== "READY" && state !== "PLAYING" && state !== "PAUSED") return;
+      this.setTracks(normalizeAvPlayTracks(av.getTotalTrackInfo?.() ?? []));
+    } catch {}
+  }
+
+  /**
+   * The one place AVPlay subtitle silence is decided, so it is a function of
+   * `subtitlesEnabled` and nothing else: selecting a track of any kind re-applies the
+   * viewer's choice, and every open applies it again once READY makes the call legal, so a
+   * channel change can never inherit a silenced engine the viewer did not ask for.
+   */
+  private applySubtitleSilence(av: AVPlay): void {
+    try {
+      const state = av.getState();
+      if (state !== "READY" && state !== "PLAYING" && state !== "PAUSED") return;
+      av.setSilentSubtitle?.(!this.subtitlesEnabled);
+    } catch {
+      /* firmware without it draws what it was always going to draw */
+    }
+  }
+
+  private readHlsTracks(hls: InstanceType<typeof HlsType>): void {
+    const source = hls as InstanceType<typeof HlsType> & {
+      audioTracks: Array<{ name?: string; lang?: string; default?: boolean }>;
+      subtitleTracks: Array<{ name?: string; lang?: string; default?: boolean }>;
+      audioTrack: number;
+      subtitleTrack: number;
+    };
+    const audio = (source.audioTracks ?? []).map((track, index) => ({
+      kind: "audio" as const,
+      label: track.name ?? "",
+      language: track.lang ?? "",
+      selected: source.audioTrack === index || (source.audioTrack < 0 && !!track.default),
+      engineIndex: index,
+    }));
+    const subtitles = (source.subtitleTracks ?? []).map((track, index) => ({
+      kind: "subtitle" as const,
+      label: track.name ?? "",
+      language: track.lang ?? "",
+      selected: source.subtitleTrack === index || (source.subtitleTrack < 0 && !!track.default),
+      engineIndex: index,
+    }));
+    this.setTracks(normalizeBrowserTracks([...audio, ...subtitles]));
+  }
+
+  /**
+   * Cue listeners attach to every TextTrack the element knows, including any the engine adds
+   * after this runs: hls.js creates them when a subtitle track is enabled, which can be well
+   * past loadedmetadata. The list's own addtrack covers those, and teardown removes both.
+   */
+  private watchTextTracks(video: HTMLVideoElement): void {
+    this.textTrackCleanup?.();
+    this.textTrackCleanup = null;
+    const onCue = () => {
+      if (!this.subtitlesEnabled) return;
+      const cues: TextTrackCue[] = [];
+      for (const track of Array.from(video.textTracks)) {
+        for (const cue of Array.from(track.activeCues ?? [])) {
+          cues.push(cue as TextTrackCue);
+        }
+      }
+      const text = cues.map((cue) => (cue as VTTCue).text ?? "").join("\n");
+      const durationMs = cues.length
+        ? Math.max(...cues.map((cue) => Math.max(0, cue.endTime - cue.startTime) * 1000))
+        : 0;
+      this.emit({ type: "subtitle", text, durationMs });
+    };
+    const watched = new Set<TextTrack>();
+    const attach = () => {
+      for (const track of Array.from(video.textTracks)) {
+        if (watched.has(track)) continue;
+        watched.add(track);
+        if (!this.subtitlesEnabled) track.mode = "disabled";
+        else if (track.mode !== "disabled") track.mode = "hidden";
+        track.addEventListener("cuechange", onCue);
+      }
+    };
+    attach();
+    const list = video.textTracks;
+    list.addEventListener?.("addtrack", attach);
+    this.textTrackCleanup = () => {
+      list.removeEventListener?.("addtrack", attach);
+      for (const track of Array.from(video.textTracks)) {
+        track.removeEventListener("cuechange", onCue);
+      }
+    };
+  }
+
+  private readNativeTracks(video: HTMLVideoElement): void {
+    const media = video as HTMLVideoElement & {
+      audioTracks?: ArrayLike<{ label?: string; language?: string; enabled?: boolean }>;
+    };
+    const audio = Array.from(media.audioTracks ?? []).map((track, engineIndex) => ({
+      kind: "audio" as const,
+      label: track.label ?? "",
+      language: track.language ?? "",
+      selected: !!track.enabled,
+      engineIndex,
+    }));
+    const text = Array.from(video.textTracks).map((track, engineIndex) => ({
+      kind: "subtitle" as const,
+      label: track.label,
+      language: track.language,
+      selected: track.mode !== "disabled",
+      engineIndex,
+    }));
+    this.watchTextTracks(video);
+    this.setTracks(normalizeBrowserTracks([...audio, ...text]));
+  }
+
+  getTracks(): MediaTrack[] {
+    return [...this.tracks];
+  }
+
+  selectTrack(kind: "audio" | "subtitle", engineIndex: number | null): boolean {
+    if (kind === "audio" && engineIndex === null) return false;
+    if (
+      engineIndex !== null &&
+      !this.tracks.some((track) => track.kind === kind && track.engineIndex === engineIndex)
+    )
+      return false;
+    const updateSubtitleOutput = () => {
+      if (kind !== "subtitle") return;
+      this.subtitlesEnabled = engineIndex !== null;
+      if (engineIndex === null) this.emit({ type: "subtitle", text: "", durationMs: 0 });
+    };
+
+    if (onTizen()) {
+      const av = window.webapis?.avplay;
+      try {
+        const state = av?.getState();
+        if (!av || (state !== "READY" && state !== "PLAYING" && state !== "PAUSED"))
+          return false;
+        if (kind === "subtitle" && engineIndex === null) {
+          if (!av.setSilentSubtitle) return false;
+        } else {
+          if (!av.setSelectTrack) return false;
+          av.setSelectTrack(kind === "audio" ? "AUDIO" : "TEXT", engineIndex!);
+        }
+        updateSubtitleOutput();
+        /*
+         * Silence follows the viewer's subtitle choice and nothing else, so selecting an
+         * audio track can never unsilence what the viewer turned off.
+         */
+        this.applySubtitleSilence(av);
+        this.readAvPlayTracks(av);
+        return true;
+      } catch {
+        return false;
+      }
+    }
+
+    if (this.hls) {
+      const hls = this.hls as InstanceType<typeof HlsType> & {
+        audioTrack: number;
+        subtitleTrack: number;
+      };
+      if (kind === "audio") hls.audioTrack = engineIndex!;
+      else hls.subtitleTrack = engineIndex ?? -1;
+      updateSubtitleOutput();
+      // Selecting a subtitle is what makes hls.js create its TextTrack, so the cue
+      // listeners have to be offered the new list again.
+      if (this.video) this.watchTextTracks(this.video);
+      this.readHlsTracks(this.hls);
+      return true;
+    }
+
+    const video = this.video as
+      | (HTMLVideoElement & {
+          audioTracks?: ArrayLike<{ enabled: boolean }>;
+        })
+      | null;
+    if (!video) return false;
+    if (kind === "audio") {
+      if (!video.audioTracks || engineIndex! >= video.audioTracks.length) return false;
+      for (let index = 0; index < video.audioTracks.length; index += 1) {
+        video.audioTracks[index].enabled = index === engineIndex;
+      }
+    } else {
+      for (let index = 0; index < video.textTracks.length; index += 1) {
+        video.textTracks[index].mode = index === engineIndex ? "hidden" : "disabled";
+      }
+    }
+    updateSubtitleOutput();
+    this.readNativeTracks(video);
+    return true;
+  }
+
+  warmRecover(kind: "network" | "media" | null): boolean {
+    if (this.hls && kind) {
+      this.failed = false;
+      this.emit({ type: "buffering-start" });
+      if (kind === "network") this.hls.startLoad(this.video?.currentTime || -1);
+      else this.hls.recoverMediaError();
+      return true;
+    }
+    if (!onTizen()) return false;
+    try {
+      const av = window.webapis?.avplay;
+      const state = av?.getState();
+      if (!av || (state !== "READY" && state !== "PAUSED")) return false;
+      this.failed = false;
+      this.emit({ type: "buffering-start" });
+      av.play();
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   getStats(): PlaybackStats {
@@ -996,25 +1278,10 @@ export class Player {
     return stats;
   }
 
-  async seekBy(seconds: number): Promise<boolean> {
-    if (this.mode !== "finite" || !Number.isFinite(seconds) || seconds === 0) return false;
-    const current = this.getPosition();
-    if (current === null) return false;
-    const duration = this.getDuration();
-    const target = Math.max(
-      0,
-      duration === null ? current + seconds : Math.min(duration, current + seconds),
-    );
-    const delta = target - current;
-    if (delta === 0) return true;
-
-    this.seeking = true;
-    const finish = (success: boolean) => {
-      this.seeking = false;
-      this.lastPosition = this.getPosition() ?? target;
-      this.stalledFor = 0;
-      return success;
-    };
+  async seekTo(seconds: number): Promise<boolean> {
+    if (!Number.isFinite(seconds) || seconds < 0) return false;
+    const target = seconds;
+    const finish = (success: boolean) => success;
 
     if (!onTizen()) {
       if (!this.video) return finish(false);
@@ -1027,39 +1294,57 @@ export class Player {
     }
 
     const av = window.webapis!.avplay!;
-    const state = av.getState();
-    if (state !== "READY" && state !== "PLAYING" && state !== "PAUSED") {
+    try {
+      const state = av.getState();
+      if (state !== "READY" && state !== "PLAYING" && state !== "PAUSED") return finish(false);
+      if (!av.seekTo) return finish(false);
+    } catch {
       return finish(false);
     }
-    const exact = state === "READY" || Math.abs(delta - seconds) > 0.001;
-    const operation = exact ? av.seekTo : delta > 0 ? av.jumpForward : av.jumpBackward;
-    if (!operation) return finish(false);
 
     return new Promise<boolean>((resolve) => {
-      const succeeded = () => resolve(finish(true));
-      const failed = () => resolve(finish(false));
+      let settled = false;
+      const done = (success: boolean) => {
+        if (settled) return;
+        settled = true;
+        window.clearTimeout(timeout);
+        resolve(finish(success));
+      };
+      const timeout = window.setTimeout(() => done(false), SEEK_TIMEOUT_MS);
       try {
-        operation.call(av, exact ? target * 1000 : Math.abs(delta) * 1000, succeeded, failed);
+        av.seekTo?.(
+          target * 1000,
+          () => done(true),
+          () => done(false),
+        );
       } catch {
-        failed();
+        done(false);
       }
     });
   }
 
-  pause() {
+  pause(): boolean {
+    if (!this.canPause()) return false;
     this.held = true;
     // A viewer who has paused is not waiting for permission to start, so the gesture the
     // browser was holding out for is no longer wanted.
     this.ungate();
     if (onTizen()) {
       try {
-        window.webapis!.avplay!.pause?.();
+        const av = window.webapis!.avplay!;
+        if (!av.pause) {
+          this.held = false;
+          return false;
+        }
+        av.pause();
       } catch {
-        /* nothing to pause */
+        this.held = false;
+        return false;
       }
     } else {
       this.video?.pause();
     }
+    return true;
   }
 
   /**
@@ -1075,26 +1360,22 @@ export class Player {
    * watching. It costs the couple of seconds any channel change costs, which is exactly what
    * a viewer pressing Play after a pause expects to see.
    */
-  resumePlayback() {
+  resumePlayback(): boolean {
     this.held = false;
     if (onTizen()) {
       try {
         const av = window.webapis!.avplay!;
-        if (av.getState() === "PAUSED") av.play();
-      } catch (error) {
-        this.fail(codeOf(error));
+        const state = av.getState();
+        if (state !== "READY" && state !== "PAUSED") return false;
+        av.play();
+        return true;
+      } catch {
+        return false;
       }
-      return;
     }
-    if (this.video) this.tryPlay(this.video);
-  }
-
-  resumeLive(url: string) {
-    this.play(url);
-  }
-
-  resume(url: string) {
-    this.resumeLive(url);
+    if (!this.video) return false;
+    this.tryPlay(this.video);
+    return true;
   }
 
   /** Give the decoder back and let go of the television's video plane entirely. */
@@ -1111,14 +1392,19 @@ export class Player {
    * only a real stop asks for it. Zapping stays one stop away from the next channel.
    */
   private teardown(release: boolean) {
-    window.clearTimeout(this.watchdog);
-    this.watchdog = undefined;
-    window.clearInterval(this.progress);
-    this.progress = undefined;
+    this.generation += 1;
     this.pausedByViewer = false;
     this.held = false;
-    this.seeking = false;
     this.ungate();
+    this.textTrackCleanup?.();
+    this.textTrackCleanup = null;
+    this.metadataCleanup?.();
+    this.metadataCleanup = null;
+    this.tracks = [];
+    this.segmentSeconds = null;
+    this.engineLiveEdge = null;
+    this.sink({ type: "tracks", tracks: [] });
+    this.sink({ type: "subtitle", text: "", durationMs: 0 });
     if (this.hls) {
       this.hls.destroy();
       this.hls = null;

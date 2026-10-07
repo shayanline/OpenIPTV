@@ -67,10 +67,19 @@ const META = "meta";
  * recognition that "refetchable" is not free when the thing being refetched is the first thing
  * the viewer waits for.
  */
+export type CacheClass = "catalogue" | "poster" | "logo";
+
+export const CACHE_BUDGET_BYTES: Readonly<Record<CacheClass, number>> = {
+  catalogue: 12 * 1024 * 1024,
+  poster: 8 * 1024 * 1024,
+  logo: 4 * 1024 * 1024,
+};
+
 export const BUDGET_BYTES = 24 * 1024 * 1024;
 
 export interface Entry {
   key: string;
+  class: CacheClass;
   bytes: number;
   /** When it was last read or written, so the least useful thing goes first. */
   at: number;
@@ -94,14 +103,16 @@ export interface Entry {
  */
 export function evictionPlan(
   entries: Entry[],
-  incoming: { key: string; bytes: number },
-  budget = BUDGET_BYTES,
+  incoming: Omit<Entry, "at">,
+  budget = CACHE_BUDGET_BYTES[incoming.class],
 ): { evict: string[]; refused: boolean } {
   // Bigger than the whole budget on its own. Nothing to evict that would help, so it is not
   // cached at all rather than emptying the cache in a doomed attempt to fit it.
   if (incoming.bytes > budget) return { evict: [], refused: true };
 
-  const others = entries.filter((e) => e.key !== incoming.key);
+  const others = entries.filter(
+    (entry) => entry.class === incoming.class && entry.key !== incoming.key,
+  );
   let used = others.reduce((sum, e) => sum + e.bytes, 0) + incoming.bytes;
   if (used <= budget) return { evict: [], refused: false };
 
@@ -221,6 +232,9 @@ function commit(
  */
 let indexing: Promise<Map<string, Omit<Entry, "key">>> | null = null;
 
+const classForKey = (key: string): CacheClass =>
+  key.startsWith("poster:") ? "poster" : key.startsWith("logo:") ? "logo" : "catalogue";
+
 function loadIndex(): Promise<Map<string, Omit<Entry, "key">>> {
   indexing ??= (async () => {
     const fresh = new Map<string, Omit<Entry, "key">>();
@@ -231,7 +245,11 @@ function loadIndex(): Promise<Map<string, Omit<Entry, "key">>> {
     if (keys && values) {
       // A loop rather than forEach, because Map.set returns the map and a forEach callback
       // that returns something reads as a map() somebody forgot to collect.
-      for (let i = 0; i < keys.length; i++) fresh.set(String(keys[i]), values[i]);
+      for (let i = 0; i < keys.length; i++) {
+        const key = String(keys[i]);
+        const value = values[i];
+        fresh.set(key, { ...value, class: value.class ?? classForKey(key) });
+      }
     }
     return fresh;
   })();
@@ -246,6 +264,21 @@ export async function entries(): Promise<Entry[]> {
 export async function usage(): Promise<{ bytes: number; count: number }> {
   const all = await entries();
   return { bytes: all.reduce((sum, e) => sum + e.bytes, 0), count: all.length };
+}
+
+export async function usageByClass(): Promise<
+  Record<CacheClass, { bytes: number; count: number }>
+> {
+  const result = {
+    catalogue: { bytes: 0, count: 0 },
+    poster: { bytes: 0, count: 0 },
+    logo: { bytes: 0, count: 0 },
+  };
+  for (const entry of await entries()) {
+    result[entry.class].bytes += entry.bytes;
+    result[entry.class].count += 1;
+  }
+  return result;
 }
 
 /**
@@ -331,17 +364,21 @@ const sizeOf = (value: Blob | string) =>
  * throws: a cache that could not be written is a cache that will be read from the network
  * instead, and that is not a fault worth putting on a television screen.
  */
-export async function write(key: string, value: Blob | string): Promise<boolean> {
+export async function write(
+  key: string,
+  value: Blob | string,
+  cacheClass: CacheClass,
+): Promise<boolean> {
   const db = await open();
   if (!db) return false;
 
   const bytes = sizeOf(value);
   // From the mirror, so this costs no transaction. It used to read the whole store, twice.
-  const { evict, refused } = evictionPlan(await entries(), { key, bytes });
+  const { evict, refused } = evictionPlan(await entries(), { key, class: cacheClass, bytes });
   if (refused) return false;
   if (evict.length) await forget((k) => evict.includes(k));
 
-  const meta = { bytes, at: Date.now() };
+  const meta = { class: cacheClass, bytes, at: Date.now() };
   const ok = await commit(db, [VALUES, META], (tx) => {
     tx.objectStore(VALUES).put(value, key);
     tx.objectStore(META).put(meta, key);

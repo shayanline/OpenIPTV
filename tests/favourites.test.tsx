@@ -96,34 +96,51 @@ test("a playlist with no favourites opens on its own first category", async () =
 
 test("favourites from hidden categories disappear in the default mode", async () => {
   localStorage.setItem("openiptv.favourites", '["a"]');
-  await mountApp(PLAYLIST, { hiddenCategories: ["News"] });
+  await mountApp(PLAYLIST, {
+    personalLineup: {
+      version: 1,
+      revision: 1,
+      personalisation: { categories: { News: { hidden: true } } },
+    },
+  });
 
   assert.deepEqual(rail(), ["Sport"]);
   assert.equal(showing(), "Sport");
 });
 
 test("hiding every category says how to restore the list", async () => {
-  await mountApp(PLAYLIST, { hiddenCategories: ["News", "Sport"] });
+  await mountApp(PLAYLIST, {
+    personalLineup: {
+      version: 1,
+      revision: 1,
+      personalisation: {
+        categories: { News: { hidden: true }, Sport: { hidden: true } },
+      },
+    },
+  });
 
   assert.deepEqual(rail(), []);
   const empty = screen.getByText("All categories are hidden.").parentElement;
   assert.equal(empty?.querySelector("kbd")?.textContent, "Red");
   assert.equal(
     empty?.querySelector(".settings-path")?.textContent,
-    "Settings›Playlists›Categories",
+    "Settings›Playlists›Lineup",
   );
 });
 
-test("search mode keeps explicit favourites from hidden categories", async () => {
+test("hidden category favourites are excluded everywhere", async () => {
   localStorage.setItem("openiptv.favourites", '["a"]');
   await mountApp(PLAYLIST, {
-    hiddenCategories: ["News"],
-    hiddenCategoryMode: "search",
+    personalLineup: {
+      version: 1,
+      revision: 1,
+      personalisation: { categories: { News: { hidden: true } } },
+    },
   });
 
-  assert.deepEqual(rail(), ["Favourites", "Sport"]);
-  assert.equal(showing(), "Favourites");
-  assert.ok(screen.getByText("Alpha"));
+  assert.deepEqual(rail(), ["Sport"]);
+  assert.equal(showing(), "Sport");
+  assert.equal(screen.queryByText("Alpha"), null);
 });
 
 test("an existing live favourite migrates into personal state without leaving the rail", async () => {
@@ -189,9 +206,12 @@ test("one matching legacy Xtream hidden label migrates to its category key", asy
       ],
     ),
   });
-  const { useSettings } = await import("../src/stores/settings");
+  const { useLineup } = await import("../src/stores/lineup");
 
-  assert.deepEqual(useSettings.getState().playlists[0].hiddenCategories, ["live:news"]);
+  assert.equal(
+    useLineup.getState().managedCategories.find((item) => item.key === "live:news")?.hidden,
+    true,
+  );
   assert.deepEqual(rail(), ["Sport"]);
 });
 
@@ -210,16 +230,16 @@ test("ambiguous and missing legacy Xtream hidden labels are removed and shown", 
       ],
     ),
   });
-  const { useSettings } = await import("../src/stores/settings");
+  const { useLineup } = await import("../src/stores/lineup");
 
-  assert.deepEqual(useSettings.getState().playlists[0].hiddenCategories, []);
+  assert.equal(useLineup.getState().unavailable.length, 2);
   assert.deepEqual(rail(), ["News", "News"]);
   assert.equal(document.body.textContent?.includes("First News"), true);
 });
 
 test("the red key hides and unhides the selected category immediately", async () => {
   await mountApp(PLAYLIST);
-  const { useSettings } = await import("../src/stores/settings");
+  const { useLineup } = await import("../src/stores/lineup");
   press(KEY.LEFT);
   assert.ok(screen.getByText("Hide category"));
 
@@ -227,22 +247,31 @@ test("the red key hides and unhides the selected category immediately", async ()
   assert.deepEqual(rail(), ["News", "Sport"]);
   assert.equal(cursorOn(), "News");
   assert.equal(Boolean(railRow("News")?.querySelector(".hidden-state")), true);
-  assert.deepEqual(useSettings.getState().playlists[0].hiddenCategories, ["News"]);
+  assert.equal(
+    useLineup.getState().managedCategories.find((item) => item.key === "News")?.hidden,
+    true,
+  );
 
   press(KEY.RED);
 
   assert.equal(Boolean(railRow("News")?.querySelector(".hidden-state")), false);
-  assert.deepEqual(useSettings.getState().playlists[0].hiddenCategories, []);
+  assert.equal(
+    useLineup.getState().managedCategories.find((item) => item.key === "News")?.hidden,
+    false,
+  );
 });
 
 test("a real category named Favourites can be hidden", async () => {
   await mountApp(REAL_FAVOURITES_CATEGORY);
-  const { useSettings } = await import("../src/stores/settings");
+  const { useLineup } = await import("../src/stores/lineup");
   press(KEY.LEFT);
 
   press(KEY.RED);
 
-  assert.deepEqual(useSettings.getState().playlists[0].hiddenCategories, ["Favourites"]);
+  assert.equal(
+    useLineup.getState().managedCategories.find((item) => item.key === "Favourites")?.hidden,
+    true,
+  );
   assert.equal(Boolean(railRow("Favourites")?.querySelector(".hidden-state")), true);
 });
 
@@ -275,7 +304,7 @@ test("concealing a focused hidden row moves to the next visible category", async
 
 test("holding red reveals saved hidden categories without toggling another row", async () => {
   await mountApp(PLAYLIST, { hiddenCategories: ["News"] });
-  const { useSettings } = await import("../src/stores/settings");
+  const { useLineup } = await import("../src/stores/lineup");
   press(KEY.LEFT);
 
   await hold(KEY.RED);
@@ -283,20 +312,25 @@ test("holding red reveals saved hidden categories without toggling another row",
   assert.deepEqual(rail(), ["News", "Sport"]);
   assert.equal(cursorOn(), "Sport");
   assert.equal(Boolean(railRow("News")?.querySelector(".hidden-state")), true);
-  assert.deepEqual(useSettings.getState().playlists[0].hiddenCategories, ["News"]);
+  assert.equal(
+    useLineup.getState().managedCategories.find((item) => item.key === "News")?.hidden,
+    true,
+  );
 
   await hold(KEY.RED);
   assert.deepEqual(rail(), ["Sport"]);
-  assert.deepEqual(useSettings.getState().playlists[0].hiddenCategories, ["News"]);
+  assert.equal(
+    useLineup.getState().managedCategories.find((item) => item.key === "News")?.hidden,
+    true,
+  );
 });
 
 test("a Red hold survives state updates during the press", async () => {
   await mountApp(PLAYLIST, { hiddenCategories: ["News"] });
   const { useSettings } = await import("../src/stores/settings");
-  const playlist = useSettings.getState().playlists[0];
 
   pressDown(KEY.RED);
-  act(() => useSettings.getState().setHiddenCategoryMode(playlist.id, "search"));
+  act(() => useSettings.getState().set("showClock", false));
   await settle(600);
   release(KEY.RED);
 
@@ -318,6 +352,7 @@ test("holding Red during search keeps focus in search", async () => {
   await mountApp(PLAYLIST, { hiddenCategories: ["News"] });
   press(KEY.LEFT);
   press(KEY.UP);
+  press(KEY.RIGHT);
   press(KEY.ENTER);
 
   await hold(KEY.RED);
@@ -357,21 +392,24 @@ test("holding Red on the on-screen Smart Remote reveals hidden categories", asyn
 
 test("a category hidden with Red stays hidden after the panel closes", async () => {
   await mountApp(PLAYLIST);
-  const { useSettings } = await import("../src/stores/settings");
+  const { useLineup } = await import("../src/stores/lineup");
   press(KEY.LEFT);
   press(KEY.RED);
 
   press(KEY.RIGHT);
   press(KEY.ENTER);
 
-  assert.deepEqual(useSettings.getState().playlists[0].hiddenCategories, ["News"]);
+  assert.equal(
+    useLineup.getState().managedCategories.find((item) => item.key === "News")?.hidden,
+    true,
+  );
   press(KEY.LEFT);
   assert.deepEqual(rail(), ["Sport"]);
 });
 
 test("Red has no action or guide on the title bar", async () => {
   await mountApp(PLAYLIST, { hiddenCategories: ["News"] });
-  const { useSettings } = await import("../src/stores/settings");
+  const { useLineup } = await import("../src/stores/lineup");
   press(KEY.LEFT);
   press(KEY.UP);
   assert.equal(document.querySelector(".panel-hints")?.textContent?.includes("Red"), false);
@@ -380,7 +418,10 @@ test("Red has no action or guide on the title bar", async () => {
   await hold(KEY.RED);
 
   assert.deepEqual(rail(), ["Sport"]);
-  assert.deepEqual(useSettings.getState().playlists[0].hiddenCategories, ["News"]);
+  assert.equal(
+    useLineup.getState().managedCategories.find((item) => item.key === "News")?.hidden,
+    true,
+  );
 });
 
 test("a hidden channel cannot be added to an invisible Favourites row", async () => {
@@ -401,11 +442,13 @@ test("a hidden channel cannot be added to an invisible Favourites row", async ()
 test("unfavouriting a hidden playing channel keeps the visible category selected", async () => {
   localStorage.setItem("openiptv.favourites", '["a","c"]');
   await mountApp(PLAYLIST, { resume: "a" });
-  const { useSettings } = await import("../src/stores/settings");
-  const playlist = useSettings.getState().playlists[0];
-
+  const { applyLineupMutation, useLineup } = await import("../src/stores/lineup");
   await act(async () => {
-    useSettings.getState().setCategoryHidden(playlist.id, "News", true);
+    void applyLineupMutation(useLineup.getState().revision, {
+      type: "category.visibility",
+      categoryKey: "News",
+      hidden: true,
+    });
   });
   assert.equal(showing(), "Sport");
 
@@ -459,16 +502,23 @@ test("a refresh that returns fewer categories brings the cursor back inside", as
   /* The same app, told the playlist now has only News in it. Pushed through the store rather
      than re-rendering, because that is how a background refresh arrives: nothing the viewer
      did, and no new element. */
-  const { useChannels } = await import("../src/stores/channels");
   const { parseM3U, groupByCategory } = await import("../src/services/m3u");
+  const { adoptCatalogue, prepareLineup } = await import("../src/stores/lineup");
+  const { useSettings } = await import("../src/stores/settings");
   const shorter = parseM3U(`#EXTM3U
 #EXTINF:-1 tvg-id="a" group-title="News",Alpha
 http://example.invalid/a.m3u8`);
+  const playlist = useSettings.getState().activePlaylist();
+  if (!playlist) throw new Error("Active playlist missing");
   await act(async () => {
-    useChannels.setState({
-      channels: shorter,
-      categories: groupByCategory(shorter).map((item) => ({ key: item.name, ...item })),
-    });
+    await adoptCatalogue(
+      playlist,
+      {
+        channels: shorter,
+        categories: groupByCategory(shorter).map((item) => ({ key: item.name, ...item })),
+      },
+      prepareLineup(playlist),
+    );
   });
   await settle();
 

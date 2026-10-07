@@ -4,8 +4,9 @@ Two different things are called publishing here, and it is worth separating them
 else.
 
 **A GitHub release** is fully automated. Tag a version, and `.github/workflows/release.yml` runs the
-gates, builds, signs the widget with the certificates in this repository's secrets, and attaches it
-with a checksum.
+gates, builds and signs the widget with the certificates in this repository's secrets, then attaches
+the widget with its signature stripped, alongside a checksum. The signed build is kept as a workflow
+artifact, because it is what the Seller Office form takes.
 
 **A Samsung store release** is not, and cannot be. The TV Seller Office has no API, no CLI and no
 supported automation of any kind: Samsung publishes a real publishing API, but only for the Galaxy
@@ -111,13 +112,15 @@ version string.
 
 1. **Applications, then Create.** Choose Tizen Web Application, and enter a management name.
 
-2. **App Package.** Upload `OpenIPTV.wgt` from the release. An automated pre test runs immediately
-   and only a package that passes it can be registered. Three things in this repository exist to get
-   past that test: the `<feature>` element declaring the screen size in `public/config.xml`, which a
-   hand written manifest has nothing to inject and whose absence is the pre test failure Samsung's own
-   guide walks through, the `<name>` element, which must match the App Title you type for the default
-   language **character for character**, and the version, which must be higher than any already
-   uploaded.
+2. **App Package.** Upload `OpenIPTV.wgt` from the release workflow's `OpenIPTV-submission`
+   artifact, which is the signed build. The widget attached to the GitHub release has its
+   signature stripped so that it can be sideloaded, which makes it the wrong file to submit. An
+   automated pre test runs immediately and only a package that passes it can be registered. Three
+   things in this repository exist to get past that test: the `<feature>` element declaring the
+   screen size in `public/config.xml`, which a hand written manifest has nothing to inject and whose
+   absence is the pre test failure Samsung's own guide walks through, the `<name>` element, which
+   must match the App Title you type for the default language **character for character**, and the
+   version, which must be higher than any already uploaded.
 
 3. **App information.** Title, description of up to 4000 characters, at least three tags, category,
    age rating, service countries, and a support email. A privacy policy address is required only if

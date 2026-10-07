@@ -103,7 +103,8 @@ window.__bench = {
      * bound while a key is held, which flatters nothing but is not what anyone experiences.
      */
     let pending = 0;
-    const onKey = () => {
+    const onKey = (event) => {
+      if (event.keyCode === 189) return;
       this.presses += 1;
       pending = performance.now();
     };
@@ -214,7 +215,8 @@ window.__bench = {
 // The permanent one, which outlives each phase and is what quietFor reads.
 window.addEventListener(
   "keydown",
-  () => {
+  (event) => {
+    if (event.keyCode === 189) return;
     window.__bench.lastKeyAt = performance.now();
     window.__bench.delivered += 1;
   },

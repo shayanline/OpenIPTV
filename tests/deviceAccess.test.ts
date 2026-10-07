@@ -158,6 +158,27 @@ describe("device pairing", () => {
     expect(counts).toEqual([1, 1, 0]);
   });
 
+  test("migrates the previous authorised phone key once", () => {
+    localStorage.setItem(
+      "openiptv.phones",
+      JSON.stringify([
+        {
+          id: "phone-one",
+          name: "Phone",
+          credentialHash: "hash",
+          createdAt: 1,
+          lastUsedAt: 2,
+        },
+      ]),
+    );
+    expect(listPairedDevices()).toEqual([
+      { id: "phone-one", name: "Phone", createdAt: 1, lastUsedAt: 2 },
+    ]);
+    expect(localStorage.getItem("openiptv.phones")).toBeNull();
+    expect(JSON.parse(localStorage.getItem("openiptv.devices") ?? "[]")).toHaveLength(1);
+    expect(listPairedDevices()).toHaveLength(1);
+  });
+
   test("ignores malformed persisted records", () => {
     localStorage.setItem("openiptv.devices", JSON.stringify([{ id: 3, credentialHash: null }]));
 

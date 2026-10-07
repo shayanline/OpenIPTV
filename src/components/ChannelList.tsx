@@ -11,7 +11,7 @@ import { useWindowed } from "../hooks/useWindowed";
 import { useViewport } from "../hooks/useViewport";
 
 interface Props {
-  channels: Channel[];
+  channels: readonly Channel[];
   /** The category these channels came from, so this column can say where the viewer is. */
   category: string;
   index: number;
@@ -202,12 +202,12 @@ export const ChannelList = memo(function ChannelList({
    * it was, since the two delays are now paid one after the other and the second no longer
    * has eighteen rebuilds to absorb.
    */
-  const [settled, setSettled] = useState(true);
+  const [settledState, setSettledState] = useState({ channels, index });
+  const settled = settledState.channels === channels && settledState.index === index;
   useEffect(() => {
-    setSettled(false);
-    const t = window.setTimeout(() => setSettled(true), 120);
+    const t = window.setTimeout(() => setSettledState({ channels, index }), 120);
     return () => window.clearTimeout(t);
-  }, [channels]);
+  }, [channels, index]);
 
   /**
    * Shrink the logos just beyond the view before they are needed.

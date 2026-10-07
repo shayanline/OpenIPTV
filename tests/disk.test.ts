@@ -1,6 +1,15 @@
 import { test } from "vitest";
 import assert from "node:assert/strict";
-import { BUDGET_BYTES, entries, evictionPlan, read, usage, write } from "../src/services/disk";
+import {
+  BUDGET_BYTES,
+  CACHE_BUDGET_BYTES,
+  entries,
+  evictionPlan,
+  read,
+  usage,
+  usageByClass,
+  write,
+} from "../src/services/disk";
 
 /**
  * What the cache throws away, and what it does when it has nowhere to keep anything.
@@ -13,18 +22,27 @@ import { BUDGET_BYTES, entries, evictionPlan, read, usage, write } from "../src/
  * actually have trouble with it rather than against a fake.
  */
 
-const at = (key: string, bytes: number, when: number) => ({ key, bytes, at: when });
+const at = (
+  key: string,
+  bytes: number,
+  when: number,
+  cacheClass: "catalogue" | "poster" | "logo" = "catalogue",
+) => ({ key, class: cacheClass, bytes, at: when });
 const MB = 1024 * 1024;
 
 test("nothing is evicted while there is room", () => {
-  const plan = evictionPlan([at("a", 100, 1), at("b", 100, 2)], { key: "c", bytes: 100 }, 1000);
+  const plan = evictionPlan(
+    [at("a", 100, 1), at("b", 100, 2)],
+    { key: "c", class: "catalogue", bytes: 100 },
+    1000,
+  );
   assert.deepEqual(plan, { evict: [], refused: false });
 });
 
 test("the least recently used goes first, and only as many as it takes", () => {
   const plan = evictionPlan(
     [at("oldest", 300, 1), at("middle", 300, 2), at("newest", 300, 3)],
-    { key: "incoming", bytes: 300 },
+    { key: "incoming", class: "catalogue", bytes: 300 },
     1000,
   );
   // 900 held plus 300 arriving is 1200 against 1000, so one has to go and exactly one does.
@@ -39,7 +57,7 @@ test("several go when one is not enough, and no more than several", () => {
   // having: it walks in order and stops, rather than clearing the cache to be sure.
   const plan = evictionPlan(
     [at("oldest", 150, 1), at("middle", 150, 2), at("newest", 100, 3)],
-    { key: "big", bytes: 800 },
+    { key: "big", class: "catalogue", bytes: 800 },
     1000,
   );
   assert.deepEqual(plan.evict, ["oldest", "middle"]);
@@ -52,21 +70,25 @@ test("replacing an entry does not have to evict the copy it replaces", () => {
   // room for a thing whose space was about to be freed anyway.
   const plan = evictionPlan(
     [at("playlist", 900, 1), at("logo", 50, 2)],
-    { key: "playlist", bytes: 950 },
+    { key: "playlist", class: "catalogue", bytes: 950 },
     1000,
   );
   assert.deepEqual(plan, { evict: [], refused: false });
 });
 
 test("something larger than the whole budget is refused rather than cached", () => {
-  const plan = evictionPlan([at("a", 100, 1)], { key: "enormous", bytes: 2000 }, 1000);
+  const plan = evictionPlan(
+    [at("a", 100, 1)],
+    { key: "enormous", class: "catalogue", bytes: 2000 },
+    1000,
+  );
   // Not "evict everything and then fail": there is no arrangement of the cache that fits it,
   // so emptying the cache first would be throwing away useful things for nothing.
   assert.deepEqual(plan, { evict: [], refused: true });
 });
 
 test("an empty cache accepts anything that fits", () => {
-  assert.deepEqual(evictionPlan([], { key: "a", bytes: 1000 }, 1000), {
+  assert.deepEqual(evictionPlan([], { key: "a", class: "catalogue", bytes: 1000 }, 1000), {
     evict: [],
     refused: false,
   });
@@ -86,10 +108,42 @@ test("the budget holds the largest playlist anybody actually uses", () => {
    */
   const playlist = {
     key: "playlist:https://iptv-org.github.io/iptv/index.m3u",
+    class: "catalogue" as const,
     bytes: 2.7 * MB * 2,
   };
   assert.deepEqual(evictionPlan([], playlist), { evict: [], refused: false });
   assert.ok(BUDGET_BYTES >= playlist.bytes * 2, "and with room for logos beside it");
+});
+
+test("cache class budgets total twenty four MiB", () => {
+  assert.equal(
+    CACHE_BUDGET_BYTES.catalogue + CACHE_BUDGET_BYTES.poster + CACHE_BUDGET_BYTES.logo,
+    BUDGET_BYTES,
+  );
+});
+
+test("poster eviction cannot remove catalogue or logo entries", () => {
+  const plan = evictionPlan(
+    [
+      at("catalogue", 11 * MB, 1, "catalogue"),
+      at("logo", 3 * MB, 2, "logo"),
+      at("poster-old", 5 * MB, 3, "poster"),
+      at("poster-new", 2 * MB, 4, "poster"),
+    ],
+    { key: "poster-incoming", class: "poster", bytes: 3 * MB },
+  );
+  assert.deepEqual(plan, { evict: ["poster-old"], refused: false });
+});
+
+test("each class refuses an item larger than its own allowance", () => {
+  for (const cacheClass of ["catalogue", "poster", "logo"] as const) {
+    const plan = evictionPlan([], {
+      key: cacheClass,
+      class: cacheClass,
+      bytes: CACHE_BUDGET_BYTES[cacheClass] + 1,
+    });
+    assert.deepEqual(plan, { evict: [], refused: true });
+  }
 });
 
 /**
@@ -104,7 +158,12 @@ test("with no database at all, the cache is empty and nothing throws", async () 
   assert.equal(typeof indexedDB, "undefined", "jsdom grew an IndexedDB, so rewrite this test");
 
   assert.equal(await read("anything"), null);
-  assert.equal(await write("anything", "some text"), false);
+  assert.equal(await write("anything", "some text", "catalogue"), false);
   assert.deepEqual(await entries(), []);
   assert.deepEqual(await usage(), { bytes: 0, count: 0 });
+  assert.deepEqual(await usageByClass(), {
+    catalogue: { bytes: 0, count: 0 },
+    poster: { bytes: 0, count: 0 },
+    logo: { bytes: 0, count: 0 },
+  });
 });

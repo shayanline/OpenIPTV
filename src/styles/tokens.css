@@ -1,3 +1,5 @@
+@import url("/fonts/fonts.css");
+
 /*
  * Design tokens, following One UI as far as it goes and Samsung's Smart TV guidelines
  * where One UI is silent.
@@ -11,22 +13,6 @@
  * is an inverted focus: the focused row becomes a solid light surface with dark text,
  * which reads across a room far better than a border or a glow.
  */
-
-/* Vazirmatn is bundled for every platform so the application has one consistent font. */
-@font-face {
-  font-family: "Vazirmatn";
-  font-style: normal;
-  font-weight: 400;
-  font-display: swap;
-  src: url("/fonts/Vazirmatn-Regular.ttf") format("truetype");
-}
-@font-face {
-  font-family: "Vazirmatn";
-  font-style: normal;
-  font-weight: 600;
-  font-display: swap;
-  src: url("/fonts/Vazirmatn-SemiBold.ttf") format("truetype");
-}
 
 :root {
   /*
@@ -179,6 +165,11 @@
   --rail-w: 424px;
   --list-w: 608px;
   --panel-w: calc(var(--rail-w) + var(--list-w) + var(--s4));
+  --vod-rail-w: 424px;
+  --poster-w: 192px;
+  --poster-h: 288px;
+  --poster-columns: 6;
+  --poster-row-h: 376px;
 
   /* Type scale. The TV guidelines set a floor for legibility at distance and ask for line
      spacing of 1.2 to 1.4. --scale is the viewer's text size preference. */
@@ -190,15 +181,6 @@
   --t-label: calc(22px * var(--scale));
   --t-caption: calc(20px * var(--scale));
   --lh: 1.35;
-
-  /*
-    * The application font, and no longer a preference.
-    *
-      * Vazirmatn is bundled so the browser and TV builds use the same face without a network request.
-      * The final families cover platforms that do not load the bundled Latin subset for another
-      * script.
-   */
-  --font: "Vazirmatn", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 
   /*
    * Motion, from the One UI motion guidance.

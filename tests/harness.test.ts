@@ -4,11 +4,16 @@ import { request } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { runInNewContext } from "node:vm";
-import { test, vi } from "vitest";
-import { host, XTREAM_FIXTURE } from "../scripts/present.mjs";
+import { expect, test, vi } from "vitest";
+import { host, XTREAM_FIXTURE, xtreamFixtureResponse } from "../scripts/present.mjs";
 import {
+  benchmarkResult,
+  createJourneyTracker,
   createXtreamJourneyTracker,
   driver,
+  evaluationValue,
+  pageResult,
+  REDESIGN_JOURNEYS,
   serve,
   XTREAM_JOURNEYS,
 } from "../scripts/tv/harness.mjs";
@@ -101,9 +106,14 @@ test("serves a deterministic large Xtream catalogue without credential values in
       address.port,
       endpoint("get_vod_streams", "&category_id=movie-large"),
     );
+    const completeMovies = await get(address.port, endpoint("get_vod_streams"));
     const emptyMovies = await get(
       address.port,
       endpoint("get_vod_streams", "&category_id=movie-empty"),
+    );
+    const failedMovies = await get(
+      address.port,
+      endpoint("get_vod_streams", "&category_id=movie-failed"),
     );
     const series = await get(address.port, endpoint("get_series", "&category_id=series-large"));
 
@@ -112,7 +122,17 @@ test("serves a deterministic large Xtream catalogue without credential values in
     assert.equal(JSON.parse(live.body).length, XTREAM_FIXTURE.liveCount);
     assert.ok(JSON.parse(movies.body).length >= 500);
     assert.ok(JSON.parse(series.body).length >= 300);
+    const complete = JSON.parse(completeMovies.body) as Array<Record<string, unknown>>;
+    assert.equal(complete.length, XTREAM_FIXTURE.movieCount);
+    assert.ok(complete.some((item) => item.name === ""));
+    assert.ok(
+      complete.some((item) => item.rating === "invalid" && item.rating_5based === "4.2"),
+    );
+    assert.ok(new Set(complete.map((item) => item.stream_id)).size < complete.length);
+    assert.ok(new Set(complete.map((item) => item.name)).size < complete.length);
+    assert.ok(complete.some((item) => String(item.name).includes("👨‍👩‍👧‍👦")));
     assert.deepEqual(JSON.parse(emptyMovies.body), []);
+    assert.equal(failedMovies.status, 503);
     assert.ok(
       JSON.parse(filteredLive.body).every(
         (stream: { category_id: string }) => stream.category_id === "live-duplicate-b",
@@ -133,7 +153,9 @@ test("serves a deterministic large Xtream catalogue without credential values in
       live,
       filteredLive,
       movies,
+      completeMovies,
       emptyMovies,
+      failedMovies,
       series,
     ]
       .map(({ body }) => body)
@@ -166,20 +188,69 @@ test("serves Xtream movie details, episodes, programme data, and finite media ro
       address.port,
       `/live/${encodeURIComponent(XTREAM_FIXTURE.username)}/${encodeURIComponent(XTREAM_FIXTURE.password)}/live-1.m3u8`,
     );
-    const catchup = await get(
+    const catchupPath = `/timeshift/${encodeURIComponent(XTREAM_FIXTURE.username)}/${encodeURIComponent(XTREAM_FIXTURE.password)}/60/2026-01-02:10-00/live-1.ts`;
+    const catchup = await get(address.port, catchupPath);
+    const poster = await get(address.port, "/fixture/poster/1.jpg");
+    const missing = await get(address.port, "/fixture/missing.jpg");
+    const undecodable = await get(address.port, "/fixture/undecodable.jpg");
+    const malformed = await get(
       address.port,
-      `/timeshift/${encodeURIComponent(XTREAM_FIXTURE.username)}/${encodeURIComponent(XTREAM_FIXTURE.password)}/60/2026-01-02:10-00/live-1.ts`,
+      `${endpoint("get_vod_streams", "")}&fixture=malformed`,
     );
+    const failed = await get(address.port, `${endpoint("get_vod_streams", "")}&fixture=failed`);
 
-    assert.equal(JSON.parse(movie.body).movie_data.stream_id, "movie-1");
-    assert.ok(JSON.parse(series.body).episodes["1"].length > 1);
+    const movieDetail = JSON.parse(movie.body);
+    const seriesDetail = JSON.parse(series.body);
+    const manualEpisode = seriesDetail.episodes["2"].find(
+      (episode: Record<string, unknown>) => episode.title === "Episode 2.1",
+    );
+    const movieSource = String(movieDetail.movie_data.direct_source);
+    const episodeSource = String(manualEpisode?.direct_source);
+    const movieMedia = await get(address.port, movieSource);
+    const episodeMedia = await get(address.port, episodeSource);
+    assert.equal(movieDetail.movie_data.stream_id, "movie-1");
+    assert.equal(movieSource, "/fixture/playback/movie-movie-1.mp4");
+    assert.equal(episodeSource, "/fixture/playback/episode-2-1.mp4");
+    assert.equal(
+      new URL(movieSource, `http://127.0.0.1:${address.port}`).origin,
+      `http://127.0.0.1:${address.port}`,
+    );
+    assert.equal(
+      new URL(episodeSource, `http://127.0.0.1:${address.port}`).origin,
+      `http://127.0.0.1:${address.port}`,
+    );
+    assert.equal(movieMedia.status, 200);
+    assert.equal(movieMedia.body, "fixture finite media");
+    assert.equal(episodeMedia.status, 200);
+    assert.equal(episodeMedia.body, "fixture finite media");
+    assert.ok(Array.isArray(movieDetail.info.backdrop_path));
+    assert.ok(seriesDetail.episodes["0"].length > 0);
+    assert.deepEqual(seriesDetail.episodes["4"], []);
+    assert.ok(
+      seriesDetail.episodes["1"].some(
+        (episode: Record<string, unknown>) => !episode.id && episode.direct_source,
+      ),
+    );
+    assert.ok(
+      seriesDetail.episodes["1"].some(
+        (episode: Record<string, unknown>) => !episode.episode_num,
+      ),
+    );
+    assert.ok(seriesDetail.episodes["1"].length > 1);
     assert.ok(
       JSON.parse(guide.body).epg_listings.some(
         (item: { has_archive: number }) => item.has_archive,
       ),
     );
     assert.equal(live.status, 200);
+    assert.ok(catchupPath.startsWith("/timeshift/"));
     assert.equal(catchup.status, 200);
+    assert.equal(catchup.body, "fixture media");
+    assert.equal(poster.status, 200);
+    assert.equal(missing.status, 404);
+    assert.equal(undecodable.status, 200);
+    assert.equal(malformed.body, "{");
+    assert.equal(failed.status, 503);
     assert.equal(movie.body.includes(XTREAM_FIXTURE.password), false);
     assert.equal(series.body.includes(XTREAM_FIXTURE.password), false);
     assert.equal(guide.body.includes(XTREAM_FIXTURE.password), false);
@@ -189,6 +260,54 @@ test("serves Xtream movie details, episodes, programme data, and finite media ro
     );
     rmSync(root, { recursive: true, force: true });
   }
+});
+
+test("harness serving honours deterministic fixture delay", async () => {
+  const root = mkdtempSync(join(tmpdir(), "openiptv-delay-test-"));
+  writeFileSync(join(root, "index.html"), "ready");
+  const hosted = await serve(root);
+  try {
+    const started = Date.now();
+    const path = `/player_api.php?username=${encodeURIComponent(XTREAM_FIXTURE.username)}&password=${encodeURIComponent(XTREAM_FIXTURE.password)}&action=get_vod_streams&fixture=slow`;
+    const response = await get(hosted.port, path);
+    expect(response.status).toBe(200);
+    expect(Date.now() - started).toBeGreaterThanOrEqual(200);
+  } finally {
+    await hosted.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("serves deterministic playback and provider fault fixtures without credentials", () => {
+  const finite = xtreamFixtureResponse("/fixture/playback/finite.mp4");
+  const movie = xtreamFixtureResponse("/fixture/playback/movie-movie-1.mp4");
+  const episode = xtreamFixtureResponse("/fixture/playback/episode-2-1.mp4");
+  const dvr = xtreamFixtureResponse("/fixture/playback/live-dvr.m3u8");
+  const live = xtreamFixtureResponse("/fixture/playback/live.m3u8");
+  const tracks = xtreamFixtureResponse("/fixture/playback/tracks.m3u8");
+  const subtitles = xtreamFixtureResponse("/fixture/playback/subtitles.vtt");
+  const failed = xtreamFixtureResponse("/fixture/playback/network-failure");
+  expect(finite).toMatchObject({ status: 200, type: "video/mp4" });
+  expect(movie).toMatchObject({ status: 200, type: "video/mp4" });
+  expect(episode).toMatchObject({ status: 200, type: "video/mp4" });
+  expect(String(dvr?.body)).toContain("PROGRAM-DATE-TIME");
+  expect(String(live?.body)).not.toContain("ENDLIST");
+  expect(String(tracks?.body)).toContain("TYPE=AUDIO");
+  expect(String(tracks?.body)).toContain("TYPE=SUBTITLES");
+  expect(String(subtitles?.body)).toContain("Fixture subtitle");
+  expect(failed).toMatchObject({ status: 503 });
+  const serialised = JSON.stringify([
+    finite,
+    movie,
+    episode,
+    dvr,
+    live,
+    tracks,
+    subtitles,
+    failed,
+  ]);
+  expect(serialised).not.toContain(XTREAM_FIXTURE.username);
+  expect(serialised).not.toContain(XTREAM_FIXTURE.password);
 });
 
 test("the TV shim keeps relayed finite media out of hls.js", () => {
@@ -258,11 +377,274 @@ test("the TV shim keeps relayed finite media out of hls.js", () => {
   }
 });
 
+test("the controlled TV shim exposes deterministic playback and fault controls", async () => {
+  const pause = vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(() => {});
+  const load = vi.spyOn(HTMLMediaElement.prototype, "load").mockImplementation(() => {});
+  const log = vi.spyOn(console, "log").mockImplementation(() => {});
+  runInNewContext(readFileSync(join(process.cwd(), "scripts/tv/shim.js"), "utf8"), {
+    console,
+    document,
+    Event: window.Event,
+    performance,
+    setTimeout,
+    URL,
+    window,
+  });
+  const controls = (
+    window as Window & {
+      __openiptvTvFaults: {
+        reset(): void;
+        useControlledPlayback(): void;
+        completePrepare(): void;
+        startBuffering(): void;
+        endBuffering(): void;
+        freezePlayhead(): void;
+        resumePlayhead(): void;
+        nextSeek(outcome: "complete" | "omit-callback" | "reject"): void;
+        emitNetworkFault(): void;
+        emitMediaFault(): void;
+        setLiveWindow(start: number, end: number): void;
+        setHidden(hidden: boolean): void;
+        snapshot(): {
+          controlled: boolean;
+          connections: number;
+          seeks: number[];
+          buffering: boolean;
+          frozen: boolean;
+          liveWindow: [number, number] | null;
+          lastFault: string;
+          hidden: boolean;
+        };
+      };
+    }
+  ).__openiptvTvFaults;
+  const events: string[] = [];
+  const avplay = window.webapis?.avplay;
+  if (!avplay) throw new Error("AVPlay shim missing");
+  avplay.setListener({
+    onbufferingstart: () => events.push("start"),
+    onbufferingcomplete: () => events.push("complete"),
+    onerror: (name: unknown) => events.push(String(name)),
+  });
+  controls.useControlledPlayback();
+  avplay.open("fixture:controlled");
+  let prepared = false;
+  avplay.prepareAsync(
+    () => {
+      prepared = true;
+    },
+    () => {},
+  );
+  expect(prepared).toBe(false);
+  controls.completePrepare();
+  expect(prepared).toBe(true);
+  avplay.play();
+  controls.startBuffering();
+  expect(controls.snapshot().buffering).toBe(true);
+  controls.endBuffering();
+  controls.freezePlayhead();
+  const frozenAt = avplay.getCurrentTime!();
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  expect(avplay.getCurrentTime!()).toBe(frozenAt);
+  controls.resumePlayhead();
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  expect(avplay.getCurrentTime!()).toBeGreaterThan(frozenAt);
+  let completed = false;
+  controls.nextSeek("complete");
+  avplay.seekTo!(
+    10_000,
+    () => {
+      completed = true;
+    },
+    () => {},
+  );
+  expect(completed).toBe(true);
+  let omitted = false;
+  controls.nextSeek("omit-callback");
+  avplay.seekTo!(
+    20_000,
+    () => {
+      omitted = true;
+    },
+    () => {},
+  );
+  expect(omitted).toBe(false);
+  let rejected = false;
+  controls.nextSeek("reject");
+  avplay.seekTo!(
+    30_000,
+    () => {},
+    () => {
+      rejected = true;
+    },
+  );
+  expect(rejected).toBe(true);
+  controls.setLiveWindow(40_000, 100_000);
+  expect(avplay.getStreamingProperty!("GET_LIVE_DURATION")).toBe("40000|100000");
+  controls.emitNetworkFault();
+  controls.emitMediaFault();
+  controls.setHidden(true);
+  expect(document.hidden).toBe(true);
+  expect(controls.snapshot()).toMatchObject({
+    controlled: true,
+    connections: 1,
+    seeks: [10_000, 20_000, 30_000],
+    buffering: false,
+    frozen: false,
+    liveWindow: [40_000, 100_000],
+    lastFault: "PLAYER_ERROR_NOT_SUPPORTED_FILE",
+    hidden: true,
+  });
+  expect(events).toContain("PLAYER_ERROR_CONNECTION_FAILED");
+  avplay.stop();
+  avplay.open("fixture:pending");
+  let cancelledPrepare = "";
+  avplay.prepareAsync(
+    () => {},
+    (error) => {
+      cancelledPrepare = String(error);
+    },
+  );
+  controls.reset();
+  expect(cancelledPrepare).toBe("PLAYER_ERROR_OPERATION_ABORTED");
+  expect(controls.snapshot()).toEqual({
+    controlled: false,
+    connections: 0,
+    seeks: [],
+    buffering: false,
+    frozen: false,
+    liveWindow: null,
+    lastFault: "",
+    hidden: false,
+  });
+
+  for (const source of [
+    "http://127.0.0.1:4174/fixture/playback/movie-movie-1.mp4",
+    "http://127.0.0.1:4174/movie/viewer/secret/movie-1.mp4",
+    "http://127.0.0.1:4174/series/viewer/secret/episode-2-1.mp4",
+    "http://127.0.0.1:4174/timeshift/viewer/secret/60/2026-01-02:10-00/live-1.ts",
+  ]) {
+    avplay.open(source);
+    expect(controls.snapshot()).toMatchObject({ controlled: true, connections: 1 });
+    controls.reset();
+  }
+
+  avplay.open("http://127.0.0.1:4174/fixture/playback/episode-2-1.mp4");
+  let episodePrepared = false;
+  avplay.prepareAsync(
+    () => {
+      episodePrepared = true;
+    },
+    () => {},
+  );
+  expect(controls.snapshot()).toMatchObject({ controlled: true, connections: 1 });
+  expect(avplay.getCurrentTime!()).toBe(0);
+  expect(episodePrepared).toBe(false);
+  controls.completePrepare();
+  expect(episodePrepared).toBe(true);
+  expect(avplay.getCurrentTime!()).toBe(0);
+  controls.reset();
+
+  const eventCount = events.length;
+  controls.emitNetworkFault();
+  expect(events).toHaveLength(eventCount);
+  pause.mockRestore();
+  load.mockRestore();
+  log.mockRestore();
+  delete window.webapis;
+  delete window.tizen;
+  delete (window as Window & { __openiptvTvFaults?: unknown }).__openiptvTvFaults;
+});
+
+test("reports page evaluation exceptions instead of returning undefined", () => {
+  assert.throws(
+    () =>
+      evaluationValue(
+        {
+          result: { type: "object" },
+          exceptionDetails: {
+            text: "Uncaught",
+            exception: { description: "TypeError: window.__bench is undefined" },
+          },
+        },
+        "surfing channels",
+      ),
+    /surfing channels failed in the page: TypeError: window\.__bench is undefined/,
+  );
+});
+
+test("reports missing benchmark state instead of parsing undefined", () => {
+  assert.throws(
+    () => benchmarkResult(undefined, "surfing channels"),
+    /surfing channels: benchmark state was unavailable because CDP returned undefined/,
+  );
+  assert.throws(
+    () =>
+      benchmarkResult(
+        JSON.stringify({
+          url: "http://127.0.0.1:4173/",
+          readyState: "loading",
+          benchmark: "undefined",
+        }),
+        "surfing channels",
+      ),
+    /benchmark recorder was undefined.*document was loading/,
+  );
+  assert.deepEqual(
+    benchmarkResult(
+      JSON.stringify({
+        url: "http://127.0.0.1:4173/",
+        readyState: "complete",
+        benchmark: "object",
+        result: { median: 40, of: 20 },
+      }),
+      "surfing channels",
+    ),
+    { median: 40, of: 20 },
+  );
+});
+
+test("reports missing measured page state with document context", () => {
+  assert.throws(
+    () => pageResult(undefined, "category landing state"),
+    /category landing state: page state was unavailable because CDP returned undefined/,
+  );
+  assert.throws(
+    () =>
+      pageResult(
+        JSON.stringify({
+          url: "http://127.0.0.1:4173/",
+          readyState: "complete",
+        }),
+        "category landing state",
+      ),
+    /category landing state: page state returned no value at http:\/\/127\.0\.0\.1:4173\/ while the document was complete/,
+  );
+  assert.deepEqual(
+    pageResult(
+      JSON.stringify({
+        url: "http://127.0.0.1:4173/",
+        readyState: "complete",
+        result: { cursor: "News", showing: "Sport" },
+      }),
+      "category landing state",
+    ),
+    { cursor: "News", showing: "Sport" },
+  );
+});
+
+test("fails a simulator run when a required redesign journey does not complete", () => {
+  const tracker = createJourneyTracker(Object.values(REDESIGN_JOURNEYS));
+  for (const label of Object.values(REDESIGN_JOURNEYS).slice(0, -1)) tracker.complete(label);
+  assert.throws(() => tracker.assertComplete(), /Poster interaction budget/);
+  assert.throws(() => tracker.complete("invented journey"), /Unknown or repeated journey/);
+});
+
 test("fails a simulator run when a real Xtream journey does not complete", () => {
   const tracker = createXtreamJourneyTracker();
   for (const label of Object.values(XTREAM_JOURNEYS).slice(0, -1)) tracker.complete(label);
-  assert.throws(() => tracker.assertComplete(), /Xtream heap growth/);
-  assert.throws(() => tracker.complete("invented journey"), /Unknown Xtream journey/);
+  assert.throws(() => tracker.assertComplete(), /VOD heap growth/);
+  assert.throws(() => tracker.complete("invented journey"), /Unknown or repeated journey/);
 });
 
 test("the simulator uses every authoritative Xtream journey label", () => {
@@ -273,6 +655,34 @@ test("the simulator uses every authoritative Xtream journey label", () => {
       `${key} is not wired into the simulator`,
     );
   }
+});
+
+test("every redesign journey is wired to an asserted television action", () => {
+  const harness = readFileSync(join(process.cwd(), "scripts/tv/harness.mjs"), "utf8");
+  const simulator = readFileSync(join(process.cwd(), "scripts/tv/sim.mjs"), "utf8");
+  for (const key of Object.keys(REDESIGN_JOURNEYS)) {
+    assert.ok(
+      harness.includes(`REDESIGN_JOURNEYS.${key}`) ||
+        simulator.includes(`REDESIGN_JOURNEYS.${key}`),
+      `${key} is not wired into a television journey`,
+    );
+  }
+  assert.ok(harness.includes("redesign.assertComplete()"));
+  assert.ok(simulator.includes("redesignJourneys.assertComplete()"));
+  assert.ok(simulator.includes("[data-recovery-cause]"));
+  assert.ok(simulator.includes("recoveryConnections"));
+  assert.equal(simulator.includes("webapis.avplay.setListener"), false);
+});
+
+test("the parity and budget walks share the authoritative lineup journey", () => {
+  const harness = readFileSync(join(process.cwd(), "scripts/tv/harness.mjs"), "utf8");
+  const simulator = readFileSync(join(process.cwd(), "scripts/tv/sim.mjs"), "utf8");
+  assert.equal(XTREAM_JOURNEYS.lineupManagement, "Xtream lineup management");
+  assert.ok(harness.includes("XTREAM_JOURNEYS.lineupManagement"));
+  assert.ok(simulator.includes("XTREAM_JOURNEYS.lineupManagement"));
+  assert.ok(harness.includes("openiptv-personal"));
+  assert.ok(simulator.includes("openiptv-personal"));
+  assert.equal(harness.includes("indexedDB.deleteDatabase('openiptv-personal')"), false);
 });
 
 test("installs the fixture seed before navigating to the application", async () => {

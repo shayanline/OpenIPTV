@@ -1,5 +1,12 @@
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
+vi.mock("../src/services/personalDisk", () => ({
+  readLineup: vi.fn().mockResolvedValue(null),
+  writeLineup: vi.fn().mockResolvedValue(undefined),
+  removeLineup: vi.fn().mockResolvedValue(undefined),
+  clearLineups: vi.fn().mockResolvedValue(undefined),
+}));
+
 const m3u = (url: string) => ({ kind: "m3u" as const, url });
 
 const PLAYLIST = `#EXTM3U
@@ -73,8 +80,12 @@ describe("remote command parsing", () => {
       { type: "setting", key: "aspectId", value: "fit" },
       { type: "setting", key: "showClock", value: false },
       { type: "setting", key: "resumeLast", value: false },
-      { type: "setting", key: "sortAlphabetically", value: true },
+      { type: "setting", key: "lineupOrderMode", value: "provider" },
+      { type: "setting", key: "lineupOrderMode", value: "alphabetical" },
+      { type: "setting", key: "lineupOrderMode", value: "number" },
+      { type: "setting", key: "lineupOrderMode", value: "custom" },
       { type: "setting", key: "compatibility", value: true },
+      { type: "setting", key: "continuousReconnect", value: true },
       {
         type: "setup.preview",
         name: "News",
@@ -90,6 +101,18 @@ describe("remote command parsing", () => {
 
     expect(parseRemoteCommand({ type: "setting", key: "secret", value: true })).toBeNull();
     expect(parseRemoteCommand({ type: "setting", key: "showClock", value: "yes" })).toBeNull();
+    expect(
+      parseRemoteCommand({ type: "setting", key: "sortAlphabetically", value: true }),
+    ).toBeNull();
+    expect(
+      parseRemoteCommand({ type: "setting", key: "lineupOrderMode", value: "recent" }),
+    ).toBeNull();
+    expect(
+      parseRemoteCommand({ type: "setting", key: "continuousReconnect", value: "yes" }),
+    ).toBeNull();
+    expect(
+      parseRemoteCommand({ type: "setting", key: "showPlaybackStats", value: true }),
+    ).toBeNull();
     expect(parseRemoteCommand({ type: "play", url: "http://example.invalid" })).toBeNull();
     expect(
       parseRemoteCommand({ type: "playlist.remove", id: "pl-1", credential: "leak" }),
@@ -171,6 +194,10 @@ describe("remote command application", () => {
       source: m3u("http://example.invalid/list.m3u"),
     });
     expect(result.snapshot.revision).toBe(0);
+    expect(result.snapshot.settings.continuousReconnect).toBe(false);
+    expect(result.snapshot.settings.lineupOrderMode).toBe("provider");
+    expect("sortAlphabetically" in result.snapshot.settings).toBe(false);
+    expect("showPlaybackStats" in result.snapshot.settings).toBe(false);
     const setting = await s.applyRemoteCommand({
       id: "after-preview",
       revision: 0,
@@ -194,9 +221,17 @@ describe("remote command application", () => {
     };
 
     const first = await s.applyRemoteCommand(request);
+    await s.applyRemoteCommand({
+      id: "later-change",
+      revision: first.snapshot.revision,
+      command: { type: "setting", key: "showClock", value: false },
+    });
     const duplicate = await s.applyRemoteCommand(request);
 
-    expect(duplicate).toEqual(first);
+    expect(duplicate.ok).toBe(first.ok);
+    expect(duplicate.reason).toBe(first.reason);
+    expect(duplicate.snapshot.revision).toBeGreaterThan(first.snapshot.revision);
+    expect(duplicate.snapshot.settings.showClock).toBe(false);
     expect(s.useSettings.getState().playlists).toHaveLength(1);
   });
 
@@ -300,6 +335,58 @@ describe("remote command application", () => {
       password: "secret",
       output: "m3u8",
     });
+  });
+
+  test("strips Xtream server userinfo from snapshots", async () => {
+    const s = await load();
+    s.useSettings.getState().addPlaylist("Provider", {
+      kind: "xtream",
+      server: "https://server-user:server-pass@provider.example/base",
+      username: "viewer",
+      password: "account-secret",
+      output: "m3u8",
+    });
+
+    const serialised = JSON.stringify(s.remoteSnapshot());
+    expect(serialised).toContain("provider.example/base");
+    expect(serialised).not.toContain("server-user");
+    expect(serialised).not.toContain("server-pass");
+    expect(serialised).not.toContain("account-secret");
+  });
+
+  test("strips M3U URL credentials from snapshots and conflicts", async () => {
+    const s = await load();
+    s.useSettings
+      .getState()
+      .addPlaylist(
+        "Private M3U",
+        m3u(
+          "https://url-user-987:url-pass-987@example.invalid/list.m3u?username=query-user-987&password=query-pass-987&token=query-token-987&format=m3u8#fragment-secret",
+        ),
+      );
+    const serialised = JSON.stringify(s.remoteSnapshot());
+    expect(serialised).toContain("example.invalid/list.m3u");
+    expect(serialised).toContain("format=m3u8");
+    expect(serialised).not.toContain("url-user-987");
+    expect(serialised).not.toContain("url-pass-987");
+    expect(serialised).not.toContain("query-user-987");
+    expect(serialised).not.toContain("query-pass-987");
+    expect(serialised).not.toContain("query-token-987");
+    expect(serialised).not.toContain("fragment-secret");
+
+    await s.applyRemoteCommand({
+      id: "advance",
+      revision: 0,
+      command: { type: "setting", key: "showClock", value: false },
+    });
+    const conflict = await s.applyRemoteCommand({
+      id: "stale",
+      revision: 0,
+      command: { type: "setting", key: "showLogos", value: false },
+    });
+    expect(JSON.stringify(conflict)).not.toContain("url-user-987");
+    expect(JSON.stringify(conflict)).not.toContain("url-pass-987");
+    expect(JSON.stringify(conflict)).not.toContain("query-token-987");
   });
 
   test("sanitises account summaries and operation errors at the device boundary", async () => {
@@ -427,4 +514,41 @@ describe("remote command application", () => {
     expect(cleared).toBe(1);
     expect(forgottenRepairHosts).toBe(1);
   });
+});
+
+test("keeps complete catalogues out of remote snapshots", async () => {
+  const s = await load();
+  const { useLineup } = await import("../src/stores/lineup");
+  useLineup.setState({
+    playlistId: "large",
+    revision: 7,
+    managedChannels: Array.from({ length: 12_000 }, (_, index) => ({
+      ref: { id: `channel-${index}` },
+      providerName: `Channel ${index}`,
+      providerNumber: index + 1,
+      effective: {
+        id: `channel-${index}`,
+        name: `Channel ${index}`,
+        number: index + 1,
+        group: "All",
+        categoryKey: "All",
+        logo: "",
+        quality: "",
+        url: `http://example.invalid/${index}`,
+      },
+      hidden: false,
+      categoryKeys: ["All"],
+    })),
+  });
+  const snapshot = s.remoteSnapshot();
+  expect(snapshot.lineup).toEqual({ playlistId: "large", revision: 7, ready: true });
+  expect(JSON.stringify(snapshot)).not.toContain("channel-11999");
+});
+
+test("publishes the active lineup readiness and revision", async () => {
+  const s = await load();
+  const { useLineup } = await import("../src/stores/lineup");
+  expect(s.remoteSnapshot().lineup).toBeNull();
+  useLineup.setState({ playlistId: "active", revision: 4 });
+  expect(s.remoteSnapshot().lineup).toEqual({ playlistId: "active", revision: 4, ready: true });
 });

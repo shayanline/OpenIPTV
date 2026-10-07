@@ -1,6 +1,7 @@
 import { FONT_SIZES, useSettings } from "../../stores/settings";
-import { useChannels } from "../../stores/channels";
 import { useLocale } from "../../hooks/useLocale";
+import { resolveLocale } from "../../services/locale";
+import { rematerialise } from "../../stores/lineup";
 import { Choice, PageHeader, Row, Toggle } from "./Field";
 import { LanguagePicker } from "../LanguagePicker";
 
@@ -18,9 +19,6 @@ export function Appearance() {
             ? t("settings.large")
             : t("settings.extraLarge"),
   }));
-  // `load` because sorting rebuilds the lists from the playlist that is already in hand: the order
-  // is applied while the channels are read, so nothing changes on screen until they are read again.
-  const { load } = useChannels();
   return (
     <>
       <PageHeader title={t("settings.appearance")} />
@@ -29,7 +27,7 @@ export function Appearance() {
           value={s.locale}
           onChange={(id) => {
             s.set("locale", id);
-            if (s.sortAlphabetically) void load();
+            rematerialise(resolveLocale(id));
           }}
         />
       </Row>
@@ -69,24 +67,6 @@ export function Appearance() {
           label={t("settings.showClock")}
           value={s.showClock}
           onChange={(v) => s.set("showClock", v)}
-        />
-      </Row>
-      {/*
-       * Sorting lives here rather than under Watching, where it used to be.
-       *
-       * It changes the order of the list on this screen's own terms, beside the two rows that decide
-       * what else that list shows. Watching is about the picture, and a channel order is not part of
-       * the picture: it was there only because it is not about the picture, which is a reason to
-       * exclude it from somewhere rather than a reason to put it here.
-       */}
-      <Row label={t("settings.sortAlphabetically")} hint={t("settings.sortAlphabeticallyHint")}>
-        <Toggle
-          label={t("settings.sortAlphabetically")}
-          value={s.sortAlphabetically}
-          onChange={(v) => {
-            s.set("sortAlphabetically", v);
-            load();
-          }}
         />
       </Row>
     </>

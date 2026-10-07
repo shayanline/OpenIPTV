@@ -13,10 +13,12 @@ export function Text({
   value,
   className = "",
   marquee = false,
+  active = false,
 }: {
   value: string;
   className?: string;
   marquee?: boolean;
+  active?: boolean;
 }) {
   const frame = useRef<HTMLSpanElement>(null);
   const run = useRef<HTMLSpanElement>(null);
@@ -53,7 +55,7 @@ export function Text({
   return (
     <span
       ref={frame}
-      className={`${className} teleprompter ${vertical ? "vertical" : ""} ${shift ? "overflowing" : ""}`}
+      className={`${className} teleprompter ${vertical ? "vertical" : ""} ${shift ? "overflowing" : ""} ${active ? "active" : ""}`}
       dir="auto"
       style={{ "--teleprompter-shift": `${shift}px` } as CSSProperties}
     >

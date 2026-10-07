@@ -59,11 +59,15 @@ it is not a gate and never runs in CI.
 
 ```
 src/
-  App.tsx                  the screen stack and the key routing, and nothing else
+  App.tsx                  the surface stack, tuner and application mode ownership
+  screens/LiveScreen.tsx   the Live picture, Guide and current panel ownership
+  screens/VodScreen.tsx    the opaque Movies and Series shell, search and details ownership
+  components/vod/          category rail, poster grid, title row, details and episode panel
   types.ts                 Channel, and the shapes the parser produces
   meta.ts                  the repository URL, and the version Vite injects from package.json
   services/m3u.ts          playlist parser, tolerant of the ways M3U is abused
   services/lineup.ts       which lists exist, and where channel up and down land
+  services/lineupProtocol.ts strict revision bound phone lineup queries and mutations
   services/search.ts       ranked matching over the whole playlist, capped per rank
   services/player.ts       one interface over AVPlay and hls.js
   services/errors.ts       engine error codes to something a viewer can act on
@@ -73,19 +77,24 @@ src/
   services/remoteServer.ts the private network server lifecycle and API boundary
   services/manifest.ts     reading and repairing a playlist, as pure functions
   services/repair.ts       serving a repaired playlist to AVPlay over a loopback socket
-  services/logos.ts        decode logos once, at the size they are drawn, and queue the work
+  services/artwork.ts      two lane poster and logo decode queue, bitmap limits and backdrop leases
+  services/logos.ts        the channel logo adapter over the shared artwork service
   services/capabilities.ts what the engine can actually do, measured rather than assumed
   services/metrics.ts      the measurements the stylesheet shares with the code
   services/store.ts        localStorage, for the short strings needed before first paint
   services/disk.ts         IndexedDB, for playlists, Xtream catalogues and logos, on a 24 MB budget
+  services/personalDisk.ts durable personal lineup records without cache eviction
   services/idle.ts         work that must never be why a key press waits
-  stores/channels.ts       channels, categories, favourites, last watched
+  stores/channels.ts       provider loading, cache and account ownership
+  stores/lineup.ts         overlays, reconciliation, effective views, revisions and rollback
+  stores/library.ts        VOD resources, synthetic categories, stale refresh and progress resolution
   stores/settings.ts       everything the viewer can change, persisted
-  hooks/useTuner.ts        the player's life, channel changing, pausing, automatic retry
+  hooks/usePlaybackController.ts the player's life, channel changing, seeking, automatic retry
   hooks/useChrome.ts       the banner, messages and dialled digits, and their timers
   hooks/useRemote.ts       remote key codes, and registering them with Tizen
   hooks/useSpatialNav.ts   four directional focus movement over arbitrary controls
-  hooks/useWindowed.ts     renders a slice of a long list instead of all of it
+  hooks/useWindowed.ts     renders list rows and complete six column poster row windows
+  hooks/useVodNavigation.ts VOD cursors, origins, settle timers and wheel input guard
   hooks/useViewport.ts     the measured height a windowed list is laid out against
   hooks/usePointerAwake.ts whether a pointer is in use, for the on screen pad
   hooks/useRemoteAccess.ts the local remote access server state for React
@@ -120,22 +129,17 @@ public/config.xml          the Tizen widget manifest, privileges and CSP
 Break one of these and the app fails on hardware no test here owns. The reasoning is in
 [the design notes](docs/design.md) and at length in the source.
 
-- **The screen is a stack and a layer only shows when nothing above it is open.** `App.tsx`
-  names the five layers. A new overlay belongs in that stack or nowhere.
-- **The four laws of the key model.** At the picture, up and down always change channel. OK does
-  the obvious thing where it is pressed. Left and right move within whatever is showing. RETURN
-  always goes back, and closes the app only when there is nothing left to close.
-  `tests/keyLaws.test.tsx` enforces them.
-- **`services/store` is localStorage, `services/disk` is IndexedDB.** Settings, favourites and
-  the last channel are short strings needed before the first paint, so they need a synchronous
-  API. Playlist text, Xtream catalogues and logos are megabytes and Blobs, which localStorage caps at 5MB
-  and cannot hold. The disk cache keeps its own 24 MB budget deliberately.
-- **No IndexedDB work on an interaction path.** Writing each logo as it was decoded cost a
-  measurable regression, and reading the whole metadata store on every write cost an 840ms frame
-  while the interface was idle. Both are queued through `services/idle`.
-- **The cursor answers the press, the expensive work follows.** The rail waits 150ms before the
-  channel column rebuilds, the search waits 150ms before it queries, the tuner waits 450ms
-  before it retunes. Anything expensive added to a held key needs the same treatment.
+- **The screen is a stack and a surface only shows when nothing above it is open.** `App.tsx` names the five levels and resolves the active surface. A new focus owning surface belongs in that stack or nowhere. The highest open focus owning surface receives input, and `LiveScreen.tsx` delegates Live keys to exactly one of Guide, panel or picture.
+- **The key model is mode specific.** At the uncovered Live picture, up and down always change channel, Left and OK open the Live browser, and Right opens the playback deck. At the uncovered finite picture, Left and Right quick seek, OK opens the deck, and up and down deliberately do nothing. Physical transport keys keep their semantic meaning on every surface. RETURN always goes back, and closes the app only when there is nothing left to close. `tests/keyLaws.test.tsx` enforces the Live contract.
+- **The three storage roles are distinct.** `services/store` keeps short launch values in synchronous localStorage. `services/disk` keeps refetchable catalogues and artwork in the budgeted `openiptv` IndexedDB cache. `services/personalDisk` keeps durable lineup overlays in `openiptv-personal`, which has no cache eviction and is never cleared by cache clearing.
+- **Provider catalogues remain immutable.** `stores/lineup` reconciles sparse personal overlays, then publishes the only Live category, channel, search, channel change and number index views that presentation may consume. Launch reads the cached catalogue and personal record together, so provider order never appears before personal order. Television management and paired phone management both call `applyLineupMutation`, while the effective number index owns dialling.
+- **No IndexedDB work occurs on a direction input path.** Interaction handlers read materialised arrays, sets and maps. Committed personal writes and cache work use `services/idle`, while a failed personal transaction restores the latest durable lineup revision and retains a recoverable management error. Playlist owner changes, removal and reset invalidate queued work, drain its promises and wait for an active write before destructive cleanup. Legacy settings disappear only after the replacement personal record commits.
+- **The cursor answers the press, the expensive work follows.** The rail waits 150ms before the channel column rebuilds, the search waits 150ms before it queries, and the tuner waits 450ms before it retunes. Anything expensive added to a held key needs the same treatment.
+- **VOD category focus is immediate.** Catalogue replacement settles after 150ms, poster requests begin 120ms later, and each accepted vertical wheel gesture moves one item in linear order before the 120ms guard begins.
+- **VOD never keeps a hidden provider connection.** Entering Movies or Series stops playback and releases the decoder, while returning to Live retunes the remembered channel through the playback controller.
+- **The 24 MiB disk cache has isolated classes.** Playlist and catalogue data use 12 MiB, poster derivatives use 8 MiB, and logo derivatives use 4 MiB. One class cannot evict another. Cache clearing never clears `openiptv-personal`.
+- **Phone lineup state stays bounded and revision bound.** Ordinary remote snapshots contain only active lineup readiness and revision. Queries default to 50 items and reject limits above 100. Every cursor binds playlist, revision, scope, category, search and hidden inclusion. A stale page or mutation returns the current revision and a fresh bounded snapshot, while repeated mutation request identifiers return their first result.
+- **Television fault controls exist only in the simulator shim.** `window.__openiptvTvFaults` can control prepare completion, buffering, playhead progress, seeks, faults, Live windows and visibility after a harness opts in. Production code does not create this interface.
 - **Cached playlists are keyed by address**, not by playlist id, or editing a URL serves the
   previous playlist from a cache that believes itself current.
 - **One artifact, no branching by model year.** The build targets es2019 and the stylesheet uses

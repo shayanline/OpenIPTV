@@ -20,6 +20,12 @@ if (!Element.prototype.scrollIntoView) {
   Element.prototype.scrollIntoView = () => {};
 }
 
+if (!Element.prototype.setPointerCapture) {
+  // The on-screen pad drags with pointer capture. jsdom has no capture to take.
+  Element.prototype.setPointerCapture = () => {};
+  Element.prototype.releasePointerCapture = () => {};
+}
+
 // createImageBitmap is used to shrink logos. Nothing in the tests draws one, and the logo
 // cache has its own tests where this is stubbed deliberately.
 if (!("createImageBitmap" in globalThis)) {

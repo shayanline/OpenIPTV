@@ -81,12 +81,7 @@ async function type(text: string) {
  */
 async function openSearch() {
   for (let i = 0; i < 4 && !document.querySelector(".rail.focused"); i++) press(KEY.LEFT);
-  for (
-    let i = 0;
-    i < 4 && !document.querySelector(".panel-key.selected, .content-selector.focused");
-    i++
-  )
-    press(KEY.UP);
+  for (let i = 0; i < 4 && !document.querySelector(".panel-key.selected"); i++) press(KEY.UP);
   for (
     let i = 0;
     i < 4 && document.querySelector(".panel-key.selected")?.textContent !== "Search";
@@ -122,6 +117,19 @@ test("typing filters the column to the channels whose names match", async () => 
   await type("alpha");
 
   assert.deepEqual(rows(), ["Alpha News", "Alpha Sport"]);
+});
+
+test("search uses effective channel names without changing provider identity", async () => {
+  await mountApp(PLAYLIST, {
+    personalLineup: {
+      version: 1,
+      revision: 1,
+      personalisation: { channels: { a: { name: "My Headlines" } } },
+    },
+  });
+  await openSearch();
+  await type("headlines");
+  assert.deepEqual(rows(), ["My Headlines"]);
 });
 
 test("results come from the whole playlist, not the category that was showing", async () => {
@@ -187,16 +195,6 @@ test("hidden categories are absent from search by default", async () => {
   assert.deepEqual(rows(), ["Alpha Sport"]);
 });
 
-test("a playlist can keep hidden category channels searchable", async () => {
-  await mountApp(PLAYLIST, {
-    hiddenCategories: ["News"],
-    hiddenCategoryMode: "search",
-  });
-  await openSearch();
-  await type("alpha");
-
-  assert.deepEqual(rows(), ["Alpha News", "Alpha Sport"]);
-});
 
 test("down leaves the field for the results, and up comes back to it", async () => {
   await mountApp(PLAYLIST);

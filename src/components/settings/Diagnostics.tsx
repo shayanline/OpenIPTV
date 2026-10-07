@@ -104,19 +104,22 @@ export function Diagnostics({
   const [cache, setCache] = useState(() => t("diagnostics.reading"));
   useEffect(() => {
     let live = true;
-    void disk.usage().then(({ bytes, count }) => {
-      if (!live) return;
-      const share = Math.round((bytes / disk.BUDGET_BYTES) * 100);
-      const entries = t("diagnostics.entryCount", { count });
-      setCache(
-        t("diagnostics.cacheUsage", {
+    void Promise.all([disk.usage(), disk.usageByClass()]).then(
+      ([{ bytes, count }, classes]) => {
+        if (!live) return;
+        const share = Math.round((bytes / disk.BUDGET_BYTES) * 100);
+        const entries = t("diagnostics.entryCount", { count });
+        const summary = t("diagnostics.cacheUsage", {
           used: (bytes / 1048576).toFixed(2),
           budget: Math.round(disk.BUDGET_BYTES / 1048576),
           share,
           entries,
-        }),
-      );
-    });
+        });
+        setCache(
+          `${summary} ${t("vod.catalogueCache")} ${(classes.catalogue.bytes / 1048576).toFixed(2)} MB, ${t("vod.posterCache")} ${(classes.poster.bytes / 1048576).toFixed(2)} MB, ${t("vod.logoCache")} ${(classes.logo.bytes / 1048576).toFixed(2)} MB.`,
+        );
+      },
+    );
     return () => {
       live = false;
     };

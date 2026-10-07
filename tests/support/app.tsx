@@ -2,6 +2,8 @@ import { act, render } from "@testing-library/react";
 import { afterEach, vi } from "vitest";
 import type { LocalePreference } from "../../src/services/locale";
 import type { PlaylistSource } from "../../src/services/playlistUrl";
+import type { XtreamEpisode, XtreamMovie } from "../../src/services/xtream";
+import type { MediaTrack } from "../../src/types";
 
 afterEach(() => vi.useRealTimers());
 
@@ -37,6 +39,15 @@ export function finishPlayback() {
   act(() => playbackEvent?.({ type: "ended" }));
 }
 
+/** A subtitle cue arriving from the engine, delivered like a real `subtitle` event. */
+export function emitSubtitle(text: string, durationMs = 0) {
+  act(() => playbackEvent?.({ type: "subtitle", text, durationMs }));
+}
+
+export function emitPlayback(event: unknown) {
+  act(() => playbackEvent?.(event));
+}
+
 export const XTREAM_SOURCE: PlaylistSource = {
   kind: "xtream",
   server: "http://provider.example",
@@ -57,13 +68,29 @@ export const xtreamFetch =
         ? categories
         : action === "get_live_streams"
           ? streams
-          : action === "get_vod_categories" || action === "get_series_categories"
-            ? []
-            : {
-                user_info: { auth: 1, status: "Active" },
-                server_info: { server_protocol: "http", url: "provider.example" },
-              };
-    return { ok: true, status: 200, json: async () => body };
+          : action === "get_short_epg"
+            ? {
+                epg_listings: [
+                  {
+                    id: "1",
+                    title: "Now showing",
+                    description: "",
+                    start_timestamp: "0",
+                    stop_timestamp: "9999999999",
+                    has_archive: 0,
+                  },
+                ],
+              }
+            : action === "get_vod_categories" || action === "get_series_categories"
+              ? []
+              : {
+                  user_info: { auth: 1, status: "Active" },
+                  server_info: { server_protocol: "http", url: "provider.example" },
+                };
+    return new Response(JSON.stringify(body), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
   };
 
 /** Presses a key the way the remote does, by keyCode, which is what the app listens for. */
@@ -139,14 +166,20 @@ export interface MountOptions {
    * ever. Anything asserting on that has to let the channel take a moment, as a real one does.
    */
   slowPicture?: number;
-  playbackStats?: boolean;
+  continuousReconnect?: boolean;
+  /** Give the live clock a seekable window behind an edge, for delayed Live tests. */
+  liveDvr?: boolean;
   faultPicture?: boolean;
   seekFails?: boolean;
+  playerTracks?: MediaTrack[];
+  trackFails?: boolean;
   locale?: LocalePreference;
   hiddenCategories?: string[];
-  hiddenCategoryMode?: "exclude" | "search";
+  personalLineup?: unknown;
+  personalWrite?: (playlistId: string, value: unknown) => Promise<void>;
   source?: PlaylistSource;
   fetchImplementation?: (input: string | URL, init?: RequestInit) => Promise<unknown>;
+  playbackUrl?: (item: XtreamMovie | XtreamEpisode) => Promise<string>;
 }
 
 export async function mountApp(
@@ -155,14 +188,19 @@ export async function mountApp(
     resume,
     awaitPlaylist = true,
     slowPicture = 0,
-    playbackStats = false,
+    continuousReconnect = false,
+    liveDvr = false,
     faultPicture = false,
     seekFails = false,
+    playerTracks = [],
+    trackFails = false,
     locale,
     hiddenCategories = [],
-    hiddenCategoryMode = "exclude",
+    personalLineup = null,
+    personalWrite = async () => {},
     source,
     fetchImplementation,
+    playbackUrl,
   }: MountOptions = {},
 ) {
   if (!vi.isFakeTimers()) vi.useFakeTimers();
@@ -176,6 +214,22 @@ export async function mountApp(
   playbackDuration = 120;
   playbackEvent = null;
 
+  vi.doMock("../../src/services/personalDisk", () => ({
+    readLineup: async () => personalLineup,
+    writeLineup: personalWrite,
+    removeLineup: async () => {},
+    clearLineups: async () => {},
+  }));
+
+  if (playbackUrl) {
+    vi.doMock("../../src/stores/library", async (importOriginal) => {
+      const actual = await importOriginal<typeof import("../../src/stores/library")>();
+      return { ...actual, libraryPlaybackUrl: playbackUrl };
+    });
+  } else {
+    vi.doUnmock("../../src/stores/library");
+  }
+
   vi.doMock("../../src/services/player", () => ({
     onTizen: () => false,
     Player: class {
@@ -187,18 +241,50 @@ export async function mountApp(
       stop() {}
       hide() {}
       show() {}
-      pause() {}
-      resumePlayback() {}
+      pause() {
+        return true;
+      }
+      resumePlayback() {
+        return true;
+      }
+      canPause() {
+        return true;
+      }
+      warmRecover() {
+        return false;
+      }
+      getTracks() {
+        return playerTracks;
+      }
+      selectTrack(kind: "audio" | "subtitle", engineIndex: number | null) {
+        if (trackFails) return false;
+        for (const track of playerTracks) {
+          if (track.kind === kind) track.selected = track.engineIndex === engineIndex;
+        }
+        this.emit({ type: "tracks" });
+        return true;
+      }
       getPosition() {
         return playbackPosition;
       }
       getDuration() {
         return playbackDuration;
       }
-      seekBy(delta: number) {
-        seekChanges.push(delta);
+      getClock() {
+        return {
+          position: playbackPosition,
+          duration: playbackDuration,
+          seekableStart: liveDvr ? 0 : null,
+          seekableEnd: liveDvr ? playbackDuration - 5 : null,
+          engineLiveEdge: liveDvr ? playbackDuration : null,
+          bufferedEnd: null,
+          segmentSeconds: null,
+        };
+      }
+      seekTo(target: number) {
+        seekChanges.push(target - playbackPosition);
         if (seekFails) return Promise.resolve(false);
-        playbackPosition = Math.max(0, Math.min(playbackDuration, playbackPosition + delta));
+        playbackPosition = Math.max(0, Math.min(playbackDuration, target));
         return Promise.resolve(true);
       }
       setMuted(value: boolean) {
@@ -227,20 +313,28 @@ export async function mountApp(
           switches: 2,
         };
       }
-      play(url: string, ...options: unknown[]) {
-        played.push(url);
-        playCalls.push([url, ...options]);
+      play(request: {
+        url: string;
+        browserRepair: boolean;
+        bufferSeconds: number;
+        mode: "live" | "finite";
+        startSeconds: number;
+      }) {
+        played.push(request.url);
+        playCalls.push([
+          request.url,
+          request.browserRepair,
+          request.bufferSeconds === 6 ? undefined : request.bufferSeconds,
+          request.mode,
+          request.startSeconds || undefined,
+        ]);
         // A picture arrives at once, so the tests are about the interface rather than about
         // waiting, unless a test has asked for a channel that takes a moment to join.
-        if (faultPicture) this.emit({ type: "error", code: "TEST_FAILURE" });
+        if (faultPicture)
+          this.emit({ type: "error", code: "PLAYER_ERROR_NOT_SUPPORTED_FILE", warmKind: null });
         else if (slowPicture) setTimeout(() => this.emit({ type: "playing" }), slowPicture);
         else this.emit({ type: "playing" });
-      }
-      resumeLive(url: string) {
-        this.play(url);
-      }
-      resume(url: string) {
-        this.resumeLive(url);
+        if (playerTracks.length) this.emit({ type: "tracks" });
       }
     },
   }));
@@ -254,12 +348,11 @@ export async function mountApp(
           name: "Test",
           ...(source ? { source, sourceVersion: 1 } : { url: "http://list.invalid/a.m3u" }),
           hiddenCategories,
-          hiddenCategoryMode,
         },
       ],
       activePlaylistId: "pl-1",
       resumeLast: !!resume,
-      showPlaybackStats: playbackStats,
+      continuousReconnect,
       ...(locale ? { locale } : {}),
     }),
   );
@@ -274,7 +367,8 @@ export async function mountApp(
       : vi.fn().mockResolvedValue({ ok: true, text: async () => playlist }),
   );
 
-  const { default: App } = await import("../../src/App");
+  const { default: App, preloadVodScreen } = await import("../../src/App");
+  await preloadVodScreen();
   const view = render(<App />);
   if (!awaitPlaylist) return view;
   // Let the playlist land.

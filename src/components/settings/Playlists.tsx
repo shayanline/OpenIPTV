@@ -1,28 +1,27 @@
-import { useLayoutEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { useLocale } from "../../hooks/useLocale";
-import { KEY, useRemote } from "../../hooks/useRemote";
-import { useSettings, type HiddenCategoryMode, type Playlist } from "../../stores/settings";
+import { useSettings, type Playlist } from "../../stores/settings";
 import { clearPlaylistCache, useChannels } from "../../stores/channels";
 import {
   checkPlaylistUrl,
   m3uSource,
   nameFromUrl,
-  parseXtreamPlaylistUrl,
+  parseXtreamTemplateUrl,
   sourceDisplay,
   type XtreamOutput,
+  xtreamFromServerField,
   xtreamSource,
 } from "../../services/playlistUrl";
 import type { MessageKey } from "../../services/locale";
 import { forgetRepairSource } from "../../services/repair";
-import type { XtreamAccount, XtreamContentKind } from "../../services/xtream";
+import type { XtreamAccount } from "../../services/xtream";
 import { Confirm } from "../Confirm";
 import { Icon } from "../Icon";
 import { Text } from "../Text";
 import { OptionPicker } from "../OptionPicker";
 import type { SettingsDetailNavigation } from "../Settings";
-import { PageHeader, Row, SettingsListHeader } from "./Field";
-
-const CATEGORY_PAGE_SIZE = 20;
+import { PageHeader, SettingsListHeader } from "./Field";
+import { LineupManager } from "./LineupManager";
 
 function AccountStatus({ account }: { account: XtreamAccount }) {
   const { t, locale, number } = useLocale();
@@ -71,377 +70,6 @@ function replacesSourceAccount(left: Playlist["source"], right: Playlist["source
   );
 }
 
-function CategoryManager({
-  playlist,
-  categories,
-  onAsking,
-}: {
-  playlist: Playlist;
-  categories: { key: string; name: string }[];
-  onAsking: (asking: boolean) => void;
-}) {
-  const { t, number } = useLocale();
-  const settings = useSettings();
-  const [query, setQuery] = useState("");
-  const [categoryKind, setCategoryKind] = useState<XtreamContentKind>("live");
-  const [page, setPage] = useState(0);
-  const [searching, setSearching] = useState(false);
-  const [actionsOpen, setActionsOpen] = useState(false);
-  const [confirmingAll, setConfirmingAll] = useState(false);
-  const searchButton = useRef<HTMLButtonElement>(null);
-  const searchInput = useRef<HTMLInputElement>(null);
-  const moreButton = useRef<HTMLButtonElement>(null);
-  const previousPage = useRef<HTMLButtonElement>(null);
-  const nextPage = useRef<HTMLButtonElement>(null);
-  const managed =
-    playlist.source.kind === "xtream"
-      ? categories.filter((category) => category.key.startsWith(`${categoryKind}:`))
-      : categories;
-  const managedKeys = new Set(managed.map((category) => category.key));
-  const folded = query.trim().toLocaleLowerCase();
-  const matches = folded
-    ? managed.filter((category) => category.name.toLocaleLowerCase().includes(folded))
-    : managed;
-  const pages = Math.max(1, Math.ceil(matches.length / CATEGORY_PAGE_SIZE));
-  const currentPage = Math.min(page, pages - 1);
-  const shown = matches.slice(
-    currentPage * CATEGORY_PAGE_SIZE,
-    (currentPage + 1) * CATEGORY_PAGE_SIZE,
-  );
-  const modeOptions: readonly { id: HiddenCategoryMode; label: string }[] = [
-    { id: "exclude", label: t("playlist.hideEverywhere") },
-    { id: "search", label: t("playlist.keepSearchable") },
-  ];
-  const modeLabel = modeOptions.find(
-    (option) => option.id === playlist.hiddenCategoryMode,
-  )?.label;
-
-  const pageFromRow = (direction: -1 | 1) => {
-    const next = currentPage + direction;
-    if (next < 0 || next >= pages) return false;
-    setPage(next);
-    return true;
-  };
-
-  const closeHideAll = () => {
-    moreButton.current?.focus();
-    setConfirmingAll(false);
-    onAsking(false);
-  };
-  const closeSearch = () => {
-    searchButton.current?.focus();
-    setSearching(false);
-    onAsking(false);
-  };
-  const openSearch = () => {
-    setActionsOpen(false);
-    setSearching(true);
-    onAsking(true);
-  };
-  const closeActions = () => {
-    moreButton.current?.focus();
-    setActionsOpen(false);
-    onAsking(false);
-  };
-  const openActions = () => {
-    setSearching(false);
-    setActionsOpen(true);
-    onAsking(true);
-  };
-
-  useLayoutEffect(() => {
-    if (searching) {
-      searchInput.current?.focus();
-      return;
-    }
-    if (actionsOpen) {
-      document
-        .querySelector<HTMLButtonElement>(".category-actions-menu .settings-menu-item")
-        ?.focus();
-      return;
-    }
-  }, [searching, actionsOpen]);
-
-  useRemote((code, event) => {
-    if (searching && code === KEY.ENTER) {
-      event.preventDefault();
-      event.stopImmediatePropagation();
-      closeSearch();
-      return;
-    }
-    if (
-      searching &&
-      (code === KEY.BACK || code === KEY.ESC || code === KEY.UP || code === KEY.DOWN)
-    ) {
-      event.preventDefault();
-      event.stopImmediatePropagation();
-      closeSearch();
-      return;
-    }
-    if (!actionsOpen) return;
-    if (code === KEY.BACK || code === KEY.ESC || code === KEY.LEFT || code === KEY.RIGHT) {
-      event.preventDefault();
-      event.stopImmediatePropagation();
-      closeActions();
-      return;
-    }
-    if (code !== KEY.UP && code !== KEY.DOWN) return;
-    event.preventDefault();
-    event.stopImmediatePropagation();
-    const items = Array.from(
-      document.querySelectorAll<HTMLButtonElement>(
-        ".category-actions-menu .settings-menu-item",
-      ),
-    );
-    const at = items.indexOf(document.activeElement as HTMLButtonElement);
-    const next = code === KEY.UP ? Math.max(0, at - 1) : Math.min(items.length - 1, at + 1);
-    items[next]?.focus();
-  });
-
-  return (
-    <>
-      <p className="sheet-lead settings-detail-context">
-        <Text value={playlist.name} />
-      </p>
-      <Row label={t("playlist.hiddenChannels")} hint={t("playlist.hiddenChannelsHint")}>
-        <button
-          type="button"
-          className="btn tonal"
-          data-settings-detail-first
-          data-ok-guide={t("common.changeIt")}
-          aria-label={`${t("playlist.hiddenChannels")}, ${modeLabel}`}
-          onClick={() =>
-            settings.setHiddenCategoryMode(
-              playlist.id,
-              playlist.hiddenCategoryMode === "exclude" ? "search" : "exclude",
-            )
-          }
-        >
-          <span>{modeLabel}</span>
-        </button>
-      </Row>
-      {playlist.source.kind === "xtream" && (
-        <div className="category-kind-selector">
-          {(["live", "movie", "series"] as const).map((kind) => (
-            <button
-              key={kind}
-              type="button"
-              className="category-kind-option"
-              aria-pressed={categoryKind === kind}
-              onClick={() => {
-                setCategoryKind(kind);
-                setPage(0);
-              }}
-            >
-              <Icon name={kind === "live" ? "tv" : kind === "movie" ? "movie" : "series"} />
-              <span>
-                {t(
-                  kind === "live"
-                    ? "content.live"
-                    : kind === "movie"
-                      ? "content.movies"
-                      : "content.series",
-                )}
-              </span>
-              <span className="count">
-                {number(
-                  categories.filter((category) => category.key.startsWith(`${kind}:`)).length,
-                )}
-              </span>
-            </button>
-          ))}
-        </div>
-      )}
-      <div className="settings-list-tools">
-        <SettingsListHeader
-          title={t("playlist.manageCategories")}
-          count={number(matches.length)}
-        >
-          <button
-            ref={searchButton}
-            type="button"
-            className="settings-icon-action"
-            aria-label={t("playlist.categorySearch")}
-            aria-expanded={searching}
-            aria-pressed={!!query}
-            onClick={() => (searching ? closeSearch() : openSearch())}
-          >
-            <Icon name="search" />
-          </button>
-          <button
-            ref={moreButton}
-            type="button"
-            className="settings-icon-action"
-            aria-label={t("playlist.categoryActions")}
-            aria-expanded={actionsOpen}
-            onClick={() => (actionsOpen ? closeActions() : openActions())}
-          >
-            <Icon name="more" />
-          </button>
-        </SettingsListHeader>
-        {searching && (
-          <div className="category-search-popup">
-            <input
-              ref={searchInput}
-              aria-label={t("playlist.categorySearch")}
-              value={query}
-              dir="auto"
-              onChange={(event) => {
-                setQuery(event.target.value);
-                setPage(0);
-              }}
-            />
-          </div>
-        )}
-        {actionsOpen && (
-          <div className="category-actions-menu">
-            <button
-              type="button"
-              className="settings-menu-item"
-              onClick={() => {
-                setActionsOpen(false);
-                setConfirmingAll(true);
-              }}
-            >
-              <Icon name="hidden" />
-              <span>{t("playlist.hideAllCategories")}</span>
-            </button>
-            <button
-              type="button"
-              className="settings-menu-item"
-              onClick={() => {
-                settings.setHiddenCategories(
-                  playlist.id,
-                  playlist.hiddenCategories.filter((key) => !managedKeys.has(key)),
-                );
-                closeActions();
-              }}
-            >
-              <Icon name="visible" />
-              <span>{t("playlist.showAllCategories")}</span>
-            </button>
-          </div>
-        )}
-      </div>
-      <div className="category-settings-list">
-        {shown.map((category, row) => {
-          const hidden = playlist.hiddenCategories.includes(category.key);
-          return (
-            <button
-              key={category.key}
-              type="button"
-              className={`category-setting-row ${hidden ? "hidden" : ""}`}
-              aria-label={t(hidden ? "playlist.unhideCategory" : "playlist.hideCategory", {
-                name: category.name,
-              })}
-              data-ok-guide={t(
-                hidden ? "playlist.unhideCategoryGuide" : "playlist.hideCategoryGuide",
-              )}
-              onClick={(event) => {
-                const nextHidden = !hidden;
-                settings.setCategoryHidden(playlist.id, category.key, nextHidden);
-                event.currentTarget.dataset.okGuide = t(
-                  nextHidden ? "playlist.unhideCategoryGuide" : "playlist.hideCategoryGuide",
-                );
-                event.currentTarget.dispatchEvent(new FocusEvent("focusin", { bubbles: true }));
-              }}
-              onKeyDown={(event) => {
-                if (
-                  event.keyCode === KEY.DOWN &&
-                  row === shown.length - 1 &&
-                  matches.length > CATEGORY_PAGE_SIZE
-                ) {
-                  event.preventDefault();
-                  event.stopPropagation();
-                  nextPage.current?.focus();
-                }
-              }}
-            >
-              <Text value={category.name} />
-              <span className={`switch ${hidden ? "" : "on"}`} aria-hidden="true">
-                <span className="switch-track">
-                  <span className="switch-knob" />
-                </span>
-                <span>{t(hidden ? "common.off" : "common.on")}</span>
-              </span>
-            </button>
-          );
-        })}
-      </div>
-      {!managed.length ? (
-        <p className="sheet-lead">{t("playlist.noCategories")}</p>
-      ) : (
-        !shown.length && (
-          <p className="sheet-lead" role="status">
-            {t("playlist.noCategoryMatches")}
-          </p>
-        )
-      )}
-      {matches.length > CATEGORY_PAGE_SIZE && (
-        <div className="category-pagination">
-          <button
-            ref={previousPage}
-            type="button"
-            className="btn tonal"
-            aria-disabled={currentPage === 0}
-            onClick={() => pageFromRow(-1)}
-            onKeyDown={(event) => {
-              if (event.keyCode !== KEY.UP) return;
-              event.preventDefault();
-              event.stopPropagation();
-              const rows =
-                document.querySelectorAll<HTMLButtonElement>(".category-setting-row");
-              rows[rows.length - 1]?.focus();
-            }}
-          >
-            <span>{t("common.previous")}</span>
-          </button>
-          <p className="category-position">
-            {t("playlist.categoryPosition", {
-              from: currentPage * CATEGORY_PAGE_SIZE + 1,
-              to: currentPage * CATEGORY_PAGE_SIZE + shown.length,
-              total: matches.length,
-            })}
-          </p>
-          <button
-            ref={nextPage}
-            type="button"
-            className="btn tonal"
-            aria-disabled={currentPage === pages - 1}
-            onClick={() => pageFromRow(1)}
-            onKeyDown={(event) => {
-              if (event.keyCode !== KEY.UP) return;
-              event.preventDefault();
-              event.stopPropagation();
-              const rows =
-                document.querySelectorAll<HTMLButtonElement>(".category-setting-row");
-              rows[rows.length - 1]?.focus();
-            }}
-          >
-            <span>{t("common.next")}</span>
-          </button>
-        </div>
-      )}
-      {confirmingAll && (
-        <Confirm
-          title={t("playlist.hideAllQuestion")}
-          body={t("playlist.hideAllBody")}
-          confirmLabel={t("playlist.hideAllCategories")}
-          cancelLabel={t("common.cancel")}
-          onCancel={closeHideAll}
-          onConfirm={() => {
-            settings.setHiddenCategories(playlist.id, [
-              ...playlist.hiddenCategories.filter((key) => !managedKeys.has(key)),
-              ...managed.map((category) => category.key),
-            ]);
-            closeHideAll();
-          }}
-        />
-      )}
-    </>
-  );
-}
-
 export function Playlists({
   onAsking,
   navigation,
@@ -451,8 +79,7 @@ export function Playlists({
 }) {
   const { t, number } = useLocale();
   const s = useSettings();
-  const { load, loading, error, errorKey, errorDetail, channels, managedCategories, accounts } =
-    useChannels();
+  const { load, loading, error, errorKey, errorDetail, channels, accounts } = useChannels();
   const errorText = (
     key: MessageKey | "" | undefined,
     detail: string | undefined,
@@ -471,7 +98,7 @@ export function Playlists({
   const [problem, setProblem] = useState<MessageKey | "">("");
   const [dismissedXtreamUrl, setDismissedXtreamUrl] = useState("");
   const suggestedXtream =
-    source === "m3u" && url !== dismissedXtreamUrl ? parseXtreamPlaylistUrl(url, "m3u8") : null;
+    source === "m3u" && url !== dismissedXtreamUrl ? parseXtreamTemplateUrl(url, "m3u8") : null;
   /** Which playlist has been asked about but not yet confirmed for removal. */
   const [confirming, setConfirming] = useState("");
   const [managing, setManaging] = useState("");
@@ -487,8 +114,6 @@ export function Playlists({
       name: "",
       source: { kind: "m3u", url: "" },
       sourceVersion: 1,
-      hiddenCategories: [],
-      hiddenCategoryMode: "exclude",
     });
     setName("");
     setUrl("");
@@ -563,7 +188,11 @@ export function Playlists({
       ? editing.id === s.activePlaylist()?.id
       : s.playlists.length === 0;
     if (editing?.id) {
-      s.updatePlaylist(editing.id, label, playlistSource);
+      const updated = await s.updatePlaylist(editing.id, label, playlistSource);
+      if (!updated) {
+        setProblem("lineup.persistenceFailed" as MessageKey);
+        return;
+      }
       if (replacesSourceAccount(editing.source, playlistSource)) {
         await clearPlaylistCache(editing);
         forgetRepairSource(editing.id);
@@ -612,25 +241,17 @@ export function Playlists({
     setNote("");
     setManaging(playlist.id);
     navigation.open(
-      `playlist-categories-${playlist.id}`,
-      t("playlist.manageCategories"),
-      `playlist-categories-${playlist.id}`,
+      `playlist-lineup-${playlist.id}`,
+      t("lineup.title"),
+      `playlist-lineup-${playlist.id}`,
       () => setManaging(""),
     );
   };
 
-  const categoryCountFor = (playlist: Playlist) =>
-    playlist.id === s.activePlaylistId && managedCategories.length
-      ? managedCategories.length
-      : playlist.categoryCount;
   const managedPlaylist = s.playlists.find((playlist) => playlist.id === managing);
   if (managedPlaylist) {
     return (
-      <CategoryManager
-        playlist={managedPlaylist}
-        categories={managedCategories}
-        onAsking={onAsking}
-      />
+      <LineupManager playlist={managedPlaylist} onAsking={onAsking} navigation={navigation} />
     );
   }
 
@@ -726,9 +347,12 @@ export function Playlists({
                 spellCheck={false}
                 dir="ltr"
                 onChange={(event) => {
-                  const parsed = parseXtreamPlaylistUrl(event.target.value, "m3u8");
-                  if (parsed) applyXtream(parsed);
-                  else setServer(event.target.value);
+                  applyXtream(
+                    xtreamFromServerField(
+                      { kind: "xtream", server, username, password, output },
+                      event.target.value,
+                    ),
+                  );
                 }}
               />
               <label htmlFor="pl-username">{t("onboarding.username")}</label>
@@ -793,6 +417,7 @@ export function Playlists({
       </p>
 
       <SettingsListHeader
+        className="playlist-list-header"
         title={t("playlist.savedPlaylists")}
         count={number(s.playlists.length)}
       >
@@ -837,8 +462,18 @@ export function Playlists({
                   <span className="tag">{t("common.active")}</span>
                 )}
               </span>
-              <span className="pl-url" dir="ltr">
-                {sourceDisplay(p.source)}
+              <span className="pl-stats">
+                {p.categoryCount !== undefined &&
+                  t("playlist.categoryCount", {
+                    count: number(p.categoryCount),
+                    total: p.categoryCount,
+                  })}
+                {p.channelCount !== undefined && (
+                  <>
+                    {p.categoryCount !== undefined && <span aria-hidden="true"> · </span>}
+                    {number(p.channelCount)} {t("channel.channels")}
+                  </>
+                )}
               </span>
               {p.source.kind === "xtream" && accounts[p.id] && (
                 <AccountStatus account={accounts[p.id]} />
@@ -847,26 +482,17 @@ export function Playlists({
             {/* Tonal rather than flat. Flat text at three metres reads as a label, not as
                 something you can press, and One UI gives a medium emphasis control a grey
                 fill precisely so it still looks like a control. */}
-            {categoryCountFor(p) !== 0 && (
-              <button
-                type="button"
-                className="btn tonal"
-                data-settings-focus={`playlist-categories-${p.id}`}
-                data-ok-guide={t("common.open")}
-                aria-label={t("playlist.manageCategoriesAria", { name: p.name })}
-                onClick={() => void manage(p)}
-              >
-                <Icon name="categories" />
-                <span>
-                  {typeof categoryCountFor(p) === "number"
-                    ? t("playlist.categoryCount", {
-                        count: number(categoryCountFor(p) ?? 0),
-                        total: categoryCountFor(p) ?? 0,
-                      })
-                    : t("playlist.manageCategories")}
-                </span>
-              </button>
-            )}
+            <button
+              type="button"
+              className="btn tonal"
+              data-settings-focus={`playlist-lineup-${p.id}`}
+              data-ok-guide={t("common.open")}
+              aria-label={`${t("lineup.title")}, ${p.name}`}
+              onClick={() => void manage(p)}
+            >
+              <Icon name="categories" />
+              <span>{t("lineup.title")}</span>
+            </button>
             <button
               type="button"
               className="btn tonal"
@@ -904,10 +530,14 @@ export function Playlists({
           cancelLabel={t("common.keepIt")}
           destructive
           onCancel={() => ask("")}
-          onConfirm={() => {
+          onConfirm={async () => {
             const gone = s.playlists.find((p) => p.id === confirming);
-            s.removePlaylist(confirming);
-            if (gone) void clearPlaylistCache(gone);
+            const removed = await s.removePlaylist(confirming);
+            if (!removed) {
+              setNote(t("lineup.persistenceFailed" as MessageKey));
+              return;
+            }
+            if (gone) await clearPlaylistCache(gone);
             forgetRepairSource(confirming);
             ask("");
             setNote(t("playlist.removed", { name: gone?.name ?? "" }));

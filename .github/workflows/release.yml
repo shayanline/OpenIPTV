@@ -119,10 +119,13 @@ jobs:
       # when the build fails.
       #
       # A note on what this signature is worth. The distributor certificate is issued against
-      # specific televisions, so this widget installs on those sets and nowhere else. That is fine
-      # for the store, which strips this signature and applies its own, and it is the reason the
-      # release notes say plainly that the asset is a submission build rather than something a
-      # stranger can sideload.
+      # specific televisions, so this widget installs on those sets and nowhere else, which makes
+      # it useless to anybody downloading it: a retail set answers it with a certificate error.
+      # Worse, the certificate carries the identifier of the television it was issued for, so
+      # publishing it would disclose that. The signature exists for the store submission, where
+      # Samsung strips it and applies its own, so the signed widget leaves this workflow as a
+      # private artifact a step below, and the public release asset has the signature entries
+      # removed from the archive entirely.
       #
       # Registering the profile and signing with it are one step rather than two because on Linux
       # the CLI does not keep the password in profiles.xml at all. `security-profiles add` hands it
@@ -230,6 +233,35 @@ jobs:
         if: always()
         run: rm -f "$RUNNER_TEMP/author.p12" "$RUNNER_TEMP/distributor.p12"
 
+      # The signed widget is the submission build, kept aside as a workflow artifact for the
+      # Seller Office form. What the release publishes is the same widget with both signature
+      # entries deleted from the archive, because a signature bound to one television's identifier
+      # installs nowhere else and discloses that identifier in a public download. The checks below
+      # assert rather than assume: a signature left behind, or a config.xml gone missing, fails
+      # the release before anything is attached to it.
+      - name: Publish the unsigned widget, keep the signed one for the store
+        run: |
+          mkdir -p build/submission
+          mv build/OpenIPTV.wgt build/submission/OpenIPTV.wgt
+          cp build/submission/OpenIPTV.wgt build/OpenIPTV.wgt
+          zip -d build/OpenIPTV.wgt 'author-signature.xml' 'signature*.xml'
+          remaining=$(unzip -Z1 build/OpenIPTV.wgt | grep -E '^(author-signature|signature[0-9]*)\.xml$' || true)
+          if [ -n "$remaining" ]; then
+            echo "Signature entries are still in the published widget: $remaining"
+            echo "Refusing to release it."
+            exit 1
+          fi
+          if ! unzip -Z1 build/OpenIPTV.wgt | grep -qx 'config.xml'; then
+            echo "config.xml is missing from the published widget root. Refusing to release it."
+            exit 1
+          fi
+
+      - name: Upload the signed submission build
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: OpenIPTV-submission
+          path: build/submission/OpenIPTV.wgt
+
       - name: Checksum what is being published
         run: |
           cd build
@@ -260,15 +292,14 @@ jobs:
 
           ---
 
-          Try it in a browser at https://shayanline.github.io/OpenIPTV, built from this tag.
-          Install it on your own television with the Tizen CLI, or read the README for the step by
-          step. `OpenIPTV.wgt.sha256` is the checksum of the attached widget.
+          [Try it in a browser](https://shayanline.github.io/OpenIPTV), built from this tag.
+          Read the README for the installation routes. `OpenIPTV.wgt.sha256` is the checksum of
+          the attached widget.
 
-          **This widget is signed for the televisions its distributor certificate was issued for,
-          so it will refuse to install on any other set.** That is how Tizen sideloading works
-          rather than a restriction chosen here: sign your own build with your own certificate,
-          which the README explains, and it installs on your television. When this application is
-          submitted to Samsung, the store replaces the signature with its own.
+          **The attached widget carries no signature, and that is deliberate.** A retail
+          television only accepts a widget signed for itself, so an installer signs this file for
+          your television as it installs it. The README covers both Apps2Samsung and TizenBrew,
+          and signing a build yourself with the Tizen CLI works just as well.
           MD
           cat release-notes.md
 
@@ -285,8 +316,8 @@ jobs:
   # ---------------------------------------------------------------------------------
   # The same application, in a browser.
   #
-  # A television is a high bar for trying something out: the widget only installs on the sets its
-  # distributor certificate names, so for anybody who is not already set up to sign, the honest
+  # A television is a high bar for trying something out: sideloading the widget means signing it
+  # for the set it lands on, so for anybody who is not already set up to sign, the honest
   # answer to "what does it look like" used to be a screenshot. The web build is the same source
   # and the same bundle, on the hls.js path rather than the AVPlay one, so it answers that question
   # without asking anybody to own the right television.

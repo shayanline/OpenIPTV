@@ -42,7 +42,70 @@ The tests cover the parts where a mistake is quiet rather than obvious:
 - the **rail's two stages**, that the cursor answers the press and the column does not, because
   nothing on screen says that has regressed except that it feels slow
 
-What they cannot cover is video decode, GPU behaviour and real hardware timing.
+### Playback and recovery
+
+The playback subsystem is covered where its rules are easy to break quietly:
+
+- **playbackRange** holds the seek arithmetic, finite clamping and the delayed Live window
+  rules as pure functions.
+- **playbackTracks** covers track normalisation, labels and the automatic identities the
+  drawers present.
+- **player** covers the engine boundary: emitted events, track reading after metadata
+  arrives, subtitle silence following the viewer's choice, and the AVPlay call ordering.
+- **playbackRecovery** covers the coordinator itself: startup and rebuffer limits, the frozen
+  playhead sampler, warm recovery, the compatibility and HTTP fallback steps, the bounded
+  retry schedule, continuous reconnect, terminal classification and what happens off screen.
+- **playbackController** covers the state the screen reads: tuning, preview naming, finite
+  resume, track memory, the 1.5 second status delay, countdowns and the continuous reconnect
+  session rules.
+- **playbackDeck** covers the deck's own rules: control order, focus clamping, the seek bar,
+  Go live at the end of a delayed window and the withdrawal timer.
+- **Track drawers, subtitles and the Guide** are covered through the key law suite, along
+  with the progress records and migration that finite Stop and resume rest on.
+- the **key transition matrix** at the foot of `keyLaws.test.tsx` states, as data, which
+  surface owns the next key after each meaningful press, so a new surface has to name its
+  rows rather than inherit accidents.
+
+The recovery state the controller exposes is intentionally free of addresses, engine strings
+and provider detail, so the deterministic fault fixtures of the completion work can inspect
+`recovery` without ever receiving a playback target.
+
+### VOD catalogue and interface
+
+The VOD tests divide ownership by boundary, so a provider payload, cache result, navigation transition, rendered control, and television journey each have one direct place to fail.
+
+- `xtream.test.ts` owns provider normalization, bounded responses, direct sources, generated addresses, season union, and episode identity.
+- `library.test.ts`, `personal.test.ts`, and `search.test.ts` own six hour resources, stale refresh, cancellation, synthetic categories, progress resolution, Series Continue, and ranked scoped search.
+- `disk.test.ts`, `artwork.test.ts`, and `logos.test.ts` own cache partitions, the two decode lanes, byte limits, bitmap closure, backdrop leases, and the Live logo adapter.
+- `windowed.test.ts` and `vodNavigation.test.ts` own complete poster rows, independent mode memory, exact Back origins, season preview, and the wheel guard.
+- `library-ui.test.tsx`, `keyLaws.test.tsx`, and `rtl-controls.test.tsx` own the opaque shell, poster cards, search, details, episodes, focus clamping, pointer behavior, and mirrored directions.
+- The parity walk captures every structural VOD region, while the simulator measures cold and warm grids, held input, category settle, origin restore, details, episodes, wheel input, and heap growth.
+
+### What still needs a television
+
+The simulator's engine is hls.js agreeing with the test, so the acceptance list below belongs
+to `npm run tv:on-set` on real hardware, and the completion work adds deterministic AVPlay
+fault controls, provider connection assertions and the full redesign journeys on top of it:
+
+- Live channel without DVR: tune, channel up and down, and a Reopen after a pulled network.
+- Live channel with DVR: the deck's seek bar, clamping at the window edges, and Go live.
+- Finite playback: quick seek with Left and Right, the settle into one engine seek, and Stop
+  returning to the details that launched it.
+- Audio and subtitle track selection, including Off and Automatic, with cues drawn over AVPlay.
+- Rebuffering: nothing under 1.5 seconds, compact status beside the clock after it, and the
+  last frame left untouched.
+- Frozen playhead recovery: the sampler reports it and recovery reopens without a keypress.
+- A terminal refusal shows the full picture state and stops retrying.
+- Hiding the app suspends the engine and returning coordinates exactly one restore.
+- Continuous reconnect retries a dead live channel indefinitely, and turning it off during a wait ends at the bounded result on the same channel.
+- A large poster catalogue keeps six columns responsive while held directions move focus without mounting the full provider index.
+- Category focus answers immediately, content settles once after movement stops, and Back restores the exact category and poster.
+- Scoped Movie and Series search returns to the exact origin after details close.
+- Movie Resume uses saved seconds, while Start from beginning uses zero and preserves old progress until the new session advances.
+- Series Continue resumes the selected target, while restart and manual episode selection begin at zero.
+- Favourite state updates the title toggle, poster badge, category count, and category visibility together.
+- Missing and undecodable artwork preserves card geometry with a stable placeholder.
+- Right to left layouts mirror rail, grid, title, season, and episode movement without changing Back semantics.
 
 ## Spacing on the old sets
 
@@ -151,6 +214,25 @@ player, because the two things worth testing are not compatible:
 | `npm run tv` | transparency, hole punch, remote keys, AVPlay state machine | placeholder |
 | `npm run tv:video` | skipped, the app takes its browser path | real, via hls.js |
 
+### Deterministic television faults
+
+The simulator injects `window.__openiptvTvFaults` through `scripts/tv/shim.js`. Production builds do not create this object, and ordinary simulator playback remains unchanged until a journey calls `useControlledPlayback()`.
+
+- `reset()` clears every controlled value, releases controlled playback and restores ordinary document visibility behavior.
+- `useControlledPlayback()` starts deterministic AVPlay behavior and connection counting.
+- `completePrepare()` completes the held `prepareAsync` call through the ordinary buffering complete listener and success callback.
+- `startBuffering()` and `endBuffering()` dispatch the AVPlay buffering callbacks consumed by the playback controller.
+- `freezePlayhead()` holds the current time, while `resumePlayhead()` resumes advancement from the harness clock.
+- `nextSeek("complete")`, `nextSeek("omit-callback")` and `nextSeek("reject")` control the next seek callback result.
+- `emitNetworkFault()` dispatches `PLAYER_ERROR_CONNECTION_FAILED`, while `emitMediaFault()` dispatches `PLAYER_ERROR_NOT_SUPPORTED_FILE`.
+- `setLiveWindow(startMilliseconds, endMilliseconds)` controls `GET_LIVE_DURATION`.
+- `setHidden(hidden)` controls document visibility and dispatches `visibilitychange`.
+- `snapshot()` returns controlled mode, connection count, seek targets, buffering, frozen state, Live window, latest fault and hidden state.
+
+A provider connection is counted when controlled `open` begins a target. Each controlled application journey opens More, reads the sanitised enum or empty value from `[data-recovery-cause]`, checks `snapshot().connections`, closes the drawer to its deck origin and resets controls before the next journey. The sequential recovery journey asserts `engine-network` and one reopen. The cancellation journey hides the document during a pending recovery, proves the connection count does not change while hidden, restores visibility and asserts `visibility-restore`. Component and coordinator tests cover the remaining reported buffer, frozen playhead and terminal media causes without reading a target address.
+
+The authoritative redesign journeys are VOD cold poster walk, VOD warm poster walk, VOD category restore, VOD search return, Movie and Series details, episode resume, favourite round trip, playback deck and drawers, quick seek while playing and paused, Live DVR and Go live, sequential recovery, recovery cancellation, television lineup management, pointer and wheel parity, right to left navigation, provider data resilience, management interaction budget and poster interaction budget. Playback journeys drive the application through remote keys and visible controls, while fault injection only controls AVPlay outcomes. `createJourneyTracker` rejects unknown or repeated labels and fails when any assigned journey does not reach its action and state assertion.
+
 Both ignore the same origin policy, because the set's player fetches streams itself and has never
 heard of it. A browser refusing a playlist on CORS grounds is the simulator being unfaithful
 rather than the app being wrong. `--cors` puts it back.
@@ -234,15 +316,25 @@ Three things about attaching cost an evening each and are written into the scrip
 It is not a gate. It needs hardware on the network, so it cannot run in CI and must never block
 anything. Read it before a release, and after any change to the player or the launch path.
 
-### Xtream verification on a set
+### Real television acceptance
 
-Use a test account whose owner permits playback, then verify both HLS and MPEG TS live output because AVPlay owns both paths. Open one movie, one series episode, and one archived catchup programme. For each finite item, pause and resume, seek forward and backward by ten seconds, then press STOP and confirm that the launching detail, episode, or guide frame returns with its cursor intact. Complete one item and confirm that it returns without retrying the finished stream.
+Use content whose owner permits playback, then record the television model, Tizen version, source kind, selected output format and exact content types tested. Record every unavailable provider capability separately. Hardware unavailability does not block a pull request, but each skipped item remains release risk and simulator evidence must not be reported as AVPlay evidence.
 
-Open the same movie category twice and confirm that the second visit displays the saved catalogue without a new visible wait. Search for a live channel outside the first category, then confirm that the rail moves to its provider category when the result plays. Repeat an M3U launch, search, category walk, and live channel change so the source specific code has not altered the existing path.
-
-Open the hosted browser build with the same account only when the provider supports HTTPS and Cross Origin Resource Sharing. Confirm that unsupported transport reports the browser limitation without printing the request address or credentials. A browser codec failure does not replace the AVPlay result because the television remains authoritative for finite containers.
-
-Record the television model, Tizen version, selected output, content tested, and any unavailable provider feature. Hardware unavailability does not block a pull request, but the missing checks remain release risk rather than becoming simulated evidence.
+1. Tune HLS Live without DVR, change channel in both directions and confirm Right opens the deck without a timeline.
+2. Tune HLS Live with DVR, seek within the reported window, move the window across a pending target, use Go live and confirm the Live badge follows actual position.
+3. Tune MPEG TS Live and confirm channel change, pause capability reporting and Stop behavior.
+4. Open one movie, quick seek while playing and paused, use the deck timeline, then Stop and confirm the launching Movie detail and cursor return.
+5. Open one Series episode, resume through Series Continue, start one selected episode from zero, then Stop and confirm the episode panel and cursor return.
+6. Open one catchup item from Guide, seek in both directions and confirm Back returns through the documented drawer origin.
+7. Select between multiple audio tracks and confirm the chosen track persists only while the target supports the same identity.
+8. Select embedded subtitles, confirm cues render once inside the safe area, then choose Off and confirm the cue clears.
+9. Hold reported buffering past the compact status threshold and confirm recovery cause `reported-buffer` without a duplicate provider connection during the allowed refill interval.
+10. Freeze an advancing playhead and confirm recovery cause `frozen-playhead`, one sequential reopen and resumed movement.
+11. Browse a large poster catalogue, hold every direction, revisit a warm category and confirm focus answers before catalogue and artwork work.
+12. Rename, number, hide and order a channel on the television. Create a personal category, change membership and confirm number dialling uses the effective number.
+13. Apply the same rename, number, visibility, category placement and personal membership changes from a paired phone. Confirm the television updates, then restart and confirm the same durable result.
+14. Hold page two on the phone, make a television edit and request the next page. Confirm a conflict loads page one at the current revision without combining rows or replaying the mutation.
+15. Clear the refetchable cache and confirm lineup personalisation remains. Remove one playlist and replace one provider account, then confirm only state owned by that source is removed.
 
 ### Phone management on a set
 
@@ -256,6 +348,10 @@ Run these checks after changing the management socket, pairing, welcome screen o
 6. Move the television to WiFi, repeat address discovery and QR pairing, then confirm that a previous browser origin is asked to pair again when the address changes.
 7. Close OpenIPTV after a phone request and reopen it immediately, then confirm that port 8976 binds again because the previous worker closed its socket before termination.
 8. Run `npm run tv:on-set` before and after pairing, then compare CPU at rest. The management worker must not create a sustained increase large enough to move the existing rest result outside ordinary run variation.
+9. Rename and restore one channel name, set and restore its number, then hide and show it. Confirm each television result matches the current phone page.
+10. Move one provider category, create one personal category, add and remove membership, then move one member around a surviving anchor.
+11. Keep a second phone page open, apply a television mutation and confirm the next phone request reports a conflict before loading a fresh page one.
+12. Restart OpenIPTV and confirm every accepted phone mutation remains. Clear the cache and confirm the same personalisation remains.
 
 ## Rebuilding the loopback socket module
 
@@ -315,7 +411,7 @@ because the caller is then the engine. All nineteen bind.
 
 Verifying it needs the television. `npm run tv:on-set -- --stream=<url>` reports whether a manifest
 is repairable and whether the playhead moves, and the feature's own end to end path is: toggle off,
-a telewebion channel fails with `[STALLED]`; toggle on, the same channel plays and Diagnostics reads
+a telewebion channel fails with `[STALLED]`, then toggle on and the same channel plays and Diagnostics reads
 `serving on port N`.
 
 ## The playlist and artwork it all runs against

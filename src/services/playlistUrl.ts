@@ -45,13 +45,16 @@ export function m3uSource(raw: string): M3USource | null {
   return checkPlaylistUrl(url).ok ? { kind: "m3u", url } : null;
 }
 
-export function xtreamSource(
+/**
+ * Everything about an Xtream source except whether the credentials are present, so the
+ * strict builder and the template parser share the same address handling.
+ */
+function xtreamUncheckedSource(
   server: string,
   username: string,
   password: string,
   output: XtreamOutput,
 ): XtreamSource | null {
-  if (!username.trim() || !password) return null;
   try {
     const url = new URL(server.trim());
     if (
@@ -77,11 +80,28 @@ export function xtreamSource(
   }
 }
 
+export function xtreamSource(
+  server: string,
+  username: string,
+  password: string,
+  output: XtreamOutput,
+): XtreamSource | null {
+  if (!username.trim() || !password) return null;
+  return xtreamUncheckedSource(server, username, password, output);
+}
+
 export function sourceDisplay(source: PlaylistSource): string {
   return source.kind === "m3u" ? source.url : source.server;
 }
 
-export function parseXtreamPlaylistUrl(
+/**
+ * An Xtream get.php address, credentials optional.
+ *
+ * Providers hand out the address as a template for the viewer to fill in, so blank
+ * username and password parameters still mark it as Xtream: the server and the stream
+ * format are adopted and the credentials are left to be typed.
+ */
+export function parseXtreamTemplateUrl(
   raw: string,
   defaultOutput: XtreamOutput = "ts",
 ): XtreamSource | null {
@@ -92,21 +112,68 @@ export function parseXtreamPlaylistUrl(
     const type = url.searchParams.get("type") ?? "m3u_plus";
     const requestedOutput = url.searchParams.get("output") ?? defaultOutput;
     const output = requestedOutput === "mpegts" ? "ts" : requestedOutput;
+    /* The type only picks which flavour of playlist get.php returns, and both of these
+       are playlists, so it does not decide whether the address is an Xtream login. The
+       conversion targets the Xtream API, which never sees that parameter. */
     if (
       !/\/get\.php$/i.test(url.pathname) ||
-      !username ||
-      !password ||
-      type !== "m3u_plus" ||
+      (type !== "m3u_plus" && type !== "m3u") ||
       (output !== "m3u8" && output !== "ts")
     ) {
       return null;
     }
+    /* Lists get passed around with a watermark in front of the host, such as
+       http://listshare@provider.example/get.php, which the URL parser reads as a userinfo
+       component. An Xtream address carries its login in the username and password beside
+       it in the query, so anything in front of the host is noise. */
+    url.username = "";
+    url.password = "";
     url.search = "";
     url.hash = "";
-    return xtreamSource(url.toString(), username, password, output);
+    return xtreamUncheckedSource(url.toString(), username, password, output);
   } catch {
     return null;
   }
+}
+
+/** The `type` parameter exactly as written, or null when absent or unreadable. */
+function explicitType(raw: string): string | null {
+  try {
+    return new URL(raw.trim()).searchParams.get("type");
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * An Xtream get.php address with credentials, strictly.
+ *
+ * Saved playlists are migrated through this without being asked, and the Xtream path talks
+ * only to player_api.php, so a panel that serves get.php and nothing else would lose a
+ * playlist that works today. Plain `m3u` is therefore only ever offered as a question in
+ * the form, and an address carrying it explicitly keeps converting nowhere but there. An
+ * address with no `type` at all still defaults to `m3u_plus` and converts as it always has.
+ */
+export function parseXtreamPlaylistUrl(
+  raw: string,
+  defaultOutput: XtreamOutput = "ts",
+): XtreamSource | null {
+  const parsed = parseXtreamTemplateUrl(raw, defaultOutput);
+  if (explicitType(raw) === "m3u") return null;
+  return parsed?.username && parsed.password ? parsed : null;
+}
+
+/** Fold an address typed or pasted into the server field into the login beside it. */
+export function xtreamFromServerField(current: XtreamSource, typed: string): XtreamSource {
+  const parsed = parseXtreamTemplateUrl(typed, current.output);
+  if (!parsed) return { ...current, server: typed };
+  return {
+    ...current,
+    server: parsed.server,
+    output: parsed.output,
+    username: parsed.username || current.username,
+    password: parsed.password || current.password,
+  };
 }
 
 export function checkPlaylistUrl(raw: string): UrlCheck {

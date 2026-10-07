@@ -27,12 +27,14 @@ import type { Channel } from "../types";
  */
 export const SEARCH_LIMIT = 300;
 
-export interface Results {
+export interface SearchResults<T> {
   /** Ranked, and no longer than SEARCH_LIMIT. */
-  matches: Channel[];
+  matches: T[];
   /** How many matched in total, which may be more than were kept. */
   total: number;
 }
+
+export type Results = SearchResults<Channel>;
 
 /**
  * The lowercase names, once per playlist rather than once per keystroke.
@@ -47,13 +49,13 @@ export interface Results {
  * sorted, and a new array is exactly when these need folding again. Keying on anything else, a
  * URL or a length, is how a search comes to answer from the previous playlist's names.
  */
-const folded = new WeakMap<readonly Channel[], string[]>();
+const folded = new WeakMap<readonly { name: string }[], string[]>();
 
-function foldedNames(channels: readonly Channel[]): string[] {
-  let names = folded.get(channels);
+function foldedNames<T extends { name: string }>(items: readonly T[]): string[] {
+  let names = folded.get(items);
   if (!names) {
-    names = channels.map((c) => c.name.toLowerCase());
-    folded.set(channels, names);
+    names = items.map((item) => item.name.toLowerCase());
+    folded.set(items, names);
   }
   return names;
 }
@@ -70,18 +72,21 @@ function foldedNames(channels: readonly Channel[]): string[] {
  * "BBC News" and "BBC One" and playlist order alone puts Sky at the top, which reads as the
  * search ignoring what was typed.
  */
-export function searchChannels(channels: readonly Channel[], query: string): Results {
+function searchNamedItems<T extends { name: string }>(
+  items: readonly T[],
+  query: string,
+): SearchResults<T> {
   const needle = query.trim().toLowerCase();
   // An empty query matches nothing rather than everything. A viewer who has typed nothing has
   // asked for nothing, and answering with the whole playlist is the opposite of what search is.
   if (!needle) return { matches: [], total: 0 };
 
-  const names = foldedNames(channels);
-  const starts: Channel[] = [];
-  const contains: Channel[] = [];
+  const names = foldedNames(items);
+  const starts: T[] = [];
+  const contains: T[] = [];
   let total = 0;
 
-  for (let i = 0; i < channels.length; i++) {
+  for (let i = 0; i < items.length; i++) {
     const at = names[i].indexOf(needle);
     if (at < 0) continue;
     total += 1;
@@ -96,8 +101,19 @@ export function searchChannels(channels: readonly Channel[], query: string): Res
      * still bounded, and the slice below takes the best three hundred of what was kept.
      */
     const rank = at === 0 ? starts : contains;
-    if (rank.length < SEARCH_LIMIT) rank.push(channels[i]);
+    if (rank.length < SEARCH_LIMIT) rank.push(items[i]);
   }
 
   return { matches: starts.concat(contains).slice(0, SEARCH_LIMIT), total };
+}
+
+export function searchChannels(channels: readonly Channel[], query: string): Results {
+  return searchNamedItems(channels, query);
+}
+
+export function searchVodItems<T extends { name: string }>(
+  items: readonly T[],
+  query: string,
+): SearchResults<T> {
+  return searchNamedItems(items, query);
 }

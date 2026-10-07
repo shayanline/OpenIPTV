@@ -68,6 +68,21 @@ test("reading reports what the playlist says about itself", () => {
   assert.equal(read.variants, 0);
 });
 
+test("reading keeps the longest valid media segment duration", () => {
+  const text = [
+    "#EXTM3U",
+    "#EXTINF:2.5,",
+    "a.ts",
+    "#EXTINF:not-a-number,",
+    "b.ts",
+    "#EXTINF:7.25,",
+    "c.ts",
+    "",
+  ].join("\n");
+
+  assert.equal(readPlaylist(text).longest, 7.25);
+});
+
 test("repairing brings the sequence inside what the set can hold", () => {
   const fixed = repaired(playlist("1786136377905810"), "https://host.example/live/index.m3u8");
   const sequence = readPlaylist(fixed).sequence;

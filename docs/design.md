@@ -9,74 +9,53 @@ and takes its look from [One UI](https://developer.samsung.com/one-ui/index.html
 
 ## The screen is a stack
 
-| Layer | What |
-|:--|:--|
-| 1 | The player, always present |
-| 1.1 | A failed channel, drawn inside the player |
-| 2 | The playback banner and its key guide, transient |
-| 3 | The channel panel |
-| 4 | Settings, the close confirmation, first run |
+| Level | Slot | Current surface |
+|:--|:--|:--|
+| 1 | Picture | The Live player, always present |
+| 2 | Primary | The Live panel or the playback deck |
+| 3 | Drawer | Guide, Audio, Subtitles or More |
+| 4 | Modal | Settings, first run or exit |
+| 5 | Popup | A confirmation above its modal |
 
-A layer only appears when nothing above it is open, which is what stops the interface piling
-up on itself. Choosing a channel closes the panel, the banner appears with the name and holds
-while the channel tunes, and five seconds after the picture arrives it goes too.
+`App.tsx` owns this stack, the tuner and the application mode. It resolves the highest open focus owning surface before rendering the screen. `LiveScreen.tsx` owns the Live picture, Guide and current panel, and it delegates each key to exactly one of those surfaces. Settings, first run, exit and confirmation own their keys in their components. The playback banner and picture state belong to the picture presentation, so neither creates another focus surface.
 
-## Four laws, no exceptions
+Choosing a channel closes the panel, the banner appears with the name and holds while the channel tunes, and five seconds after the picture arrives it goes too. A higher surface keeps ownership until it closes, including Guide during its closing transition.
 
-A live TV app has two jobs competing for the same four keys: changing channel, which every
-television gives to up and down, and controlling playback, which
-[Samsung's media player guidance](https://developer.samsung.com/smarttv/design/media-player.html)
-gives to the same directions. Answering both at once is how a key ends up meaning two things,
-and this app used to print both meanings in one line of on screen help.
+## Live key laws
 
-1. **At the picture, up and down always change channel.** In every state, whatever is on
-   screen, whatever holds the focus. In the channel list they move the highlight, because
-   there is visibly a list with a highlight in it.
-2. **OK does the obvious thing where it is pressed.** At the picture that is always the
-   channel list. On a focused button it is that button.
-3. **Left and right move within whatever is showing.** At the picture, left goes to the
-   channel list, because that is what is off the left of the screen. In the panel, either
-   direction switches between the category and channel lists, preserving each list's cursor,
-   while the title bar cycles Search and Settings.
-4. **RETURN always goes back.** It clears the screen if anything is on it, closes the panel if
-   the panel is open, and closes the application only when there is nothing left to close.
+A live TV app has two jobs competing for the same four keys: changing channel, which every television gives to up and down, and controlling playback, which [Samsung's media player guidance](https://developer.samsung.com/smarttv/design/media-player.html) gives to the same directions. Answering both at once is how a key ends up meaning two things, and this app used to print both meanings in one line of on screen help.
 
-| State | Up, Down | Left | Right | OK | Return |
+1. **At the Live picture, up and down always change channel.** This applies while the Live picture is the active surface, including when the channel has failed. In the Live panel they move the highlight because the panel owns those keys. At the finite picture they deliberately do nothing, because there is no next channel.
+2. **OK does the obvious thing where it is pressed.** At the Live picture that is the channel list. At the finite picture it opens the playback deck. On a focused button it is that button.
+3. **Left and right move within the active surface.** At the Live picture, left goes to the channel list and right opens the playback deck. At the finite picture they quick seek ten seconds at a time. In the panel, either direction switches between the category and channel lists while preserving each list's cursor, and the title bar cycles Search and Settings.
+4. **RETURN always goes back within the active surface.** It clears the Live picture if anything is on it, closes a drawer back to the surface that opened it, closes the deck or panel if open, and closes the application only when there is nothing left to close.
+5. **Physical transport keys keep their semantic meaning on every surface.** Play, Pause, Play or Pause, Stop, Rewind, Fast Forward, Previous and Next do the same thing whether or not the deck is showing.
+
+| Surface | Up, Down | Left | Right | OK | Return |
 |:--|:--|:--|:--|:--|:--|
-| Picture | Channel | Channel list | Shows the banner | Channel list | Clear, then close the app |
-| A failed channel | Channel | Channel list | Shows the banner | Channel list | Close the app |
-| Channel list | The highlight | Categories | Categories | Watch | Back to the picture |
+| Live picture | Channel | Channel list | Playback deck | Channel list | Clear, then close the app |
+| Live picture, failed channel | Channel | Channel list | Playback deck | Channel list | Close the app |
+| Finite picture | Nothing | Seek back | Seek forward | Playback deck | Back to the content's own screen |
+| Playback deck | Seek bar | Move focus | Move focus | Activate | Close the deck |
+| Panel channel list | The highlight | Categories | Watch | Watch | Back to the picture |
 
-Law 1 is the one worth defending, and it is the reason nothing here can trap anybody: there is
-no state at the picture, including a channel that has failed, where channel up leaves the
-viewer where they were. Whatever has gone wrong, one press moves on. What it costs is that the
-buttons cannot be reached with down, so they are reached with right instead. What it buys is
-that there is nothing to learn.
+The first law prevents a failed Live channel from trapping the viewer because channel up still moves on while the picture owns input. The panel, Guide, deck, Settings and confirmation receive their own directional events when they are above the picture.
 
-`tests/keyLaws.test.tsx` holds the four laws, so they cannot be changed by accident.
+`tests/keyLaws.test.tsx` holds the Live and finite picture contracts, while the surface ownership tests pin the delegation boundary.
 
-## No seek bar, deliberately
+## Seeking where it can be honest
 
-There was one, drawn from a live window measured off the stream, and it was the least honest
-thing on the screen. Half of these servers report a window they do not have, so a channel that
-had just started announced "8 minutes behind" over a picture that was live, and a channel with
-no window at all showed a bar that could not move. It also spent two of the four directions and
-a second focus level on skip back and skip forward, which do nothing on most playlists.
+The old design had a seek bar drawn from a live window measured off the stream, and it was the least honest thing on the screen. Half of these servers report a window they do not have, so a channel that had just started announced "8 minutes behind" over a picture that was live, and a channel with no window at all showed a bar that could not move. It also spent two of the four directions and a second focus level on skip back and skip forward, which do nothing on most playlists.
 
-Nothing replaced it. There are no on screen playback buttons at all, and each was removed for
-the same reason: it was a permanent piece of the screen earning less than its keep.
+What replaced it is seeking where the medium actually supports it.
 
-**Pause** already has a key on the Smart Remote, a key on every keyboard (Space) and a button
-on the on screen pad, so a fourth way to reach it bought nothing. Resuming **rejoins the
-broadcast** rather than continuing from where it stopped: live television has moved on and
-there is no bar to catch up with, so continuing would leave the viewer permanently behind with
-nothing explaining why.
+**Finite content seeks at the picture.** Left and Right accumulate ten second steps and show a compact indicator with the direction and target time, without opening the deck and without taking focus. One engine seek lands 350 milliseconds after the presses settle, a rejected or timed out seek restores the actual position, and a stream that cannot seek says Seeking unavailable instead of pretending. Pause survives a seek, because pausing is the viewer's state, not the engine's.
 
-**Reload** was the last to go. It existed for the commonest fault these relays have, a picture
-that freezes while the connection stays open and the engine reports nothing wrong. That is a
-machine's job, not a viewer's: the player watches the playhead and, if it has not moved in
-twelve seconds and nobody pressed pause, reports it as an ordinary failure, which the automatic
-retry picks up like any other.
+**Live television seeks only inside the deck.** The deck opens on Right whether or not the channel has a DVR range, so the key never changes meaning because of a range the viewer cannot see. When a real window exists the deck carries a timeline with the oldest available programme time on the left, and while playback is behind, a focusable Go live action sits one step past the safe edge. Ordinary Live has no timeline: pausing it shows the persistent paused state, and Play retunes to the current edge rather than resuming from a position the broadcast has left behind. On a DVR window pause holds position and Play resumes in place.
+
+**Pause that does not exist is not faked.** When an engine exposes no legal pause, the deck omits the action and a physical Pause request answers with a compact Pause unavailable notice, rather than tearing down the decoder to simulate one.
+
+**Reload** is still nobody's button. It existed for the commonest fault these relays have, a picture that freezes while the connection stays open and the engine reports nothing wrong. That is a machine's job, not a viewer's: the player watches the playhead and, if it has not moved in twelve seconds and nobody pressed pause, reports it as an ordinary failure, which the automatic retry picks up like any other.
 
 Choosing the channel that is already playing does nothing except put the list away. It used to
 tear the stream down and rebuild it, which is a second of black and a re-buffer as the answer to
@@ -118,16 +97,11 @@ layer per press. The timers only decide what happens if nobody asks.
 | A failed channel before trying again | 4s, 8s, 15s | Then it stops, rather than retrying all night |
 | A frozen picture before it counts as broken | 12s | A bad connection can stall for ten and recover |
 
-Layer 1.1 is why a broken channel does not interrupt anything: it takes no focus and blocks no
-keys, so pressing down to try the next one works exactly as it does when the picture is fine.
-In a playlist where some channels are off the air, that is the difference between hopping and
-being nagged.
+A broken channel stays inside the Live picture presentation. It takes no focus and blocks no keys, so pressing down to try the next one works exactly as it does when the picture is fine.
 
 ## The panel
 
-The picture is the home of the app, and the panel is the one place you go from it. It takes 1064
-of 1920 so the picture it is chosen against stays visible. Three bands, and only ever one cursor
-among them:
+The Live picture is the home of the current screen, and the panel is the primary surface opened from it. `LiveScreen.tsx` owns both surfaces and gives the panel every focus key while it is active. The panel takes 1064 of 1920 so the picture it is chosen against stays visible. It has three bands and one cursor among them:
 
 - **A title bar** across the top: the app's mark and name, and the Search and Settings keys on
   the trailing edge. The mark is an `<img>` at `public/icon.svg`, the same vector the set's
@@ -152,7 +126,7 @@ The cursor answers the key and the column follows it, rather than the two moving
 down walk each list and use the title bar as its boundary: reaching Search from the top returns to
 the top with down, and reaching it from the bottom returns to the bottom with up. Left and right
 switch columns without changing their remembered rows. Search and Settings themselves are a
-two-control horizontal ring; vertical movement leaves the ring for the list edge that matches the
+two control horizontal ring. Vertical movement leaves the ring for the list edge that matches the
 pressed direction.
 Arriving at a category is the most expensive thing this app does, because every row is thrown
 away and rebuilt from channel objects no memo has seen, and doing that on each press of a held
@@ -220,52 +194,59 @@ This is local HTTP on a trusted home network. There is no account, hosted relay,
 
 The management socket and compatibility socket are separate artifacts with separate owners. The management worker binds only to the reported private address and serves three fixed phone assets plus versioned API routes. The compatibility worker remains loopback only and cannot serve management data.
 
-## Xtream catalogues and playback
+### Paired phone lineup management
 
-An Xtream source stores the server, username, password, and preferred live output as typed fields. `services/xtream` is the only boundary that constructs Player API and media addresses. Credentials remain in local settings because the protocol requires them for every request, but cache keys, item identities, diagnostics, errors, remote state snapshots, and fixture responses never include them. Provider `direct_source` values are used as complete stream addresses without appending credentials.
+An ordinary remote snapshot contains only the active lineup identifier, readiness and lineup revision. It never contains a category or channel catalogue. The phone requests one page with 50 items by default, while the protocol rejects a limit above 100 and the interface retains at most 100 rows after explicit page loading.
 
-Launch authentication loads the account, all category lists, and every live summary because resume, favourites, number entry, channel changing, and global live search require the complete live lineup. Movie and series lists load only after their category is selected. Movie details, seasons, episodes, and programme information load only when opened or focused. An empty category is a completed load, so revisiting it does not repeat the request. Category lists and details use the same six hour freshness policy and versioned IndexedDB keys as the live catalogue, while programme information remains briefly in memory because it changes with time.
+Every page cursor binds its playlist, lineup revision, scope, category, search text and hidden inclusion. A television edit or authoritative refresh makes an older cursor conflict before any rows return. The server returns the current lineup revision with a fresh bounded snapshot, then the phone discards its held rows and loads page one without replaying a mutation.
 
-The panel header cycles through Live, Movies, and Series for an Xtream source. Left moves from an item list to its category rail, while Right returns to the items. OK plays live television, opens a movie detail, opens a series, opens a season, or plays an episode according to the focused row. RETURN removes one movie, season, episode, guide, or search frame before it closes the panel. Live search covers every loaded live summary. Movie and series search covers only categories already opened, which avoids downloading a provider's complete on demand catalogue for one query.
+Phone mutations carry a request identifier and the current lineup revision. `services/lineupProtocol` validates exact shapes, Unicode length, active identifier ownership and placement anchors, then resolves opaque channel identifiers to complete `ChannelRef` values. Every accepted television and phone mutation ends at `useLineup.getState().applyLineupMutation`, so protocol, server and static web code contain no sibling overlay implementation.
 
-Movies, episodes, and catchup use finite playback. Pause retains the current position, Play resumes it, Rewind and Fast Forward seek ten seconds, Previous and Next stay within the current movie or episode list, and STOP returns to the frame that launched playback. Completion removes saved progress and returns to that frame. Finite targets bypass live compatibility probing and retry behavior because a completed file is not a stalled broadcast.
+The protocol remembers 64 completed mutation results and shares an active promise for simultaneous retries. A repeated request identifier receives its first result without another write or revision increment. Ordinary remote snapshot revision remains independent because it owns settings and playlist commands, while lineup revision owns catalogue and personalisation consistency.
 
-Guide reads short programme data for the focused or playing live channel. A past archived programme inside the channel's advertised archive duration exposes Play from start, which creates a finite timeshift target from the provider start time and duration. Missing, future, or invalid archive data remains readable without offering an action.
+The phone exposes provider and personal categories, category membership, unavailable records, provider, alphabetical, number and custom order, visibility, retry and paged anchor search. Provider text is escaped and rendered with `dir="auto"`. Lineup responses omit source fingerprints, provider credentials and playback addresses.
 
-## Two stores, for two different jobs
+## Xtream VOD experience
 
-| | Holds | Why |
+An Xtream source stores the server, username, password, and preferred live output as typed fields. `services/xtream` is the only boundary that constructs Player API and media addresses. Credentials remain in local settings because the protocol requires them for every request, while cache keys, item identities, diagnostics, errors, remote state snapshots, and fixture responses exclude them. A valid provider `direct_source` is used before a generated media address.
+
+Movies and Series are opaque full screen modes beside Live. Entering either mode stops playback and releases the decoder, while returning to Live retunes the remembered channel through the ordinary playback controller. App owns the mode and screen stack, `VodScreen` owns the VOD surface, and `useVodNavigation` owns independent Movie and Series positions.
+
+The category rail contains Continue watching when it has resolved progress, Favourites when it has saved parent items, All, then provider categories in provider order. Focus selects a category immediately, catalogue replacement settles after 150 milliseconds, and poster requests begin 120 milliseconds later. A vertical wheel gesture advances one item in linear order and ignores another gesture for 120 milliseconds.
+
+Movie and Series search loads the complete index only after Search or All is selected. Input changes immediately, ranked results settle after 150 milliseconds, names that begin with the query precede names that contain it, and the grid retains at most 300 matches while reporting the complete count. Back restores the exact category or search result origin.
+
+Movie details contain the shared Back, title, and Favourite row, provider artwork, supplied metadata, synopsis, and playback actions. Series details keep the same title and hero geometry while Episodes replaces the poster region with a season selector and windowed episode list. Series Continue is the only episode resume path, while a manually selected episode always starts from zero.
+
+Progress remains synchronous because the playback controller needs it at pause, Stop, hiding, completion, and target changes. Continue watching includes resolved movies and one parent card for the latest resumable Series episode. Completion removes progress, while a restart keeps the previous record until the new session advances for 15 seconds.
+
+Guide remains the Live drawer owned by `LiveScreen.tsx`. It reads short programme data for the focused or playing Live channel, and missing or invalid archive data remains readable without exposing an unsupported action.
+
+## Storage and cache partitions
+
+| Service | Holds | Reason |
 |:--|:--|:--|
-| `services/store` | localStorage | Settings, favourites, the last channel. Short strings that have to be readable before the first paint, which is what a synchronous API is for. |
-| `services/disk` | IndexedDB | The playlist text and the logos. |
+| `services/store` | Settings, favourites, the last channel, and finite progress | These short values must be available synchronously before the first paint or playback restore. |
+| `services/disk` | Playlists, catalogue data, poster derivatives, and logo derivatives | These payloads are larger, refetchable, and suitable for idle IndexedDB work. |
+| `services/personalDisk` | Sparse channel and category overlays, placements, personal categories, and unavailable references | These viewer records cannot be refetched, so `openiptv-personal` has no eviction and cache clearing never opens it. |
 
-The split is not tidiness. Samsung documents localStorage as holding up to 5MB per application,
-and a twelve thousand channel playlist is around 2.3MB of text, so one large playlist plus the
-settings was already most of the allowance and a larger one did not fit at all. The failure is a
-thrown `QuotaExceededError`, which the store quite correctly swallows, so the effect was a cache
-that silently stopped working on exactly the playlists that most needed one. `setItem` is also
-synchronous, so it wrote those megabytes to flash on the main thread during launch. And it cannot
-hold a Blob, which a logo is.
+Provider catalogues remain immutable. `stores/lineup` validates personal records, reconciles stable provider identities, applies sparse overlays, and materialises the effective channels, categories, browse view, search view and number index that every Live consumer reads. M3U records persist only hexadecimal fingerprints, so stream addresses and embedded credentials never enter the personal database.
 
-IndexedDB has been on these televisions since Tizen 2.4, five years before the oldest set this
-supports, so none of it is a new dependency on a new engine.
+Launch starts the personal record read beside the catalogue cache read and publishes only after both are ready, which prevents provider order or names from appearing before personal values. Direction input reads the materialised arrays and maps without opening IndexedDB. A committed mutation updates memory immediately, then one idle transaction advances the durable revision. A failed transaction restores the latest durable revision, preserves unavailable records, and leaves the initiating management surface available for Retry.
 
-The budget stays at **24 MB**, deliberately. It holds the 2.7 MB reference playlist, which occupies about 5.4 MB when counted as JavaScript text, plus several thousand reduced logos and lazy Xtream catalogue entries. Everything is refetchable, so a larger number would buy fewer refetches by taking more shared flash. Over budget, the least recently used entry goes first, and something larger than the whole budget is refused outright rather than emptying the cache in a doomed attempt to fit it. Diagnostics reports what is held.
+Durable state changes only after a personal record read or a completed write transaction. Category refreshes reconcile against the current live overlay, so they cannot replay the launch record over later edits. Playlist changes, removal and reset cancel queued work, drain mutation promises, wait for an active write, then perform destructive cleanup. A stale completion cannot publish under a newer playlist owner or recreate a deleted record.
 
-Three things keep it from growing without bound:
+Migration ownership remains with each final state reader. Settings converts legacy playlist addresses, records old alphabetical intent and retains hidden category fields until the matching personal lineup record commits. Compact personal state validates favourites, last playback and bounded progress, while durable lineup parsing keeps known version 1 fields and retained unavailable references. A failed or interrupted write leaves legacy input available for the next launch. A repeated completed launch makes no durable change.
 
-- **Cached playlists are keyed by address, not by playlist id.** The id survives the address
-  being edited, so a viewer who corrected a typo in a URL was served the previous playlist's
-  channels from a cache that believed itself current.
-- **A sweep at launch** drops cached playlists nothing is configured to watch. Removing a
-  playlist used to leave its copy behind for good, and no code could have removed it afterwards:
-  the key was derived from an id that no longer existed, so nothing knew the entry's name.
-- **Logos are saved at the size they are drawn**, a few kilobytes each, not as the original. The
-  expensive part of a logo was never the download, it is the decode: broadcasters host artwork at
-  whatever size suits them, two thousand pixels square being real, and fifteen of those at once
-  froze the interface for three and a half seconds. Saving the reduced one needs a canvas read,
-  which tainting forbids, so it works on a television, where a packaged app declares the origins
-  it may reach, and quietly does not in a desktop browser, where most hosts refuse the fetch.
+M3U overlay references use hexadecimal fingerprint identities rather than provider ids that may contain stream addresses. Reconciliation checks a complete fingerprint before considering a unique base fingerprint, while occurrence suffixes never fall back to another occurrence. Ambiguous overrides and memberships remain unavailable for explicit viewer action.
+
+The IndexedDB cache has a fixed 24 MiB budget split into 12 MiB for playlists and catalogue data, 8 MiB for JPEG poster derivatives, and 4 MiB for PNG logo derivatives. Each class evicts its own least recently used entries, so poster browsing cannot evict the catalogue needed at launch. Diagnostics reports total usage and each class.
+
+`services/artwork` owns two shared decode lanes, visible reference counts, queue cancellation, compressed byte limits, idle disk writes, and independent bitmap limits. Posters decode to their published card size, while the active details backdrop decodes to at most 1280 by 720 pixels and lives only for that details selection.
+
+- Cached playlists use their address in the key because editing an address must never serve the previous playlist.
+- A launch sweep removes catalogue entries for playlists that are no longer configured.
+- Artwork derivatives are saved at display size, and every evicted bitmap is closed.
 
 ## Compatibility mode, and why it is off
 

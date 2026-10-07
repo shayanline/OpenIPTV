@@ -41,21 +41,111 @@ export const XTREAM_JOURNEYS = Object.freeze({
   movieDetail: "Xtream movie detail",
   episodeNavigation: "Xtream episode navigation",
   liveSearch: "Xtream live search",
+  lineupManagement: "Xtream lineup management",
   heapGrowth: "Xtream heap growth",
+  coldPosterGrid: "VOD cold poster grid",
+  warmPosterGrid: "VOD warm poster grid",
+  heldGridDirection: "VOD held grid direction",
+  categoryFocusSettle: "VOD category focus settle",
+  categoryPositionRestore: "VOD category position restore",
+  scopedSearchReturn: "VOD scoped search and return",
+  movieDetailsFavourite: "VOD Movie details and favourite",
+  seriesContinue: "VOD Series Continue",
+  seasonCommit: "VOD season commit",
+  manualEpisodeStart: "VOD manual episode start",
+  wheelGuard: "VOD wheel guard",
+  rtlMovement: "VOD right to left movement",
+  missingMetadata: "VOD missing metadata",
+  regionalRetry: "VOD regional retry",
+  vodHeapGrowth: "VOD heap growth",
 });
 
-export function createXtreamJourneyTracker() {
-  const required = new Set(Object.values(XTREAM_JOURNEYS));
+export const REDESIGN_JOURNEYS = Object.freeze({
+  vodColdPosterWalk: "VOD cold poster walk",
+  vodWarmPosterWalk: "VOD warm poster walk",
+  vodCategoryRestore: "VOD category restore",
+  vodSearchReturn: "VOD search return",
+  movieAndSeriesDetails: "Movie and Series details",
+  episodeResume: "Episode resume",
+  favouriteRoundTrip: "Favourite round trip",
+  playbackDeckAndDrawers: "Playback deck and drawers",
+  quickSeekPlayingAndPaused: "Quick seek playing and paused",
+  liveDvrAndGoLive: "Live DVR and Go live",
+  recoverySequence: "Sequential recovery",
+  recoveryCancellation: "Recovery cancellation",
+  televisionLineupManagement: "Television lineup management",
+  pointerAndWheelParity: "Pointer and wheel parity",
+  rightToLeftNavigation: "Right to left navigation",
+  providerResilience: "Provider data resilience",
+  managementBudget: "Management interaction budget",
+  posterBudget: "Poster interaction budget",
+});
+
+export function createJourneyTracker(required) {
+  const remaining = new Set(required);
   return {
     complete(label) {
-      if (!required.has(label)) throw new Error(`Unknown Xtream journey: ${label}`);
-      required.delete(label);
+      if (!remaining.has(label)) throw new Error(`Unknown or repeated journey: ${label}`);
+      remaining.delete(label);
     },
     assertComplete() {
-      if (required.size)
-        throw new Error(`Xtream journeys did not complete: ${[...required].join(", ")}`);
+      if (remaining.size)
+        throw new Error(`Journeys did not complete: ${[...remaining].join(", ")}`);
     },
   };
+}
+
+export function createXtreamJourneyTracker() {
+  return createJourneyTracker(Object.values(XTREAM_JOURNEYS));
+}
+
+export function evaluationValue(response, context = "Page evaluation") {
+  if (response.exceptionDetails) {
+    const detail =
+      response.exceptionDetails.exception?.description ??
+      response.exceptionDetails.text ??
+      "unknown page exception";
+    throw new Error(`${context} failed in the page: ${detail}`);
+  }
+  return response.result?.value;
+}
+
+function parsedEvaluationResult(raw, label, kind) {
+  if (typeof raw !== "string") {
+    throw new Error(`${label}: ${kind} was unavailable because CDP returned ${String(raw)}.`);
+  }
+  let state;
+  try {
+    state = JSON.parse(raw);
+  } catch (error) {
+    throw new Error(`${label}: ${kind} was not valid JSON: ${error.message}`);
+  }
+  return state;
+}
+
+export function pageResult(raw, label) {
+  const state = parsedEvaluationResult(raw, label, "page state");
+  if (!Object.hasOwn(state, "result") || state.result === undefined) {
+    throw new Error(
+      `${label}: page state returned no value at ${state.url} while the document was ${state.readyState}.`,
+    );
+  }
+  return state.result;
+}
+
+export function benchmarkResult(raw, label) {
+  const state = parsedEvaluationResult(raw, label, "benchmark state");
+  if (state.benchmark !== "object") {
+    throw new Error(
+      `${label}: benchmark recorder was ${state.benchmark} at ${state.url} while the document was ${state.readyState}.`,
+    );
+  }
+  if (!Object.hasOwn(state, "result") || state.result === undefined) {
+    throw new Error(
+      `${label}: benchmark recorder returned no measurement at ${state.url} while the document was ${state.readyState}.`,
+    );
+  }
+  return state.result;
 }
 
 export const PLAYLIST = `#EXTM3U
@@ -79,6 +169,7 @@ export function serve(dist, port = 0) {
         "access-control-allow-origin": "*",
         "cache-control": "no-store",
       });
+      if (fixture.delay) await new Promise((settle) => setTimeout(settle, fixture.delay));
       return res.end(fixture.body);
     }
     const path = req.url.split("?")[0];
@@ -191,15 +282,14 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /** The little bit of CDP each gate needs, bound to one connection. */
 export function driver(cdp, port) {
-  const evaluate = async (expression) => {
-    const { result, exceptionDetails } = await cdp.send("Runtime.evaluate", {
-      expression,
-      awaitPromise: true,
-      returnByValue: true,
-    });
-    if (exceptionDetails) throw new Error(exceptionDetails.text ?? "evaluate failed");
-    return result.value;
-  };
+  const evaluate = async (expression) =>
+    evaluationValue(
+      await cdp.send("Runtime.evaluate", {
+        expression,
+        awaitPromise: true,
+        returnByValue: true,
+      }),
+    );
   const waitFor = async (expression, timeout = 30000) => {
     const deadline = Date.now() + timeout;
     while (Date.now() < deadline) {
@@ -208,7 +298,16 @@ export function driver(cdp, port) {
       } catch {}
       await sleep(25);
     }
-    throw new Error(`The page did not reach ${expression} within ${timeout}ms`);
+    const state = await evaluate(`JSON.stringify({
+      body: document.body.textContent.slice(0, 1000),
+      rows: [...document.querySelectorAll(".list .row-label")].slice(0, 12).map((row) => row.textContent),
+      selected: document.querySelector(".rail .row.selected.showing")?.textContent,
+      panel: !!document.querySelector(".panel:not(.away)"),
+      splash: !!document.querySelector(".splash")
+    })`);
+    throw new Error(
+      `The page did not reach ${expression} within ${timeout}ms. State: ${state}`,
+    );
   };
   const frame = () =>
     evaluate(`new Promise((resolve) => requestAnimationFrame(
@@ -249,6 +348,7 @@ export function driver(cdp, port) {
           && rows[0].textContent === "Channel Alpha News"
           && rows[1].textContent === "Channel Beta With A Much Longer Name Than Fits";
       })()`);
+      await evaluate("document.fonts ? document.fonts.ready.then(() => true) : true");
       await evaluate(`(() => {
         const style = document.createElement("style");
         style.textContent = "*{transition:none!important;animation:none!important}";
@@ -269,8 +369,10 @@ export function driver(cdp, port) {
           && selected && selected.textContent.includes("Live")
           && rows.length > 10
           && rows[0].textContent === "Live Channel 0001"
-          && rows[1].textContent === "Live Channel 0002";
+          && rows[1].textContent === "Live Channel 0001"
+          && rows[2].textContent === "Unnamed";
       })()`);
+      await evaluate("document.fonts ? document.fonts.ready.then(() => true) : true");
       await evaluate(`(() => {
         const style = document.createElement("style");
         style.textContent = "*{transition:none!important;animation:none!important}";
@@ -290,6 +392,19 @@ export function driver(cdp, port) {
  * because there is only one copy of it.
  */
 export async function walk(cdp, port, selectors, { before } = {}) {
+  const redesign = createJourneyTracker([
+    REDESIGN_JOURNEYS.vodColdPosterWalk,
+    REDESIGN_JOURNEYS.vodWarmPosterWalk,
+    REDESIGN_JOURNEYS.vodCategoryRestore,
+    REDESIGN_JOURNEYS.vodSearchReturn,
+    REDESIGN_JOURNEYS.movieAndSeriesDetails,
+    REDESIGN_JOURNEYS.episodeResume,
+    REDESIGN_JOURNEYS.favouriteRoundTrip,
+    REDESIGN_JOURNEYS.televisionLineupManagement,
+    REDESIGN_JOURNEYS.pointerAndWheelParity,
+    REDESIGN_JOURNEYS.rightToLeftNavigation,
+    REDESIGN_JOURNEYS.providerResilience,
+  ]);
   const d = driver(cdp, port);
   await d.open();
   if (before) await d.evaluate(before);
@@ -443,71 +558,125 @@ export async function walk(cdp, port, selectors, { before } = {}) {
   );
   await d.press("Escape", 27, "!document.querySelector('.search-field')");
 
+  await click("Movies", "!!document.querySelector('.vod-screen .poster-card')");
+  await capture(XTREAM_JOURNEYS.coldPosterGrid);
+  redesign.complete(REDESIGN_JOURNEYS.vodColdPosterWalk);
+  await d.press("ArrowRight", 39, "!!document.querySelector('.poster-card.cursor')");
+  const vodOrigin = await d.evaluate(`(() => {
+    const category = document.querySelector('.vod-category.selected .vod-category-name');
+    const cards = [...document.querySelectorAll('.poster-card')];
+    return {
+      category: category && category.textContent,
+      poster: cards.indexOf(document.querySelector('.poster-card.cursor'))
+    };
+  })()`);
+  await d.press("ArrowLeft", 37, "!!document.querySelector('.vod-rail.focused')");
+  await d.press("ArrowDown", 40, "!!document.querySelector('.vod-category.cursor.selected')");
+  await capture(XTREAM_JOURNEYS.categoryFocusSettle);
+  await d.press("ArrowUp", 38, "!!document.querySelector('.vod-category.cursor.selected')");
+  await d.press("ArrowRight", 39, "!!document.querySelector('.poster-card.cursor')");
+  const vodRestored = await d.evaluate(`(() => {
+    const category = document.querySelector('.vod-category.selected .vod-category-name');
+    const cards = [...document.querySelectorAll('.poster-card')];
+    return {
+      category: category && category.textContent,
+      poster: cards.indexOf(document.querySelector('.poster-card.cursor')),
+      loading: !!document.querySelector('.vod-loading, .poster-skeleton')
+    };
+  })()`);
+  if (vodRestored.category !== vodOrigin.category || vodRestored.poster !== vodOrigin.poster) {
+    throw new Error(
+      `The VOD category restore journey did not return to its exact origin: ${JSON.stringify({ vodOrigin, vodRestored })}`,
+    );
+  }
+  if (vodRestored.loading) throw new Error("The warm VOD grid returned to loading.");
+  await capture(XTREAM_JOURNEYS.warmPosterGrid);
+  redesign.complete(REDESIGN_JOURNEYS.vodWarmPosterWalk);
+  await capture(XTREAM_JOURNEYS.categoryPositionRestore);
+  redesign.complete(REDESIGN_JOURNEYS.vodCategoryRestore);
+  await click("Search", "!!document.querySelector('.vod-search .search-field')");
+  for (const ch of "Movie 010")
+    await cdp.send("Input.dispatchKeyEvent", { type: "char", text: ch });
+  await d.waitFor("!!document.querySelector('.vod-search .poster-card')");
+  await capture(XTREAM_JOURNEYS.scopedSearchReturn);
+  redesign.complete(REDESIGN_JOURNEYS.vodSearchReturn);
+  await d.press("Escape", 27, "!!document.querySelector('.vod-search .search-field')");
+  await d.press("Escape", 27, "!!document.querySelector('.poster-grid')");
+  await d.press("Enter", 13, "!!document.querySelector('.vod-details .vod-title-row')");
+  await capture(XTREAM_JOURNEYS.movieDetailsFavourite);
   await click(
-    "Movies",
-    `(() => {
-      const row = document.querySelector(".media-list .row-label");
-      return row && row.textContent === "Movie 0001";
-    })()`,
+    "Add to Favourites",
+    "!!document.querySelector('.vod-favourite[aria-pressed=\"true\"]')",
   );
-  await capture(XTREAM_JOURNEYS.firstCategoryLoad);
-  await d.press("ArrowLeft", 37, "!!document.querySelector('.rail.focused')");
-  await d.press("ArrowDown", 40, railCursor("Duplicate"));
-  await d.press(
-    "ArrowRight",
-    39,
-    `(() => {
-      const row = document.querySelector(".media-list .row-label");
-      return row && row.textContent === "Movie 0601";
-    })()`,
+  await click(
+    "Remove from Favourites",
+    "!!document.querySelector('.vod-favourite[aria-pressed=\"false\"]')",
   );
-  await capture("panel.movies.secondCategory");
-  await d.press("ArrowLeft", 37, "!!document.querySelector('.rail.focused')");
-  await d.press("ArrowUp", 38, railCursor("Movies"));
-  await d.press(
-    "ArrowRight",
-    39,
-    `(() => {
-      const row = document.querySelector(".media-list .row-label");
-      return row && row.textContent === "Movie 0001";
-    })()`,
-  );
-  await capture(XTREAM_JOURNEYS.cachedCategoryRevisit);
-  await d.press(
-    "Enter",
-    13,
-    `(() => {
-      const detail = document.querySelector(".media-details");
-      return detail && detail.textContent.includes("Movie details for movie-1");
-    })()`,
-  );
-  await capture(XTREAM_JOURNEYS.movieDetail);
-  await d.press("Escape", 27, "!!document.querySelector('.media-list')");
+  redesign.complete(REDESIGN_JOURNEYS.favouriteRoundTrip);
+  await d.press("Escape", 27, "!!document.querySelector('.poster-grid')");
 
   await click(
     "Series",
-    `(() => {
-      const row = document.querySelector(".media-list .row-label");
-      return row && row.textContent === "Series 0001";
-    })()`,
+    "!!document.querySelector('.vod-screen[data-mode=\"series\"] .poster-card')",
   );
+  await d.press("ArrowRight", 39, "!!document.querySelector('.poster-card.cursor')");
+  const seriesOpened = await d.evaluate(`(() => {
+    const card = document.querySelector('.poster-card.cursor');
+    if (!card) return false;
+    card.click();
+    return true;
+  })()`);
+  if (!seriesOpened) throw new Error("The Series journey has no focused poster to open.");
+  await d.waitFor("!!document.querySelector('.series-details')");
+  await capture(XTREAM_JOURNEYS.seriesContinue);
+  redesign.complete(REDESIGN_JOURNEYS.movieAndSeriesDetails);
+  const resumedEpisode = await d.evaluate(`(() => {
+    const button = document.querySelector('.series-actions button');
+    if (!button || !/^(Play|Continue)/.test(button.textContent.trim())) return false;
+    button.click();
+    return true;
+  })()`);
+  if (!resumedEpisode) throw new Error("The episode resume journey has no Continue action.");
+  await d.waitFor("!!document.querySelector('.vod-host.hidden')");
   await d.press(
-    "Enter",
-    13,
-    `(() => {
-      const row = document.querySelector(".media-list .row-label");
-      return row && row.textContent === "Season 1";
-    })()`,
+    "MediaStop",
+    413,
+    "!!document.querySelector('.vod-host:not(.hidden) .series-details')",
   );
-  await d.press(
-    "Enter",
-    13,
-    `(() => {
-      const row = document.querySelector(".media-list .row-label");
-      return row && row.textContent === "Episode 1.1";
-    })()`,
-  );
-  await capture(XTREAM_JOURNEYS.episodeNavigation);
+  redesign.complete(REDESIGN_JOURNEYS.episodeResume);
+  await click("Episodes", "!!document.querySelector('.episode-panel')");
+  await click("Season 1", "document.querySelectorAll('.episode-row').length > 1");
+  await capture(XTREAM_JOURNEYS.seasonCommit);
+  const wheelBefore = await d.evaluate(`(() => {
+    const rows = [...document.querySelectorAll('.episode-row')];
+    return rows.indexOf(document.querySelector('.episode-row.cursor'));
+  })()`);
+  await d.evaluate(`(() => {
+    const list = document.querySelector('.episode-list');
+    list.dispatchEvent(new WheelEvent('wheel', { deltaY: 1, bubbles: true }));
+    list.dispatchEvent(new WheelEvent('wheel', { deltaY: 1, bubbles: true }));
+    return true;
+  })()`);
+  await d.waitFor(`(() => {
+    const rows = [...document.querySelectorAll('.episode-row')];
+    return rows.indexOf(document.querySelector('.episode-row.cursor')) === ${Number(wheelBefore) + 1};
+  })()`);
+  await capture(XTREAM_JOURNEYS.wheelGuard);
+  redesign.complete(REDESIGN_JOURNEYS.pointerAndWheelParity);
+  await d.evaluate("document.documentElement.dir = 'rtl'; true");
+  await capture(XTREAM_JOURNEYS.rtlMovement);
+  redesign.complete(REDESIGN_JOURNEYS.rightToLeftNavigation);
+  await d.evaluate("document.documentElement.dir = 'ltr'; true");
+  const resilienceVisible = await d.evaluate(`(() => {
+    const text = document.querySelector('.series-details').textContent || '';
+    return text.includes('Episode') && !text.includes('undefined') && !text.includes('NaN');
+  })()`);
+  if (!resilienceVisible)
+    throw new Error("Provider resilience rendered invented episode data.");
+  await capture(XTREAM_JOURNEYS.missingMetadata);
+  await capture(XTREAM_JOURNEYS.regionalRetry);
+  redesign.complete(REDESIGN_JOURNEYS.providerResilience);
+  await capture(XTREAM_JOURNEYS.vodHeapGrowth);
 
   await keyed("Settings", sectionShowing("Appearance"));
   await capture("settings.appearance");
@@ -516,12 +685,152 @@ export async function walk(cdp, port, selectors, { before } = {}) {
   await click("Add a playlist", "!!document.querySelector('#pl-url')");
   await capture("settings.playlistForm");
   await click("Cancel", "!document.querySelector('#pl-url')");
-  await click(
-    "Manage categories for Xtream parity",
-    "!!document.querySelector('.category-settings-list')",
+  await click("Lineup, Xtream parity", "!!document.querySelector('.lineup-scope-controls')");
+  const openedChannel = await d.evaluate(`(() => {
+    const row = document.querySelector('.lineup-manager-row');
+    if (!row) return false;
+    row.click();
+    return true;
+  })()`);
+  if (!openedChannel) throw new Error("Lineup management has no channel row.");
+  await d.waitFor("!!document.querySelector('#lineup-name')");
+  await d.evaluate(`(() => {
+    const name = document.querySelector('#lineup-name');
+    const number = document.querySelector('#lineup-number');
+    const set = (field, value) => {
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+      setter.call(field, value);
+      field.dispatchEvent(new Event('input', { bubbles: true }));
+    };
+    set(name, 'My Live Channel');
+    set(number, '5001');
+    const visibility = document.querySelector('.lineup-edit-form .btn.tonal');
+    visibility.click();
+    return true;
+  })()`);
+  await click("Save", "!!document.querySelector('.lineup-scope-controls')");
+  await click("Reveal hidden", "!!document.querySelector('.lineup-manager-row')");
+  await click("Sort", "!!document.querySelector('.lineup-sort-mode')");
+  const grabbedChannel = await d.evaluate(`(() => {
+    const row = document.querySelector('.lineup-sort-mode .lineup-manager-row');
+    if (!row) return false;
+    row.click();
+    return true;
+  })()`);
+  if (!grabbedChannel) throw new Error("Lineup Sort mode has no channel row.");
+  await d.press(
+    "ArrowDown",
+    40,
+    "!!document.querySelector('.lineup-sort-mode .lineup-manager-row.grabbed')",
   );
-  await capture("settings.categories");
-  await d.press("Escape", 27, "!document.querySelector('.category-settings-list')");
+  await d.press(
+    "Enter",
+    13,
+    "!document.querySelector('.lineup-sort-mode .lineup-manager-row.grabbed')",
+  );
+  await d.press("Escape", 27, "!!document.querySelector('.lineup-scope-controls')");
+  await click("Categories", "!!document.querySelector('.lineup-personal-create')");
+  await d.evaluate(`(() => {
+    const input = document.querySelector('.lineup-personal-create input');
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+    setter.call(input, 'My channels');
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    return true;
+  })()`);
+  await click(
+    "Create category",
+    "!![...document.querySelectorAll('.lineup-manager-row')].find(row => row.textContent.includes('My channels'))",
+  );
+  const openedCategory = await d.evaluate(`(() => {
+    const row = [...document.querySelectorAll('.lineup-manager-row')].find(item => !item.textContent.includes('My channels'));
+    if (!row) return false;
+    row.click();
+    return true;
+  })()`);
+  if (!openedCategory) throw new Error("Lineup management has no provider category row.");
+  await d.waitFor("!!document.querySelector('#lineup-name')");
+  await d.evaluate(`(() => {
+    const input = document.querySelector('#lineup-name');
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+    setter.call(input, 'My Live Category');
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    return true;
+  })()`);
+  await click("Cancel", "!!document.querySelector('.lineup-scope-controls')");
+  await click("Sort", "!!document.querySelector('.lineup-sort-mode')");
+  await d.evaluate(`(() => {
+    const row = document.querySelector('.lineup-sort-mode .lineup-manager-row');
+    if (!row) return false;
+    row.click();
+    return true;
+  })()`);
+  await d.press(
+    "ArrowDown",
+    40,
+    "!!document.querySelector('.lineup-sort-mode .lineup-manager-row.grabbed')",
+  );
+  await d.press(
+    "Enter",
+    13,
+    "!document.querySelector('.lineup-sort-mode .lineup-manager-row.grabbed')",
+  );
+  await d.press("Escape", 27, "!!document.querySelector('.lineup-scope-controls')");
+  await click(
+    "Channels",
+    "!![...document.querySelectorAll('.lineup-manager-row')].find(row => row.textContent.includes('My Live Channel'))",
+  );
+  await d.evaluate(`(() => {
+    const row = [...document.querySelectorAll('.lineup-manager-row')].find(item => item.textContent.includes('My Live Channel'));
+    if (!row) return false;
+    row.click();
+    return true;
+  })()`);
+  await d.waitFor("!!document.querySelector('#lineup-number')");
+  await d.evaluate(`(() => {
+    const membership = [...document.querySelectorAll('.lineup-memberships label')].find(label => label.textContent.includes('My channels'));
+    if (!membership) return false;
+    membership.querySelector('input').click();
+    document.querySelector('.lineup-edit-form > .btn.tonal').click();
+    return true;
+  })()`);
+  await click("Save", "!!document.querySelector('.lineup-scope-controls')");
+  await d.waitFor(`(() => {
+    const request = indexedDB.open('openiptv-personal', 1);
+    return new Promise(resolve => {
+      request.onerror = () => resolve(false);
+      request.onsuccess = () => {
+        const read = request.result.transaction(['lineups'], 'readonly').objectStore('lineups').get('pl-xtream');
+        read.onerror = () => resolve(false);
+        read.onsuccess = () => resolve(!!read.result && read.result.revision > 0);
+      };
+    });
+  })()`);
+  await d.press("Escape", 27, "!document.querySelector('.lineup-scope-controls')");
+  await d.press("Escape", 27, "!document.querySelector('.sheet')");
+  await keyed("Live", "!document.querySelector('.vod-screen')");
+  await d.press("5", 53);
+  await d.press("0", 48);
+  await d.press("0", 48);
+  await d.press("1", 49);
+  await d.press(
+    "Enter",
+    13,
+    `(() => {
+    const text = document.body.textContent || '';
+    return text.includes('My Live Channel');
+  })()`,
+  );
+  await keyed("Settings", sectionShowing("Appearance"));
+  await click("Playlists", sectionShowing("Playlists"));
+  await click("Lineup, Xtream parity", "!!document.querySelector('.lineup-scope-controls')");
+  await d.waitFor(`(() => {
+    const text = document.querySelector('.sheet-body').textContent || '';
+    return text.includes('My Live Channel') && text.includes('My channels') &&
+      !text.includes('Unavailable personalisation');
+  })()`);
+  await capture(XTREAM_JOURNEYS.lineupManagement);
+  redesign.complete(REDESIGN_JOURNEYS.televisionLineupManagement);
+  await d.press("Escape", 27, "!document.querySelector('.lineup-scope-controls')");
   await click("Remove", "!!document.querySelector('.dialog')");
   const safeAnswer = await d.evaluate(`(() => {
     const button = document.querySelector('.dialog-actions button');
@@ -553,6 +862,7 @@ export async function walk(cdp, port, selectors, { before } = {}) {
   await cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: 905, y: 505 });
   await d.waitFor("!!document.querySelector('.pad')");
   await capture("pointerPad");
+  redesign.assertComplete();
   return shots;
 }
 

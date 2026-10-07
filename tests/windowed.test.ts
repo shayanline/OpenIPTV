@@ -1,6 +1,13 @@
 import { test } from "vitest";
 import assert from "node:assert/strict";
-import { RAIL_ROW_BASE, windowOf } from "../src/hooks/useWindowed";
+import {
+  POSTER_COLUMNS,
+  posterColumnsForViewport,
+  posterWindowOf,
+  RAIL_ROW_BASE,
+  wheelStep,
+  windowOf,
+} from "../src/hooks/useWindowed";
 
 /**
  * The windowing arithmetic, which decides which rows exist at all. Getting it wrong shows
@@ -141,4 +148,44 @@ test("the rail's taller rows fit fewer of them in the same space", () => {
   assert.equal(list.row, ROW);
   assert.ok(rail.visible < list.visible);
   assert.equal(rail.visible, Math.floor(VIEW / RAIL_ROW_BASE));
+});
+
+test("poster windows always contain complete six item rows", () => {
+  for (const count of [0, 1, 5, 6, 7, 53]) {
+    const window = posterWindowOf(count, Math.max(0, count - 1), 752, 1);
+    assert.equal(window.itemStart % POSTER_COLUMNS, 0);
+    assert.ok(window.itemEnd === count || window.itemEnd % POSTER_COLUMNS === 0);
+    if (count) assert.ok(count - 1 >= window.itemStart && count - 1 < window.itemEnd);
+  }
+});
+
+test("desktop poster columns keep CSS and windowing on one shared value", () => {
+  assert.equal(posterColumnsForViewport(1280), 3);
+  assert.equal(posterColumnsForViewport(1920), 6);
+  const window = posterWindowOf(30, 8, 752, 1, 0, posterColumnsForViewport(1280));
+  assert.equal(window.itemStart % 3, 0);
+  assert.ok(window.itemEnd === 30 || window.itemEnd % 3 === 0);
+});
+
+test("poster windows clamp a cursor after a result set shrinks", () => {
+  const window = posterWindowOf(7, 80, 376, 1, 10);
+  assert.equal(window.itemStart, 0);
+  assert.equal(window.itemEnd, 7);
+});
+
+test("larger text changes poster row height without changing columns", () => {
+  const regular = posterWindowOf(100, 0, 752, 1);
+  const large = posterWindowOf(100, 0, 752, 1.3);
+  assert.equal(regular.itemEnd % POSTER_COLUMNS, 0);
+  assert.equal(large.itemEnd % POSTER_COLUMNS, 0);
+  assert.ok(large.visible < regular.visible);
+});
+
+test("wheel movement advances one linear item across row boundaries", () => {
+  const first = wheelStep(5, 20, 1, 0, Number.NEGATIVE_INFINITY);
+  const guarded = wheelStep(first.cursor, 20, 1, 119, first.lastAcceptedAt);
+  const second = wheelStep(first.cursor, 20, 1, 120, first.lastAcceptedAt);
+  assert.deepEqual(first, { cursor: 6, lastAcceptedAt: 0, accepted: true });
+  assert.equal(guarded.accepted, false);
+  assert.deepEqual(second, { cursor: 7, lastAcceptedAt: 120, accepted: true });
 });

@@ -15,6 +15,13 @@
     return pointer;
   }
 
+  function encodeBytes(exports, value) {
+    var bytes = value instanceof Uint8Array ? value : new Uint8Array(value);
+    var pointer = exports.malloc(bytes.length);
+    new Uint8Array(exports.memory.buffer, pointer, bytes.length).set(bytes);
+    return pointer;
+  }
+
   function cwrap(exports, name, returnType, argumentTypes) {
     return function () {
       var values = [];
@@ -24,6 +31,10 @@
           var pointer = encode(exports, String(arguments[index]));
           allocated.push(pointer);
           values.push(pointer);
+        } else if (argumentTypes[index] === "bytes") {
+          var bytesPointer = encodeBytes(exports, arguments[index]);
+          allocated.push(bytesPointer);
+          values.push(bytesPointer);
         } else values.push(arguments[index]);
       }
       var returned = exports[name].apply(null, values);

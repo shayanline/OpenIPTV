@@ -21,10 +21,13 @@ export function exitApp() {
 
 export function ExitDialog({
   watching,
+  onConfirm,
   onCancel,
 }: {
   /** Whether a channel is actually playing, which decides what staying is called. */
   watching: boolean;
+  /** Runs before the application exits, so playback is released first. */
+  onConfirm?: () => void;
   onCancel: () => void;
 }) {
   const { t } = useLocale();
@@ -37,7 +40,10 @@ export function ExitDialog({
          list with nothing playing and from a playlist that loaded nothing, where it told the
          viewer they were watching something they were not. */
       cancelLabel={watching ? t("common.keepWatching") : t("common.stayHere")}
-      onConfirm={exitApp}
+      onConfirm={() => {
+        onConfirm?.();
+        exitApp();
+      }}
       onCancel={onCancel}
     />
   );

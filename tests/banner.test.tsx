@@ -5,7 +5,6 @@ import { act, cleanup, render, renderHook, screen } from "@testing-library/react
 import { KEY } from "../src/hooks/useRemote";
 import { useChrome } from "../src/hooks/useChrome";
 import { PlaybackBanner } from "../src/components/PlaybackBanner";
-import type { PlaybackTarget } from "../src/types";
 import { mountApp, press, settle } from "./support/app";
 
 /**
@@ -200,36 +199,43 @@ test("the banner goes away while a channel remains paused", async () => {
   assert.equal(bannerUp(), false, "the banner had not gone before pausing");
 
   press(KEY.PAUSE);
-  assert.equal(bannerUp(), true, "pausing did not show the channel banner");
+  assert.ok(document.querySelector(".playback-deck"), "pausing did not open the deck");
+  assert.equal(bannerUp(), false, "the deck left the Live banner visible");
   await past();
-  assert.equal(bannerUp(), false, "paused state kept the expired banner visible");
+  assert.equal(bannerUp(), false, "paused state raised the Live banner after the deck closed");
 });
 
-const finiteTarget: PlaybackTarget = {
-  id: "movie-1",
-  playlistId: "playlist-1",
-  mode: "finite",
-  kind: "movie",
-  name: "Feature film",
-  group: "Cinema",
-  logo: "",
-  url: "http://example.invalid/movie.mp4",
-};
-
-test("finite playback shows elapsed and total time", () => {
-  render(<PlaybackBanner target={finiteTarget} elapsed={65} duration={3600} />);
-  assert.ok(screen.getByText("1:05 of 1:00:00"));
-});
-
-test("live playback does not show finite timing", () => {
+test("the banner reports the channel number, name and group only", () => {
   render(
     <PlaybackBanner
-      target={{ ...finiteTarget, mode: "live", kind: "live" }}
-      elapsed={65}
-      duration={3600}
+      channel={{
+        id: "channel-1",
+        name: "News",
+        logo: "",
+        group: "News",
+        url: "http://example.invalid/live.m3u8",
+        quality: "",
+        number: 7,
+      }}
     />,
   );
-  assert.equal(document.body.textContent?.includes("1:05 of 1:00:00"), false);
+
+  const banner = document.querySelector(".pb");
+  assert.ok(banner);
+  assert.equal(banner.querySelector(".pb-number")?.textContent, "7");
+  assert.equal(banner.querySelector(".pb-title")?.textContent, "News");
+  assert.equal(banner.querySelector(".pb-group")?.textContent, "News");
+});
+
+test("the banner hides beneath the deck", async () => {
+  await mountApp(PLAYLIST);
+  press(KEY.ENTER);
+  await settle(500);
+  assert.equal(bannerUp(), true, "the channel was never named");
+
+  press(KEY.RIGHT);
+  assert.equal(bannerUp(), false, "the banner stayed up under the deck");
+  assert.ok(document.querySelector(".playback-deck"));
 });
 
 test("a live banner shows current and next programme names when available", () => {

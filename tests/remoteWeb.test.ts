@@ -5,6 +5,12 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 interface RemoteApp {
   start(): Promise<void>;
   parsePairSecret(): string;
+  sendLineupMutation(mutation: object, source: HTMLElement | null): Promise<void>;
+  openLineupAnchorPicker(
+    itemId: string,
+    placement: "before" | "after",
+    source?: HTMLElement,
+  ): void;
 }
 
 const labels = {
@@ -110,9 +116,9 @@ const snapshot = (change: Record<string, unknown> = {}) => ({
     aspectId: "fill",
     showClock: true,
     resumeLast: true,
-    sortAlphabetically: false,
+    lineupOrderMode: "provider",
     compatibility: false,
-    showPlaybackStats: false,
+    continuousReconnect: false,
   },
   playlists: [
     {
@@ -123,6 +129,7 @@ const snapshot = (change: Record<string, unknown> = {}) => ({
     },
   ],
   activePlaylistId: "pl-1",
+  lineup: null,
   setup: { name: "", source: { kind: "m3u", url: "" } },
   devices: [{ id: "device-1", name: "My device", createdAt: 1, lastUsedAt: 1 }],
   about: { version: "1.5.0", repository: "https://github.com/shayanline/OpenIPTV" },
@@ -179,7 +186,14 @@ test("loads device assets relative to either the TV root or build preview path",
   expect(html).toContain('src="remote.js"');
   expect(html).toContain('src="/icon.svg"');
   expect(html).not.toContain('<main id="app" aria-live');
+  expect(css).toContain('@import url("/fonts/fonts.css")');
+  expect(css).toContain("font-family: var(--font)");
   expect(css).toContain("@media (max-width: 680px)");
+  expect(css).toMatch(/\.tabs a \{ min-height: 44px;/);
+  expect(css).toMatch(/activate-playlist[^}]*min-height: 44px;/);
+  expect(css).toMatch(
+    /\.playlist-actions button, \.device-actions button \{[^}]*min-height: 44px;/,
+  );
   expect(css).toContain("@media (max-width: 380px)");
   expect(css).toContain("env(safe-area-inset-bottom)");
   expect(css).toContain("scroll-snap-type: x proximity");
@@ -292,6 +306,7 @@ test("matches the player settings menu order", async () => {
     labels.appearance,
     labels.playback,
     labels.playlists,
+    "Lineup",
     labels.devices,
     labels.about,
   ];
@@ -899,6 +914,32 @@ test("restores focus after a setting is saved", async () => {
   expect((document.activeElement as HTMLElement | null)?.dataset.setting).toBe("showClock");
 });
 
+test("the continuous reconnect toggle writes the same setting as the TV", async () => {
+  localStorage.setItem("openiptv.remote", JSON.stringify({ deviceId: "p", credential: "c" }));
+  const fetchMock = vi
+    .fn()
+    .mockImplementationOnce(() => reply(200, snapshot()))
+    .mockImplementationOnce(() =>
+      reply(200, { ok: true, snapshot: snapshot({ revision: 1 }) }),
+    );
+  vi.stubGlobal("fetch", fetchMock);
+  await loadApp().start();
+
+  const toggle = document.querySelector(
+    '[data-setting="continuousReconnect"]',
+  ) as HTMLInputElement;
+  expect(toggle).toBeTruthy();
+  toggle.click();
+  await vi.waitFor(() =>
+    expect(document.querySelector("[role=status]")?.textContent).toBe(labels.saved),
+  );
+  expect(JSON.parse(fetchMock.mock.calls[1][1].body).command).toEqual({
+    type: "setting",
+    key: "continuousReconnect",
+    value: true,
+  });
+});
+
 test("refreshes state after a revision conflict", async () => {
   localStorage.setItem("openiptv.remote", JSON.stringify({ deviceId: "p", credential: "c" }));
   const fetchMock = vi
@@ -948,4 +989,625 @@ test("confirms cache clearing before sending it", async () => {
 
   expect(window.confirm).toHaveBeenCalledWith(labels.cacheConfirm);
   expect(JSON.parse(fetchMock.mock.calls[1][1].body).command.type).toBe("cache.clear");
+});
+
+const lineupSnapshot = (change: Record<string, unknown> = {}) =>
+  snapshot({
+    lineup: { playlistId: "pl-1", revision: 3, ready: true },
+    ...change,
+  });
+
+const lineupChannel = (index: number, name = `Channel ${index}`) => ({
+  kind: "channel",
+  id: `channel-${index}`,
+  name,
+  providerName: `Provider ${index}`,
+  number: index + 1,
+  providerNumber: index + 1,
+  hidden: false,
+  categoryKeys: ["News"],
+  personalCategoryIds: [],
+});
+
+function lineupPage(
+  items: unknown[],
+  nextCursor: string | null = null,
+  total = items.length,
+  revision = 3,
+) {
+  return { ok: true, page: { revision, items, nextCursor, total } };
+}
+
+test("migrates the previous phone credential key", async () => {
+  localStorage.setItem(
+    "openiptv.phone",
+    JSON.stringify({ phoneId: "old-phone", credential: "secret" }),
+  );
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(() => reply(200, snapshot())),
+  );
+  await loadApp().start();
+  expect(localStorage.getItem("openiptv.phone")).toBeNull();
+  expect(JSON.parse(localStorage.getItem("openiptv.remote") ?? "{}")).toEqual({
+    deviceId: "old-phone",
+    credential: "secret",
+  });
+});
+
+test("loads only the first fifty lineup items", async () => {
+  localStorage.setItem("openiptv.remote", JSON.stringify({ deviceId: "p", credential: "c" }));
+  const items = Array.from({ length: 50 }, (_, index) => lineupChannel(index));
+  const fetchMock = vi
+    .fn()
+    .mockImplementationOnce(() => reply(200, lineupSnapshot()))
+    .mockImplementationOnce(() => reply(200, lineupPage(items, "next", 151)));
+  vi.stubGlobal("fetch", fetchMock);
+  await loadApp().start();
+  await vi.waitFor(() => expect(document.querySelectorAll(".lineup-row")).toHaveLength(50));
+  expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual({
+    playlistId: "pl-1",
+    revision: 3,
+    scope: "channels",
+  });
+  expect(document.querySelector("[data-lineup-more]")).toBeTruthy();
+});
+
+test("appends a second page through the opaque cursor", async () => {
+  localStorage.setItem("openiptv.remote", JSON.stringify({ deviceId: "p", credential: "c" }));
+  const first = Array.from({ length: 50 }, (_, index) => lineupChannel(index));
+  const second = Array.from({ length: 50 }, (_, index) => lineupChannel(index + 50));
+  const fetchMock = vi
+    .fn()
+    .mockImplementationOnce(() => reply(200, lineupSnapshot()))
+    .mockImplementationOnce(() => reply(200, lineupPage(first, "opaque-page-two", 120)))
+    .mockImplementationOnce(() => reply(200, lineupPage(second, "opaque-page-three", 120)));
+  vi.stubGlobal("fetch", fetchMock);
+  await loadApp().start();
+  await vi.waitFor(() => expect(document.querySelector("[data-lineup-more]")).toBeTruthy());
+  (document.querySelector("[data-lineup-more]") as HTMLButtonElement).click();
+  await vi.waitFor(() => expect(document.querySelectorAll(".lineup-row")).toHaveLength(100));
+  expect(JSON.parse(fetchMock.mock.calls[2][1].body).cursor).toBe("opaque-page-two");
+});
+
+test("changes scope without carrying the old cursor", async () => {
+  localStorage.setItem("openiptv.remote", JSON.stringify({ deviceId: "p", credential: "c" }));
+  const fetchMock = vi
+    .fn()
+    .mockImplementationOnce(() => reply(200, lineupSnapshot()))
+    .mockImplementationOnce(() => reply(200, lineupPage([lineupChannel(1)], "old-cursor", 2)))
+    .mockImplementationOnce(() => reply(200, lineupPage([], null, 0)));
+  vi.stubGlobal("fetch", fetchMock);
+  await loadApp().start();
+  await vi.waitFor(() =>
+    expect(document.querySelector('[data-lineup-scope="categories"]')).toBeTruthy(),
+  );
+  (document.querySelector('[data-lineup-scope="categories"]') as HTMLButtonElement).click();
+  await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
+  expect(JSON.parse(fetchMock.mock.calls[2][1].body)).toEqual({
+    playlistId: "pl-1",
+    revision: 3,
+    scope: "categories",
+  });
+});
+
+test("debounces search and resets to page one", async () => {
+  vi.useFakeTimers();
+  localStorage.setItem("openiptv.remote", JSON.stringify({ deviceId: "p", credential: "c" }));
+  const fetchMock = vi
+    .fn()
+    .mockImplementationOnce(() => reply(200, lineupSnapshot()))
+    .mockImplementationOnce(() => reply(200, lineupPage([lineupChannel(1)], "old", 2)))
+    .mockImplementationOnce(() => reply(200, lineupPage([], null, 0)));
+  vi.stubGlobal("fetch", fetchMock);
+  await loadApp().start();
+  await vi.advanceTimersByTimeAsync(0);
+  const input = document.querySelector("[data-lineup-search]") as HTMLInputElement;
+  input.value = "خبر";
+  input.dispatchEvent(new Event("input", { bubbles: true }));
+  await vi.advanceTimersByTimeAsync(249);
+  expect(fetchMock).toHaveBeenCalledTimes(2);
+  await vi.advanceTimersByTimeAsync(1);
+  await Promise.resolve();
+  expect(JSON.parse(fetchMock.mock.calls[2][1].body)).toEqual({
+    playlistId: "pl-1",
+    revision: 3,
+    scope: "channels",
+    query: "خبر",
+  });
+});
+
+test("includes hidden items only after the reveal control changes", async () => {
+  localStorage.setItem("openiptv.remote", JSON.stringify({ deviceId: "p", credential: "c" }));
+  const fetchMock = vi
+    .fn()
+    .mockImplementationOnce(() => reply(200, lineupSnapshot()))
+    .mockImplementationOnce(() => reply(200, lineupPage([])))
+    .mockImplementationOnce(() => reply(200, lineupPage([])));
+  vi.stubGlobal("fetch", fetchMock);
+  await loadApp().start();
+  await vi.waitFor(() => expect(document.querySelector("[data-lineup-hidden]")).toBeTruthy());
+  (document.querySelector("[data-lineup-hidden]") as HTMLInputElement).click();
+  await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
+  expect(JSON.parse(fetchMock.mock.calls[2][1].body).includeHidden).toBe(true);
+});
+
+test("refetches page one after a stale page conflict", async () => {
+  localStorage.setItem("openiptv.remote", JSON.stringify({ deviceId: "p", credential: "c" }));
+  const fetchMock = vi
+    .fn()
+    .mockImplementationOnce(() => reply(200, lineupSnapshot()))
+    .mockImplementationOnce(() =>
+      reply(409, {
+        ok: false,
+        reason: "conflict",
+        revision: 4,
+        snapshot: lineupSnapshot({ lineup: { playlistId: "pl-1", revision: 4, ready: true } }),
+      }),
+    )
+    .mockImplementationOnce(() => reply(200, lineupPage([lineupChannel(1)], null, 1, 4)));
+  vi.stubGlobal("fetch", fetchMock);
+  await loadApp().start();
+  await vi.waitFor(() => expect(document.querySelectorAll(".lineup-row")).toHaveLength(1));
+  expect(JSON.parse(fetchMock.mock.calls[2][1].body)).toEqual({
+    playlistId: "pl-1",
+    revision: 4,
+    scope: "channels",
+  });
+  expect(document.querySelector(".lineup-state.notice")?.textContent).toBe(
+    "The lineup changed on the TV. The latest page has been loaded.",
+  );
+});
+
+test("refetches the current query after a successful mutation", async () => {
+  localStorage.setItem("openiptv.remote", JSON.stringify({ deviceId: "p", credential: "c" }));
+  const fetchMock = vi
+    .fn()
+    .mockImplementationOnce(() => reply(200, lineupSnapshot()))
+    .mockImplementationOnce(() => reply(200, lineupPage([lineupChannel(1)])))
+    .mockImplementationOnce(() =>
+      reply(200, { ok: true, revision: 4, affectedIds: ["channel-1"] }),
+    )
+    .mockImplementationOnce(() =>
+      reply(200, lineupPage([lineupChannel(1, "Renamed")], null, 1, 4)),
+    );
+  vi.stubGlobal("fetch", fetchMock);
+  const app = loadApp();
+  await app.start();
+  await vi.waitFor(() => expect(document.querySelectorAll(".lineup-row")).toHaveLength(1));
+  await app.sendLineupMutation(
+    { type: "channel.rename", channelId: "channel-1", name: "Renamed" },
+    null,
+  );
+  expect(JSON.parse(fetchMock.mock.calls[3][1].body).revision).toBe(4);
+  expect(document.querySelector("[data-operation-status]")?.textContent).toBe(labels.saved);
+});
+
+test("never renders a complete catalogue from the state snapshot", async () => {
+  localStorage.setItem("openiptv.remote", JSON.stringify({ deviceId: "p", credential: "c" }));
+  vi.stubGlobal(
+    "fetch",
+    vi
+      .fn()
+      .mockImplementationOnce(() => reply(200, lineupSnapshot()))
+      .mockImplementationOnce(() => reply(200, lineupPage([], null, 0))),
+  );
+  await loadApp().start();
+  expect(document.body.textContent).not.toContain("channel-11999");
+});
+
+test("sends every lineup operation with the current revision and a fresh request id", async () => {
+  localStorage.setItem("openiptv.remote", JSON.stringify({ deviceId: "p", credential: "c" }));
+  var revision = 3;
+  const mutations: Array<{
+    id: string;
+    playlistId: string;
+    revision: number;
+    mutation: unknown;
+  }> = [];
+  const fetchMock = vi.fn((path: string, options?: RequestInit) => {
+    if (path === "/api/v1/state") return reply(200, lineupSnapshot());
+    if (path === "/api/v1/lineup/query") return reply(200, lineupPage([], null, 0, revision));
+    const body = JSON.parse(String(options?.body)) as {
+      id: string;
+      playlistId: string;
+      revision: number;
+      mutation: unknown;
+    };
+    mutations.push(body);
+    revision += 1;
+    return reply(200, { ok: true, revision, affectedIds: [] });
+  });
+  vi.stubGlobal("fetch", fetchMock);
+  const app = loadApp();
+  await app.start();
+  const operations = [
+    { type: "channel.rename", channelId: "channel-1", name: "Mine" },
+    { type: "channel.rename", channelId: "channel-1", name: null },
+    { type: "channel.number", channelId: "channel-1", number: 101 },
+    { type: "channel.number", channelId: "channel-1", number: null },
+    { type: "channel.visibility", channelId: "channel-1", hidden: true },
+    { type: "category.rename", categoryKey: "News", name: "Headlines" },
+    { type: "category.visibility", categoryKey: "News", hidden: true },
+    { type: "categories.visibility", contentKind: "live", hidden: true },
+    { type: "order.mode", mode: "provider" },
+    { type: "order.mode", mode: "alphabetical" },
+    { type: "order.mode", mode: "number" },
+    { type: "order.mode", mode: "custom" },
+    {
+      type: "channel.place",
+      categoryKey: "News",
+      placement: { itemId: "channel-1", beforeId: "channel-2" },
+    },
+    { type: "category.place", placement: { itemId: "News", afterId: "Sport" } },
+    { type: "personal-category.create", name: "Mine" },
+    { type: "personal-category.rename", categoryId: "mine", name: "Ours" },
+    { type: "personal-category.delete", categoryId: "mine" },
+    { type: "personal-category.memberships", channelId: "channel-1", categoryIds: ["mine"] },
+    { type: "personal-category.memberships", channelId: "channel-1", categoryIds: [] },
+    {
+      type: "personal-category.place-channel",
+      categoryId: "mine",
+      placement: { itemId: "channel-1", beforeId: "channel-2" },
+    },
+    { type: "unavailable.remove", key: "channel-override:missing" },
+    { type: "unavailable.remove", key: "category-override:missing" },
+    { type: "unavailable.remove", key: "personal-membership:missing" },
+    { type: "unavailable.remove", key: "channel-placement:missing" },
+    { type: "unavailable.remove", key: "category-placement:missing" },
+  ];
+  for (const operation of operations) await app.sendLineupMutation(operation, null);
+  expect(new Set(mutations.map((entry) => entry.id)).size).toBe(operations.length);
+  expect(mutations.map((entry) => entry.mutation)).toEqual(operations);
+  expect(
+    mutations.every((entry) => entry.playlistId === "pl-1" && Number.isInteger(entry.revision)),
+  ).toBe(true);
+});
+
+test("preserves exact bidirectional text and accessible lineup actions", async () => {
+  localStorage.setItem("openiptv.remote", JSON.stringify({ deviceId: "p", credential: "c" }));
+  const exact = "العربية فارسی 👩‍👩‍👧‍👦 é English";
+  vi.stubGlobal(
+    "fetch",
+    vi
+      .fn()
+      .mockImplementationOnce(() => reply(200, lineupSnapshot({ direction: "rtl" })))
+      .mockImplementationOnce(() =>
+        reply(
+          200,
+          lineupPage([
+            {
+              kind: "category",
+              id: "News",
+              contentKind: "live",
+              name: exact,
+              providerName: exact,
+              hidden: true,
+              count: 1,
+              unavailableCount: 0,
+            },
+          ]),
+        ),
+      ),
+  );
+  await loadApp().start();
+  await vi.waitFor(() =>
+    expect(document.querySelector(".lineup-row strong")?.textContent).toBe(exact),
+  );
+  expect(document.querySelector(".lineup-row strong")?.getAttribute("dir")).toBe("auto");
+  expect(document.querySelector(".lineup-row")?.textContent).toContain("Hidden");
+  expect(
+    document.querySelector('[data-lineup-action="move-before"]')?.getAttribute("aria-label"),
+  ).toContain(exact);
+  expect(document.documentElement.dir).toBe("rtl");
+});
+
+test("keeps mutation conflict visible after refetch without replay", async () => {
+  localStorage.setItem("openiptv.remote", JSON.stringify({ deviceId: "p", credential: "c" }));
+  const fetchMock = vi
+    .fn()
+    .mockImplementationOnce(() => reply(200, lineupSnapshot()))
+    .mockImplementationOnce(() => reply(200, lineupPage([lineupChannel(1)])))
+    .mockImplementationOnce(() =>
+      reply(409, {
+        ok: false,
+        reason: "conflict",
+        revision: 4,
+        snapshot: lineupSnapshot({ lineup: { playlistId: "pl-1", revision: 4, ready: true } }),
+      }),
+    )
+    .mockImplementationOnce(() => reply(200, lineupPage([lineupChannel(1)], null, 1, 4)));
+  vi.stubGlobal("fetch", fetchMock);
+  await loadApp().start();
+  await vi.waitFor(() =>
+    expect(document.querySelector('[data-lineup-action="rename"]')).toBeTruthy(),
+  );
+  (document.querySelector('[data-lineup-action="rename"]') as HTMLButtonElement).click();
+  const input = document.querySelector('[name="lineupValue"]') as HTMLInputElement;
+  input.value = "Changed";
+  input.dispatchEvent(new Event("input", { bubbles: true }));
+  document
+    .querySelector("[data-lineup-editor]")
+    ?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+  await vi.waitFor(() =>
+    expect(document.querySelector(".lineup-state.notice")?.textContent).toContain(
+      "latest page",
+    ),
+  );
+  expect(
+    fetchMock.mock.calls.filter((call) => call[0] === "/api/v1/lineup/mutation"),
+  ).toHaveLength(1);
+  expect(document.querySelector("[data-lineup-editor]")).toBeNull();
+});
+
+test("failed rename retains typed value and restores opener focus", async () => {
+  localStorage.setItem("openiptv.remote", JSON.stringify({ deviceId: "p", credential: "c" }));
+  const fetchMock = vi
+    .fn()
+    .mockImplementationOnce(() => reply(200, lineupSnapshot()))
+    .mockImplementationOnce(() => reply(200, lineupPage([lineupChannel(1)])))
+    .mockImplementationOnce(() =>
+      reply(500, { ok: false, reason: "persistence", revision: 3 }),
+    );
+  vi.stubGlobal("fetch", fetchMock);
+  await loadApp().start();
+  await vi.waitFor(() =>
+    expect(document.querySelector('[data-lineup-action="rename"]')).toBeTruthy(),
+  );
+  const opener = document.querySelector('[data-lineup-action="rename"]') as HTMLButtonElement;
+  opener.click();
+  const input = document.querySelector('[name="lineupValue"]') as HTMLInputElement;
+  input.value = "Typed value";
+  input.dispatchEvent(new Event("input", { bubbles: true }));
+  document
+    .querySelector("[data-lineup-editor]")
+    ?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+  await vi.waitFor(() =>
+    expect((document.querySelector('[name="lineupValue"]') as HTMLInputElement)?.value).toBe(
+      "Typed value",
+    ),
+  );
+  await vi.waitFor(() =>
+    expect((document.activeElement as HTMLElement | null)?.dataset.lineupAction).toBe("rename"),
+  );
+});
+
+test("anchor picker pages anchors and restores focus on cancel", async () => {
+  localStorage.setItem("openiptv.remote", JSON.stringify({ deviceId: "p", credential: "c" }));
+  const category = {
+    kind: "category",
+    id: "News",
+    contentKind: "live",
+    name: "News",
+    providerName: "News",
+    hidden: false,
+    count: 2,
+    unavailableCount: 0,
+  };
+  const anchor = { ...category, id: "Sport", name: "Sport", providerName: "Sport" };
+  const fetchMock = vi
+    .fn()
+    .mockImplementationOnce(() => reply(200, lineupSnapshot()))
+    .mockImplementationOnce(() => reply(200, lineupPage([category, anchor])))
+    .mockImplementationOnce(() => reply(200, lineupPage([category, anchor])));
+  vi.stubGlobal("fetch", fetchMock);
+  await loadApp().start();
+  await vi.waitFor(() =>
+    expect(document.querySelector('[data-lineup-action="move-before"]')).toBeTruthy(),
+  );
+  const opener = document.querySelector(
+    '[data-lineup-action="move-before"]',
+  ) as HTMLButtonElement;
+  opener.click();
+  await vi.waitFor(() => expect(document.querySelector(".lineup-anchor-picker")).toBeTruthy());
+  expect(document.querySelector(".lineup-anchor-picker")?.getAttribute("aria-labelledby")).toBe(
+    "lineup-anchor-title",
+  );
+  expect(document.querySelector("[data-anchor-search]")?.getAttribute("dir")).toBe("auto");
+  (document.querySelector('[data-lineup-action="cancel-anchor"]') as HTMLButtonElement).click();
+  await vi.waitFor(() =>
+    expect((document.activeElement as HTMLElement | null)?.dataset.lineupAction).toBe(
+      "move-before",
+    ),
+  );
+});
+
+test("membership toggle sends the complete next personal category list", async () => {
+  localStorage.setItem("openiptv.remote", JSON.stringify({ deviceId: "p", credential: "c" }));
+  const personal = {
+    kind: "personal-category",
+    id: "mine",
+    name: "Mine",
+    providerName: "Mine",
+    hidden: false,
+    count: 1,
+    unavailableCount: 0,
+  };
+  const member = { ...lineupChannel(1), personalCategoryIds: ["mine"] };
+  const fetchMock = vi
+    .fn()
+    .mockImplementationOnce(() => reply(200, lineupSnapshot()))
+    .mockImplementationOnce(() => reply(200, lineupPage([])))
+    .mockImplementationOnce(() => reply(200, lineupPage([personal])))
+    .mockImplementationOnce(() => reply(200, lineupPage([member])))
+    .mockImplementationOnce(() =>
+      reply(200, { ok: true, revision: 4, affectedIds: ["channel-1"] }),
+    )
+    .mockImplementationOnce(() =>
+      reply(200, lineupPage([{ ...member, personalCategoryIds: [] }], null, 1, 4)),
+    );
+  vi.stubGlobal("fetch", fetchMock);
+  await loadApp().start();
+  await vi.waitFor(() =>
+    expect(document.querySelector('[data-lineup-scope="personal-categories"]')).toBeTruthy(),
+  );
+  (
+    document.querySelector('[data-lineup-scope="personal-categories"]') as HTMLButtonElement
+  ).click();
+  await vi.waitFor(() =>
+    expect(document.querySelector('[data-lineup-action="open-members"]')).toBeTruthy(),
+  );
+  (document.querySelector('[data-lineup-action="open-members"]') as HTMLButtonElement).click();
+  await vi.waitFor(() =>
+    expect(document.querySelector('[data-lineup-action="membership"]')).toBeTruthy(),
+  );
+  (document.querySelector('[data-lineup-action="membership"]') as HTMLButtonElement).click();
+  await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(6));
+  expect(JSON.parse(fetchMock.mock.calls[4][1].body).mutation).toEqual({
+    type: "personal-category.memberships",
+    channelId: "channel-1",
+    categoryIds: [],
+  });
+});
+
+test("a slow lineup page cannot replace a newer search", async () => {
+  vi.useFakeTimers();
+  localStorage.setItem("openiptv.remote", JSON.stringify({ deviceId: "p", credential: "c" }));
+  let releaseOld: (value: unknown) => void = () => {};
+  const oldPage = new Promise((resolve) => {
+    releaseOld = resolve;
+  });
+  const fetchMock = vi
+    .fn()
+    .mockImplementationOnce(() => reply(200, lineupSnapshot()))
+    .mockImplementationOnce(() => oldPage)
+    .mockImplementationOnce(() => reply(200, lineupPage([lineupChannel(2, "New result")])));
+  vi.stubGlobal("fetch", fetchMock);
+  await loadApp().start();
+  expect(document.querySelector("#lineup")?.getAttribute("aria-busy")).toBe("true");
+  const search = document.querySelector("[data-lineup-search]") as HTMLInputElement;
+  expect(search.disabled).toBe(true);
+  search.value = "new";
+  search.dispatchEvent(new Event("input", { bubbles: true }));
+  await vi.advanceTimersByTimeAsync(250);
+  await Promise.resolve();
+  releaseOld({
+    status: 200,
+    ok: true,
+    json: async () => lineupPage([lineupChannel(1, "Old result")]),
+  });
+  await Promise.resolve();
+  expect(document.querySelector(".lineup-row strong")?.textContent).toBe("New result");
+});
+
+test("a mutation invalidates a slow lineup query before the successful refetch", async () => {
+  localStorage.setItem("openiptv.remote", JSON.stringify({ deviceId: "p", credential: "c" }));
+  let releaseOld: (value: unknown) => void = () => {};
+  const oldPage = new Promise((resolve) => {
+    releaseOld = resolve;
+  });
+  const fetchMock = vi
+    .fn()
+    .mockImplementationOnce(() => reply(200, lineupSnapshot()))
+    .mockImplementationOnce(() => oldPage)
+    .mockImplementationOnce(() =>
+      reply(200, { ok: true, revision: 4, affectedIds: ["channel-1"] }),
+    )
+    .mockImplementationOnce(() =>
+      reply(200, lineupPage([lineupChannel(2, "New revision item")], null, 1, 4)),
+    );
+  vi.stubGlobal("fetch", fetchMock);
+  const app = loadApp();
+  await app.start();
+  await app.sendLineupMutation(
+    { type: "channel.rename", channelId: "channel-1", name: "New revision item" },
+    null,
+  );
+  expect(JSON.parse(fetchMock.mock.calls[3][1].body).revision).toBe(4);
+  expect(document.querySelector(".lineup-row strong")?.textContent).toBe("New revision item");
+  releaseOld({
+    status: 200,
+    ok: true,
+    json: async () => lineupPage([lineupChannel(1, "Old revision item")]),
+  });
+  await Promise.resolve();
+  await Promise.resolve();
+  expect(document.querySelector(".lineup-row strong")?.textContent).toBe("New revision item");
+  expect(document.querySelector("#lineup")?.getAttribute("aria-busy")).toBe("false");
+});
+
+test("anchor conflict refreshes revision and refetches the picker", async () => {
+  localStorage.setItem("openiptv.remote", JSON.stringify({ deviceId: "p", credential: "c" }));
+  const category = {
+    kind: "category",
+    id: "News",
+    contentKind: "live",
+    name: "News",
+    providerName: "News",
+    hidden: false,
+    count: 2,
+    unavailableCount: 0,
+  };
+  const anchor = { ...category, id: "Sport", name: "Sport", providerName: "Sport" };
+  const fetchMock = vi
+    .fn()
+    .mockImplementationOnce(() => reply(200, lineupSnapshot()))
+    .mockImplementationOnce(() => reply(200, lineupPage([category, anchor])))
+    .mockImplementationOnce(() =>
+      reply(409, {
+        ok: false,
+        reason: "conflict",
+        revision: 4,
+        snapshot: lineupSnapshot({ lineup: { playlistId: "pl-1", revision: 4, ready: true } }),
+      }),
+    )
+    .mockImplementationOnce(() => reply(200, lineupPage([category, anchor], null, 2, 4)));
+  vi.stubGlobal("fetch", fetchMock);
+  await loadApp().start();
+  await vi.waitFor(() =>
+    expect(document.querySelector('[data-lineup-action="move-before"]')).toBeTruthy(),
+  );
+  (document.querySelector('[data-lineup-action="move-before"]') as HTMLButtonElement).click();
+  await vi.waitFor(() =>
+    expect(document.querySelector('[data-lineup-anchor="Sport"]')).toBeTruthy(),
+  );
+  expect(JSON.parse(fetchMock.mock.calls[3][1].body).revision).toBe(4);
+  expect(document.querySelector(".lineup-state.notice")?.textContent).toContain("latest page");
+  expect(document.querySelector(".lineup-anchor-picker")?.textContent).not.toContain(
+    "Loading lineup",
+  );
+});
+
+test("bulk visibility offers live movie and series show and hide mutations", async () => {
+  localStorage.setItem("openiptv.remote", JSON.stringify({ deviceId: "p", credential: "c" }));
+  var revision = 3;
+  const sent: unknown[] = [];
+  vi.stubGlobal(
+    "fetch",
+    vi.fn((path: string, options?: RequestInit) => {
+      if (path === "/api/v1/state") return reply(200, lineupSnapshot());
+      if (path === "/api/v1/lineup/query") return reply(200, lineupPage([], null, 0, revision));
+      const body = JSON.parse(String(options?.body));
+      sent.push(body.mutation);
+      revision += 1;
+      return reply(200, { ok: true, revision, affectedIds: [] });
+    }),
+  );
+  await loadApp().start();
+  await vi.waitFor(() =>
+    expect(document.querySelector('[data-lineup-scope="categories"]')).toBeTruthy(),
+  );
+  (document.querySelector('[data-lineup-scope="categories"]') as HTMLButtonElement).click();
+  await vi.waitFor(() =>
+    expect(document.querySelectorAll("[data-lineup-bulk]")).toHaveLength(6),
+  );
+  await vi.waitFor(() =>
+    expect(document.querySelector("#lineup")?.getAttribute("aria-busy")).toBe("false"),
+  );
+  for (let index = 0; index < 6; index += 1) {
+    const button = document.querySelectorAll<HTMLButtonElement>("[data-lineup-bulk]")[index];
+    if (!button) throw new Error(`Bulk visibility control ${index} missing`);
+    button.click();
+    await vi.waitFor(() =>
+      expect(document.querySelector("#lineup")?.getAttribute("aria-busy")).toBe("false"),
+    );
+  }
+  expect(sent).toEqual([
+    { type: "categories.visibility", contentKind: "live", hidden: true },
+    { type: "categories.visibility", contentKind: "live", hidden: false },
+    { type: "categories.visibility", contentKind: "movie", hidden: true },
+    { type: "categories.visibility", contentKind: "movie", hidden: false },
+    { type: "categories.visibility", contentKind: "series", hidden: true },
+    { type: "categories.visibility", contentKind: "series", hidden: false },
+  ]);
 });

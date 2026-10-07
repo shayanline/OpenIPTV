@@ -6,7 +6,7 @@ import { ScrollIndicator } from "./ScrollIndicator";
 import { KeyGuide, SettingsPath } from "./KeyGuide";
 import { RAIL_ROW_BASE, useWindowed } from "../hooks/useWindowed";
 import { useViewport } from "../hooks/useViewport";
-import type { XtreamContentKind } from "../services/xtream";
+import type { AppMode } from "../services/surfaceStack";
 import { ContentSelector } from "./ContentSelector";
 
 /**
@@ -37,11 +37,11 @@ interface Props {
   focused: boolean;
   scale: number;
   content?: {
-    value: XtreamContentKind;
-    focus: XtreamContentKind;
-    available: readonly XtreamContentKind[];
+    value: AppMode;
+    focus: AppMode;
+    available: readonly AppMode[];
     focused: boolean;
-    onChange: (value: XtreamContentKind) => void;
+    onChange: (value: AppMode) => void;
   };
   /** Must be stable, or every row rebuilds on every press. */
   onSelect: (index: number) => void;
@@ -199,11 +199,7 @@ export const Sidebar = memo(function Sidebar({
                   items={[{ keys: ["Red"], label: t("playlist.showAllCategories") }]}
                 />
                 <SettingsPath
-                  items={[
-                    t("settings.title"),
-                    t("settings.playlists"),
-                    t("playlist.categoriesTitle"),
-                  ]}
+                  items={[t("settings.title"), t("settings.playlists"), t("lineup.title")]}
                   direction={direction}
                 />
               </div>

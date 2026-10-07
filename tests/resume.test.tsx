@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, test, vi } from "vitest";
 import assert from "node:assert/strict";
-import { act, cleanup, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, screen } from "@testing-library/react";
 import { KEY } from "../src/hooks/useRemote";
 import { groupByCategory } from "../src/services/m3u";
 import {
@@ -73,6 +73,50 @@ test("the remembered channel plays and the panel never opens", async () => {
     categoryKey: "Sport",
   });
   assert.equal(localStorage.getItem("openiptv.last"), null);
+});
+
+test("restoring VOD mode cannot replace Movie playback with remembered Live", async () => {
+  localStorage.setItem("app:last-mode:pl-1", "movie");
+  await mountApp("", {
+    source: XTREAM_SOURCE,
+    resume: "xtream:pl-1:live:1",
+    playbackUrl: async () => "http://example.invalid/movie.mp4",
+    fetchImplementation: async (input) => {
+      const action = new URL(String(input)).searchParams.get("action") ?? "authenticate";
+      const bodies: Record<string, unknown> = {
+        authenticate: {
+          user_info: { auth: 1, status: "Active" },
+          server_info: { server_protocol: "http", url: "provider.example" },
+        },
+        get_live_categories: [{ category_id: "first", category_name: "First" }],
+        get_live_streams: [
+          { stream_id: 1, name: "First channel", category_id: "first", num: 1 },
+        ],
+        get_vod_categories: [{ category_id: "10", category_name: "Movies" }],
+        get_vod_streams: [
+          { stream_id: "100", category_id: "10", name: "Restart film", container_extension: "mp4" },
+        ],
+        get_vod_info: {
+          info: { name: "Restart film" },
+          movie_data: { stream_id: "100", category_id: "10", container_extension: "mp4" },
+        },
+        get_series_categories: [],
+      };
+      return new Response(JSON.stringify(bodies[action] ?? []), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    },
+  });
+
+  assert.deepEqual(played, []);
+  await settle(300);
+  fireEvent.click(screen.getByRole("button", { name: /Restart film/ }));
+  await settle(0);
+  fireEvent.click(screen.getByRole("button", { name: "Play" }));
+  await settle(0);
+
+  assert.deepEqual(played, ["http://example.invalid/movie.mp4"]);
 });
 
 test("an Xtream channel outside the first provider category resumes", async () => {

@@ -1,10 +1,17 @@
+export type AppMode = "live" | "movie" | "series";
 export type PictureSurface = "picture";
-export type PrimarySurface = "panel";
-export type DrawerSurface = "guide";
+export type PrimarySurface = "panel" | "playback-deck" | "vod";
+export type DrawerSurface = "guide" | "audio" | "subtitles" | "more";
+export type PlaybackDrawerSurface = Exclude<DrawerSurface, "guide">;
 export type ModalSurface = "settings" | "onboarding" | "exit";
 export type PopupSurface = "confirmation";
-export type LiveSurface = PictureSurface | PrimarySurface;
-export type SurfaceId = LiveSurface | DrawerSurface | ModalSurface | PopupSurface;
+export type LiveSurface = PictureSurface | "panel";
+export type SurfaceId =
+  | PictureSurface
+  | PrimarySurface
+  | DrawerSurface
+  | ModalSurface
+  | PopupSurface;
 export type SurfaceKeyHandler = (code: number, event: KeyboardEvent) => void;
 
 export interface SurfaceStack {

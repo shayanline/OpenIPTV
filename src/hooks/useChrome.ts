@@ -55,6 +55,7 @@ export interface Chrome {
   dial: (digit: number, onSettled: (channel: number) => void) => void;
   /** Finish dialling now, which is what OK means on a half typed number. */
   commitDigits: () => string;
+  cancelDigits: () => void;
   /**
    * Clear everything transient, in one press, now.
    *
@@ -104,6 +105,7 @@ export function useChrome(): Chrome {
   }, [show]);
 
   const holdBanner = useCallback(() => {
+    if (!up.current) return;
     window.clearTimeout(noticeTimer.current);
     show(true);
   }, [show]);
@@ -161,6 +163,12 @@ export function useChrome(): Chrome {
     return typed;
   }, []);
 
+  const cancelDigits = useCallback(() => {
+    window.clearTimeout(digitTimer.current);
+    dialled.current = "";
+    setDigits("");
+  }, []);
+
   const clear = useCallback(() => {
     window.clearTimeout(noticeTimer.current);
     window.clearTimeout(toastTimer.current);
@@ -183,6 +191,7 @@ export function useChrome(): Chrome {
     say,
     dial,
     commitDigits,
+    cancelDigits,
     clear,
   };
 }

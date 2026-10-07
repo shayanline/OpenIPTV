@@ -26,6 +26,9 @@ export function SearchField({
   onExitUp,
   onExitDown,
   onExitStart,
+  onDismissKeyboard,
+  onSubmit,
+  showCount = true,
 }: {
   value: string;
   /** Whether the cursor is on the field, as opposed to down among the results. */
@@ -40,6 +43,9 @@ export function SearchField({
   onExitUp?: () => void;
   onExitDown?: () => void;
   onExitStart?: () => void;
+  onDismissKeyboard?: () => void;
+  onSubmit?: () => void;
+  showCount?: boolean;
 }) {
   const { t, number, direction } = useLocale();
   const field = useRef<HTMLInputElement>(null);
@@ -70,6 +76,19 @@ export function SearchField({
         value={value}
         onChange={(e) => onChange(e.target.value)}
         onKeyDown={(event) => {
+          if (event.keyCode === 13 && onSubmit) {
+            event.preventDefault();
+            event.stopPropagation();
+            onSubmit();
+            return;
+          }
+          if ((event.keyCode === 10009 || event.keyCode === 27) && onDismissKeyboard) {
+            event.preventDefault();
+            event.stopPropagation();
+            event.currentTarget.blur();
+            onDismissKeyboard();
+            return;
+          }
           const start = direction === "rtl" ? 39 : 37;
           if (
             event.keyCode === start &&
@@ -107,7 +126,7 @@ export function SearchField({
        * known and printing it would be worse: a chip reading 4,211 above a list holding three
        * hundred invites somebody to scroll to the end looking for the rest.
        */}
-      {!!value.trim() && (
+      {showCount && !!value.trim() && (
         <span className="count">{total > shown ? `${number(shown)}+` : number(total)}</span>
       )}
     </div>

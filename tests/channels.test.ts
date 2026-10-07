@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import assert from "node:assert/strict";
 import { parseXtreamPlaylistUrl, type XtreamSource } from "../src/services/playlistUrl";
+import { channelRef } from "../src/services/lineup";
+import { parseM3U } from "../src/services/m3u";
 
 /**
  * Loading a playlist, which is the one thing here that talks to the network.
@@ -35,10 +37,20 @@ http://example.invalid/c.m3u8`;
  * would actually have the problem.
  */
 const disk = new Map<string, Blob | string>();
+let readPersonal: (playlistId: string) => Promise<unknown | null> = async () => null;
+let clearedLineups = 0;
 
 const load = async () => {
   vi.resetModules();
   disk.clear();
+  vi.doMock("../src/services/personalDisk", () => ({
+    readLineup: (playlistId: string) => readPersonal(playlistId),
+    writeLineup: async () => {},
+    removeLineup: async () => {},
+    clearLineups: async () => {
+      clearedLineups += 1;
+    },
+  }));
   vi.doMock("../src/services/disk", () => ({
     BUDGET_BYTES: 5 * 1024 * 1024,
     read: async (key: string) => disk.get(key) ?? null,
@@ -65,7 +77,8 @@ const load = async () => {
   const settings = await import("../src/stores/settings");
   const channels = await import("../src/stores/channels");
   const personal = await import("../src/stores/personal");
-  return { ...settings, ...channels, ...personal };
+  const lineup = await import("../src/stores/lineup");
+  return { ...settings, ...channels, ...personal, ...lineup };
 };
 
 const configure = (s: Awaited<ReturnType<typeof load>>, url = "http://list.invalid/a.m3u") => {
@@ -87,11 +100,11 @@ const configureXtream = (s: Awaited<ReturnType<typeof load>>, source = XTREAM_SO
   return s.useSettings.getState().playlists[0];
 };
 
-const xtreamResponse = (body: unknown, status = 200) => ({
-  ok: status >= 200 && status < 300,
-  status,
-  json: async () => body,
-});
+const xtreamResponse = (body: unknown, status = 200) =>
+  new Response(JSON.stringify(body), {
+    status,
+    headers: { "Content-Type": "application/json" },
+  });
 
 const xtreamFetch = (overrides: Record<string, unknown> = {}) =>
   vi.fn(async (input: string | URL) => {
@@ -184,6 +197,8 @@ const HOUR = 60 * 60 * 1000;
 
 beforeEach(() => {
   vi.useFakeTimers();
+  readPersonal = async () => null;
+  clearedLineups = 0;
   localStorage.clear();
   vi.unstubAllGlobals();
 });
@@ -434,6 +449,31 @@ test("a failed refresh keeps the saved copy rather than emptying the screen", as
   assert.match(s.useChannels.getState().error, /Showing the last saved copy/);
   assert.equal(s.useChannels.getState().errorKey, "playlist.refreshFailed");
   assert.equal(s.useChannels.getState().channels.length, 2, "the cached channels went away");
+});
+
+test("cached provider rows wait for personal state and publish one effective snapshot", async () => {
+  let resolvePersonal: (value: unknown) => void = () => {};
+  readPersonal = () =>
+    new Promise((resolve) => {
+      resolvePersonal = resolve;
+    });
+  const s = await load();
+  configure(s);
+  seedCache(s, PLAYLIST, HOUR);
+  vi.stubGlobal("fetch", vi.fn());
+  const loading = s.useChannels.getState().load();
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.equal(s.useChannels.getState().channels.length, 0);
+  const firstChannelId = channelRef(parseM3U(PLAYLIST)[0]).id;
+  resolvePersonal({
+    version: 1,
+    revision: 2,
+    personalisation: { channels: { [firstChannelId]: { name: "Mine" } } },
+  });
+  await loading;
+  assert.equal(s.useChannels.getState().channels[0].name, "Mine");
+  assert.equal(s.useLineup.getState().channels[0].name, "Mine");
 });
 
 test("a cache younger than its life is not refreshed at all", async () => {
@@ -773,7 +813,6 @@ test("favourites survive a reload and clear on request", async () => {
 test("sorting A to Z is applied to what was fetched", async () => {
   const s = await load();
   configure(s);
-  s.useSettings.getState().set("sortAlphabetically", true);
   vi.stubGlobal(
     "fetch",
     vi.fn().mockResolvedValue({
@@ -787,7 +826,11 @@ http://example.invalid/a.m3u8`,
   );
 
   await s.useChannels.getState().load();
-  expect(s.useChannels.getState().channels.map((c) => c.name)).toEqual(["Alpha", "Zeta"]);
+  void s.applyLineupMutation(s.useLineup.getState().revision, {
+    type: "order.mode",
+    mode: "alphabetical",
+  });
+  expect(s.useLineup.getState().channels.map((c) => c.name)).toEqual(["Alpha", "Zeta"]);
 });
 
 /**
@@ -860,6 +903,23 @@ test("clearing cache removes Xtream values and freshness stamps", async () => {
   expect(localStorage.getItem(`openiptv.at.${prefix}:series:200`)).toBeNull();
 });
 
+test("keeps every personal store on cache clear", async () => {
+  const s = await load();
+  s.usePersonal.getState().toggleFavourite({
+    itemKey: "alpha",
+    playlistId: "one",
+    kind: "live",
+    providerId: "alpha",
+    categoryKey: "News",
+    name: "Alpha",
+    logo: "",
+  });
+  const before = localStorage.getItem("openiptv.personal");
+  await s.clearCache();
+  expect(localStorage.getItem("openiptv.personal")).toBe(before);
+  expect(clearedLineups).toBe(0);
+});
+
 test("editing a playlist's address does not serve the old one from cache", async () => {
   const s = await load();
   configure(s, "http://list.invalid/before.m3u");
@@ -869,7 +929,7 @@ test("editing a playlist's address does not serve the old one from cache", async
   // The id is unchanged, which is exactly the case that used to go wrong: the cache was
   // keyed on it, so a corrected address was answered with the previous playlist's channels
   // and a timestamp saying they were current.
-  s.useSettings
+  await s.useSettings
     .getState()
     .updatePlaylist(id, "After", { kind: "m3u", url: "http://list.invalid/after.m3u" });
   vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, text: async () => OTHER }));
@@ -881,7 +941,6 @@ test("editing a playlist's address does not serve the old one from cache", async
 test("sorting A to Z counts numbers rather than spelling them", async () => {
   const s = await load();
   configure(s);
-  s.useSettings.getState().set("sortAlphabetically", true);
   vi.stubGlobal(
     "fetch",
     vi.fn().mockResolvedValue({
@@ -899,7 +958,11 @@ http://example.invalid/1.m3u8`,
   // Plain string ordering puts "Sport 10" before "Sport 2", which is alphabetical at the
   // viewer rather than for them. These are channel names and they are full of numbers.
   await s.useChannels.getState().load();
-  expect(s.useChannels.getState().channels.map((c) => c.name)).toEqual([
+  void s.applyLineupMutation(s.useLineup.getState().revision, {
+    type: "order.mode",
+    mode: "alphabetical",
+  });
+  expect(s.useLineup.getState().channels.map((c) => c.name)).toEqual([
     "Sport 1",
     "Sport 2",
     "Sport 10",

@@ -17,7 +17,6 @@ const playlist: Playlist = {
   source,
   sourceVersion: 1,
   hiddenCategories: [],
-  hiddenCategoryMode: "exclude",
 };
 
 const channel = (streamId = "10", archiveDays = 7): Channel => ({
@@ -41,6 +40,12 @@ const auth = {
   user_info: { auth: 1, status: "Active" },
   server_info: { server_protocol: "http", url: "provider.example" },
 };
+
+const jsonResponse = (body: unknown) =>
+  new Response(JSON.stringify(body), {
+    status: 200,
+    headers: { "Content-Type": "application/json" },
+  });
 
 const programme = (
   id: string,
@@ -75,20 +80,17 @@ test("guide sorts programmes and selects the current and next entries", async ()
   const now = Date.now() / 1000;
   const { useLibrary } = await loadStore(async (input) => {
     const action = new URL(String(input)).searchParams.get("action");
-    return {
-      ok: true,
-      status: 200,
-      json: async () =>
-        action === "get_short_epg"
-          ? {
-              epg_listings: [
-                programme("next", now + 1800, now + 3600),
-                programme("past", now - 3600, now - 1800),
-                programme("current", now - 1800, now + 1800),
-              ],
-            }
-          : auth,
-    } as Response;
+    return jsonResponse(
+      action === "get_short_epg"
+        ? {
+            epg_listings: [
+              programme("next", now + 1800, now + 3600),
+              programme("past", now - 3600, now - 1800),
+              programme("current", now - 1800, now + 1800),
+            ],
+          }
+        : auth,
+    );
   });
   useLibrary.getState().selectPlaylist(playlist);
 
@@ -102,23 +104,19 @@ test("guide sorts programmes and selects the current and next entries", async ()
 
 test("guide keeps malformed base64 text readable", async () => {
   const now = Date.now() / 1000;
-  const { useLibrary } = await loadStore(
-    async (input) =>
-      ({
-        ok: true,
-        status: 200,
-        json: async () =>
-          new URL(String(input)).searchParams.get("action") === "get_short_epg"
-            ? {
-                epg_listings: [
-                  programme("bad", now - 60, now + 60, {
-                    title: "News %%%",
-                    description: "Already plain text",
-                  }),
-                ],
-              }
-            : auth,
-      }) as Response,
+  const { useLibrary } = await loadStore(async (input) =>
+    jsonResponse(
+      new URL(String(input)).searchParams.get("action") === "get_short_epg"
+        ? {
+            epg_listings: [
+              programme("bad", now - 60, now + 60, {
+                title: "News %%%",
+                description: "Already plain text",
+              }),
+            ],
+          }
+        : auth,
+    ),
   );
   useLibrary.getState().selectPlaylist(playlist);
 
@@ -133,25 +131,21 @@ test("guide keeps malformed base64 text readable", async () => {
 test("catchup targets require a complete past programme inside the archive boundary", async () => {
   const now = Date.now() / 1000;
   const exactBoundary = now - 7 * 86400;
-  const { useLibrary } = await loadStore(
-    async (input) =>
-      ({
-        ok: true,
-        status: 200,
-        json: async () =>
-          new URL(String(input)).searchParams.get("action") === "get_short_epg"
-            ? {
-                epg_listings: [
-                  programme("boundary", exactBoundary, exactBoundary + 5401),
-                  programme("expired", exactBoundary - 1, exactBoundary + 100),
-                  programme("future", now + 60, now + 3660),
-                  programme("current", now - 60, now + 60),
-                  programme("not-archived", now - 7200, now - 3600, { has_archive: 0 }),
-                  programme("missing-stop", now - 7200, now - 3600, { stop_timestamp: "" }),
-                ],
-              }
-            : auth,
-      }) as Response,
+  const { useLibrary } = await loadStore(async (input) =>
+    jsonResponse(
+      new URL(String(input)).searchParams.get("action") === "get_short_epg"
+        ? {
+            epg_listings: [
+              programme("boundary", exactBoundary, exactBoundary + 5401),
+              programme("expired", exactBoundary - 1, exactBoundary + 100),
+              programme("future", now + 60, now + 3660),
+              programme("current", now - 60, now + 60),
+              programme("not-archived", now - 7200, now - 3600, { has_archive: 0 }),
+              programme("missing-stop", now - 7200, now - 3600, { stop_timestamp: "" }),
+            ],
+          }
+        : auth,
+    ),
   );
   useLibrary.getState().selectPlaylist(playlist);
 
@@ -190,7 +184,10 @@ test("a newer focused channel request cancels the abandoned guide request", asyn
     const url = new URL(String(input));
     const action = url.searchParams.get("action");
     if (action !== "get_short_epg")
-      return { ok: true, status: 200, json: async () => auth } as Response;
+      return new Response(JSON.stringify(auth), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
     const streamId = url.searchParams.get("stream_id");
     if (streamId === "10") {
       markFirstStarted?.();
@@ -203,7 +200,10 @@ test("a newer focused channel request cancels the abandoned guide request", asyn
         else init?.signal?.addEventListener("abort", abort);
       });
     }
-    return { ok: true, status: 200, json: async () => ({ epg_listings: [] }) } as Response;
+    return new Response(JSON.stringify({ epg_listings: [] }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
   });
   useLibrary.getState().selectPlaylist(playlist);
 
@@ -224,11 +224,7 @@ test("guide data is reused briefly and refetched after its memory lifetime", asy
   const { useLibrary } = await loadStore(async (input) => {
     const action = new URL(String(input)).searchParams.get("action");
     if (action === "get_short_epg") guideRequests += 1;
-    return {
-      ok: true,
-      status: 200,
-      json: async () => (action === "get_short_epg" ? { epg_listings: [] } : auth),
-    } as Response;
+    return jsonResponse(action === "get_short_epg" ? { epg_listings: [] } : auth);
   });
   useLibrary.getState().selectPlaylist(playlist);
 

@@ -5,8 +5,17 @@ import { GuideList } from "../src/components/GuideList";
 import { KEY } from "../src/hooks/useRemote";
 import { formatTime } from "../src/services/locale";
 import type { ChannelGuide } from "../src/stores/library";
-import type { PlaybackTarget } from "../src/types";
+import type { Channel, PlaybackTarget } from "../src/types";
 import { finishPlayback, mountApp, played, press, settle, XTREAM_SOURCE } from "./support/app";
+
+const GUIDE_CHANNEL: Channel = {
+  id: "xtream:pl-1:live:1",
+  name: "Provider One",
+  group: "News",
+  url: "http://provider.example/live/viewer/secret/1.m3u8",
+  quality: "",
+  number: 1,
+};
 
 const target: PlaybackTarget = {
   id: "xtream:pl-1:catchup:1:past",
@@ -61,7 +70,7 @@ test("GuideList formats programme timestamps in the viewer locale and timezone",
   const stopTimestamp = 3600;
   render(
     <GuideList
-      channel="Provider One"
+      channel={GUIDE_CHANNEL}
       guide={{
         state: "loaded",
         items: [
@@ -81,8 +90,9 @@ test("GuideList formats programme timestamps in the viewer locale and timezone",
       focused
       scale={1}
       onMove={() => {}}
-      onSelect={() => {}}
+      onPlay={() => {}}
       onRetry={() => {}}
+      onWheel={() => {}}
     />,
   );
 
@@ -95,17 +105,18 @@ test("GuideList formats programme timestamps in the viewer locale and timezone",
 });
 
 test("GuideList keeps every programme readable and only offers valid catchup", () => {
-  const onSelect = vi.fn();
+  const onPlay = vi.fn();
   render(
     <GuideList
-      channel="Provider One"
+      channel={GUIDE_CHANNEL}
       guide={loadedGuide}
       index={0}
       focused
       scale={1}
       onMove={() => {}}
-      onSelect={onSelect}
+      onPlay={onPlay}
       onRetry={() => {}}
+      onWheel={() => {}}
     />,
   );
 
@@ -116,20 +127,21 @@ test("GuideList keeps every programme readable and only offers valid catchup", (
   const playButtons = screen.getAllByRole("button", { name: "Play from start" });
   expect(playButtons).toHaveLength(1);
   fireEvent.click(playButtons[0]);
-  expect(onSelect).toHaveBeenCalledWith(0);
+  expect(onPlay).toHaveBeenCalledWith(0);
 });
 
 test("GuideList visibly selects programmes without catchup", () => {
   render(
     <GuideList
-      channel="Provider One"
+      channel={GUIDE_CHANNEL}
       guide={loadedGuide}
       index={1}
       focused
       scale={1}
       onMove={() => {}}
-      onSelect={() => {}}
+      onPlay={() => {}}
       onRetry={() => {}}
+      onWheel={() => {}}
     />,
   );
 
@@ -152,13 +164,14 @@ test("GuideList moves focus to the viewport edge before scrolling", () => {
     })),
   };
   const props = {
-    channel: "Provider One",
+    channel: GUIDE_CHANNEL,
     guide,
     focused: true,
     scale: 1,
     onMove: () => {},
-    onSelect: () => {},
+    onPlay: () => {},
     onRetry: () => {},
+    onWheel: () => {},
   };
 
   try {
@@ -189,13 +202,13 @@ test.each([
   const retry = vi.fn();
   render(
     <GuideList
-      channel="Provider One"
+      channel={GUIDE_CHANNEL}
       guide={{ state, items: [], ...(state === "failed" ? { error: "Guide failed" } : {}) }}
       index={0}
       focused
       scale={1}
       onMove={() => {}}
-      onSelect={() => {}}
+      onPlay={() => {}}
       onRetry={retry}
     />,
   );
@@ -261,8 +274,19 @@ const xtreamFetch = async (input: string | URL) => {
       ],
     },
   };
-  return { ok: true, status: 200, json: async () => body[action] } as Response;
+  return new Response(JSON.stringify(body[action]), {
+    status: 200,
+    headers: { "Content-Type": "application/json" },
+  });
 };
+
+/* Right opens the deck now; Guide is the leading context action inside it. */
+async function openGuideViaDeck() {
+  press(KEY.RIGHT);
+  press(KEY.LEFT);
+  press(KEY.ENTER);
+  await settle(0);
+}
 
 test("Guide opens from live playback and starts archived playback", async () => {
   await mountApp("", { source: XTREAM_SOURCE, fetchImplementation: xtreamFetch });
@@ -270,8 +294,7 @@ test("Guide opens from live playback and starts archived playback", async () => 
 
   press(KEY.ENTER);
   await settle(0);
-  press(KEY.RIGHT);
-  await settle(0);
+  await openGuideViaDeck();
   expect(document.querySelector(".guide-drawer")).toBeTruthy();
   expect(document.querySelector(".guide-row.current .row-label")?.textContent).toBe(
     "News at Noon",
@@ -314,14 +337,14 @@ test("mouse wheel moves the programme guide selection in both directions", async
   await mountApp("", { source: XTREAM_SOURCE, fetchImplementation: xtreamFetch });
   press(KEY.ENTER);
   await settle(0);
-  press(KEY.RIGHT);
-  await settle(0);
+  await openGuideViaDeck();
   const viewport = document.querySelector(".guide-list .viewport");
   assert.ok(viewport);
 
   fireEvent.wheel(viewport, { deltaY: 100 });
   expect(document.querySelector(".guide-row.selected .row-label")?.textContent).toBe("Weather");
 
+  await settle(120);
   fireEvent.wheel(viewport, { deltaY: -100 });
   expect(document.querySelector(".guide-row.selected .row-label")?.textContent).toBe(
     "News at Noon",
@@ -332,8 +355,7 @@ test("Guide clamps its cursor when refreshed programmes become shorter", async (
   await mountApp("", { source: XTREAM_SOURCE, fetchImplementation: xtreamFetch });
   press(KEY.ENTER);
   await settle(0);
-  press(KEY.RIGHT);
-  await settle(0);
+  await openGuideViaDeck();
   press(KEY.DOWN);
   expect(document.querySelector(".guide-row.cursor .row-label")?.textContent).toBe("Weather");
 
@@ -375,14 +397,16 @@ test("GREEN in Guide favourites its guide channel instead of the programme row i
       ],
       get_short_epg: { epg_listings: [] },
     };
-    return { ok: true, status: 200, json: async () => body[action] } as Response;
+    return new Response(JSON.stringify(body[action]), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
   };
   await mountApp("", { source: XTREAM_SOURCE, fetchImplementation });
   press(KEY.DOWN);
   press(KEY.ENTER);
   await settle(0);
-  press(KEY.RIGHT);
-  await settle(0);
+  await openGuideViaDeck();
 
   press(KEY.GREEN);
 
@@ -399,7 +423,10 @@ test("focused live guide loading waits for the row to settle", async () => {
     const action = url.searchParams.get("action") ?? "authenticate";
     if (action === "get_short_epg") {
       requested.push(url.searchParams.get("stream_id") ?? "");
-      return { ok: true, status: 200, json: async () => ({ epg_listings: [] }) } as Response;
+      return new Response(JSON.stringify({ epg_listings: [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
     }
     const body: Record<string, unknown> = {
       authenticate: {
@@ -414,7 +441,10 @@ test("focused live guide loading waits for the row to settle", async () => {
         { stream_id: "2", name: "Two", category_id: "10" },
       ],
     };
-    return { ok: true, status: 200, json: async () => body[action] } as Response;
+    return new Response(JSON.stringify(body[action]), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
   };
   await mountApp("", { source: XTREAM_SOURCE, fetchImplementation });
 
@@ -447,8 +477,7 @@ test("opening and returning from Guide preserves the live row", async () => {
 
   press(KEY.ENTER);
   await settle(0);
-  press(KEY.RIGHT);
-  await settle(0);
+  await openGuideViaDeck();
   expect(document.querySelector(".guide-drawer")).toBeTruthy();
   press(KEY.BACK);
   await settle(180);
