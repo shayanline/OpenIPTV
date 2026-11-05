@@ -1,4 +1,4 @@
-import type HlsType from "hls.js";
+import { loadHlsLibrary } from "./hlsLoader";
 import {
   initialBufferSeconds,
   needsRepair,
@@ -526,7 +526,7 @@ export async function prepare(
   if (!onTizen()) {
     if (!browserRepairs.has(upstream)) {
       try {
-        const { default: Hls } = (await import("hls.js")) as { default: typeof HlsType };
+        const Hls = await loadHlsLibrary();
         if (stale() || !Hls.isSupported()) return null;
       } catch {
         return null;
