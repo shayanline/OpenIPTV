@@ -131,6 +131,8 @@ export default {
   "playbackInfo.progressive": "প্রগ্রেসিভ",
   "playbackInfo.interlaced": "ইন্টারলেসড",
   "playbackInfo.videoCodec": "ভিডিও কোডেক",
+  "playbackInfo.hdr": "ডায়নামিক রেঞ্জ",
+  "playbackInfo.hdrUnsignalled": "ঘোষিত নয় (সাধারণত SDR)",
   "playbackInfo.audioCodec": "অডিও কোডেক",
   "playbackInfo.bitrate": "রেন্ডিশন বিটরেট",
   "playbackInfo.bandwidth": "নেটওয়ার্ক অনুমান",

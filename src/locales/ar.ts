@@ -131,6 +131,8 @@ export default {
   "playbackInfo.progressive": "تدريجي",
   "playbackInfo.interlaced": "متداخل",
   "playbackInfo.videoCodec": "ترميز الفيديو",
+  "playbackInfo.hdr": "النطاق الديناميكي",
+  "playbackInfo.hdrUnsignalled": "غير مُعلَن (عادةً SDR)",
   "playbackInfo.audioCodec": "ترميز الصوت",
   "playbackInfo.bitrate": "معدل بت النسخة",
   "playbackInfo.bandwidth": "تقدير الشبكة",

@@ -133,6 +133,8 @@ export default {
   "playbackInfo.progressive": "Progressief",
   "playbackInfo.interlaced": "Interlaced",
   "playbackInfo.videoCodec": "Videocodec",
+  "playbackInfo.hdr": "Dynamisch bereik",
+  "playbackInfo.hdrUnsignalled": "Niet opgegeven (meestal SDR)",
   "playbackInfo.audioCodec": "Audiocodec",
   "playbackInfo.bitrate": "Renditiebitsnelheid",
   "playbackInfo.bandwidth": "Netwerkschatting",
