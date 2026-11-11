@@ -18,7 +18,16 @@ Keep implementation decisions, internal architecture, cache and retry timing, so
 
 ## Verification
 
-Choose checks from the changed files and behavior. Start with the smallest check that can detect a regression, then widen only when the impact cannot be mapped safely or a relevant failure indicates a broader problem. Do not run a check only because it exists.
+Verification is a separate final phase that starts only after the task author approves the finished implementation. Do not run verification commands during implementation, including lint, type checks, tests, builds, TV gates, WebAssembly checks, XML validation, or `git diff --check`. Reading files and reviewing the diff while editing do not replace final verification.
+
+1. When implementation is ready, describe the changes as unverified and awaiting approval. Ask the task author, "Is the task finished and approved for final verification?", then wait for explicit confirmation before running checks. Do not infer approval from the original task request or your own assessment that implementation is complete.
+2. After approval, select and run the final checks justified by the changed files and behavior, using the rules below.
+3. Fix issues introduced by the task during final verification, then rerun failed checks and any passing checks invalidated by the fixes. If remediation changes the approved behavior or adds scope, obtain the author's approval again before resuming verification.
+4. Do not commit, push, open a pull request, or report the task as verified and complete until all required checks pass. Approval to begin verification does not grant permission to commit or push.
+
+### Final Check Selection
+
+Choose checks from the changed files and behavior. Start with the smallest check that can detect a regression, then widen only when the impact cannot be mapped safely or a relevant failure indicates a broader problem. Do not run a check only because it exists. All checks in this section belong to the approved final verification phase.
 
 - For documentation, badges, links, prose, or comment only changes, inspect the diff, rendering, links, spelling, commands, and examples. Skip application lint, type checks, tests, builds, TV gates, and WebAssembly checks.
 - For changed TypeScript or TSX files, lint only the changed files with `npm run lint -- <files>`. Run `npm run typecheck` when production TypeScript or shared test types change. Run related tests with `npm test -- <test files>` only when behavior or test code changes.
@@ -28,9 +37,9 @@ Choose checks from the changed files and behavior. Start with the smallest check
 - Run `npm run tv:budget` after a build when launch work, interaction paths, rendering volume, windowing, caching, or other measured performance behavior changes. Read the machine load before treating a failure as a regression.
 - Run `npm run wasm:check` only when `wasm/`, `public/wasm/`, its worker, checksums, or the repair integration changes. This check does not need an application build.
 - Validate `public/config.xml` with `python3 -c "from xml.dom.minidom import parse; parse('public/config.xml')"` when it changes.
-- Run `npm run check` during implementation only when the user requests it, the change is broad, or the affected tests cannot be selected safely. Before opening a pull request, follow the complete local gate in [CONTRIBUTING.md](CONTRIBUTING.md).
-- Do not repeat a passing check unless later edits could invalidate it. Do not expand the task to fix an unrelated existing failure. Confirm the failure against the unchanged baseline when practical, then report it.
-- Always inspect the complete diff and run `git diff --check`. Before reporting completion, state which checks ran and which checks were skipped, with a short reason.
+- Run `npm run check` only during approved final verification when the author requests it, the change is broad, or the affected tests cannot be selected safely. Before opening a pull request, follow the complete local gate in [CONTRIBUTING.md](CONTRIBUTING.md).
+- Do not repeat a passing check unless later edits could invalidate it. Do not expand the task to fix an unrelated existing failure. Confirm the failure against the unchanged baseline when practical, then report it as a blocker rather than claiming verification passed.
+- Inspect the complete diff and run `git diff --check` during final verification. Before reporting verified completion, state which checks ran and which checks were skipped, with a short reason.
 
 The three `tv:` gates are the checks that speak for hardware nobody here has. Details of what each measures and how to read it are in [testing and measurement](docs/testing.md).
 
