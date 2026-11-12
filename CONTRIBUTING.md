@@ -10,22 +10,11 @@ there because breaking it fails on hardware that no test in this repository owns
 
 ## Before opening a pull request
 
-```bash
-npm ci
-npm run check       # lint, typecheck, unit and component tests
-npm run build
-npm run tv:gap      # spacing parity for the sets without flex gap
-npm run tv:engines  # the app in a real Chromium 69 and 120
-```
+Choose the checks the change justifies from the selection table in [testing and measurement](docs/testing.md), under the approval rules in [AGENTS.md](AGENTS.md). What each gate measures and how to read its output is in the same document.
 
-`npm run check` and `npm run build` are the minimum. Run the two `tv:` gates as well if you touched
-anything in `src/styles/`, anything about layout, or anything that could differ between engine
-versions, because those are exactly the failures a laptop hides. What each gate measures and how to
-read its output is in [testing and measurement](docs/testing.md).
+Preparing a pull request does not invalidate results from checks that already passed on the same inputs, so nothing needs to rerun just because a pull request is being opened.
 
-CI runs all of it on every pull request, so a run that is red there is not ready, with one exception:
-the performance budget is allowed to fail, because it compares against numbers measured on a
-particular machine and a shared runner is not that machine.
+CI runs the full set on code changes and skips documentation only paths, so a run that is red there is not ready, with one exception: the performance budget is allowed to fail, because it compares against numbers measured on a particular machine and a shared runner is not that machine.
 
 ## Things that will be asked of a change
 
