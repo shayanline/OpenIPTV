@@ -87,6 +87,7 @@ const targetOf = (item: TuneItem): PlaybackTarget =>
         group: item.group,
         logo: item.logo,
         url: item.url,
+        ...(item.fallbackUrl ? { fallbackUrl: item.fallbackUrl } : {}),
       };
 
 export interface TunerOptions {
@@ -368,6 +369,7 @@ export function useTuner(options: TunerOptions): Tuner {
 
   const tuneToken = useRef(0);
   const httpFallbackTried = useRef("");
+  const streamFallbackTried = useRef("");
   const tuneTo = useCallback((target: PlaybackTarget) => {
     tuneToken.current += 1;
     const token = tuneToken.current;
@@ -427,7 +429,35 @@ export function useTuner(options: TunerOptions): Tuner {
 
   useEffect(() => {
     const target = currentRef.current;
-    if (!fault || !target || !canUseHttpFallback() || !HTTP_FALLBACK_FAULT.test(fault)) return;
+    if (!fault || !target) return;
+
+    /*
+     * The configured address failed, so try the one the provider advertises before falling
+     * back to anything else. This is the reverse of the old order: the configured address is
+     * where the API answered, while a panel's advertisement can point at a CDN that refuses
+     * video. One attempt, and only when the two actually differ.
+     */
+    const streamKey = `${target.id}:${target.fallbackUrl ?? ""}`;
+    if (
+      target.fallbackUrl &&
+      HTTP_FALLBACK_FAULT.test(fault) &&
+      streamFallbackTried.current !== streamKey
+    ) {
+      streamFallbackTried.current = streamKey;
+      const retried = { ...target, url: target.fallbackUrl, fallbackUrl: undefined };
+      currentRef.current = retried;
+      setCurrent(retried);
+      setFault("");
+      setPaused(false);
+      setBusy(true);
+      setWaited(0);
+      setRetryIn(0);
+      announced.current = "";
+      tuneTo(retried);
+      return;
+    }
+
+    if (!canUseHttpFallback() || !HTTP_FALLBACK_FAULT.test(fault)) return;
     const fallback = httpFallback(target.url);
     const attemptKey = `${target.id}:${target.url}`;
     if (!fallback || httpFallbackTried.current === attemptKey) return;
@@ -544,6 +574,7 @@ export function useTuner(options: TunerOptions): Tuner {
       // acts on it in the same tick, such as opening the panel onto whatever is playing, would
       // otherwise read the one before.
       httpFallbackTried.current = "";
+      streamFallbackTried.current = "";
       currentRef.current = target;
       setCurrent(target);
       setFault("");
@@ -580,6 +611,7 @@ export function useTuner(options: TunerOptions): Tuner {
     window.clearTimeout(retryTimer.current);
     window.clearTimeout(zapTimer.current);
     httpFallbackTried.current = "";
+    streamFallbackTried.current = "";
     currentRef.current = null;
     previewRef.current = null;
     setCurrent(null);

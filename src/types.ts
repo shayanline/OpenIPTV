@@ -7,6 +7,8 @@ export interface PlaybackTarget {
   group: string;
   logo: string;
   url: string;
+  /** The provider-advertised address, tried once if the configured one cannot play. */
+  fallbackUrl?: string;
   resumeAt?: number;
 }
 
@@ -17,6 +19,8 @@ export interface Channel {
   logo: string;
   group: string;
   url: string;
+  /** The provider-advertised address, tried once if the configured one cannot play. */
+  fallbackUrl?: string;
   quality: string;
   /** Position in the playlist, used for the number key jump. */
   number: number;

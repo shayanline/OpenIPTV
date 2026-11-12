@@ -30,6 +30,14 @@ export function PlaybackInfo({ read }: { read: () => PlaybackStats | null }) {
     ],
     [t("playbackInfo.scan"), stats.scan ? t(`playbackInfo.${stats.scan}`) : missing],
     [t("playbackInfo.videoCodec"), stats.videoCodec ?? missing],
+    [
+      t("playbackInfo.hdr"),
+      stats.hdr === undefined
+        ? missing
+        : stats.hdr === "unsignalled"
+          ? t("playbackInfo.hdrUnsignalled")
+          : stats.hdr,
+    ],
     [t("playbackInfo.audioCodec"), stats.audioCodec ?? missing],
     [t("playbackInfo.bitrate"), rate(stats.bitrate) || missing],
     [t("playbackInfo.bandwidth"), rate(stats.bandwidth) || missing],

@@ -133,6 +133,8 @@ export default {
   "playbackInfo.progressive": "Прогрессивная",
   "playbackInfo.interlaced": "Чересстрочная",
   "playbackInfo.videoCodec": "Видеокодек",
+  "playbackInfo.hdr": "Динамический диапазон",
+  "playbackInfo.hdrUnsignalled": "Не указан (обычно SDR)",
   "playbackInfo.audioCodec": "Аудиокодек",
   "playbackInfo.bitrate": "Битрейт варианта",
   "playbackInfo.bandwidth": "Оценка сети",

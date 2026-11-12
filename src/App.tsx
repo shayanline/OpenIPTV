@@ -10,7 +10,7 @@ import {
 import { useChannels } from "./stores/channels";
 import { usePersonal } from "./stores/personal";
 import {
-  libraryPlaybackUrl,
+  libraryPlaybackTarget,
   useLibrary,
   type GuideProgramme,
   type LibraryItem,
@@ -1632,7 +1632,7 @@ export default function App() {
     async (selection: FiniteSelection) => {
       if (!activePlaylist) return;
       try {
-        const url = await libraryPlaybackUrl(selection.item);
+        const { url, fallbackUrl } = await libraryPlaybackTarget(selection.item);
         const progress = progressFor(selection.item.key);
         const catalogueKind = selection.kind === "movie" ? "movie" : "series";
         const parent =
@@ -1654,6 +1654,7 @@ export default function App() {
           group: categoryName,
           logo: "logo" in selection.item ? selection.item.logo : "",
           url,
+          ...(fallbackUrl ? { fallbackUrl } : {}),
           ...(progress?.seconds ? { resumeAt: progress.seconds } : {}),
         };
         finiteSelection.current = selection;
