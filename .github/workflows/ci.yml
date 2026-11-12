@@ -1,15 +1,12 @@
 name: CI
 
-# Prose cannot fail a build, and three minutes of Chromium proves nothing about a paragraph. The
-# filter is on the paths rather than on the jobs, so a documentation commit skips the runner
-# entirely instead of starting one to decide it has nothing to do. Nothing under these paths is
-# read by the build, the tests or any of the tv: gates.
+# Documentation pushes skip runners. Pull requests report the required checks, but the changes
+# job skips application work when every changed path is prose or an issue template.
 on:
   push:
     branches: [master, main]
     paths-ignore: ["**.md", "docs/**", ".github/ISSUE_TEMPLATE/**"]
   pull_request:
-    paths-ignore: ["**.md", "docs/**", ".github/ISSUE_TEMPLATE/**"]
   # So the engine and budget jobs can be run deliberately, rather than only as a side effect of
   # pushing something, and so a documentation commit can still be checked on purpose.
   workflow_dispatch:
@@ -42,7 +39,48 @@ permissions:
 # code and this workflow runs on every pull request from anybody. The tag is in the comment so a
 # human can still read what version it is, and dependabot keeps the pins moving.
 jobs:
+  changes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      run-checks: ${{ steps.paths.outputs.run-checks }}
+    steps:
+      - uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        id: paths
+        with:
+          script: |
+            if (context.eventName !== 'pull_request') {
+              core.setOutput('run-checks', true);
+              return;
+            }
+            const { data: pr } = await github.rest.pulls.get({
+              ...context.repo,
+              pull_number: context.payload.pull_request.number,
+            });
+            if (pr.head.sha !== context.payload.pull_request.head.sha) {
+              core.setOutput('run-checks', true);
+              return;
+            }
+            const files = await github.paginate(github.rest.pulls.listFiles, {
+              ...context.repo,
+              pull_number: pr.number,
+              per_page: 100,
+            });
+            const prose = path => typeof path === 'string' &&
+              (path.endsWith('.md') || path.startsWith('docs/') ||
+               path.startsWith('.github/ISSUE_TEMPLATE/'));
+            const runChecks = files.length !== pr.changed_files || files.some(file =>
+              !prose(file.filename) ||
+              ((file.status === 'renamed' || file.previous_filename !== undefined) &&
+               !prose(file.previous_filename)));
+            core.setOutput('run-checks', runChecks);
+
   check:
+    needs: changes
+    if: needs.changes.outputs.run-checks == 'true'
     runs-on: ubuntu-latest
     # A backstop, not an estimate. Anything here that hangs rather than fails would otherwise
     # burn the six hour default, and a Chrome that dies mid run is a realistic way to hang.
@@ -109,6 +147,8 @@ jobs:
   # so every year in between runs a strict superset of what the app asks for.
   # ---------------------------------------------------------------------------------
   engines:
+    needs: changes
+    if: needs.changes.outputs.run-checks == 'true'
     runs-on: ubuntu-latest
     # Longer, because a new engine is a couple of hundred megabytes to fetch.
     timeout-minutes: 30
@@ -153,6 +193,8 @@ jobs:
   # absolute measurement. Read the numbers, do not merge on the tick alone.
   # ---------------------------------------------------------------------------------
   budget:
+    needs: changes
+    if: needs.changes.outputs.run-checks == 'true'
     runs-on: ubuntu-latest
     continue-on-error: true
     timeout-minutes: 20
@@ -205,7 +247,8 @@ jobs:
   # that installs on somebody's television, where nothing can be patched in a hurry.
   # ---------------------------------------------------------------------------------
   dependencies:
-    if: github.event_name == 'pull_request'
+    needs: changes
+    if: github.event_name == 'pull_request' && needs.changes.outputs.run-checks == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
