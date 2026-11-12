@@ -3,15 +3,51 @@
 Nobody here owns a 2020 Samsung television, and that is the problem every gate in this
 repository exists to work around.
 
+## Choosing local checks
+
+Run verification commands only after explicit final approval under the verification rules in [AGENTS.md](../AGENTS.md). When approval is given, run the union of the checks the changed files justify rather than every row in this table.
+
+| What changed | What to run |
+|:--|:--|
+| Documentation, comments, badges, links or prose | Inspect the diff, the rendering, the links, the spelling and every command and example it gives. No application checks are needed. |
+| TypeScript or TSX | `npm run lint -- <changed files>`. Add `npm run typecheck` for production TypeScript or shared test types. Run the related test files only when behavior or test code changed. |
+| Entry points, application wiring, imports that alter packaging, compiler or bundler configuration, dependencies, generated assets, public contracts, or several connected areas | `npm run build`. The build is also the prerequisite whenever any selected `tv:` gate needs a `dist/`. |
+| Spacing, layout, flex gap fallbacks, or rendered component structure | `npm run tv:gap`, after the build. |
+| Runtime APIs, browser compatibility, the build target, application wiring, or behavior that could differ across engines, including layout and CSS changes that may render differently between them | `npm run tv:engines`, after the build. |
+| Launch work, interaction paths, rendering volume, windowing, caching, or other measured performance behavior | `npm run tv:budget`, after the build. |
+| `wasm/`, `public/wasm/`, its worker, the checksums, or the repair integration | `npm run wasm:check`. It needs no application build unless runtime assets or wiring also require one. |
+| `public/config.xml` | `python3 -c "from xml.dom.minidom import parse; parse('public/config.xml')"`. No application build is needed unless something else justifies one. |
+| Test files only | Lint the changed test files and run the related tests. No production typecheck or build is needed unless shared types, configuration, fixtures or contracts require it. |
+| A broad change, an impact that cannot be mapped safely, or an explicit request for everything | Run `npm run check` when no build is needed. When a build is justified, run `npm run lint`, `npm test` and `npm run build` once each. Add only the TV gates justified by the rows above. |
+| Benchmark or test harness code | The check or checks that exercise the changed harness, not the whole suite by default. |
+
+### Reusing results
+
+`npm run check` is lint, typecheck and the entire Vitest suite in one command, so do not also run those parts separately over the same unchanged inputs. `npm run build` includes the typecheck, so when a build is justified choose it instead of a standalone `npm run typecheck`. When the change justifies broad verification and a build, run `npm run lint`, `npm test` and `npm run build` once each rather than `npm run check` on top of a build. When it justifies broad verification and no build, run `npm run check` once.
+
+An isolated parser change, for example a fix inside `src/services/m3u.ts` alone:
+
 ```bash
-npm run check       # lint, typecheck, unit and component tests
-npm run build       # required before any of the three gates below
-npm run tv:gap      # spacing parity for the sets without flex gap
-npm run tv:engines  # the app in a real Chromium 69 and a real Chromium 120
-npm run tv:budget   # frame times and the launch on the floor profile, pass or fail
+npm run lint -- src/services/m3u.ts
+npm run typecheck
+npm test -- tests/m3u.test.ts
 ```
 
-CI runs all of them. The budget is `continue-on-error`, for the reason in the last section.
+No build and no `tv:` gates are needed unless other changes in the same diff warrant them. When the edited module feeds other tested consumers, select the test files for those consumers as well.
+
+Reuse one `dist/` for every selected `tv:` gate and rebuild only when build inputs change. Do not reinstall dependencies between checks: `npm ci` belongs to the initial setup, to missing or stale dependencies, and to lockfile changes. A passing result stays valid until a relevant input changes, which covers code, tests, configuration, dependencies, the environment, and generated artifacts.
+
+After a fix, rerun the checks that failed and the checks the fix could have invalidated, and do not restart the whole sequence. Routine remediation inside the approved scope does not need approval again, because the numbered approval steps in AGENTS.md already cover changes to scope or behavior. Record each check, its result and the input state it ran against briefly in the final handoff. No separate ledger or tooling is needed.
+
+### Selecting benchmarks
+
+`npm run tv:budget` already runs the floor profile benchmark and the launch timing, so `npm run tv:bench`, `npm run tv:bench:floor`, `npm run tv:quick` and any separate launch timing are not prerequisites for it. `npm run tv:quick` is an optional diagnostic that gives no budget verdict, and under the approval rule above it runs only after approval like every other check rather than being mandatory before the budget.
+
+`npm run tv:engines -- --all` is not routine. `npm run tv:calibrate` belongs to the rare occasions the throttle factor needs recalibration. `npm run tv:on-set` is a separate hardware check that the simulator does not replace and CI does not require. The sections below describe what each of these measures and how to read it.
+
+### What CI does
+
+CI runs the full set on code changes: one job installs dependencies and runs `npm run check`, `npm run build`, the `public/config.xml` validation, the WebAssembly check and `npm run tv:gap`, while the engines and budget jobs each install and build independently. Documentation paths are skipped on push and pull request, which covers Markdown files, `docs/` and the issue templates, and `workflow_dispatch` can run the jobs deliberately, so not every pull request exercises the whole set. The budget job is `continue-on-error` on the shared runners and stays informational, for the reason in the budget section. The per job isolation repeats install and build work, and nothing in this document changes that.
 
 ## The suite
 
@@ -361,9 +397,7 @@ The shared parity walk starts from Xtream live rows, performs live search, opens
 seven, because the floor is the weakest set in the supported range and everything newer is faster,
 so a budget met there is met everywhere.
 
-`npm run tv:quick` uses the same floor profile and visits every journey, but it shortens the idle
-windows and repeats fewer channel rows, channel changes and panel visits. It is useful while working,
-while the full budget remains the final measurement.
+`npm run tv:quick` uses the same floor profile and visits every journey, but it shortens the idle windows and repeats fewer channel rows, channel changes and panel visits. It is an optional diagnostic and issues no budget verdict, so the full budget remains the final measurement.
 
 Two things are spent per phase, and neither is a maximum. **Stalls** counts frames past 100ms,
 because the median was always fine: the interface was never uniformly slow, it froze for a third of
