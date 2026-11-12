@@ -1,0 +1,106 @@
+name: Dependabot auto merge
+
+on:
+  pull_request_target:
+    types: [opened, reopened, synchronize, ready_for_review, converted_to_draft, edited]
+
+concurrency:
+  group: dependabot-auto-merge-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  dependabot-auto-merge:
+    if: github.event.pull_request.user.login == 'dependabot[bot]' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Clear the previous decision and verify the commit
+        id: provenance
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            core.setOutput('trusted', false);
+            const { data: pr } = await github.rest.pulls.get({
+              ...context.repo,
+              pull_number: context.payload.pull_request.number,
+            });
+            if (pr.state !== 'open' || pr.head.sha !== context.payload.pull_request.head.sha) {
+              core.info('The pull request is closed or this event has been superseded.');
+              return;
+            }
+            if (pr.auto_merge) {
+              await github.graphql(`mutation($id: ID!) {
+                disablePullRequestAutoMerge(input: {pullRequestId: $id}) {
+                  pullRequest { number }
+                }
+              }`, { id: pr.node_id });
+            }
+            const commits = await github.paginate(github.rest.pulls.listCommits, {
+              ...context.repo,
+              pull_number: pr.number,
+              per_page: 100,
+            });
+            const commit = commits[0];
+            const repository = `${context.repo.owner}/${context.repo.repo}`;
+            // The pinned metadata action reads the first commit, so additional commits stay manual.
+            const trusted = !pr.draft && pr.user.login === 'dependabot[bot]' &&
+              pr.user.id === 49699333 && pr.base.ref === 'master' &&
+              pr.base.repo.full_name === repository && pr.head.repo.full_name === repository &&
+              pr.commits === 1 && commits.length === 1 && commit.sha === pr.head.sha &&
+              commit.author?.login === 'dependabot[bot]' && commit.author.id === 49699333 &&
+              commit.committer?.login === 'web-flow' && commit.committer.id === 19864447 &&
+              commit.commit.verification?.verified === true &&
+              commit.commit.verification.reason === 'valid';
+            core.setOutput('trusted', trusted);
+            if (!trusted) core.info('This pull request requires manual review.');
+
+      - name: Read the Dependabot update metadata
+        id: metadata
+        if: steps.provenance.outputs.trusted == 'true'
+        continue-on-error: true
+        uses: dependabot/fetch-metadata@25dd0e34f4fe68f24cc83900b1fe3fe149efef98 # v3.1.0
+        with:
+          github-token: ${{ github.token }}
+
+      - name: Enable auto merge for eligible updates
+        if: steps.metadata.outcome == 'success'
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          GH_TOKEN: ${{ github.token }}
+          AUTO_MERGE_ENABLED: ${{ vars.DEPENDABOT_AUTO_MERGE_ENABLED }}
+          UPDATED_DEPENDENCIES: ${{ steps.metadata.outputs.updated-dependencies-json }}
+        with:
+          script: |
+            const { execFileSync } = require('node:child_process');
+            if (process.env.AUTO_MERGE_ENABLED !== 'true') {
+              core.info('Auto merge awaits the repository activation setting.');
+              return;
+            }
+            const allowed = new Set(['version-update:semver-patch', 'version-update:semver-minor']);
+            const dependencies = JSON.parse(process.env.UPDATED_DEPENDENCIES);
+            if (!Array.isArray(dependencies) || dependencies.length === 0 ||
+                !dependencies.every(dependency => allowed.has(dependency?.updateType))) {
+              core.info('The update metadata requires manual review.');
+              return;
+            }
+            const { data: pr } = await github.rest.pulls.get({
+              ...context.repo,
+              pull_number: context.payload.pull_request.number,
+            });
+            const repository = `${context.repo.owner}/${context.repo.repo}`;
+            if (pr.state !== 'open' || pr.draft ||
+                pr.head.sha !== context.payload.pull_request.head.sha ||
+                pr.user.login !== 'dependabot[bot]' || pr.user.id !== 49699333 ||
+                pr.base.ref !== 'master' || pr.base.repo.full_name !== repository ||
+                pr.head.repo.full_name !== repository) {
+              core.info('The pull request changed after the eligibility decision.');
+              return;
+            }
+            execFileSync('gh', ['pr', 'merge', String(pr.number), '--repo', repository,
+              '--auto', '--squash', '--match-head-commit', pr.head.sha], { stdio: 'inherit' });
