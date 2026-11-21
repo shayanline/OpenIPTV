@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import assert from "node:assert/strict";
 import { Player, onTizen, type PlayerEvent } from "../src/services/player";
 
@@ -830,4 +830,50 @@ test("browser finite unsupported containers report the media element failure", a
     ["NotSupportedError"],
   );
   browser.stop();
+});
+
+describe("the dynamic range in the playback information", () => {
+  test("the browser reads it from the rendition hls.js is playing", async () => {
+    delete (window as unknown as { webapis?: unknown }).webapis;
+    hlsMock.supported = true;
+    const browser = new Player(() => {});
+    browser.attach(document.createElement("video"));
+    browser.play("http://example.invalid/hdr.m3u8");
+    await vi.advanceTimersByTimeAsync(0);
+    const hls = hlsMock.instance as unknown as { levels: Array<Record<string, unknown>> };
+    hls.levels[2].attrs = { "VIDEO-RANGE": "HLG", CODECS: "hvc1.2.4.L150.B0" };
+    expect(browser.getStats().hdr).toBe("HLG");
+    hls.levels[2].attrs = {};
+    expect(browser.getStats().hdr).toBe("unsignalled");
+    browser.stop();
+  });
+
+  test("the television fetches the manifest once and answers on a later read", async () => {
+    const fetcher = vi.fn(
+      async () =>
+        ({
+          ok: true,
+          text: async () =>
+            '#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=5000000,VIDEO-RANGE=PQ,CODECS="hvc1.2.4.L150.B0"\nhdr.m3u8',
+        }) as unknown as Response,
+    );
+    vi.stubGlobal("fetch", fetcher);
+    player.play("http://example.invalid/tv-hdr.m3u8");
+    expect(player.getStats().hdr).toBeUndefined();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(player.getStats().hdr).toBe("HDR10");
+    player.getStats();
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    vi.unstubAllGlobals();
+  });
+
+  test("the television never reads an MPEG-TS address, which has no end", () => {
+    const fetcher = vi.fn();
+    vi.stubGlobal("fetch", fetcher);
+    player.play("http://example.invalid/live/1.ts");
+    player.getStats();
+    expect(player.getStats().hdr).toBe("unsignalled");
+    expect(fetcher).not.toHaveBeenCalled();
+    vi.unstubAllGlobals();
+  });
 });

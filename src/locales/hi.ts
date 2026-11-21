@@ -131,6 +131,8 @@ export default {
   "playbackInfo.progressive": "प्रोग्रेसिव",
   "playbackInfo.interlaced": "इंटरलेस्ड",
   "playbackInfo.videoCodec": "वीडियो कोडेक",
+  "playbackInfo.hdr": "डायनेमिक रेंज",
+  "playbackInfo.hdrUnsignalled": "घोषित नहीं (आमतौर पर SDR)",
   "playbackInfo.audioCodec": "ऑडियो कोडेक",
   "playbackInfo.bitrate": "रेंडिशन बिटरेट",
   "playbackInfo.bandwidth": "नेटवर्क अनुमान",

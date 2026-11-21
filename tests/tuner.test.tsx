@@ -212,6 +212,25 @@ test("packaged TV fallback stays direct because no local relay exists", () => {
   expect(httpFallback("http://provider.example/movie.mp4", "file:", "null")).toBe("");
 });
 
+test("finite media retries the advertised origin once before the HTTP fallback", () => {
+  const withFallback = {
+    ...movie,
+    fallbackUrl: "https://advertised.invalid/movie.mp4",
+  };
+  const { result } = mount();
+  act(() => result.current.start(withFallback));
+  act(() => playerMock.instances[0].emit({ type: "error", code: "manifestLoadError" }));
+
+  expect(playerMock.instances[0].play).toHaveBeenLastCalledWith(
+    withFallback.fallbackUrl,
+    false,
+    undefined,
+    "finite",
+    25,
+  );
+  expect(playerMock.instances[0].play).toHaveBeenCalledTimes(2);
+});
+
 test("finite pause resumes in place and seek delegates to the player", async () => {
   const { result } = mount();
   act(() => result.current.start(movie));

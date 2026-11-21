@@ -133,6 +133,8 @@ export default {
   "playbackInfo.progressive": "Progressiva",
   "playbackInfo.interlaced": "Interlacciata",
   "playbackInfo.videoCodec": "Codec video",
+  "playbackInfo.hdr": "Gamma dinamica",
+  "playbackInfo.hdrUnsignalled": "Non dichiarata (di solito SDR)",
   "playbackInfo.audioCodec": "Codec audio",
   "playbackInfo.bitrate": "Bitrate della variante",
   "playbackInfo.bandwidth": "Stima della rete",

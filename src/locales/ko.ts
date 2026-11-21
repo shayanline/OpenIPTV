@@ -131,6 +131,8 @@ export default {
   "playbackInfo.progressive": "순차 주사",
   "playbackInfo.interlaced": "비월 주사",
   "playbackInfo.videoCodec": "비디오 코덱",
+  "playbackInfo.hdr": "다이내믹 레인지",
+  "playbackInfo.hdrUnsignalled": "선언되지 않음(보통 SDR)",
   "playbackInfo.audioCodec": "오디오 코덱",
   "playbackInfo.bitrate": "화질 비트레이트",
   "playbackInfo.bandwidth": "네트워크 추정치",

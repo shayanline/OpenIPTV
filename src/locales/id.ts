@@ -132,6 +132,8 @@ export default {
   "playbackInfo.progressive": "Progresif",
   "playbackInfo.interlaced": "Interlaced",
   "playbackInfo.videoCodec": "Codec video",
+  "playbackInfo.hdr": "Rentang dinamis",
+  "playbackInfo.hdrUnsignalled": "Tidak dinyatakan (biasanya SDR)",
   "playbackInfo.audioCodec": "Codec audio",
   "playbackInfo.bitrate": "Bitrate rendisi",
   "playbackInfo.bandwidth": "Perkiraan jaringan",

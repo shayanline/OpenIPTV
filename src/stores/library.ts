@@ -4,9 +4,9 @@ import { whenIdle } from "../services/idle";
 import { read, write } from "../services/store";
 import {
   authenticateXtream,
-  buildXtreamCatchupUrl,
-  buildXtreamEpisodeUrl,
-  buildXtreamMovieUrl,
+  buildXtreamCatchupUrls,
+  buildXtreamEpisodeUrls,
+  buildXtreamMovieUrls,
   loadXtreamCategories,
   loadXtreamGuide,
   loadXtreamMovieDetail,
@@ -22,6 +22,7 @@ import {
   type XtreamSeries,
   type XtreamSeriesDetail,
   type XtreamSession,
+  type XtreamStreamUrls,
 } from "../services/xtream";
 import type { Channel, PlaybackTarget } from "../types";
 import type { Playlist } from "./settings";
@@ -196,13 +197,19 @@ async function sessionFor(playlist: Playlist): Promise<XtreamSession> {
   return request;
 }
 
-export async function libraryPlaybackUrl(item: XtreamMovie | XtreamEpisode): Promise<string> {
+export async function libraryPlaybackTarget(
+  item: XtreamMovie | XtreamEpisode,
+): Promise<XtreamStreamUrls> {
   const playlist = selected;
   if (!playlist) throw new Error("This playlist has no on demand library");
   const session = await sessionFor(playlist);
   return "streamId" in item
-    ? buildXtreamMovieUrl(session, item.streamId, item.extension)
-    : buildXtreamEpisodeUrl(session, item.episodeId, item.extension);
+    ? buildXtreamMovieUrls(session, item.streamId, item.extension)
+    : buildXtreamEpisodeUrls(session, item.episodeId, item.extension);
+}
+
+export async function libraryPlaybackUrl(item: XtreamMovie | XtreamEpisode): Promise<string> {
+  return (await libraryPlaybackTarget(item)).url;
 }
 
 function deduplicate(frameKey: string, work: () => Promise<void>): Promise<void> {
@@ -246,6 +253,12 @@ function catchupTarget(
     !/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}(?::\d{2})?$/.test(programme.start)
   )
     return undefined;
+  const addresses = buildXtreamCatchupUrls(
+    session,
+    metadata.streamId,
+    Math.ceil((stop - start) / 60),
+    programme.start,
+  );
   return {
     id: `xtream:${playlist.id}:catchup:${metadata.streamId}:${programme.id}`,
     playlistId: playlist.id,
@@ -254,12 +267,8 @@ function catchupTarget(
     name: programme.title,
     group: channel.name,
     logo: channel.logo,
-    url: buildXtreamCatchupUrl(
-      session,
-      metadata.streamId,
-      Math.ceil((stop - start) / 60),
-      programme.start,
-    ),
+    url: addresses.url,
+    ...(addresses.fallbackUrl ? { fallbackUrl: addresses.fallbackUrl } : {}),
   };
 }
 

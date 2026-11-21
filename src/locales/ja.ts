@@ -132,6 +132,8 @@ export default {
   "playbackInfo.progressive": "プログレッシブ",
   "playbackInfo.interlaced": "インターレース",
   "playbackInfo.videoCodec": "映像コーデック",
+  "playbackInfo.hdr": "ダイナミックレンジ",
+  "playbackInfo.hdrUnsignalled": "未宣言（通常は SDR）",
   "playbackInfo.audioCodec": "音声コーデック",
   "playbackInfo.bitrate": "配信ビットレート",
   "playbackInfo.bandwidth": "ネットワーク推定値",

@@ -132,6 +132,8 @@ export default {
   "playbackInfo.progressive": "Aşamalı",
   "playbackInfo.interlaced": "Taramalı",
   "playbackInfo.videoCodec": "Video codec bileşeni",
+  "playbackInfo.hdr": "Dinamik aralık",
+  "playbackInfo.hdrUnsignalled": "Belirtilmemiş (genellikle SDR)",
   "playbackInfo.audioCodec": "Ses codec bileşeni",
   "playbackInfo.bitrate": "Varyant bit hızı",
   "playbackInfo.bandwidth": "Ağ tahmini",

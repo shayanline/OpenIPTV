@@ -131,6 +131,8 @@ export default {
   "playbackInfo.progressive": "逐行",
   "playbackInfo.interlaced": "隔行",
   "playbackInfo.videoCodec": "视频编码",
+  "playbackInfo.hdr": "动态范围",
+  "playbackInfo.hdrUnsignalled": "未声明（通常为 SDR）",
   "playbackInfo.audioCodec": "音频编码",
   "playbackInfo.bitrate": "当前码率",
   "playbackInfo.bandwidth": "网络估算",
