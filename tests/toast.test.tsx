@@ -191,6 +191,7 @@ test("a disabled owner ignores results", () => {
 
 test("StrictMode still accepts the first real notification", () => {
   let api: ReturnType<typeof useToast> | null = null;
+  // biome-ignore lint/correctness/noComponentHookFactories: This test creates its probe once before rendering it.
   function Probe() {
     api = useToast("strict");
     return <ToastHost />;
@@ -210,6 +211,7 @@ test("StrictMode still accepts the first real notification", () => {
 
 test("the host keeps focus, splits alert from status and stays passive", () => {
   let api: ReturnType<typeof useToast> | null = null;
+  // biome-ignore lint/correctness/noComponentHookFactories: This test creates its probe once before rendering it.
   function Probe() {
     api = useToast("host");
     return (
@@ -250,6 +252,7 @@ test("the host keeps focus, splits alert from status and stays passive", () => {
 
 test("non-error kinds land in the polite region with their kind marker", () => {
   let api: ReturnType<typeof useToast> | null = null;
+  // biome-ignore lint/correctness/noComponentHookFactories: This test creates its probe once before rendering it.
   function Probe() {
     api = useToast("kinds");
     return <ToastHost />;

@@ -23,6 +23,7 @@ test("content box resize deliveries update height without reading layout again",
     },
   );
   const height = vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(500);
+  // biome-ignore lint/correctness/noComponentHookFactories: This test creates its probe once before rendering it.
   function Probe() {
     const ref = useRef<HTMLDivElement>(null);
     const measured = useViewport(ref, true);

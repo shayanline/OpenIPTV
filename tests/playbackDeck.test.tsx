@@ -688,8 +688,8 @@ test("the programme card shares the banner secondary palette and retains Guide s
   expect(rule('.deck-control[data-control="guide"] .icon')).toContain("width: 58px;");
   expect(rule('.deck-control[data-control="guide"] .icon')).toContain("height: 58px;");
   expect(rule('.deck-control[data-control="guide"] .icon')).toContain("padding: 17px;");
-  expect(rule(".deck-controls")).toContain(
-    "grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);",
+  expect(rule(".deck-controls")).toMatch(
+    /grid-template-columns: minmax\(0(?:px)?, 1fr\) auto minmax\(0(?:px)?, 1fr\);/,
   );
   expect(styles).toContain(".no-flex-gap .deck-programme-panel > * + *");
   expect(styles).toContain('html[dir="rtl"].no-flex-gap .deck-programme-panel > * + *');

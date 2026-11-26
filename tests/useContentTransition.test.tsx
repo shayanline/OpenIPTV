@@ -5,6 +5,7 @@ import { useContentTransition } from "../src/hooks/useContentTransition";
 
 const DURATION_MS = 180;
 const DURATION = `${DURATION_MS}ms`;
+const transitionHosts = new Set<HTMLElement>();
 
 const setup = (ownerKey = "pl-1:v1:details") =>
   renderHook(({ owner }: { owner: string }) => useContentTransition(owner), {
@@ -22,7 +23,7 @@ const opacityEnd = (opacity: string, propertyName = "opacity", stale = false) =>
     currentTarget: element,
     propertyName,
   } as unknown as TransitionEvent;
-  element.remove();
+  transitionHosts.add(element);
   return event;
 };
 
@@ -34,6 +35,10 @@ const advance = async (ms: number) => {
 
 afterEach(() => {
   cleanup();
+  transitionHosts.forEach((element) => {
+    element.remove();
+  });
+  transitionHosts.clear();
   document.documentElement.style.removeProperty("--t-navigation");
   vi.useRealTimers();
 });

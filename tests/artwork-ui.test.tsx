@@ -306,6 +306,7 @@ test("EpisodeList ignores late palettes from an old image and keeps its callback
   releaseAll = service.releaseAllArtwork;
   const callbacks = new Map<string, NonNullable<ArtworkProps["onPalette"]>>();
   vi.doMock("../src/components/Artwork", () => ({
+    // biome-ignore lint/correctness/noComponentHookFactories: This module mock is created once per test and keeps its identity across rerenders.
     Artwork: ({ src, onPalette }: ArtworkProps) => {
       if (src && onPalette) callbacks.set(src, onPalette);
       return null;
@@ -406,6 +407,7 @@ test("viewport bookkeeping skips unchanged poster cells while handlers and chang
   const renders = vi.fn(() => <span role="img" aria-label="Poster" />);
   vi.doMock("../src/components/Artwork", () => ({ Artwork: renders }));
   vi.doMock("../src/components/Text", () => ({
+    // biome-ignore lint/correctness/noComponentHookFactories: This module mock is created once per test and keeps its identity across rerenders.
     Text: ({ value }: { value: string }) => <span>{value}</span>,
   }));
   const viewport = await import("../src/hooks/useViewport");
@@ -565,6 +567,7 @@ test.each([80, 376 * 6])(
 test("remote poster content reset cancels the old row animation and positions immediately", async () => {
   document.documentElement.dataset.inputMode = "remote";
   vi.doMock("../src/components/Text", () => ({
+    // biome-ignore lint/correctness/noComponentHookFactories: This module mock is created once per test and keeps its identity across rerenders.
     Text: ({ value }: { value: string }) => <span>{value}</span>,
   }));
   const viewport = await import("../src/hooks/useViewport");

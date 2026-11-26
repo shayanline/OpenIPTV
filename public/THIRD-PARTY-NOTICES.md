@@ -12,7 +12,7 @@ package.
 
 ## Shipped inside the application
 
-**hls.js**, version 1.7.3, Apache License 2.0, Copyright 2017 Dailymotion. Loaded only in a
+**hls.js**, version 1.7.4, Apache License 2.0, Copyright 2017 Dailymotion. Loaded only in a
 desktop browser, where the television's own decoder does not exist, and imported on demand from
 `src/services/player.ts` so it becomes a separate chunk. Parts of it derive from
 videojs-contrib-hls, Copyright 2013 to 2015 Brightcove, under the same licence, and both notices are
@@ -23,10 +23,10 @@ licence text is in [licenses/Apache-2.0.txt](licenses/Apache-2.0.txt).
 
 **flag-icons**, version 7.3.2, MIT, Copyright (c) 2013 Panayiotis Lipiridis. Only the selected 4x3 SVGs from the [flag-icons v7.3.2 source](https://github.com/lipis/flag-icons/tree/v7.3.2) ship with the application. No JavaScript or CSS runtime package is included. The licence text is in [licenses/flag-icons.txt](licenses/flag-icons.txt).
 
-**React** and **React DOM**, version 19.3.0, MIT, Copyright Meta Platforms, Inc. and affiliates.
+**React** and **React DOM**, version 19.3.1, MIT, Copyright Meta Platforms, Inc. and affiliates.
 Text in [licenses/react.txt](licenses/react.txt), which covers both packages.
 
-**zustand**, version 5.0.15, MIT, Copyright 2019 Paul Henschel. Text in
+**zustand**, version 5.1.0, MIT, Copyright 2019 Paul Henschel. Text in
 [licenses/zustand.txt](licenses/zustand.txt).
 
 **uqr**, version 0.1.3, MIT, Copyright Project Nayuki and Anthony Fu. It generates pairing QR codes locally so no setup information leaves the television. Text in [licenses/uqr.txt](licenses/uqr.txt).

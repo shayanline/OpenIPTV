@@ -1,132 +1,108 @@
 name: CI
 
-# Prose cannot fail a build, and three minutes of Chromium proves nothing about a paragraph. The
-# filter is on the paths rather than on the jobs, so a documentation commit skips the runner
-# entirely instead of starting one to decide it has nothing to do. Nothing under these paths is
-# read by the build, the tests or any of the tv: gates.
+# Pull requests always report required checks, including documentation changes.
 on:
   push:
     branches: [master, main]
     paths-ignore: ["**.md", "docs/**", ".github/ISSUE_TEMPLATE/**"]
   pull_request:
-    paths-ignore: ["**.md", "docs/**", ".github/ISSUE_TEMPLATE/**"]
-  # So the engine and budget jobs can be run deliberately, rather than only as a side effect of
-  # pushing something, and so a documentation commit can still be checked on purpose.
   workflow_dispatch:
 
-# A second push to a pull request branch makes the first run pointless, so those runs share a group
-# and the older one is cancelled. A second commit on master is a state nobody has checked yet, so a
-# push keys on the commit instead and every one of them runs alone.
-#
-# Both halves of that are load bearing. Sharing one group across master meant a release, or a row of
-# Dependabot merges, cancelled the run for the commit before it, and 16 of the 73 master runs here
-# ended cancelled rather than finishing, against 13 that genuinely failed. GitHub draws a cancelled
-# run as a red "failing" README badge (actions/runner#4047) and caches that image for five minutes,
-# so the badge reported a broken build on commits whose checks had all passed. Keying on the commit
-# also means a commit on master keeps the verification it used to lose to whatever landed next.
-#
-# `cancel-in-progress: false` is not enough on its own, because at most one run may be pending per
-# group and a third arrival cancels whichever one was waiting, so the cancelled run becomes the one
-# queued rather than the one running.
+# Replace stale PR runs while keeping a run for each pushed commit.
 concurrency:
   group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
   cancel-in-progress: true
 
-# Nothing here writes to the repository, so nothing here needs to be able to. Stated explicitly
-# because the default for an older account is still read and write, and a token that can push is
-# worth having only if something needs to push.
 permissions:
   contents: read
 
-# Actions are pinned to a commit rather than a tag, since a tag can be moved to point at different
-# code and this workflow runs on every pull request from anybody. The tag is in the comment so a
-# human can still read what version it is, and dependabot keeps the pins moving.
 jobs:
-  check:
+  changes:
     runs-on: ubuntu-latest
-    # A backstop, not an estimate. Anything here that hangs rather than fails would otherwise
-    # burn the six hour default, and a Chrome that dies mid run is a realistic way to hang.
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      run-checks: ${{ steps.paths.outputs.run-checks }}
+    steps:
+      - uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        id: paths
+        with:
+          script: |
+            if (context.eventName !== 'pull_request') {
+              core.setOutput('run-checks', true);
+              return;
+            }
+            const { data: pr } = await github.rest.pulls.get({
+              ...context.repo,
+              pull_number: context.payload.pull_request.number,
+            });
+            if (pr.head.sha !== context.payload.pull_request.head.sha) {
+              core.setOutput('run-checks', true);
+              return;
+            }
+            const files = await github.paginate(github.rest.pulls.listFiles, {
+              ...context.repo,
+              pull_number: pr.number,
+              per_page: 100,
+            });
+            const prose = path => typeof path === 'string' &&
+              (path.endsWith('.md') || path.startsWith('docs/') ||
+               path.startsWith('.github/ISSUE_TEMPLATE/'));
+            const runChecks = files.length !== pr.changed_files || files.some(file =>
+              !prose(file.filename) ||
+              ((file.status === 'renamed' || file.previous_filename !== undefined) &&
+               !prose(file.previous_filename)));
+            core.setOutput('run-checks', runChecks);
+
+  check:
+    needs: changes
+    if: needs.changes.outputs.run-checks == 'true'
+    runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          # Read from .nvmrc so the version lives in one place. The floor is 22.18 because that is
-          # where the tooling this project uses settled, and vite.config.ts explains at length why
-          # the tests run through Vitest rather than Node's own type stripping.
           node-version-file: .nvmrc
           cache: npm
 
       - run: npm ci
 
-      # Lint, typecheck and unit tests, which is what `npm run check` is.
-      - run: npm run check
-
-      # Formatting is deliberately not a gate. Biome's formatter disagrees with this codebase in 71
-      # files, almost all of it wanting to explode hand aligned argument lists and object literals
-      # into something several lines longer, and the alignment here is a considered choice rather
-      # than an accident. `npm run format:check` still exists for anyone who wants its opinion.
+      # The build includes the typecheck. Formatting remains optional.
+      - run: npm run lint
+      - run: npm test
       - run: npm run build
 
-      # The widget manifest has to be well formed XML or the Tizen CLI will not package it, and it
-      # is a file nothing else parses, so nothing else would notice. It has been broken in this
-      # repository before.
-      #
-      # Parsed with the expat that comes with the runner's Python rather than with xmllint, which
-      # is not on the image and which the images team has twice declined to add. Installing
-      # libxml2-utils to run one well formedness check cost fifteen seconds of apt on every run,
-      # almost all of it `apt-get update`, and expat rejects exactly the same files while needing
-      # nothing installed at all. It reports the line and column, which xmllint also did.
       - name: Validate the widget manifest
         run: python3 -c "from xml.dom.minidom import parse; parse('public/config.xml')"
 
-      # The committed WebAssembly cannot be rebuilt here, because it needs Samsung's own Emscripten
-      # fork, so the next best thing is proving that what is committed is what the recorded source
-      # produced, and that the module and its worker still agree about the nineteen socket functions
-      # the platform supplies. That mismatch is a failure this project has already paid for once.
+      # CI checks the committed modules because rebuilding needs Samsung's toolchain.
       - name: The committed WebAssembly matches its source
         run: |
           shasum -a 256 -c wasm/checksums.txt
-          node scripts/wasm-check.mjs
+          npm run wasm:check
 
-      # The televisions this is built for have no flex gap, so the stylesheet carries a
-      # second set of spacing rules that no browser here ever uses. Without this they would
-      # only be exercised on hardware nobody in CI has, which is to say never.
       - name: Spacing is the same with and without flex gap
         run: npm run tv:gap
 
-  # ---------------------------------------------------------------------------------
-  # The app, in the actual browser engines Samsung ships.
-  #
-  # A separate job because it downloads a couple of hundred megabytes of Chromium and
-  # takes minutes rather than seconds, and because it is the one thing here that has to
-  # run on Linux: the pinned old builds run there reliably and on a current macOS they
-  # variously segfault, so a developer's laptop gets a best effort and CI gets the truth.
-  #
-  # Two engines, not seven, and engine-parity.mjs argues the case at length. The short
-  # version is that the build targets the oldest and the stylesheet uses nothing newer,
-  # so every year in between runs a strict superset of what the app asks for.
-  # ---------------------------------------------------------------------------------
+  # Pinned browser engines run reliably on Linux.
   engines:
+    needs: changes
+    if: needs.changes.outputs.run-checks == 'true'
     runs-on: ubuntu-latest
-    # Longer, because a new engine is a couple of hundred megabytes to fetch.
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .nvmrc
           cache: npm
 
-      # Keyed on the resolved snapshot positions, so a new engine in platforms.json fetches
-      # and everything else is already on disk.
-      #
-      # restore-keys is what makes that last sentence true. Without it an exact key miss restores
-      # nothing at all, so adding one engine would re-download every engine, which is a couple of
-      # hundred megabytes each and turns a fifty second job into a several minute one. The prefix
-      # match hands back the previous cache and engines.mjs then fetches only what is missing.
+      # Reuse existing downloads when the engine matrix changes.
       - name: Cache the pinned engines
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -137,82 +113,57 @@ jobs:
       - run: npm ci
       - run: npm run build
 
-      # Nothing throws on a 2020 engine, and the layout lands in the same place there as on
-      # a 2025 one. This is what catches a builtin the old engine lacks, which the type
-      # checker cannot see because the types describe the language rather than the browser,
-      # and which esbuild does not polyfill because it lowers syntax and not methods.
-      - name: Same behaviour on Chromium 69 and 120
+      - name: Check browser engine compatibility
         run: npm run tv:engines
 
-  # ---------------------------------------------------------------------------------
   # Frame timings under the primary estimated Everyday TV hardware target.
   #
   # CPU throughput is calibrated on this runner and checked again after the journeys.
   # The shared runner job remains informational, while the harness rejects mismatched
   # CPU controls and uncontrolled networking. Compatibility has a separate engine gate.
-  # ---------------------------------------------------------------------------------
   budget:
+    needs: changes
+    if: needs.changes.outputs.run-checks == 'true'
     runs-on: ubuntu-latest
     continue-on-error: true
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .nvmrc
           cache: npm
       - run: npm ci
       - run: npm run build
 
-      # No playlist argument any more, and that is a fix rather than a tidy up.
-      #
-      # It used to be passed here because the simulator only knew the playlist that happened to
-      # be in its Chrome profile, and a fresh runner has no profile: the app came up on its first
-      # run screen, the readiness check refused to measure it, and this job exited 2 on every
-      # single run. Being continue-on-error, the workflow stayed green and the budget was never
-      # once evaluated in CI.
-      #
-      # The harness now owns the playlist. It fetches iptv-org's index, serves it locally and
-      # asserts it into the profile's settings every run, so a fresh runner and a laptop measure
-      # the same 12,732 channels and neither needs telling.
-      # Written to the run summary as well as the log, because a job that is allowed to fail reports
-      # itself green in the checks list: without this, the numbers nobody is supposed to merge on the
-      # tick alone are buried in the log of a job that looks like it passed.
       - name: Measure the estimated Everyday TV performance target
         run: |
           set -o pipefail
           npm run tv:budget 2>&1 | tee /tmp/budget.txt
-        continue-on-error: true
 
       - name: Put the numbers where they can be read
         if: always()
         run: |
-          echo '## Performance budget, on the estimated Everyday TV target' >> "$GITHUB_STEP_SUMMARY"
-          echo '' >> "$GITHUB_STEP_SUMMARY"
-          echo 'This estimated hardware target calibrates CPU throughput on the current runner.' >> "$GITHUB_STEP_SUMMARY"
-          echo 'CPU control and network isolation must pass. Browser compatibility is checked separately.' >> "$GITHUB_STEP_SUMMARY"
-          echo '' >> "$GITHUB_STEP_SUMMARY"
-          echo '```' >> "$GITHUB_STEP_SUMMARY"
-          tail -40 /tmp/budget.txt >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || echo "the run produced nothing" >> "$GITHUB_STEP_SUMMARY"
-          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          {
+            echo '## Performance budget, on the estimated Everyday TV target'
+            echo ''
+            echo 'Shared runner timings are informational. Inspect regressions before merging.'
+            echo 'This estimated hardware target calibrates CPU throughput on the current runner.'
+            echo 'CPU control and network isolation must pass. Browser compatibility is checked separately.'
+            echo ''
+            echo '```'
+            tail -40 /tmp/budget.txt 2>/dev/null || echo "the run produced nothing"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
 
-  # ---------------------------------------------------------------------------------
-  # What a new dependency would bring with it.
-  #
-  # Four runtime dependencies and one of them is only used off the television, so this is
-  # cheap and almost never fires. It is here because the thing being protected is a widget
-  # that installs on somebody's television, where nothing can be patched in a hurry.
-  # ---------------------------------------------------------------------------------
   dependencies:
-    if: github.event_name == 'pull_request'
+    needs: changes
+    if: github.event_name == 'pull_request' && needs.changes.outputs.run-checks == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v4
+      - uses: actions/dependency-review-action@bbc44d14a204704ccc493733616cd1e93a0321ec # v4
         with:
           fail-on-severity: high
-          # A copyleft licence in something that ships inside the widget would be a licensing
-          # problem rather than a security one, and THIRD-PARTY-NOTICES.md is what would need
-          # rewriting, so it is worth being told at the point somebody proposes it.
           deny-licenses: AGPL-3.0, GPL-2.0, GPL-3.0

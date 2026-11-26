@@ -132,8 +132,11 @@ function expectScrolling(row: HTMLElement) {
   expect(runStyle.maxWidth).toBe("none");
   expect(runStyle.overflow).toBe("visible");
   expect(labelOf(row).style.getPropertyValue("--teleprompter-duration")).toBe(`${160 / 36}s`);
-  expect(runStyle.animation).toContain("var(--teleprompter-animation)");
-  expect(runStyle.animation).toContain("1 both");
+  expect(runStyle.animationName).toBe(
+    labelOf(row).classList.contains("vertical") ? "teleprompter-y" : "teleprompter-x",
+  );
+  expect(runStyle.animationIterationCount).toBe("1");
+  expect(runStyle.animationFillMode).toBe("both");
 }
 
 test.each([

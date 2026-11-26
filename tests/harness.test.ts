@@ -15,6 +15,7 @@ import {
   pageResult,
   REDESIGN_JOURNEYS,
   serve,
+  VOD_CATEGORY_READY,
   XTREAM_JOURNEYS,
 } from "../scripts/tv/harness.mjs";
 
@@ -683,6 +684,30 @@ test("the parity and budget walks share the authoritative lineup journey", () =>
   assert.ok(harness.includes("openiptv-personal"));
   assert.ok(simulator.includes("openiptv-personal"));
   assert.equal(harness.includes("indexedDB.deleteDatabase('openiptv-personal')"), false);
+});
+
+test("VOD category readiness waits for the committed pane while the rail owns focus", () => {
+  let focused = true;
+  let selected = true;
+  let busy: string | null = "true";
+  const pane = { getAttribute: () => busy };
+  const rail = { querySelector: () => (selected ? {} : null) };
+  const document = {
+    querySelector: (selector: string) =>
+      selector.endsWith(".vod-pane") ? pane : focused ? rail : null,
+  };
+  const ready = () => runInNewContext(VOD_CATEGORY_READY, { document });
+  assert.equal(ready(), false);
+  busy = "false";
+  assert.equal(ready(), true);
+  focused = false;
+  assert.equal(ready(), false);
+  focused = true;
+  selected = false;
+  assert.equal(ready(), false);
+  selected = true;
+  busy = null;
+  assert.equal(ready(), false);
 });
 
 test("installs the fixture seed before navigating to the application", async () => {

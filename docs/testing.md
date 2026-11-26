@@ -57,6 +57,36 @@ Safe Browsing real time hash lookups are also disabled in the dedicated measurem
 
 The fresh measurement profile also sets secure DNS mode to `off` before launch because automatic DNS over HTTPS probes can bypass the HTTP proxy. Initialization refuses to overwrite an existing `Local State` file. Everyday browser preferences and system DNS settings remain unchanged.
 
+### Keeping the source identical across runs
+
+The default public playlist cache refreshes after a day, which can change the workload between runs. For a qualification cohort or a controlled comparison, retain one public snapshot outside the repository and use the existing `--playlist` option. A content hash in the source address gives different bytes a different cache ownership key. Do not replace the file during a cohort.
+
+```bash
+FIXTURE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/openiptv-benchmark-source.XXXXXX")"
+curl --fail --location --output "$FIXTURE_DIR/playlist.m3u" \
+  "https://iptv-org.github.io/iptv/index.m3u"
+SNAPSHOT_SHA="$(shasum -a 256 "$FIXTURE_DIR/playlist.m3u" | cut -d ' ' -f 1)"
+mv "$FIXTURE_DIR/playlist.m3u" "$FIXTURE_DIR/$SNAPSHOT_SHA.m3u"
+chmod 444 "$FIXTURE_DIR/$SNAPSHOT_SHA.m3u"
+printf 'SNAPSHOT_URL=http://127.0.0.1:4195/%s.m3u\n' "$SNAPSHOT_SHA"
+python3 -m http.server 4195 --bind 127.0.0.1 --directory "$FIXTURE_DIR"
+```
+
+After the server reports that it is ready, copy the printed `SNAPSHOT_URL` assignment into another terminal and set `CHROME` to the retained Chrome for Testing executable. With the production app served, use the same snapshot for every accepted run and the separate floor comparison. Check its digest before and after each command, retain the raw file with the results, and stop on a valid UX failure.
+
+```bash
+set -o pipefail
+curl --fail --silent "$SNAPSHOT_URL" | shasum -a 256
+npm run tv:budget -- --playlist="$SNAPSHOT_URL" --chrome="$CHROME"
+curl --fail --silent "$SNAPSHOT_URL" | shasum -a 256
+npm run tv:budget:floor -- --playlist="$SNAPSHOT_URL" --chrome="$CHROME"
+curl --fail --silent "$SNAPSHOT_URL" | shasum -a 256
+```
+
+The simulator acquires this source before calibration and timing. It still seeds the application's owned fixture address, so the playlist names, groups, complete Live workload, substituted artwork and Xtream Movie, Series and management journeys remain unchanged. The extra source server does not add a browser network origin or relax the measurement proxy.
+
+### Profiling VOD
+
 `npm run tv:profile:vod -- --url=http://127.0.0.1:4183/ --port=9433 --moves=12 --chrome="$CHROME"` profiles initial VOD loading and the complete twelve move grid walk on the primary Everyday TV target. Set `CHROME` to the retained Chrome for Testing executable. Add `--floor` for the original floor comparison. It uses the simulator's production build, automatic CPU calibration, native timing shim and Xtream fixture. The committed category readiness check, three second setup settling period, 100 ms dispatch pause and 600 ms journey tail match the complete benchmark. Both drivers record cold category readiness on the browser recorder's clock after the committed DOM barrier. This avoids replaying unrelated Live journeys for each profile. The output is a unique temporary directory, or a unique child of the existing parent passed with `--output`.
 
 The profiler captures JavaScript stack samples at a requested 1000 microsecond interval together with rendering events from `toplevel,devtools.timeline,blink.user_timing,v8`. Open `rendering.trace.json` in Chrome DevTools Performance and select the renderer thread identified in `measurements.json`. The `vod-category-start`, `vod-category-end`, `vod-grid-start` and `vod-grid-end` marks bound the measured phases. Add `--details=true` to profile opening the selected movie after the grid walk, with `vod-details-start` and `vod-details-end` marks. Its title row readiness check and 600 ms tail match the complete gate. Setup between those marks is outside the phase metrics. Raw callback intervals, input timestamps, cursor movements and response boundaries in `measurements.json` correlate slow samples with the trace. The mark's trace timestamp and `args.data.startTime` map page milliseconds to trace microseconds. Add `--screenshot=true` to capture the final screen outside the measured phases.
@@ -67,7 +97,9 @@ Profiling and the optional `--commits=true` React diagnostic add overhead, so ne
 
 ### What CI does
 
-CI runs the full set on code changes: one job installs dependencies and runs `npm run check`, `npm run build`, the `public/config.xml` validation, the WebAssembly check and `npm run tv:gap`, while the engines and budget jobs each install and build independently. Documentation paths are skipped on push and pull request, which covers Markdown files, `docs/` and the issue templates, and `workflow_dispatch` can run the jobs deliberately, so not every pull request exercises the whole set. The budget job is `continue-on-error` on the shared runners and stays informational, for the reason in the budget section. The per job isolation repeats install and build work, and nothing in this document changes that.
+CI runs the full set on code changes. One job installs dependencies and runs `npm run lint`, `npm test`, `npm run build`, the `public/config.xml` validation, the WebAssembly checks and `npm run tv:gap`. The build includes the typecheck. The engines and budget jobs each install and build independently. Documentation pushes skip CI. Every pull request reports a `changes` check, which skips application jobs when all current and previous file paths are Markdown, under `docs/`, or issue templates. `workflow_dispatch` still runs the jobs deliberately. The budget job is `continue-on-error` on the shared runners and stays informational, for the reason in the budget section.
+
+Dependabot patch and minor updates use native GitHub auto merge. A grouped update qualifies only when every dependency has an eligible update type. Only a single verified Dependabot commit is eligible because the pinned metadata action reads the first commit. Major updates, manually changed pull requests, and unavailable metadata remain available for manual review. Before setting the repository variable `DEPENDABOT_AUTO_MERGE_ENABLED` to `true`, protect `master` with required GitHub Actions checks `changes`, `check`, `engines`, `dependencies`, and `dependabot-auto-merge`. Leave `budget` informational. The automation uses the built in token without approving pull requests or checking out their code.
 
 ## The suite
 
@@ -254,7 +286,9 @@ The Everyday TV target is a development workload class rather than a claim about
 
 Both targets use the same journeys, fixture data, Tizen API shim, build provenance checks, network isolation and UX goals. A hardware profile does not select a compatibility engine. The benchmark uses installed Chrome and identifies its actual version, while `tv:engines` tests the supported browser engines independently. Both hardware comparisons use the same user agent as a fixture input, which does not establish compatibility. The original floor remains a separate performance comparison, without requiring the primary target to represent the weakest supported TV.
 
-The 528 target passed three valid complete runs with all 15 measured phases on official Chrome for Testing 158.0.8127.88, revision `0cefb18236a23db1ebb6b2bc040fbbaf8cbe759e`, for mac arm64. Initial CPU medians were 529, 527.5 and 519.5, while final medians were 516, 507.5 and 524.5. All six controls were within 5% of 528. One intervening complete attempt had an initial median of 541.5 and a final median of 499.5, so it was excluded as CPU invalid. Every attempt had zero network and browser startup violations. The three accepted cold category readiness times were 506 ms, 502.4 ms and 484 ms against the approved 2000 ms deadline. Live, grid, search and detail interaction goals were unchanged, and each complete grid walk answered all 12 presses across 72 positions. The lower 396 target had a valid Live navigation failure, so its earlier passing runs do not qualify it. These results establish repeatability for this estimated renderer workload on the retained production build, with real TV GPU, decoder and input validation still missing.
+The integrated 2.0.0 production build, with `index.html` SHA256 `e1a3ce72c42075e4408be88ea41e3d192e0685bf05c6c1dded9d7b386554f94a`, passed three valid complete runs at the 528 target with all 15 measured phases on official Chrome for Testing 158.0.8127.88, revision `0cefb18236a23db1ebb6b2bc040fbbaf8cbe759e`, for mac arm64. All three runs used the same retained public fixture, SHA256 `0b2023cbf81668afc6b36146712ebb6ed7ce2ae22031c7b4b9c6c71bf228d2ab`, containing 11,512 channels in 187 categories and 11,370 logos. Initial CPU medians were 527, 527.5 and 526, while final medians were 517.5, 531 and 525.5. All six controls were within 5% of 528. One intervening complete attempt had an initial median of 517 and a final median of 495.5, so it was excluded as CPU invalid. Every attempt had zero network and browser startup violations. Two earlier passing runs used a different public snapshot and do not count toward this cohort. The three accepted cold category readiness times were 519.8 ms, 494.9 ms and 490.5 ms against the approved 2000 ms deadline. Live, grid, search and detail interaction goals were unchanged, and each complete grid walk answered all 12 presses across 72 positions. A previous lower 396 target had a valid Live navigation failure, so its earlier passing runs do not qualify it. These results establish repeatability for this estimated renderer workload on the retained production build, with real TV GPU, decoder and input validation still missing.
+
+The separate original floor comparison used the same frozen source and completed all 15 phases with initial and final CPU medians of 132.5 and 127, both within 5% of 132, and zero network or browser startup violations. Its first attempt was excluded before timing because calibration reached 124. The valid comparison missed frame, input and stall goals, including 134 ms grid input p95 and 17% of scoped search time in frame gaps over 100 ms. Cold category readiness was 1065.7 ms, but its 106 ms frame p95 exceeded the unchanged 50 ms goal. This comparison does not qualify the original floor or establish a measured four times speedup on physical hardware.
 
 Both profiles calibrate the current host automatically and repeat the final CPU control. The separate physical device profile retains its recorded S90D facts, but its CPU calibration is marked false. Neither performance gate uses that file or its legacy fixed slowdown. Direct simulator invocation without a profile flag retains that legacy diagnostic path. The physical calibration command measures a different arithmetic workload and cannot supply a BenchmarkIndex score by converting its slowdown ratio. None of these resource controls emulates TV GPU, video decoding, worker execution or storage performance.
 

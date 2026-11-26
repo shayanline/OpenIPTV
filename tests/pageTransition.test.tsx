@@ -6,6 +6,7 @@ const DURATION_MS = 180;
 const DURATION = `${DURATION_MS}ms`;
 const FADE: PageMotionPair = { leaving: "fade", entering: "fade" };
 const RAIL: PageMotionPair = { leaving: "rail", entering: "rail" };
+const transitionHosts = new Set<HTMLElement>();
 
 const setup = (ownerKey = "pl-1:0") => {
   const commits: string[] = [];
@@ -35,7 +36,7 @@ const opacityEnd = (opacity: string, propertyName = "opacity", stale = false) =>
     currentTarget: element,
     propertyName,
   } as unknown as import("react").TransitionEvent;
-  element.remove();
+  transitionHosts.add(element);
   return event;
 };
 
@@ -81,7 +82,7 @@ const transformEnd = (
     currentTarget: element,
     propertyName,
   } as unknown as import("react").TransitionEvent;
-  element.remove();
+  transitionHosts.add(element);
   return event;
 };
 
@@ -96,6 +97,10 @@ const readyNow = (result: { current: { settlingRevision: number } }) =>
 
 afterEach(() => {
   cleanup();
+  transitionHosts.forEach((element) => {
+    element.remove();
+  });
+  transitionHosts.clear();
   document.documentElement.style.removeProperty("--t-navigation");
   vi.useRealTimers();
 });

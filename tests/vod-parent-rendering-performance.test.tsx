@@ -30,6 +30,7 @@ function mountXtream() {
   // Count parent renders without replacing the real screen or its readiness effect.
   vi.doMock("../src/screens/VodScreen", async (importOriginal) => {
     const actual = await importOriginal<typeof import("../src/screens/VodScreen")>();
+    // biome-ignore lint/correctness/noComponentHookFactories: This module mock creates one wrapper whose identity is retained across screen renders.
     const Counting = forwardRef<VodScreenHandle, VodScreenProps>(function Counting(props, ref) {
       observed.renders += 1;
       observed.props = props;

@@ -7248,6 +7248,10 @@ test("the mobile navigation drawer opens, focuses, navigates and closes", async 
 });
 
 test("the header remote launcher opens the control sheet and sends keys", async () => {
+  const frames: FrameRequestCallback[] = [];
+  vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) =>
+    frames.push(callback),
+  );
   localStorage.setItem("openiptv.remote", JSON.stringify({ deviceId: "p", credential: "c" }));
   const commands: unknown[] = [];
   const fetchMock = vi.fn((path: string, options?: RequestInit) => {
@@ -7266,7 +7270,11 @@ test("the header remote launcher opens the control sheet and sends keys", async 
   launcher.click();
   const overlay = document.querySelector("[data-remote-overlay]") as HTMLElement;
   expect(overlay.hidden).toBe(false);
-  await vi.waitFor(() => expect(overlay.classList.contains("open")).toBe(true));
+  expect(overlay.classList.contains("open")).toBe(false);
+  frames.splice(0).forEach((callback) => {
+    callback(0);
+  });
+  expect(overlay.classList.contains("open")).toBe(true);
 
   (document.querySelector('[data-remote-key="13"]') as HTMLButtonElement).click();
   await vi.waitFor(() => expect(commands).toHaveLength(1));

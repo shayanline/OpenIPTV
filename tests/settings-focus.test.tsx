@@ -526,6 +526,7 @@ function livePairingHarness() {
   const publish: { current: ((change: Partial<RemoteAccessState>) => void) | null } = {
     current: null,
   };
+  // biome-ignore lint/correctness/noComponentHookFactories: Each harness call creates one isolated component whose identity is retained by rerender.
   function LiveSettings({ inputEnabled = true }: { inputEnabled?: boolean }) {
     const [state, setState] = useState<RemoteAccessState>(() =>
       access({ status: "listening" }),
@@ -711,6 +712,7 @@ test("spatial navigation skips native disabled controls when choosing a target",
   });
 
   let move: ((code: number) => boolean) | null = null;
+  // biome-ignore lint/correctness/noComponentHookFactories: This test creates its harness once before rendering it.
   function Harness({
     prevDisabled = true,
     nextDisabled = false,

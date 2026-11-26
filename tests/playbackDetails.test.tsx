@@ -177,6 +177,7 @@ beforeEach(() => {
   unavailableArtwork = "";
   localStorage.clear();
   vi.doMock("../src/components/Artwork", () => ({
+    // biome-ignore lint/correctness/noComponentHookFactories: This module mock is created once per test and keeps its identity across rerenders.
     Artwork: (props: ArtworkProps) => {
       artworkCalls.push(props);
       return props.src === unavailableArtwork ? (

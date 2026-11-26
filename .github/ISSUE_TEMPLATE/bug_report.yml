@@ -5,9 +5,9 @@ body:
   - type: markdown
     attributes:
       value: |
-        Most of what makes a television bug fixable is knowing which television. Settings, then
-        Diagnostics, lists what the set reports about itself and every key its remote sends, and
-        copying it here saves a round of questions.
+        Open Settings > About > Diagnostics for device and playback details.
+        Remove private addresses, credentials and pairing codes from text and screenshots.
+        Report security problems through [private vulnerability reporting](https://github.com/shayanline/OpenIPTV/security/advisories/new).
 
   - type: textarea
     id: what
@@ -21,12 +21,19 @@ body:
       required: true
 
   - type: input
+    id: version
+    attributes:
+      label: OpenIPTV version
+      description: Open Settings > About. For a source build, include the commit if known.
+      placeholder: "1.10.0"
+    validations:
+      required: true
+
+  - type: input
     id: television
     attributes:
       label: Which television
-      description: >
-        The model and the year if you know it, and whether this is a TV at all: the same build runs
-        in a desktop browser, and a fault that only happens in a browser is a different bug.
+      description: Give the TV model and year, or the browser and version.
       placeholder: Samsung 2021 QN90A, or "desktop Chrome 141"
     validations:
       required: true
@@ -35,22 +42,20 @@ body:
     id: tizen
     attributes:
       label: Tizen version
-      description: Settings, then Diagnostics, reports it. Leave it blank if you cannot get that far.
+      description: Open Settings > About > Diagnostics. Leave blank if unavailable.
       placeholder: "7.0"
 
   - type: textarea
     id: diagnostics
     attributes:
       label: The Diagnostics screen
-      description: >
-        Whatever it says, pasted or photographed. The engine, the memory, the picture path in use and
-        the compatibility state are the four that usually explain a fault on their own.
+      description: Paste the details or attach a screenshot after removing private information.
 
   - type: dropdown
     id: compatibility
     attributes:
       label: Is compatibility mode on?
-      description: Settings, then Watching. It is off unless you turned it on.
+      description: Open Settings > Playback. It is off unless you turned it on.
       options:
         - "Off, the default"
         - "On"
@@ -61,20 +66,14 @@ body:
     attributes:
       label: The playlist, if it is involved
       description: >
-        Please do not paste a private or paid playlist address, or anything with a username or a
-        password in it. What helps is the shape of the file: how many channels, whether the failing
-        entry is HLS or something else, and if you can share one problematic entry with the host
-        removed, that is usually enough.
+        Say whether you use M3U or Xtream, how many channels it contains and which stream format
+        fails, if known. Do not include private addresses, usernames, passwords or tokens.
 
   - type: checkboxes
     id: checked
     attributes:
       label: Before opening this
       options:
-        - label: >
-            I read the troubleshooting section in the README, since a channel that will not play is
-            often the playlist rather than the app.
-          required: false
-        - label: >
-            This is not a security problem. Those go through SECURITY.md privately instead.
+        - label: I read the troubleshooting section in the README.
+        - label: This is not a security problem. I will report security problems privately.
           required: true

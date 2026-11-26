@@ -54,6 +54,7 @@ function mountRail(initialMode: "movie" | "series" = "movie", initialScale = 1) 
   const states: VodNavigationState[] = [];
   const onCategorySettled = vi.fn();
   const onPosterSettled = vi.fn();
+  // biome-ignore lint/correctness/noComponentHookFactories: Each mount creates one isolated fixture whose identity is retained by rerender.
   function Fixture({ mode, scale }: { mode: "movie" | "series"; scale: number }) {
     const navigation = useVodNavigation({
       ...context,

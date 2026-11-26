@@ -282,6 +282,14 @@ export const MEASURE = (selectors) => `(() => {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+// The selected rail cursor answers immediately. The pane owns the later catalogue commit.
+export const VOD_CATEGORY_READY = `(() => {
+  const rail = document.querySelector(".vod-screen .vod-rail.focused");
+  const pane = document.querySelector(".vod-screen .vod-pane");
+  return !!rail && !!rail.querySelector(".vod-category.cursor.selected")
+    && !!pane && pane.getAttribute("aria-busy") === "false";
+})()`;
+
 /** The little bit of CDP each gate needs, bound to one connection. */
 export function driver(cdp, port) {
   const evaluate = async (expression) =>
@@ -750,9 +758,9 @@ export async function walk(cdp, port, selectors, { before } = {}) {
     };
   })()`);
   await d.press("ArrowLeft", 37, "!!document.querySelector('.vod-rail.focused')");
-  await d.press("ArrowDown", 40, "!!document.querySelector('.vod-category.cursor.selected')");
+  await d.press("ArrowDown", 40, VOD_CATEGORY_READY);
   await capture(XTREAM_JOURNEYS.categoryFocusSettle);
-  await d.press("ArrowUp", 38, "!!document.querySelector('.vod-category.cursor.selected')");
+  await d.press("ArrowUp", 38, VOD_CATEGORY_READY);
   await d.press("ArrowRight", 39, "!!document.querySelector('.poster-card.cursor')");
   const vodRestored = await d.evaluate(`(() => {
     const category = document.querySelector('.vod-category.selected .vod-category-name');
