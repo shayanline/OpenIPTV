@@ -50,7 +50,8 @@ jobs:
             const repository = `${context.repo.owner}/${context.repo.repo}`;
             // The pinned metadata action reads the first commit, so additional commits stay manual.
             const trusted = !pr.draft && pr.user.login === 'dependabot[bot]' &&
-              pr.user.id === 49699333 && pr.base.ref === 'master' &&
+              pr.user.id === 49699333 &&
+              pr.base.ref === context.payload.repository.default_branch &&
               pr.base.repo.full_name === repository && pr.head.repo.full_name === repository &&
               pr.commits === 1 && commits.length === 1 && commit.sha === pr.head.sha &&
               commit.author?.login === 'dependabot[bot]' && commit.author.id === 49699333 &&
@@ -97,7 +98,8 @@ jobs:
             if (pr.state !== 'open' || pr.draft ||
                 pr.head.sha !== context.payload.pull_request.head.sha ||
                 pr.user.login !== 'dependabot[bot]' || pr.user.id !== 49699333 ||
-                pr.base.ref !== 'master' || pr.base.repo.full_name !== repository ||
+                pr.base.ref !== context.payload.repository.default_branch ||
+                pr.base.repo.full_name !== repository ||
                 pr.head.repo.full_name !== repository) {
               core.info('The pull request changed after the eligibility decision.');
               return;

@@ -1,25 +1,14 @@
 name: Release
 
-# A tag is the trigger, because a release is a decision rather than a consequence of pushing.
-#
-# What this can and cannot do is worth stating plainly at the top, since the boundary is not
-# obvious. It builds the application, signs it with the certificates from this repository's secrets,
-# and attaches the widget to a GitHub release. It does not submit anything to Samsung: the TV Seller
-# Office has no API of any kind, so every step from uploading the package onwards is a web form that
-# a person fills in. docs/publishing.md is the runbook for that half.
-#
-# The tag is the version and carries no prefix, because Samsung's is the version that matters and
-# Samsung takes `major.minor.micro` and nothing else. A `v` would have to be stripped in every place
-# that compares the tag with package.json or with the manifest, and one of those places would
-# eventually forget. Matching on a leading digit keeps every other tag out of here.
+# Tags publish an unsigned widget and the browser demo. Store signing stays local.
 on:
   push:
     tags: ["[0-9]*"]
-  # So a release can be rehearsed without cutting a tag. Nothing is published in that case.
+  # Manual runs create an artifact and can optionally redeploy the browser demo.
   workflow_dispatch:
     inputs:
       dry-run:
-        description: Build and sign, but attach nothing
+        description: Skip publishing the browser demo
         type: boolean
         default: true
 
@@ -31,253 +20,39 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
-    # The signing keys live in an environment rather than in plain repository secrets, so they are
-    # unreachable from a pull request and can be held behind a protection rule. The author
-    # certificate is the one thing here that cannot be replaced: lose it and the application can
-    # never be updated again, only republished as a different app with a different name.
     environment: release
 
     permissions:
-      # Only for the last step, which creates the release.
       contents: write
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .nvmrc
           cache: npm
 
-      - run: npm ci
-
-      # The same gates as every other push. A release that skips them is a release nobody checked,
-      # and the two hardware gates are exactly the ones that catch what a laptop hides.
-      - run: npm run check
-      - run: npm run build
-      - run: npm run tv:gap
-      - run: npm run wasm:check
-
-      # The tag and package.json have to agree, or the widget claims a version the About screen
-      # contradicts. Samsung is stricter still: each field is bounded, and a version that collides
-      # with one already uploaded is refused, so this checks the shape as well as the match.
-      - name: The tag matches the version, and Samsung will accept its shape
-        if: startsWith(github.ref, 'refs/tags/')
+      - name: Validate the version
         run: |
-          tag="$GITHUB_REF_NAME"
-          declared=$(node -p "require('./package.json').version")
-          if [ "$tag" != "$declared" ]; then
-            echo "The tag says $tag and package.json says $declared. Nothing is built until they agree."
-            exit 1
-          fi
-          if ! printf '%s' "$tag" | grep -Eq '^([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.([0-9]{1,4}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5])$'; then
-            echo "Samsung takes major.minor.micro only, bounded at 255.255.65535, so $tag would be refused."
-            exit 1
-          fi
+          node --input-type=module <<'JS'
+          import { readFileSync } from 'node:fs';
+          const { version } = JSON.parse(readFileSync('package.json', 'utf8'));
+          const limits = [255, 255, 65535];
+          if (!/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(version) ||
+              version.split('.').some((part, index) => Number(part) > limits[index])) {
+            throw new Error(`Samsung requires major.minor.micro bounded at 255.255.65535. Got ${version}.`);
+          }
+          if (process.env.GITHUB_REF_TYPE === 'tag' && process.env.GITHUB_REF_NAME !== version) {
+            throw new Error(`Tag ${process.env.GITHUB_REF_NAME} does not match package.json version ${version}.`);
+          }
+          JS
 
-      # Tizen Studio is not on any hosted runner, so the command line half of it is installed here.
-      # Only the web CLI is needed: packaging a widget is signing a zip, and none of the IDE, the
-      # emulator or the TV extensions take part in it.
-      # Restored before the install step, which then skips the download entirely. Keyed on the
-      # version in the URL, so bumping 6.1 fetches a fresh one rather than resurrecting the old.
-      - name: Cache the Tizen CLI
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ~/tizen-studio
-          key: tizen-studio-${{ runner.os }}-6.1
-
-      - name: Install the Tizen CLI
-        run: |
-          sudo apt-get update -qq
-          # gnome-keyring and dbus-x11 are not optional on Linux, and the reason is two steps down:
-          # the CLI keeps certificate passwords in the login keyring rather than in profiles.xml.
-          # Java is here because the CLI is Java, and zip because it shells out to it to build the
-          # widget. libxml2-utils used to be in this list and never had a caller, because the
-          # manifest is parsed in CI and nothing here reads XML.
-          sudo apt-get install -y --no-install-recommends \
-            zip openjdk-17-jre-headless dbus-x11 gnome-keyring
-
-          # Asking the restored copy to identify itself, rather than trusting that a cache hit means
-          # a working toolchain. A partial or stale restore answers nothing and gets replaced, so
-          # the cache can never be the reason a release fails, only the reason one is quicker.
-          if ! "$HOME/tizen-studio/tools/ide/bin/tizen" version >/dev/null 2>&1; then
-            # 6.1 is the newest the download server publishes, checked rather than assumed. If this
-            # ever 404s, the directory listing at download.tizen.org/sdk/Installer/ says what exists.
-            curl -sSfL -o /tmp/tizen-cli.bin \
-              "https://download.tizen.org/sdk/Installer/tizen-studio_6.1/web-cli_Tizen_Studio_6.1_ubuntu-64.bin"
-            chmod +x /tmp/tizen-cli.bin
-            /tmp/tizen-cli.bin --accept-license "$HOME/tizen-studio"
-          fi
-
-          # The installer creates this and a cache of tizen-studio alone does not, since nothing
-          # certificate shaped is worth carrying between runs.
-          mkdir -p "$HOME/tizen-studio-data/profile"
-          echo "$HOME/tizen-studio/tools/ide/bin" >> "$GITHUB_PATH"
-
-      # Both certificates arrive base64 encoded, are written outside the workspace so they cannot be
-      # picked up by anything that archives the checkout, and are deleted in a step that runs even
-      # when the build fails.
-      #
-      # A note on what this signature is worth. The distributor certificate is issued against
-      # specific televisions, so this widget installs on those sets and nowhere else, which makes
-      # it useless to anybody downloading it: a retail set answers it with a certificate error.
-      # Worse, the certificate carries the identifier of the television it was issued for, so
-      # publishing it would disclose that. The signature exists for the store submission, where
-      # Samsung strips it and applies its own, so the signed widget leaves this workflow as a
-      # private artifact a step below, and the public release asset has the signature entries
-      # removed from the archive entirely.
-      #
-      # Registering the profile and signing with it are one step rather than two because on Linux
-      # the CLI does not keep the password in profiles.xml at all. `security-profiles add` hands it
-      # to tools/certificate-encryptor/secret-tool, which writes it to the GNOME login keyring, and
-      # `package` reads it back with a lookup against that same keyring. A hosted runner has no
-      # session bus and no keyring, so the store quietly does nothing, the add still reports
-      # "Succeed to add" because it never checks, and signing later fails with
-      # "CertificationException: Invaild password" against a password that is perfectly correct.
-      # Both commands therefore run inside one `dbus-run-session` with the keyring unlocked, since
-      # a second step would be a second session and the secret would not be there.
-      - name: Register the signing profile, then package and sign
-        env:
-          SIGNING_PROFILE: OpenIPTV
-          AUTHOR_P12: ${{ secrets.TIZEN_AUTHOR_P12 }}
-          AUTHOR_PASSWORD: ${{ secrets.TIZEN_AUTHOR_PASSWORD }}
-          DISTRIBUTOR_P12: ${{ secrets.TIZEN_DISTRIBUTOR_P12 }}
-          DISTRIBUTOR_PASSWORD: ${{ secrets.TIZEN_DISTRIBUTOR_PASSWORD }}
-        run: |
-          missing=""
-          [ -n "$AUTHOR_P12" ] || missing="$missing TIZEN_AUTHOR_P12"
-          [ -n "$AUTHOR_PASSWORD" ] || missing="$missing TIZEN_AUTHOR_PASSWORD"
-          [ -n "$DISTRIBUTOR_P12" ] || missing="$missing TIZEN_DISTRIBUTOR_P12"
-          [ -n "$DISTRIBUTOR_PASSWORD" ] || missing="$missing TIZEN_DISTRIBUTOR_PASSWORD"
-          if [ -n "$missing" ]; then
-            # Named rather than counted, and the passwords are checked as well as the certificates:
-            # without this an unset password reaches the Tizen CLI as an empty one and fails several
-            # steps later, complaining about a keystore rather than about a secret nobody set.
-            echo "These secrets are not set on the release environment:$missing"
-            echo "docs/publishing.md explains what each one is and how to produce it."
-            exit 1
-          fi
-          umask 077
-          printf '%s' "$AUTHOR_P12" | base64 -d > "$RUNNER_TEMP/author.p12"
-          printf '%s' "$DISTRIBUTOR_P12" | base64 -d > "$RUNNER_TEMP/distributor.p12"
-
-          # Each certificate is opened here, before the Tizen CLI sees it, because the CLI's account
-          # of a bad one is "An error has occurred" in a log file on a machine that is about to be
-          # destroyed. openssl says which of the two it is and whether the bytes even survived the
-          # trip through a secret: the digest is printed so it can be compared with the file on the
-          # machine that uploaded it, and a digest gives nothing away.
-          bad=""
-          for name in author distributor; do
-            digest=$(shasum -a 256 "$RUNNER_TEMP/$name.p12" | cut -c1-16)
-            size=$(wc -c < "$RUNNER_TEMP/$name.p12" | tr -d ' ')
-            if PW="$(eval echo "\$$(echo "$name" | tr '[:lower:]' '[:upper:]')_PASSWORD")" \
-               openssl pkcs12 -in "$RUNNER_TEMP/$name.p12" -nokeys -noout -passin env:PW 2>/dev/null; then
-              echo "$name.p12: $size bytes, digest $digest, opens with its password"
-            else
-              echo "$name.p12: $size bytes, digest $digest, DOES NOT open with the password given"
-              bad="yes"
-            fi
-          done
-          if [ -n "$bad" ]; then
-            echo "One of the certificates and its password disagree, so signing would fail anyway."
-            exit 1
-          fi
-          # The keyring is created here and dies with the runner, so what unlocks it is a constant
-          # rather than a secret. Everything that needs the password lives inside this one session.
-          dbus-run-session -- bash -euo pipefail -c '
-            echo openiptv-ci | gnome-keyring-daemon --unlock
-
-            # Give the CLI an empty profile document before creating the profile, then point it at
-            # that document.
-            #
-            # A fresh hosted runner has no profile document. `security-profiles add` reads the
-            # configured file before it appends the new profile, so a missing file fails with
-            # "Not found a file of security profiles".
-            printf "%s\n" \
-              "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"no\"?>" \
-              "<profiles active=\"\" version=\"3.1\"></profiles>" \
-              > "$HOME/tizen-studio-data/profile/profiles.xml"
-            tizen cli-config "profiles.path=$HOME/tizen-studio-data/profile/profiles.xml"
-            tizen security-profiles add -n OpenIPTV \
-              -a "$RUNNER_TEMP/author.p12" -p "$AUTHOR_PASSWORD" \
-              -d "$RUNNER_TEMP/distributor.p12" --dist-password "$DISTRIBUTOR_PASSWORD"
-            test -s "$HOME/tizen-studio-data/profile/profiles.xml"
-
-            # scripts/package.sh needs no changes to run here: it takes the profile name from the
-            # environment, finds the CLI on PATH, stamps the version into the manifest and writes
-            # the widget to build/.
-            npm run package
-          '
-          ls -l build/
-
-      # The Tizen CLI answers a failure with "An error has occurred. See the log file", and then the
-      # runner is destroyed with the log inside it. Whatever it wrote is the only account of what went
-      # wrong, so it is printed here rather than lost. Both paths, because the CLI names its log
-      # relative to the working directory and writes it under the home directory.
-      - name: What the Tizen CLI said, if it failed
-        if: failure()
-        run: |
-          for log in "$HOME/tizen-studio-data/cli/logs/cli.log" \
-                     "$GITHUB_WORKSPACE/tizen-studio-data/cli/logs/cli.log"; do
-            if [ -f "$log" ]; then
-              echo "----- $log"
-              tail -80 "$log"
-            fi
-          done
-          echo "----- java, since the CLI signs through it"
-          java -version 2>&1 || echo "no java on the path"
-
-      # Deleted whether or not any of the above worked. `if: always()` rather than a trap, so a
-      # cancelled run cleans up too.
-      - name: Forget the certificates
-        if: always()
-        run: rm -f "$RUNNER_TEMP/author.p12" "$RUNNER_TEMP/distributor.p12"
-
-      # The signed widget is the submission build, kept aside as a workflow artifact for the
-      # Seller Office form. What the release publishes is the same widget with both signature
-      # entries deleted from the archive, because a signature bound to one television's identifier
-      # installs nowhere else and discloses that identifier in a public download. The checks below
-      # assert rather than assume: a signature left behind, or a config.xml gone missing, fails
-      # the release before anything is attached to it.
-      - name: Publish the unsigned widget, keep the signed one for the store
-        run: |
-          mkdir -p build/submission
-          mv build/OpenIPTV.wgt build/submission/OpenIPTV.wgt
-          cp build/submission/OpenIPTV.wgt build/OpenIPTV.wgt
-          zip -d build/OpenIPTV.wgt 'author-signature.xml' 'signature*.xml'
-          remaining=$(unzip -Z1 build/OpenIPTV.wgt | grep -E '^(author-signature|signature[0-9]*)\.xml$' || true)
-          if [ -n "$remaining" ]; then
-            echo "Signature entries are still in the published widget: $remaining"
-            echo "Refusing to release it."
-            exit 1
-          fi
-          if ! unzip -Z1 build/OpenIPTV.wgt | grep -qx 'config.xml'; then
-            echo "config.xml is missing from the published widget root. Refusing to release it."
-            exit 1
-          fi
-
-      - name: Upload the signed submission build
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: OpenIPTV-submission
-          path: build/submission/OpenIPTV.wgt
-
-      - name: Checksum what is being published
-        run: |
-          cd build
-          shasum -a 256 OpenIPTV.wgt > OpenIPTV.wgt.sha256
-          cat OpenIPTV.wgt.sha256
-
-      # The notes are the changelog entry for this version, so the file in the repository and the
-      # release page cannot end up saying different things. A tag with no entry fails here rather
-      # than publishing an empty release, because a tag cannot be moved once somebody has pulled it
-      # and the alternative is editing the notes by hand afterwards, which nobody remembers to do.
       - name: Take the release notes from the changelog
-        if: startsWith(github.ref, 'refs/tags/')
+        if: github.event_name == 'push'
         run: |
-          # Stated rather than inherited. The default shell is already `bash -e`, but without this
-          # the step reads as though the extraction failing would simply produce an empty file and
-          # carry on, which is the behaviour you get running it anywhere else.
           set -euo pipefail
           python3 - "$GITHUB_REF_NAME" <<'PY' > release-notes.md
           import re, sys
@@ -296,52 +71,67 @@ jobs:
           Read the README for the installation routes. `OpenIPTV.wgt.sha256` is the checksum of
           the attached widget.
 
-          **The attached widget carries no signature, and that is deliberate.** A retail
-          television only accepts a widget signed for itself, so an installer signs this file for
-          your television as it installs it. The README covers both Apps2Samsung and TizenBrew,
-          and signing a build yourself with the Tizen CLI works just as well.
+          The attached widget is unsigned. The README covers installation through Apps2Samsung,
+          TizenBrew and local signing with the Tizen CLI.
           MD
-          cat release-notes.md
+
+      - run: npm ci
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build
+      - run: npm run tv:gap
+
+      - name: Check the committed WebAssembly
+        run: |
+          shasum -a 256 -c wasm/checksums.txt
+          npm run wasm:check
+
+      # An unsigned WGT is a ZIP of the built widget root.
+      - name: Package the unsigned widget
+        run: |
+          version=$(node -p "require('./package.json').version")
+          node scripts/stamp-version.mjs dist/config.xml "$version"
+          python3 -c "from xml.dom.minidom import parse; parse('dist/config.xml')"
+          test -f dist/index.html
+          mkdir -p build
+          (cd dist && zip -qr ../build/OpenIPTV.wgt . -x author-signature.xml 'signature*.xml')
+          cd build
+          shasum -a 256 OpenIPTV.wgt > OpenIPTV.wgt.sha256
+
+      - name: Upload the unsigned widget
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: OpenIPTV
+          path: |
+            build/OpenIPTV.wgt
+            build/OpenIPTV.wgt.sha256
+          if-no-files-found: error
 
       - name: Attach it to the release
-        if: startsWith(github.ref, 'refs/tags/')
+        if: github.event_name == 'push'
         uses: softprops/action-gh-release@8a0cd651e5b2365bd640854a3fa5dfc70e4875f3 # v3.0.4
         with:
           files: |
             build/OpenIPTV.wgt
             build/OpenIPTV.wgt.sha256
-          generate_release_notes: true
+          fail_on_unmatched_files: true
           body_path: release-notes.md
 
-  # ---------------------------------------------------------------------------------
-  # The same application, in a browser.
-  #
-  # A television is a high bar for trying something out: sideloading the widget means signing it
-  # for the set it lands on, so for anybody who is not already set up to sign, the honest
-  # answer to "what does it look like" used to be a screenshot. The web build is the same source
-  # and the same bundle, on the hls.js path rather than the AVPlay one, so it answers that question
-  # without asking anybody to own the right television.
-  #
-  # A separate job because a job takes one environment and the one above is already `release`, and
-  # deploying Pages requires `github-pages`. It rebuilds rather than carrying dist/ across, which
-  # costs four seconds against the ceremony of an artifact upload and download.
-  #
-  # A tag publishes, and a dry run never does, because quietly replacing what the world is looking
-  # at is not a rehearsal. Turning the dry run off by hand publishes too, which is the way to put
-  # the site back without inventing a version: the page is the current build of whatever ref was
-  # dispatched, and the widget is the thing versions are for.
-  # ---------------------------------------------------------------------------------
+  # Pages needs its own deployment environment. Rebuilding avoids an extra bundle transfer.
   pages:
     needs: release
-    if: startsWith(github.ref, 'refs/tags/') || github.event.inputs.dry-run == 'false'
+    if: github.event_name == 'push' || !inputs.dry-run
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
     permissions:
+      contents: read
       pages: write
-      # Pages verifies the deployment came from this workflow rather than accepting the token on
-      # its own, which is what this is for.
       id-token: write
+
+    concurrency:
+      group: github-pages
+      cancel-in-progress: false
 
     environment:
       name: github-pages
@@ -349,6 +139,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
@@ -356,26 +148,15 @@ jobs:
           cache: npm
 
       - run: npm ci
-      # vite.config.ts sets `base: "./"` so every asset reference is relative, which the television
-      # needs because it loads the widget off the filesystem. A project Pages site is served from
-      # /OpenIPTV/ rather than from the root, and relative paths satisfy both without a second build.
       - run: npm run build
 
-      # The demo playlist stays outside public/, so Vite never copies it into the widget. It is added
-      # only to the Pages artifact, where it can be used without OpenIPTV shipping a channel list or
-      # a default stream.
+      # The demo playlist must never enter the widget.
       - name: Add the demo playlist to Pages
         run: |
           mkdir -p dist/demo
           cp demo/nasa.m3u dist/demo/nasa.m3u
 
-      # There is no actions/configure-pages step here, and its absence is deliberate twice over.
-      # Its only job is to report a base path for frameworks that need one baked in at build time,
-      # and this build needs none because `base: "./"` makes every reference relative. Asking it to
-      # switch Pages on instead, with `enablement: true`, fails with "Resource not accessible by
-      # integration": creating the site takes an administration scope that GITHUB_TOKEN cannot be
-      # granted, so it can only ever use a site that already exists. The site is enabled once, by
-      # hand, with `gh api -X POST repos/OWNER/REPO/pages -f build_type=workflow`.
+      # Relative asset URLs need no configure-pages step. Enable Pages once in repository settings.
       - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
           path: dist

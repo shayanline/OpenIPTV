@@ -3,10 +3,7 @@
 Two different things are called publishing here, and it is worth separating them before anything
 else.
 
-**A GitHub release** is fully automated. Tag a version, and `.github/workflows/release.yml` runs the
-gates, builds and signs the widget with the certificates in this repository's secrets, then attaches
-the widget with its signature stripped, alongside a checksum. The signed build is kept as a workflow
-artifact, because it is what the Seller Office form takes.
+**A GitHub release** is fully automated. Tag a version, and `.github/workflows/release.yml` runs the checks, builds the unsigned widget and attaches it alongside a checksum. The workflow also deploys the browser demo to GitHub Pages. It needs no signing certificates or Tizen SDK.
 
 **A Samsung store release** is not, and cannot be. The TV Seller Office has no API, no CLI and no
 supported automation of any kind: Samsung publishes a real publishing API, but only for the Galaxy
@@ -64,27 +61,22 @@ Three prerequisites that are easy to miss, each of which stops the process dead:
 Samsung also warns that certificates cannot be created at all on Samsung Certificate Extension
 versions before 2.0.73, so an old Tizen Studio may simply refuse.
 
-## The four secrets the release workflow needs
+## Workflow setup
 
-Set these on the `release` environment rather than as plain repository secrets, so a pull request
-cannot reach them:
+Keep the `release` environment for release approval rules. Enable GitHub Pages with GitHub Actions as its source and use the `github-pages` environment for deployments. The workflow uses the built in GitHub token and needs no additional secrets.
 
-| Secret | What it is |
-|:--|:--|
-| `TIZEN_AUTHOR_P12` | The author certificate, base64 encoded |
-| `TIZEN_AUTHOR_PASSWORD` | Its password |
-| `TIZEN_DISTRIBUTOR_P12` | The distributor certificate, base64 encoded |
-| `TIZEN_DISTRIBUTOR_PASSWORD` | Its password |
+Manual runs produce an `OpenIPTV` artifact containing the unsigned widget and checksum. They skip public deployment by default. Clear `dry-run` to redeploy the browser demo from the selected ref without creating a release.
 
-Both certificates live in `~/SamsungCertificate/<profile>/` after Certificate Manager creates them.
-Encode them without newlines:
+## Signing a store submission
+
+Check out the release tag in a clean checkout and configure the `OpenIPTV` signing profile using the [manual signing instructions](../README.md#build-and-sign-manually), then run:
 
 ```bash
-base64 -i ~/SamsungCertificate/OpenIPTV/author.p12 | tr -d '\n' | pbcopy
+npm ci
+npm run package
 ```
 
-The workflow writes them under `RUNNER_TEMP`, never into the workspace, and deletes them in a step
-that runs even when the build fails or is cancelled.
+Submit the resulting `build/OpenIPTV.wgt` to Samsung. Keep this signed copy local because its distributor certificate contains television identifiers. [Repository readers can download Actions artifacts](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/download-workflow-artifacts), so those artifacts cannot serve as private storage for signed submissions.
 
 ## Cutting a release
 
@@ -112,15 +104,7 @@ version string.
 
 1. **Applications, then Create.** Choose Tizen Web Application, and enter a management name.
 
-2. **App Package.** Upload `OpenIPTV.wgt` from the release workflow's `OpenIPTV-submission`
-   artifact, which is the signed build. The widget attached to the GitHub release has its
-   signature stripped so that it can be sideloaded, which makes it the wrong file to submit. An
-   automated pre test runs immediately and only a package that passes it can be registered. Three
-   things in this repository exist to get past that test: the `<feature>` element declaring the
-   screen size in `public/config.xml`, which a hand written manifest has nothing to inject and whose
-   absence is the pre test failure Samsung's own guide walks through, the `<name>` element, which
-   must match the App Title you type for the default language **character for character**, and the
-   version, which must be higher than any already uploaded.
+2. **App Package.** Upload the locally signed `build/OpenIPTV.wgt` described in [Signing a store submission](#signing-a-store-submission). The unsigned GitHub release download is unsuitable for store submission. Samsung runs an automated check before registering the package. The manifest must declare the screen size, its `<name>` must exactly match the default language App Title, and its version must be higher than any already uploaded.
 
 3. **App information.** Title, description of up to 4000 characters, at least three tags, category,
    age rating, service countries, and a support email. A privacy policy address is required only if
