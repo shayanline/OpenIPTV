@@ -5,8 +5,9 @@ body:
   - type: markdown
     attributes:
       value: |
-        Open Settings > About > Diagnostics for device and playback details.
-        Remove private addresses, credentials and pairing codes from text and screenshots.
+        Open Settings > About > Support > Diagnostics for device and playback details.
+        Include the platform and installation route, particularly for an experimental TV candidate.
+        Remove private addresses, credentials, pairing codes, device keys and serial numbers from text and screenshots.
         Report security problems through [private vulnerability reporting](https://github.com/shayanline/OpenIPTV/security/advisories/new).
 
   - type: textarea
@@ -33,17 +34,42 @@ body:
     id: television
     attributes:
       label: Which television
-      description: Give the TV model and year, or the browser and version.
-      placeholder: Samsung 2021 QN90A, or "desktop Chrome 141"
+      description: Give the TV or streaming device model and year, or the browser and version. Do not include its serial number.
+      placeholder: Samsung QN90A, LG OLED C1, Philips model, Fire TV device, or desktop Chrome
+    validations:
+      required: true
+
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - Samsung Tizen
+        - LG webOS candidate
+        - Titan OS candidate
+        - VIDAA candidate
+        - VIZIO candidate
+        - Amazon Vega integration kit
+        - Desktop browser
+        - Other or unknown
     validations:
       required: true
 
   - type: input
-    id: tizen
+    id: system-version
     attributes:
-      label: Tizen version
-      description: Open Settings > About > Diagnostics. Leave blank if unavailable.
-      placeholder: "7.0"
+      label: TV OS and firmware
+      description: Use the TV or device settings for its OS and firmware versions. Leave blank if unavailable.
+      placeholder: Tizen 7.0, webOS TV 6.0, or the version shown by your device
+
+  - type: textarea
+    id: installation
+    attributes:
+      label: Installation route and artifact
+      description: Give the release filename or source commit, installation method and checksum if available. Do not include a private launch URL or credentials.
+      placeholder: |
+        I downloaded OpenIPTV-webos.ipk from the release linked in my version field and
+        installed it through LG Developer Mode using ares-install.
 
   - type: textarea
     id: diagnostics

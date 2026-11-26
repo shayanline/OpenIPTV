@@ -7,7 +7,9 @@
   // TypeScript and JSX itself, has no opinion about which compiler is installed, and covers
   // the formatter gap in the same tool rather than a second one.
   "vcs": { "enabled": true, "clientKind": "git", "useIgnoreFile": true },
-  "files": { "includes": ["src/**", "tests/**", "scripts/**", "*.ts", "*.json", "*.jsonc"] },
+  "files": {
+    "includes": ["src/**", "tests/**", "scripts/**", "platforms/**", "*.ts", "*.json", "*.jsonc"]
+  },
 
   // Matched to what is already written here rather than imposed on it, so that turning the
   // formatter on does not reflow five thousand lines of carefully wrapped prose.

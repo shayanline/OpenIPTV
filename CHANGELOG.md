@@ -2,6 +2,22 @@
 
 Notable changes, newest first, in the format of [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## Unreleased
+
+The additional TV targets remain experimental. Device validation and official store approval are still required before claiming general support.
+
+### Added
+
+- LG webOS gains candidate IPK packaging, native HLS selection, remote key handling and a helper that installs and launches the app on a registered development TV.
+- Titan OS gains a hosted app candidate with platform key mappings and exit handling.
+- VIDAA and VIZIO gain candidate web bundles awaiting partner integration. Amazon Vega gains a WebView integration kit that still requires an official SDK project and VPKG build.
+- The release workflow prepares separate TV artifacts with checksums and runs an artifact smoke gate. Installation, troubleshooting and official distribution requirements are documented for each target.
+
+### Fixed
+
+- An earlier lazy hls.js load cannot replace a newer native HLS tune.
+- TV candidates no longer attempt to send failed streams through Vite's development HTTP relay.
+
 ## 1.10.0
 
 ### Added

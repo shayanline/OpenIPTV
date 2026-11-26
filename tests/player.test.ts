@@ -17,6 +17,7 @@ const hlsMock = vi.hoisted(() => ({
 vi.mock("hls.js", () => {
   class FakeHls {
     static isSupported = () => hlsMock.supported;
+    static DefaultConfig = { loader: class {} };
     static Events = {
       ERROR: "error",
       LEVEL_SWITCHED: "levelSwitch",
@@ -220,6 +221,9 @@ afterEach(() => {
   delete (window as unknown as { webapis?: unknown }).webapis;
   delete (window as unknown as { tizen?: unknown }).tizen;
   document.getElementById("avplay-surface")?.remove();
+  document.querySelectorAll('meta[name="openiptv-platform"]').forEach((meta) => {
+    meta.remove();
+  });
 });
 
 test("the TV path is taken when AVPlay is present", () => {
@@ -396,6 +400,100 @@ test("hls.js statistics report the rendition in use and count level changes", as
     switches: 1,
   });
   browser.stop();
+});
+
+test.each(["webos", "titan"])(
+  "%s prefers native HLS without instantiating hls.js even when MSE is available",
+  async (target) => {
+    delete window.webapis;
+    const marker = document.createElement("meta");
+    marker.name = "openiptv-platform";
+    marker.content = target;
+    document.head.append(marker);
+    hlsMock.supported = true;
+    const video = document.createElement("video");
+    vi.spyOn(video, "canPlayType").mockReturnValue("probably");
+    vi.spyOn(video, "load").mockImplementation(() => {});
+    vi.spyOn(video, "play").mockResolvedValue(undefined);
+    player.attach(video);
+    player.play("https://example.invalid/live.m3u8");
+    await vi.advanceTimersByTimeAsync(0);
+    expect(video.src).toBe("https://example.invalid/live.m3u8");
+    expect(video.play).toHaveBeenCalledOnce();
+    expect(hlsMock.instance).toBeNull();
+    player.detach();
+  },
+);
+
+test("LG falls back to hls.js when native HLS is unavailable", async () => {
+  delete window.webapis;
+  const marker = document.createElement("meta");
+  marker.name = "openiptv-platform";
+  marker.content = "webos";
+  document.head.append(marker);
+  hlsMock.supported = true;
+  const video = document.createElement("video");
+  vi.spyOn(video, "canPlayType").mockReturnValue("");
+  vi.spyOn(video, "load").mockImplementation(() => {});
+  player.attach(video);
+  player.play("https://example.invalid/live.m3u8");
+  await vi.advanceTimersByTimeAsync(0);
+  expect(hlsMock.instance?.source).toBe("https://example.invalid/live.m3u8");
+  player.detach();
+});
+
+test("compatibility repair retains hls.js on a TV profile with native HLS", async () => {
+  delete window.webapis;
+  const marker = document.createElement("meta");
+  marker.name = "openiptv-platform";
+  marker.content = "titan";
+  document.head.append(marker);
+  hlsMock.supported = true;
+  const video = document.createElement("video");
+  vi.spyOn(video, "canPlayType").mockReturnValue("probably");
+  vi.spyOn(video, "load").mockImplementation(() => {});
+  player.attach(video);
+  player.play("https://example.invalid/live.m3u8", true);
+  await vi.advanceTimersByTimeAsync(0);
+  expect(hlsMock.instance?.source).toBe("https://example.invalid/live.m3u8");
+  player.detach();
+});
+
+test("native HLS finite playback starts at its saved position", () => {
+  delete window.webapis;
+  const marker = document.createElement("meta");
+  marker.name = "openiptv-platform";
+  marker.content = "webos";
+  document.head.append(marker);
+  const video = document.createElement("video");
+  vi.spyOn(video, "canPlayType").mockReturnValue("probably");
+  vi.spyOn(video, "load").mockImplementation(() => {});
+  vi.spyOn(video, "play").mockResolvedValue(undefined);
+  player.attach(video);
+  player.play("https://example.invalid/film.m3u8", false, undefined, "finite", 25);
+  expect(video.currentTime).toBe(25);
+  expect(video.play).toHaveBeenCalledOnce();
+  player.detach();
+});
+
+test("an earlier lazy HLS attempt cannot replace a newer native TV tune", async () => {
+  delete window.webapis;
+  const marker = document.createElement("meta");
+  marker.name = "openiptv-platform";
+  marker.content = "webos";
+  document.head.append(marker);
+  hlsMock.supported = true;
+  const video = document.createElement("video");
+  vi.spyOn(video, "canPlayType").mockReturnValue("probably");
+  vi.spyOn(video, "load").mockImplementation(() => {});
+  vi.spyOn(video, "play").mockResolvedValue(undefined);
+  player.attach(video);
+  player.play("https://example.invalid/previous.m3u8", true);
+  player.play("https://example.invalid/current.m3u8");
+  await vi.advanceTimersByTimeAsync(0);
+  expect(video.src).toBe("https://example.invalid/current.m3u8");
+  expect(hlsMock.instance).toBeNull();
+  player.detach();
 });
 
 test("the adaptive request starts low and asks the set to skip nothing", () => {

@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { platform } from "../services/tvPlatform";
 
 /**
  * Samsung remote key codes. The arrows and Enter match a desktop keyboard, so the whole
@@ -49,6 +50,60 @@ export const KEY = {
   PREV: 10232,
   NEXT: 10233,
 } as const;
+
+const NAMED_KEYS: Record<string, number> = {
+  Enter: KEY.ENTER,
+  ArrowLeft: KEY.LEFT,
+  ArrowRight: KEY.RIGHT,
+  ArrowUp: KEY.UP,
+  ArrowDown: KEY.DOWN,
+  MediaPlay: KEY.PLAY,
+  MediaPause: KEY.PAUSE,
+  MediaPlayPause: KEY.PLAY_PAUSE,
+  MediaStop: KEY.STOP,
+  MediaRewind: KEY.REWIND,
+  MediaFastForward: KEY.FORWARD,
+  ChannelUp: KEY.CH_UP,
+  ChannelDown: KEY.CH_DOWN,
+};
+
+/**
+ * Preserve the app's key model while accepting each platform's documented remote codes.
+ * Backspace in a text field belongs to the keyboard, including Titan's system keyboard.
+ */
+export function remoteKeyCode(event: {
+  keyCode: number;
+  key?: string;
+  target?: EventTarget | null;
+}): number {
+  const target = platform();
+  const code = event.keyCode;
+  if (target === "browser" || target === "tizen") return code;
+  const element = event.target;
+  const editing =
+    element instanceof HTMLElement &&
+    (element.isContentEditable || /^(INPUT|TEXTAREA)$/.test(element.tagName));
+  if (editing && (code === 8 || (code === 0 && event.key === "Backspace"))) return code;
+
+  if (
+    event.key === "GoBack" ||
+    event.key === "BrowserBack" ||
+    (target === "webos" && code === 461) ||
+    (target === "vega" && code === 27)
+  )
+    return KEY.BACK;
+
+  if (target === "titan") {
+    const keys = window as unknown as { VK_BACK?: number; VK_BACK_SPACE?: number };
+    if (code === 8 || code === keys.VK_BACK || code === keys.VK_BACK_SPACE) return KEY.BACK;
+    if (code === 33) return KEY.CH_UP;
+    if (code === 34) return KEY.CH_DOWN;
+    if (code === 179) return KEY.PLAY_PAUSE;
+  }
+
+  const named = NAMED_KEYS[event.key ?? ""];
+  return typeof named === "number" ? named : code;
+}
 
 /**
  * The remote keys the app asks Tizen to deliver.
@@ -156,7 +211,7 @@ export function sendKey(code: number) {
 
 export function useRemote(handler: (code: number, event: KeyboardEvent) => void) {
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => handler(e.keyCode, e);
+    const onKey = (e: KeyboardEvent) => handler(remoteKeyCode(e), e);
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [handler]);

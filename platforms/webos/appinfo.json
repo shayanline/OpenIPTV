@@ -1,0 +1,14 @@
+{
+  "id": "io.github.shayanline.openiptv",
+  "title": "OpenIPTV",
+  "type": "web",
+  "main": "index.html",
+  "version": "0.0.0",
+  "requiredACG": [],
+  "icon": "icon-80.png",
+  "largeIcon": "icon-130.png",
+  "vendor": "Shayan Khaksar",
+  "appDescription": "Play your own M3U playlists and Xtream sources.",
+  "resolution": "1920x1080",
+  "disableBackHistoryAPI": true
+}

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { releaseLogos } from "../services/logos";
 import type { Fit } from "../services/player";
 import { onTizen, type PlaybackStats, Player, type PlayerEvent } from "../services/player";
+import { platform } from "../services/tvPlatform";
 import {
   idleRepair,
   pauseRepair,
@@ -40,7 +41,10 @@ const HTTP_FALLBACK_FAULT =
   /CONNECTION_FAILED|NETWORK|manifestLoad|levelLoad|fragLoad|TIMEOUT|CIPHER|CERT|NOT_SUPPORTED/i;
 
 const canUseHttpFallback = () =>
-  onTizen() || (typeof window !== "undefined" && window.location.protocol === "http:");
+  onTizen() ||
+  (platform() === "browser" &&
+    typeof window !== "undefined" &&
+    window.location.protocol === "http:");
 
 export const httpFallback = (
   address: string,

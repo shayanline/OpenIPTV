@@ -130,6 +130,9 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.useRealTimers();
+  document.querySelectorAll('meta[name="openiptv-platform"]').forEach((meta) => {
+    meta.remove();
+  });
 });
 
 test.each([
@@ -204,6 +207,20 @@ test("HTTP pages retry failed HTTP finite media once through the local relay", (
   );
   expect(playerMock.instances[0].play).toHaveBeenCalledTimes(2);
 });
+
+test.each(["webos", "titan", "vidaa", "vizio", "vega"])(
+  "%s does not retry a failed stream through a development relay absent from TV hosting",
+  (target) => {
+    const marker = document.createElement("meta");
+    marker.name = "openiptv-platform";
+    marker.content = target;
+    document.head.append(marker);
+    const { result } = mount(false);
+    act(() => result.current.start(movie));
+    act(() => playerMock.instances[0].emit({ type: "error", code: "manifestLoadError" }));
+    expect(playerMock.instances[0].play).toHaveBeenCalledOnce();
+  },
+);
 
 test("packaged TV fallback stays direct because no local relay exists", () => {
   expect(httpFallback("https://provider.example/movie.mp4", "file:", "null")).toBe(

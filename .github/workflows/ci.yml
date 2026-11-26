@@ -76,6 +76,16 @@ jobs:
       - run: npm test
       - run: npm run build
 
+      - name: Install the LG packaging tool
+        run: |
+          npm install --global @webos-tools/cli@3.2.6
+          ares-config --profile tv
+
+      - name: Package and exercise the TV release candidates
+        run: |
+          npm run ports:package
+          npm run ports:smoke
+
       - name: Validate the widget manifest
         run: python3 -c "from xml.dom.minidom import parse; parse('public/config.xml')"
 

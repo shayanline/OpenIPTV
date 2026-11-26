@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { KEY } from "../hooks/useRemote";
+import { KEY, remoteKeyCode } from "../hooks/useRemote";
 
 export interface PickerOption<T extends string> {
   value: T;
@@ -57,9 +57,10 @@ export function OptionPicker<T extends string>({
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       const { open, choose, close } = latest.current;
+      const code = remoteKeyCode(event);
       const active = document.activeElement;
       if (!(active instanceof HTMLElement) || !pickerRef.current?.contains(active)) return;
-      if (event.keyCode === KEY.BACK || event.keyCode === KEY.ESC) {
+      if (code === KEY.BACK || code === KEY.ESC) {
         if (!open) return;
         event.preventDefault();
         event.stopImmediatePropagation();

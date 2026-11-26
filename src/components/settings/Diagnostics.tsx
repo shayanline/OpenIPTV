@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useLocale } from "../../hooks/useLocale";
-import { KEY, keyGrants, supportedKeys } from "../../hooks/useRemote";
+import { KEY, keyGrants, remoteKeyCode, supportedKeys } from "../../hooks/useRemote";
 import { supportsFlexGap } from "../../services/capabilities";
+import { platformName } from "../../services/tvPlatform";
 import * as disk from "../../services/disk";
 import { repairState } from "../../services/repair";
 import type { MessageKey } from "../../services/locale";
@@ -137,7 +138,7 @@ export function Diagnostics({
       { label: "diagnostics.app", value: APP_VERSION },
       {
         label: "diagnostics.platform",
-        value: tizen ? t("diagnostics.tizen", { version: tizen }) : t("diagnostics.notSamsung"),
+        value: tizen ? t("diagnostics.tizen", { version: tizen }) : platformName(),
       },
       {
         label: "diagnostics.engine",
@@ -213,7 +214,8 @@ export function Diagnostics({
     const onKey = (event: KeyboardEvent) => {
       event.preventDefault();
       event.stopImmediatePropagation();
-      if (event.keyCode === KEY.BACK || event.keyCode === KEY.ESC) {
+      const code = remoteKeyCode(event);
+      if (code === KEY.BACK || code === KEY.ESC) {
         closeTester();
         return;
       }

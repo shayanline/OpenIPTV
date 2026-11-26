@@ -1,7 +1,7 @@
 {
   "name": "open-iptv",
   "version": "1.10.0",
-  "description": "IPTV player for Samsung Tizen TVs",
+  "description": "IPTV player for Samsung Tizen TVs with experimental shared web app ports",
   "scripts": {
     "test": "vitest run",
     "dev": "vite",
@@ -10,6 +10,12 @@
     "preview": "vite preview",
     "icon": "node scripts/icon.mjs",
     "package": "./scripts/package.sh",
+    "ports:package": "node scripts/tv-ports.mjs all --ipk",
+    "ports:smoke": "node scripts/tv/ports-smoke.mjs",
+    "package:webos": "npm run build && node scripts/tv-ports.mjs webos --ipk",
+    "package:hosted": "npm run build && node scripts/tv-ports.mjs hosted",
+    "package:vega": "npm run build && node scripts/tv-ports.mjs vega",
+    "deploy:webos": "node scripts/webos-install.mjs",
     "simulator": "npm run package && arch -x86_64 \"$HOME/.tizen-extension-platform/server/sdktools/data/tools/sec-tv-simulator/nwjs.app/Contents/MacOS/nwjs\" --platform samsung-tv --tizentvversion 10.0 --resolution 1920x1080 --file \"$PWD/build/OpenIPTV.wgt\"",
     "deploy": "./scripts/deploy.sh",
     "tv": "node scripts/tv/sim.mjs",
