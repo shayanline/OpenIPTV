@@ -40,12 +40,16 @@ const LONG_PLAYLIST = `#EXTM3U\n${Array.from(
     `#EXTINF:-1 tvg-id="long-${i}" group-title="News",Channel ${i}\nhttp://example.invalid/${i}.m3u8`,
 ).join("\n")}`;
 
-/** The rail row the cursor is on, so where the panel would open can be checked without opening it. */
-const cursorOn = () =>
-  document.querySelector(".rail .row.selected .row-label")?.textContent ?? "";
+/** The rail row whose channels are showing when the resumed channel list opens. */
+const displayedCategory = () =>
+  document.querySelector(".rail .row.showing .row-label")?.textContent ?? "";
 
 beforeEach(() => {
   localStorage.clear();
+  const clientHeight = Object.getOwnPropertyDescriptor(Element.prototype, "clientHeight")!.get!;
+  vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockImplementation(function () {
+    return this.matches(".list .viewport") ? 400 : clientHeight.call(this);
+  });
 });
 
 afterEach(() => {
@@ -94,7 +98,12 @@ test("restoring VOD mode cannot replace Movie playback with remembered Live", as
         ],
         get_vod_categories: [{ category_id: "10", category_name: "Movies" }],
         get_vod_streams: [
-          { stream_id: "100", category_id: "10", name: "Restart film", container_extension: "mp4" },
+          {
+            stream_id: "100",
+            category_id: "10",
+            name: "Restart film",
+            container_extension: "mp4",
+          },
         ],
         get_vod_info: {
           info: { name: "Restart film" },
@@ -174,8 +183,8 @@ test("the cursor is left on the resumed channel, so opening the list lands on it
   // first category. This was the useful half of what reopening the panel used to do.
   press(KEY.LEFT);
   assert.ok(panelOpen());
-  assert.equal(cursorOn(), "Sport");
-  assert.equal(screen.getByText("Gamma").closest(".row")?.classList.contains("selected"), true);
+  assert.equal(displayedCategory(), "Sport");
+  assert.equal(screen.getByText("Gamma").closest(".row")?.classList.contains("cursor"), true);
 });
 
 test("a resumed channel beyond the first screen is selected when the panel opens", async () => {
@@ -184,7 +193,7 @@ test("a resumed channel beyond the first screen is selected when the panel opens
   press(KEY.LEFT);
 
   assert.equal(
-    screen.getByText("Channel 31").closest(".row")?.classList.contains("selected"),
+    screen.getByText("Channel 31").closest(".row")?.classList.contains("cursor"),
     true,
   );
 });
@@ -204,7 +213,7 @@ test("a playlist refresh keeps the resumed channel selected", async () => {
   press(KEY.LEFT);
 
   assert.equal(
-    screen.getByText("Channel 31").closest(".row")?.classList.contains("selected"),
+    screen.getByText("Channel 31").closest(".row")?.classList.contains("cursor"),
     true,
   );
 });

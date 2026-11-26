@@ -63,7 +63,7 @@ test("the playback deck is a primary surface alongside the panel", () => {
   expect(activeSurface(stack({ primary: "playback-deck" }))).toBe("playback-deck");
 });
 
-test.each(["guide", "audio", "subtitles", "more"] as const)(
+test.each(["guide", "audio", "subtitles", "details"] as const)(
   "the %s drawer owns input above the deck",
   (drawer) => {
     expect(activeSurface(stack({ primary: "playback-deck", drawer }))).toBe(drawer);
@@ -72,7 +72,7 @@ test.each(["guide", "audio", "subtitles", "more"] as const)(
 );
 
 test("a modal owns input above each drawer", () => {
-  for (const drawer of ["guide", "audio", "subtitles", "more"] as const) {
+  for (const drawer of ["guide", "audio", "subtitles", "details"] as const) {
     expect(activeSurface(stack({ primary: "playback-deck", drawer, modal: "settings" }))).toBe(
       "settings",
     );
@@ -84,7 +84,7 @@ test("a confirmation owns input above the complete stack", () => {
     activeSurface(
       stack({
         primary: "playback-deck",
-        drawer: "more",
+        drawer: "details",
         modal: "settings",
         popup: "confirmation",
       }),

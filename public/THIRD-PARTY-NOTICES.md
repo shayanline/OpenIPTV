@@ -12,7 +12,7 @@ package.
 
 ## Shipped inside the application
 
-**hls.js**, version 1.7.1, Apache License 2.0, Copyright 2017 Dailymotion. Loaded only in a
+**hls.js**, version 1.7.3, Apache License 2.0, Copyright 2017 Dailymotion. Loaded only in a
 desktop browser, where the television's own decoder does not exist, and imported on demand from
 `src/services/player.ts` so it becomes a separate chunk. Parts of it derive from
 videojs-contrib-hls, Copyright 2013 to 2015 Brightcove, under the same licence, and both notices are
@@ -21,7 +21,9 @@ licence text is in [licenses/Apache-2.0.txt](licenses/Apache-2.0.txt).
 
 **Lucide Icons**, SVG icon geometry from the Lucide project, ISC License, Copyright 2026 Lucide Icons and Contributors. Some icons derive from Feather Icons under the MIT License, Copyright 2013-present Cole Bemis. The application embeds the selected SVG paths directly without the Lucide runtime package. The licence texts and attribution are in [licenses/lucide.txt](licenses/lucide.txt).
 
-**React** and **React DOM**, version 19.2.8, MIT, Copyright Meta Platforms, Inc. and affiliates.
+**flag-icons**, version 7.3.2, MIT, Copyright (c) 2013 Panayiotis Lipiridis. Only the selected 4x3 SVGs from the [flag-icons v7.3.2 source](https://github.com/lipis/flag-icons/tree/v7.3.2) ship with the application. No JavaScript or CSS runtime package is included. The licence text is in [licenses/flag-icons.txt](licenses/flag-icons.txt).
+
+**React** and **React DOM**, version 19.3.0, MIT, Copyright Meta Platforms, Inc. and affiliates.
 Text in [licenses/react.txt](licenses/react.txt), which covers both packages.
 
 **zustand**, version 5.0.15, MIT, Copyright 2019 Paul Henschel. Text in

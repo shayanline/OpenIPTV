@@ -1,12 +1,7 @@
 import { sendKey } from "../hooks/useRemote";
 import { APP_VERSION, REPO_URL } from "../meta";
 import { clearCache, clearPlaylistCache, useChannels } from "../stores/channels";
-import {
-  applyLineupMutation,
-  rematerialise,
-  type LineupSummary,
-  useLineup,
-} from "../stores/lineup";
+import { rematerialise, type LineupSummary, useLineup } from "../stores/lineup";
 import { useSetup } from "../stores/setup";
 import {
   ASPECTS,
@@ -18,6 +13,7 @@ import {
 import {
   directionFor,
   isLocalePreference,
+  localeLabelKey,
   LOCALE_OPTIONS,
   resolveLocale,
   translate,
@@ -38,7 +34,14 @@ import {
   type PairedDevice,
 } from "./deviceAccess";
 import { forgetRepairHosts, forgetRepairSource, stopRepair } from "./repair";
-import type { LineupOrderMode } from "./lineup";
+import { forgetAll } from "./disk";
+import { clearDeviceAccess } from "./deviceAccess";
+import { CUSTOM_CATEGORIES_ENABLED } from "./lineupCapabilities";
+import {
+  PLAYLIST_ENTRY_MESSAGE,
+  PlaylistEntryError,
+  type PlaylistEntryProblem,
+} from "./playlistEntry";
 import type { XtreamAccount } from "./xtream";
 
 type BooleanSetting =
@@ -48,14 +51,18 @@ type BooleanSetting =
   | "showPlaybackStats"
   | "resumeLast"
   | "compatibility"
-  | "continuousReconnect";
-type ChoiceSetting = "locale" | "fontSizeId" | "aspectId" | "lineupOrderMode";
+  | "continuousReconnect"
+  | "hideEmptyCategories"
+  | "playlistShortcut"
+  | "showLive"
+  | "showMovies"
+  | "showSeries";
+type ChoiceSetting = "locale" | "fontSizeId" | "aspectId";
 type SettingCommand =
   | { type: "setting"; key: BooleanSetting; value: boolean }
   | { type: "setting"; key: "locale"; value: LocalePreference }
   | { type: "setting"; key: "fontSizeId"; value: string }
-  | { type: "setting"; key: "aspectId"; value: AspectId }
-  | { type: "setting"; key: "lineupOrderMode"; value: LineupOrderMode };
+  | { type: "setting"; key: "aspectId"; value: AspectId };
 
 type RemoteXtreamSource = Omit<XtreamSource, "password"> & { hasPassword: boolean };
 type RemotePlaylistSource = Exclude<PlaylistSource, XtreamSource> | RemoteXtreamSource;
@@ -72,8 +79,9 @@ export type RemoteCommand =
   | { type: "playlist.update"; id: string; name: string; source: PlaylistSource }
   | { type: "playlist.remove"; id: string }
   | { type: "playlist.activate"; id: string }
-  | { type: "playlist.refresh" }
+  | { type: "playlist.refresh"; id: string }
   | { type: "cache.clear" }
+  | { type: "app.reset" }
   | { type: "device.rename"; id: string; name: string }
   | { type: "device.revoke"; id: string }
   | { type: "remote.key"; code: number };
@@ -83,7 +91,7 @@ export interface RemoteSnapshot {
   locale: string;
   direction: "ltr" | "rtl";
   labels: Record<string, string>;
-  localeOptions: { id: LocalePreference; label: string }[];
+  localeOptions: { id: LocalePreference; label: string; secondary?: string }[];
   settings: {
     locale: LocalePreference;
     fontSizeId: string;
@@ -93,10 +101,15 @@ export interface RemoteSnapshot {
     showClock: boolean;
     showPlaybackStats: boolean;
     resumeLast: boolean;
-    lineupOrderMode: LineupOrderMode;
     compatibility: boolean;
     continuousReconnect: boolean;
+    hideEmptyCategories: boolean;
+    playlistShortcut: boolean;
+    showLive: boolean;
+    showMovies: boolean;
+    showSeries: boolean;
   };
+  capabilities: { customCategories: boolean };
   playlists: RemotePlaylist[];
   activePlaylistId: string;
   lineup: LineupSummary | null;
@@ -115,6 +128,8 @@ export interface CommandRequest {
 export interface CommandResult {
   ok: boolean;
   reason?: "conflict" | "invalid" | "failed" | "notFound";
+  message?: string;
+  cancelled?: boolean;
   snapshot: RemoteSnapshot;
 }
 
@@ -126,13 +141,13 @@ const BOOLEAN_SETTINGS = new Set<BooleanSetting>([
   "resumeLast",
   "compatibility",
   "continuousReconnect",
+  "hideEmptyCategories",
+  "playlistShortcut",
+  "showLive",
+  "showMovies",
+  "showSeries",
 ]);
-const CHOICE_SETTINGS = new Set<ChoiceSetting>([
-  "locale",
-  "fontSizeId",
-  "aspectId",
-  "lineupOrderMode",
-]);
+const CHOICE_SETTINGS = new Set<ChoiceSetting>(["locale", "fontSizeId", "aspectId"]);
 const REMOTE_KEYS = new Set([
   13, 37, 38, 39, 40, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 403, 404, 405, 406, 412, 413, 415,
   417, 427, 428, 448, 449, 10009, 10232, 10233, 10252,
@@ -236,15 +251,6 @@ function validSetting(key: unknown, value: unknown): SettingCommand | null {
   if (key === "aspectId" && ASPECTS.some((option) => option.id === value)) {
     return { type: "setting", key, value: value as AspectId };
   }
-  if (
-    key === "lineupOrderMode" &&
-    (value === "provider" ||
-      value === "alphabetical" ||
-      value === "number" ||
-      value === "custom")
-  ) {
-    return { type: "setting", key, value };
-  }
   return null;
 }
 
@@ -313,10 +319,13 @@ export function parseRemoteCommand(value: unknown): RemoteCommand | null {
   ) {
     return { type: input.type, code: input.code };
   }
-  if (
-    (input.type === "playlist.refresh" || input.type === "cache.clear") &&
-    exact(input, ["type"])
-  ) {
+  if (input.type === "playlist.refresh" && exact(input, ["type", "id"]) && text(input.id)) {
+    return { type: input.type, id: input.id };
+  }
+  if (input.type === "cache.clear" && exact(input, ["type"])) {
+    return { type: input.type };
+  }
+  if (input.type === "app.reset" && exact(input, ["type"])) {
     return { type: input.type };
   }
   return null;
@@ -329,6 +338,9 @@ export function remoteSnapshot(): RemoteSnapshot {
   const locale = resolveLocale(settings.locale);
   const t = (key: Parameters<typeof translate>[1], values?: Parameters<typeof translate>[2]) =>
     translate(locale, key, values);
+  const summary = useLineup.getState().lineupSummary();
+  const activeSummary =
+    summary && summary.playlistId === settings.activePlaylistId ? summary : null;
   return {
     revision,
     locale,
@@ -357,6 +369,7 @@ export function remoteSnapshot(): RemoteSnapshot {
       setupCompleteBody: t("remote.setupCompleteBody", {
         count: channels.channels.length,
       }),
+      setupSavedEmpty: t("playlist.savedNoChannels", { name: "{name}" }),
       setupFailedTitle: t("remote.setupFailedTitle"),
       setupLoadFailed: t("remote.setupLoadFailed"),
       manage: t("settings.title"),
@@ -365,6 +378,11 @@ export function remoteSnapshot(): RemoteSnapshot {
       saving: `${t("common.save")}…`,
       saved: t("playlist.saved", { name: t("settings.title") }),
       playlists: t("settings.playlists"),
+      savedPlaylists: t("playlist.savedPlaylists"),
+      playlistUnavailable: t("playlist.unavailable"),
+      playlistSavedContent: t("playlist.savedContent"),
+      playlistUpdated: t("playlist.updated", { name: "{name}" }),
+      refreshing: t("playlist.refreshing"),
       lineup: t("remote.lineup"),
       lineupChannels: t("remote.lineupChannels"),
       lineupMovies: t("content.movies"),
@@ -372,22 +390,24 @@ export function remoteSnapshot(): RemoteSnapshot {
       lineupCategories: t("remote.lineupCategories"),
       lineupPersonalCategories: t("remote.lineupPersonalCategories"),
       lineupSearch: t("remote.lineupSearch"),
+      lineupSearchCategories: t("remote.lineupSearchCategories"),
+      lineupSearchChannels: t("search.ariaLabel"),
+      lineupSearchTitles: t("remote.lineupSearchTitles"),
       lineupRevealHidden: t("remote.lineupRevealHidden"),
       lineupResults: t("remote.lineupResults", { shown: "{shown}", total: "{total}" }),
       lineupLoadMore: t("remote.lineupLoadMore"),
       lineupLoading: t("remote.lineupLoading"),
       lineupEmpty: t("remote.lineupEmpty"),
-      lineupUnavailable: t("remote.lineupUnavailable"),
       lineupConflict: t("remote.lineupConflict"),
       lineupHidden: t("lineup.hidden"),
       lineupUnavailableItem: t("lineup.unavailable"),
       lineupRestore: t("remote.lineupRestore"),
       lineupRename: t("remote.lineupRename"),
+      lineupEditChannel: t("lineup.editChannel"),
+      lineupEditCategory: t("lineup.renameCategory"),
       lineupNumber: t("remote.lineupNumber"),
       lineupHide: t("remote.lineupHide"),
       lineupShow: t("remote.lineupShow"),
-      lineupMoveBefore: t("remote.lineupMoveBefore"),
-      lineupMoveAfter: t("remote.lineupMoveAfter"),
       lineupCreateCategory: t("remote.lineupCreateCategory"),
       lineupDeleteCategory: t("remote.lineupDeleteCategory"),
       lineupAddMembership: t("remote.lineupAddMembership"),
@@ -396,7 +416,63 @@ export function remoteSnapshot(): RemoteSnapshot {
       lineupMembers: t("remote.lineupMembers"),
       lineupCount: t("remote.lineupChannelCount"),
       lineupBulkHide: t("lineup.hideAll"),
-      lineupBulkShow: t("lineup.showAll"),
+      lineupBulkShow: t("playlist.showAllCategories"),
+      lineupPlaylistSettings: t("lineup.playlistSettings"),
+      lineupCategoryVisibility: t("lineup.categoryVisibility"),
+      lineupChannelVisibility: t("lineup.channelVisibility"),
+      lineupChannelOrder: t("lineup.channelOrder"),
+      lineupMovieOrder: t("lineup.movieOrder"),
+      lineupSeriesOrder: t("lineup.seriesOrder"),
+      lineupEditCustomOrder: t("lineup.editCustomOrder"),
+      lineupAllCategoriesIn: t("lineup.allCategoriesIn", { section: "{section}" }),
+      lineupHideAllQuestion: t("lineup.hideAllCategoriesQuestion"),
+      lineupHideAllBody: t("lineup.hideAllCategoriesBody", {
+        section: "{section}",
+        playlist: "{playlist}",
+      }),
+      lineupLive: t("content.live"),
+      lineupPrevious: t("common.previous"),
+      lineupNext: t("common.next"),
+      lineupPage: t("lineup.page", { current: "{current}", total: "{total}" }),
+      lineupReorder: t("lineup.sort"),
+      lineupGrab: t("lineup.grab"),
+      lineupRelease: t("lineup.release"),
+      lineupReorderHelp: t("remote.lineupReorderHelp"),
+      lineupManageVisibility: t("lineup.manageVisibility"),
+      lineupVisibilityHelp: t("lineup.visibilityHelp"),
+      lineupBack: t("common.back"),
+      lineupSearchToggle: t("common.search"),
+      lineupCategorySettings: t("lineup.categorySettings"),
+      lineupChannelSettings: t("lineup.channelSettings"),
+      lineupMovieSettings: t("lineup.movieSettings"),
+      lineupSeriesSettings: t("lineup.seriesSettings"),
+      lineupManageCategoryVisibility: t("lineup.manageCategoryVisibility"),
+      lineupManageChannelVisibility: t("lineup.manageChannelVisibility"),
+      lineupRenameCategories: t("lineup.renameCategories"),
+      lineupEditNamesNumbers: t("lineup.editNamesNumbers"),
+      lineupContentManagement: t("lineup.contentManagement", { kind: "{kind}" }),
+      lineupManageContentHint: t("lineup.manageContentHint"),
+      lineupShowAll: t("lineup.showAllItems"),
+      lineupHideAll: t("lineup.hideAllItems"),
+      lineupHideAllChannelsQuestion: t("lineup.hideAllChannelsQuestion"),
+      lineupHideAllChannelsBody: t("lineup.hideAllChannelsBody", {
+        category: "{category}",
+        playlist: "{playlist}",
+      }),
+      lineupRemoveUnavailableQuestion: t("lineup.removeUnavailableQuestion"),
+      lineupRemoveUnavailableBody: t("lineup.removeUnavailableBody"),
+      lineupItemOrder: t("lineup.itemOrder"),
+      lineupCategoryOrder: t("lineup.categoryOrder"),
+      lineupLoadFailed: t("remote.lineupLoadFailed"),
+      lineupFieldName: t("lineup.customName"),
+      lineupFieldNumber: t("lineup.channelNumber"),
+      lineupVisible: t("lineup.visible"),
+      lineupDuplicateNumber: t("lineup.duplicateNumber"),
+      lineupInvalidValue: t("lineup.invalidNumber"),
+      lineupPersistenceFailed: t("lineup.persistenceFailed"),
+      xtreamDetected: t("onboarding.xtreamDetected"),
+      keepM3u: t("onboarding.keepM3u"),
+      useXtream: t("onboarding.useXtream"),
       appearance: t("settings.appearance"),
       playback: t("settings.playback"),
       general: t("settings.general"),
@@ -429,10 +505,10 @@ export function remoteSnapshot(): RemoteSnapshot {
       remoteBlue: t("common.blue"),
       addPlaylist: t("common.addPlaylist"),
       remove: t("common.remove"),
-      edit: t("common.edit"),
       refresh: t("common.refreshPlaylist"),
       active: t("common.active"),
       activate: t("remote.activate"),
+      noAction: t("common.noAction"),
       invalidUrl: t("validation.completeAddress"),
       changeFailed: t("remote.changeFailed"),
       pairingFailed: t("remote.pairingFailed"),
@@ -440,9 +516,24 @@ export function remoteSnapshot(): RemoteSnapshot {
       cache: t("settings.clearCache"),
       cacheConfirm: t("settings.clearCacheQuestion"),
       removeConfirm: t("playlist.removeBody"),
+      playlistRemoveQuestion: t("playlist.removeQuestion", { name: "{name}" }),
+      categoryRemoveQuestion: t("lineup.deletePersonalQuestion"),
+      categoryRemoveBody: t("lineup.deletePersonalBody"),
       conflict: t("remote.conflict"),
       unavailable: t("remote.tvUnavailable"),
       revoked: t("remote.revoked"),
+      unavailableTitle: t("remote.unavailableTitle"),
+      displayOptions: t("remote.displayOptions"),
+      actions: t("remote.actions"),
+      pairedDevices: t("remote.pairedDevices"),
+      deviceNameIphone: t("remote.deviceNameIphone"),
+      deviceNameIpad: t("remote.deviceNameIpad"),
+      deviceNameAndroidPhone: t("remote.deviceNameAndroidPhone"),
+      deviceNameAndroidTablet: t("remote.deviceNameAndroidTablet"),
+      deviceNameMac: t("remote.deviceNameMac"),
+      deviceNameWindows: t("remote.deviceNameWindows"),
+      deviceNameLinux: t("remote.deviceNameLinux"),
+      deviceNameBrowser: t("remote.deviceNameBrowser"),
       textSize: t("settings.textSize"),
       small: t("settings.small"),
       medium: t("settings.medium"),
@@ -464,14 +555,45 @@ export function remoteSnapshot(): RemoteSnapshot {
       compatibility: t("settings.compatibility"),
       continuousReconnect: t("settings.continuousReconnect"),
       resumeLast: t("settings.resumeLast"),
+      hideEmptyCategories: t("settings.hideEmptyCategories"),
+      hideEmptyCategoriesHint: t("settings.hideEmptyCategoriesHint"),
+      playlistShortcut: t("settings.playlistShortcut"),
+      playlistShortcutHint: t("settings.playlistShortcutHint"),
+      showLive: t("settings.showLive"),
+      showMovies: t("settings.showMovies"),
+      showSeries: t("settings.showSeries"),
+      content: t("settings.content"),
+      managePlaylists: t("playlist.managePlaylists"),
+      searchPlaylists: t("playlist.searchPlaylists"),
+      lineupNoMatches: t("lineup.noMatches"),
+      keepSectionHint: t("settings.keepSectionHint"),
+      sectionUnsupportedHint: t("settings.sectionUnsupportedHint"),
+      sectionVisibilityHint: t("settings.sectionVisibilityHint"),
+      resetRemoteHint: t("settings.resetRemoteHint"),
+      resetQuestion: t("playlist.resetQuestion", { name: "{name}" }),
+      resetBody: t("playlist.resetBody"),
+      resetToDefault: t("lineup.resetDetails"),
+      resetData: t("settings.resetData"),
+      resetDataQuestion: t("settings.resetDataQuestion"),
+      resetDataBody: t("settings.resetDataBody"),
+      resetDone: t("settings.resetDone"),
+      clearCacheDone: t("settings.clearCacheDone"),
+      accountConnectionsCompact: t("playlist.accountConnectionsCompact", {
+        active: "{active}",
+        maximum: "{maximum}",
+      }),
+      accountConnectionsOnly: t("playlist.accountConnectionsOnly", {
+        active: "{active}",
+        total: "{total}",
+      }),
       applicationData: t("settings.applicationData"),
       noDevices: t("remote.noDevices"),
       thisDevice: t("remote.thisDevice"),
-      rename: t("common.edit"),
+      lastUsed: t("remote.lastUsed", { when: "{when}" }),
+      rename: t("common.rename"),
       revoke: t("remote.revoke"),
       revokeConfirm: t("remote.revokeBody"),
       revokeSelfConfirm: t("remote.revokeSelfBody"),
-      trustedNetwork: t("remote.trustedNetwork"),
       accountActive: t("playlist.accountActive"),
       accountInactive: t("playlist.accountInactive"),
       accountExpired: t("playlist.accountExpired"),
@@ -486,10 +608,20 @@ export function remoteSnapshot(): RemoteSnapshot {
       open: t("common.open"),
       close: t("common.close"),
       cancel: t("common.cancel"),
+      clear: t("common.clear"),
+      manageNav: t("remote.manageNav"),
+      menu: t("remote.menu"),
+      manageContent: t("remote.manageContent"),
+      editCredentials: t("playlist.editCredentials"),
+      editAddress: t("playlist.editAddress"),
+      removePlaylist: t("remote.removePlaylist"),
+      breadcrumbs: t("remote.breadcrumbs"),
+      lineupAddChannels: t("remote.lineupAddChannels"),
     },
     localeOptions: LOCALE_OPTIONS.map((option) => ({
       id: option.id,
-      label: option.id === "system" ? t("language.system") : option.nativeLabel,
+      label: option.nativeLabel,
+      secondary: t(localeLabelKey(option.id)),
     })),
     settings: {
       locale: settings.locale,
@@ -500,17 +632,22 @@ export function remoteSnapshot(): RemoteSnapshot {
       showClock: settings.showClock,
       showPlaybackStats: settings.showPlaybackStats,
       resumeLast: settings.resumeLast,
-      lineupOrderMode: useLineup.getState().orderMode,
       compatibility: settings.compatibility,
       continuousReconnect: settings.continuousReconnect,
+      hideEmptyCategories: settings.hideEmptyCategories,
+      playlistShortcut: settings.playlistShortcut,
+      showLive: settings.showLive,
+      showMovies: settings.showMovies,
+      showSeries: settings.showSeries,
     },
+    capabilities: { customCategories: CUSTOM_CATEGORIES_ENABLED },
     playlists: settings.playlists.map((playlist) => ({
       ...playlist,
       source: remoteSource(playlist.source),
       ...(channels.accounts[playlist.id] ? { account: channels.accounts[playlist.id] } : {}),
     })),
     activePlaylistId: settings.activePlaylistId,
-    lineup: useLineup.getState().lineupSummary(),
+    lineup: activeSummary,
     setup: { name: setup.name, source: remoteSource(setup.source) },
     devices: listPairedDevices(),
     about: { version: APP_VERSION, repository: REPO_URL },
@@ -523,8 +660,19 @@ export function remoteSnapshot(): RemoteSnapshot {
   };
 }
 
-function result(ok: boolean, reason?: CommandResult["reason"]): CommandResult {
-  return { ok, ...(reason ? { reason } : {}), snapshot: remoteSnapshot() };
+function result(
+  ok: boolean,
+  reason?: CommandResult["reason"],
+  message?: string,
+  cancelled?: boolean,
+): CommandResult {
+  return {
+    ok,
+    ...(reason ? { reason } : {}),
+    ...(message ? { message } : {}),
+    ...(cancelled ? { cancelled: true } : {}),
+    snapshot: remoteSnapshot(),
+  };
 }
 
 function remember(id: string, value: CommandResult): CommandResult {
@@ -544,15 +692,6 @@ function playlistId(): string {
 async function applySetting(
   command: SettingCommand,
 ): Promise<"conflict" | "failed" | undefined> {
-  if (command.key === "lineupOrderMode") {
-    const lineup = useLineup.getState();
-    const outcome = await applyLineupMutation(lineup.revision, {
-      type: "order.mode",
-      mode: command.value,
-    });
-    if (outcome.ok) return;
-    return outcome.reason === "conflict" ? "conflict" : "failed";
-  }
   const settings = useSettings.getState();
   if (command.key === "locale") {
     settings.set("locale", command.value);
@@ -583,7 +722,9 @@ function validSource(source: PlaylistSource, password = ""): PlaylistSource | nu
   );
 }
 
-async function perform(command: RemoteCommand): Promise<CommandResult["reason"] | undefined> {
+async function perform(
+  command: RemoteCommand,
+): Promise<CommandResult["reason"] | "cancelled" | undefined> {
   const settings = useSettings.getState();
   const channels = useChannels.getState();
   if (command.type === "remote.key") {
@@ -598,8 +739,15 @@ async function perform(command: RemoteCommand): Promise<CommandResult["reason"] 
   if (command.type === "setup") {
     const source = validSource(command.source);
     if (!source) return "invalid";
+    const emptyAtStart = settings.playlists.length === 0;
     const validation = await channels.validatePlaylist(command.name, source);
-    if (validation.error || !validation.count) return "failed";
+    if (validation.cancelled) return "cancelled";
+    if (validation.error) {
+      throw new PlaylistEntryError(validation.problem ?? "network");
+    }
+    if (!emptyAtStart || useSettings.getState().playlists.length !== 0) {
+      return "conflict";
+    }
     const playlist = {
       id: playlistId(),
       name:
@@ -608,17 +756,29 @@ async function perform(command: RemoteCommand): Promise<CommandResult["reason"] 
       sourceVersion: 1,
     };
     settings.replacePlaylists([playlist], playlist.id, command.locale);
-    await channels.load(true);
+    const activation = await channels.activatePlaylist(playlist.id);
+    if (activation.error) return "failed";
     useSetup.getState().clear();
     return;
   }
   if (command.type === "playlist.add") {
     const source = validSource(command.source);
     if (!source) return "invalid";
+    const validation = await channels.validatePlaylist(command.name, source);
+    if (validation.cancelled) return "cancelled";
+    if (validation.error) {
+      throw new PlaylistEntryError(validation.problem ?? "network");
+    }
+    const first = useSettings.getState().playlists.length === 0;
     settings.addPlaylist(
       command.name.trim() || nameFromUrl(source.kind === "m3u" ? source.url : source.server),
       source,
     );
+    if (first) {
+      const active = useSettings.getState().activePlaylistId;
+      const activation = await channels.activatePlaylist(active);
+      if (activation.error) return "failed";
+    }
     return;
   }
   if (command.type === "playlist.update") {
@@ -627,8 +787,23 @@ async function perform(command: RemoteCommand): Promise<CommandResult["reason"] 
     const password = playlist.source.kind === "xtream" ? playlist.source.password : "";
     const source = validSource(command.source, password);
     if (!source) return "invalid";
+    const validation = await channels.validatePlaylist(command.name, source);
+    if (validation.cancelled) return "cancelled";
+    if (validation.error) {
+      throw new PlaylistEntryError(validation.problem ?? "network");
+    }
+    const current = useSettings.getState();
+    const stillThere = current.playlists.find((item) => item.id === command.id);
+    if (!stillThere) return "notFound";
+    if (
+      stillThere.sourceVersion !== playlist.sourceVersion ||
+      (playlist.sourceVersion === undefined &&
+        JSON.stringify(stillThere.source) !== JSON.stringify(playlist.source))
+    ) {
+      return "conflict";
+    }
     const reload =
-      settings.activePlaylistId === command.id &&
+      current.activePlaylistId === command.id &&
       JSON.stringify(playlist.source) !== JSON.stringify(source);
     const updated = await settings.updatePlaylist(
       command.id,
@@ -640,7 +815,9 @@ async function perform(command: RemoteCommand): Promise<CommandResult["reason"] 
       await clearPlaylistCache(playlist);
       forgetRepairSource(playlist.id);
     }
-    if (reload) await channels.load(true);
+    if (reload && useSettings.getState().activePlaylistId === command.id) {
+      await channels.activatePlaylist(command.id);
+    }
     return;
   }
   if (command.type === "playlist.remove") {
@@ -650,28 +827,122 @@ async function perform(command: RemoteCommand): Promise<CommandResult["reason"] 
     if (!(await settings.removePlaylist(command.id))) return "failed";
     await clearPlaylistCache(playlist);
     forgetRepairSource(playlist.id);
-    if (active) await channels.load();
+    if (active) {
+      const promoted = useSettings.getState().activePlaylistId;
+      if (promoted) {
+        await channels.activatePlaylist(promoted);
+      } else await channels.load();
+    }
     return;
   }
   if (command.type === "playlist.activate") {
-    if (!settings.playlists.some((playlist) => playlist.id === command.id)) return "notFound";
-    settings.set("activePlaylistId", command.id);
-    await channels.load();
-    return;
+    if (useSettings.getState().activePlaylistId === command.id) return;
+    const result = await channels.activatePlaylist(command.id);
+    return result.activated ? undefined : "notFound";
   }
   if (command.type === "playlist.refresh") {
-    await channels.load(true);
-    return;
+    const playlist = settings.playlists.find((item) => item.id === command.id);
+    if (!playlist) return "notFound";
+    const loaded =
+      settings.activePlaylistId === playlist.id
+        ? await channels.load(true)
+        : await channels.refreshPlaylist(playlist);
+    return loaded.error ? "failed" : undefined;
   }
   if (command.type === "cache.clear") {
     await clearCache();
     forgetRepairHosts();
     return;
   }
+  if (command.type === "app.reset") {
+    if (!(await settings.reset())) return "failed";
+    await forgetAll();
+    stopRepair();
+    forgetRepairHosts();
+    clearDeviceAccess();
+    await channels.load();
+    return;
+  }
   if (command.type === "device.rename") {
     return renamePairedDevice(command.id, command.name) ? undefined : "notFound";
   }
   return revokePairedDevice(command.id) ? undefined : "notFound";
+}
+
+interface GuardedOutcome {
+  reason?: CommandResult["reason"];
+  message?: string;
+  cancelled?: boolean;
+}
+
+function safeEntryMessage(problem: PlaylistEntryProblem): string {
+  const locale = resolveLocale(useSettings.getState().locale);
+  return translate(locale, PLAYLIST_ENTRY_MESSAGE[problem]);
+}
+
+function commandSuccessMessage(
+  command: RemoteCommand,
+  previousName: string,
+): string | undefined {
+  const settings = useSettings.getState();
+  const locale = resolveLocale(settings.locale);
+  const t = (key: Parameters<typeof translate>[1], values?: Parameters<typeof translate>[2]) =>
+    translate(locale, key, values);
+  const playlist =
+    "id" in command ? settings.playlists.find((item) => item.id === command.id) : undefined;
+  if (command.type === "playlist.refresh") {
+    return t("playlist.refreshed", { count: playlist?.channelCount ?? 0 });
+  }
+  if (command.type === "playlist.activate") {
+    const count = playlist?.channelCount ?? 0;
+    return count > 0
+      ? t("playlist.loaded", { name: playlist?.name ?? previousName, count })
+      : t("playlist.savedNoChannels", { name: playlist?.name ?? previousName });
+  }
+  if (command.type === "playlist.update") {
+    return t("playlist.updated", { name: playlist?.name ?? previousName });
+  }
+  if (command.type === "playlist.remove") {
+    return t("playlist.removed", { name: previousName });
+  }
+  if (command.type === "playlist.add") {
+    const name =
+      command.name.trim() ||
+      nameFromUrl(command.source.kind === "m3u" ? command.source.url : command.source.server);
+    if (settings.playlists.length !== 1) return t("playlist.saved", { name });
+    const count = settings.playlists[0].channelCount ?? 0;
+    return count > 0
+      ? t("playlist.loaded", { name, count })
+      : t("playlist.savedNoChannels", { name });
+  }
+  if (command.type === "setting") return t("playlist.saved", { name: t("settings.title") });
+  if (command.type === "cache.clear") return t("settings.clearCacheDone");
+  if (command.type === "app.reset") return t("settings.resetDone");
+}
+
+async function performGuarded(command: RemoteCommand): Promise<GuardedOutcome> {
+  try {
+    const previousName =
+      "id" in command
+        ? (useSettings.getState().playlists.find((playlist) => playlist.id === command.id)
+            ?.name ?? "")
+        : "";
+    const reason = await perform(command);
+    if (reason === "cancelled") return { cancelled: true };
+    return {
+      reason,
+      message: reason ? undefined : commandSuccessMessage(command, previousName),
+    };
+  } catch (error) {
+    if (error instanceof PlaylistEntryError) {
+      return { reason: "failed", message: safeEntryMessage(error.problem) };
+    }
+    if (error instanceof DOMException && error.name === "AbortError") {
+      return { cancelled: true };
+    }
+    const locale = resolveLocale(useSettings.getState().locale);
+    return { reason: "failed", message: translate(locale, "remote.changeFailed") };
+  }
 }
 
 async function applyRemoteCommandNow(request: CommandRequest): Promise<CommandResult> {
@@ -683,15 +954,22 @@ async function applyRemoteCommandNow(request: CommandRequest): Promise<CommandRe
     return request.id ? remember(request.id, invalid) : invalid;
   }
   if (command.type === "setup.preview" || command.type === "remote.key") {
-    const failure = await perform(command);
-    return remember(request.id, result(!failure, failure));
+    const outcome = await performGuarded(command);
+    if (outcome.cancelled)
+      return remember(request.id, result(true, undefined, undefined, true));
+    return remember(request.id, result(!outcome.reason, outcome.reason, outcome.message));
   }
   if (request.revision !== revision) return remember(request.id, result(false, "conflict"));
 
-  const failure = await perform(command);
-  if (failure) return remember(request.id, result(false, failure));
+  const outcome = await performGuarded(command);
+  if (outcome.cancelled) {
+    return remember(request.id, result(true, undefined, undefined, true));
+  }
+  if (outcome.reason) {
+    return remember(request.id, result(false, outcome.reason, outcome.message));
+  }
   revision += 1;
-  return remember(request.id, result(true));
+  return remember(request.id, result(true, undefined, outcome.message));
 }
 
 export function applyRemoteCommand(request: CommandRequest): Promise<CommandResult> {

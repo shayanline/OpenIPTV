@@ -69,6 +69,14 @@ const paths: Record<string, React.ReactNode> = {
       <path d="m6.18 5.276 3.1 3.899" />
     </>
   ),
+  cast: (
+    <>
+      <circle cx="9" cy="7" r="3" />
+      <path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6" />
+      <circle cx="17.5" cy="8.5" r="2.5" />
+      <path d="M16.8 14.2c2.9.6 5.2 3 5.2 5.8" />
+    </>
+  ),
   series: (
     <>
       <path d="m16 6 4 14" />
@@ -196,6 +204,12 @@ const paths: Record<string, React.ReactNode> = {
       <path d="m2 2 20 20" />
     </>
   ),
+  check: (
+    <>
+      <path d="m9 12 2 2 4-4" />
+      <circle cx="12" cy="12" r="10" />
+    </>
+  ),
   tv: (
     <>
       <path d="m17 2-5 5-5-5" />
@@ -250,6 +264,12 @@ const paths: Record<string, React.ReactNode> = {
       <rect x="9" y="2" width="6" height="13" rx="3" />
     </>
   ),
+  close: (
+    <>
+      <path d="M18 6 6 18" />
+      <path d="m6 6 12 12" />
+    </>
+  ),
   return: (
     <>
       <path d="M9 14 4 9l5-5" />
@@ -273,10 +293,16 @@ const paths: Record<string, React.ReactNode> = {
 
 export type IconName = keyof typeof paths;
 
-export function Icon({ name }: { name: IconName }) {
+export function Icon({
+  name,
+  logicalDirection = false,
+}: {
+  name: IconName;
+  logicalDirection?: boolean;
+}) {
   return (
     <svg
-      className={`icon icon-${name}`}
+      className={`icon icon-${name} ${logicalDirection ? "icon-logical-direction" : ""}`.trim()}
       viewBox="0 0 24 24"
       aria-hidden="true"
       focusable="false"

@@ -8,6 +8,7 @@ import {
   parseXtreamTemplateUrl,
   sourceDisplay,
   type XtreamSource,
+  validatePlaylistSource,
   xtreamFromServerField,
   xtreamSource,
 } from "../src/services/playlistUrl";
@@ -28,6 +29,72 @@ const accepted = [
   // No file extension at all: plenty of providers serve a playlist straight off a path.
   "https://example.com/playlist",
 ];
+
+test.each([
+  [{ server: "" }, { server: "validation.enterServer" }],
+  [{ server: "provider.example" }, { server: "validation.startHttp" }],
+  [{ server: "ftp://provider.example" }, { server: "validation.httpOnly" }],
+  [
+    { server: "https://viewer:secret@provider.example" },
+    { server: "validation.serverWithoutCredentials" },
+  ],
+  [{ username: "  " }, { username: "validation.enterUsername" }],
+  [{ password: "" }, { password: "validation.enterPassword" }],
+  [
+    { server: "", username: "", password: "" },
+    {
+      server: "validation.enterServer",
+      username: "validation.enterUsername",
+      password: "validation.enterPassword",
+    },
+  ],
+] as const)(
+  "source validation assigns each invalid Xtream field its own guidance: %j",
+  (fields, problems) => {
+    const result = validatePlaylistSource({
+      kind: "xtream",
+      server: "https://provider.example",
+      username: "viewer",
+      password: "secret",
+      output: "m3u8",
+      ...fields,
+    });
+    assert.equal(result.source, null);
+    assert.deepEqual(result.problems, problems);
+  },
+);
+
+test("source validation keeps M3U guidance on the address and preserves password content", () => {
+  assert.deepEqual(validatePlaylistSource({ kind: "m3u", url: "" }).problems, {
+    url: "validation.enterAddress",
+  });
+  assert.deepEqual(
+    validatePlaylistSource({ kind: "m3u", url: " https://provider.example/list.m3u " }),
+    {
+      source: { kind: "m3u", url: "https://provider.example/list.m3u" },
+      problems: {},
+    },
+  );
+  assert.deepEqual(
+    validatePlaylistSource({
+      kind: "xtream",
+      server: "https://provider.example/portal/get.php",
+      username: " viewer ",
+      password: " p& ss ",
+      output: "ts",
+    }),
+    {
+      source: {
+        kind: "xtream",
+        server: "https://provider.example/portal",
+        username: "viewer",
+        password: " p& ss ",
+        output: "ts",
+      },
+      problems: {},
+    },
+  );
+});
 
 for (const url of accepted) {
   test(`accepts ${url}`, () => assert.equal(checkPlaylistUrl(url).ok, true));

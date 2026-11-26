@@ -1,4 +1,4 @@
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import {
   directionFor,
   detectSystemLocale,
@@ -58,8 +58,37 @@ describe("locale selection", () => {
     expect(formatNumber("fa", 1234)).toBe("۱٬۲۳۴");
   });
 
-  test("ships a translation for every interface message in every locale", () => {
-    for (const locale of LOCALES) expect(untranslatedKeys(locale)).toEqual([]);
+  test("channel and category numbers reuse one formatter per locale", async () => {
+    vi.resetModules();
+    const numbers = vi.spyOn(Intl, "NumberFormat");
+    try {
+      const locale = await import("../src/services/locale");
+      expect(locale.formatNumber("en", 1234)).toBe("1,234");
+      expect(locale.formatNumber("en", 5001)).toBe("5,001");
+      locale.formatNumber("fa", 1234);
+      locale.formatNumber("fa", 5001);
+      expect(numbers).toHaveBeenCalledTimes(2);
+      expect(numbers.mock.calls.map(([id]) => id)).toEqual(["en", "fa"]);
+    } finally {
+      numbers.mockRestore();
+    }
+  });
+
+  test("number formatting retains its fallback when the engine rejects a formatter", async () => {
+    vi.resetModules();
+    const numbers = vi.spyOn(Intl, "NumberFormat").mockImplementation(() => {
+      throw new Error("Unavailable formatter");
+    });
+    try {
+      const locale = await import("../src/services/locale");
+      expect(locale.formatNumber("en", 1234)).toBe("1234");
+    } finally {
+      numbers.mockRestore();
+    }
+  });
+
+  test.each(LOCALES)("ships a translation for every interface message in %s", (locale) => {
+    expect(untranslatedKeys(locale)).toEqual([]);
   });
 
   test("offers fifteen additional locales sorted by English name", () => {

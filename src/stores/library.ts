@@ -7,6 +7,7 @@ import {
   buildXtreamCatchupUrl,
   buildXtreamEpisodeUrl,
   buildXtreamMovieUrl,
+  compareXtreamSeasonKeys,
   directSourceFingerprint,
   loadXtreamCategories,
   loadXtreamGuide,
@@ -35,6 +36,7 @@ import {
   usePersonal,
 } from "./personal";
 import { adoptCategorySummaries, orderedCategoryItems, useLineup } from "./lineup";
+import { knownCategoryCount } from "../services/categoryCounts";
 
 export type LibraryKind = Exclude<XtreamContentKind, "live">;
 export type LibraryItem = XtreamMovie | XtreamSeries;
@@ -55,9 +57,9 @@ export type LibraryResource<T> = {
 
 export type VodCategoryRow = {
   key: string;
-  source: "continue" | "favourites" | "all" | "provider";
+  source: "continue" | "favourites" | "provider";
   name: string;
-  count: number;
+  count?: number;
 };
 
 export interface SeriesContinueTarget {
@@ -95,10 +97,12 @@ interface LibraryState {
   categories: Record<LibraryKind, LibraryList<XtreamCategory>>;
   categoryItems: Record<string, LibraryList<LibraryItem>>;
   searchItems: Record<LibraryKind, LibraryList<LibraryItem>>;
+  searchItemsByCategory: Record<LibraryKind, Record<string, LibraryItem[]>>;
   movieDetails: Record<string, LibraryDetail<XtreamMovieDetail>>;
   seriesDetails: Record<string, LibraryDetail<XtreamSeriesDetail>>;
   guides: Record<string, ChannelGuide>;
   selectPlaylist: (playlist: Playlist | undefined) => void;
+  adoptSession: (playlist: Playlist, session: XtreamSession) => void;
   loadCategories: (kind: LibraryKind) => Promise<void>;
   loadCategory: {
     (categoryKey: string): Promise<void>;
@@ -109,6 +113,11 @@ interface LibraryState {
   loadMovie: (movieKey: string) => Promise<void>;
   loadSeries: (seriesKey: string) => Promise<void>;
   categoriesFor: (kind: LibraryKind) => VodCategoryRow[];
+  categoryCountFor: (
+    kind: LibraryKind,
+    categoryKey: string,
+    declared?: number,
+  ) => number | undefined;
   itemsFor: (kind: LibraryKind, categoryKey: string) => LibraryResource<LibraryItem[]>;
   progressSeedFor: (
     item: XtreamMovie | XtreamEpisode,
@@ -133,10 +142,61 @@ const initialCategories = (): Record<LibraryKind, LibraryList<XtreamCategory>> =
   movie: emptyList(),
   series: emptyList(),
 });
+
+/** A shared metadata refresh keeps each unchanged mode's category list stable. */
+function categoryListsFor(
+  all: readonly XtreamCategory[],
+  previous: Record<LibraryKind, LibraryList<XtreamCategory>>,
+): Record<LibraryKind, LibraryList<XtreamCategory>> {
+  const next = initialCategories();
+  for (const category of all) {
+    if (category.kind === "movie" || category.kind === "series") {
+      next[category.kind].items.push(category);
+    }
+  }
+  for (const kind of ["movie", "series"] as const) {
+    const items = next[kind].items;
+    const state = items.length ? "loaded" : "empty";
+    const current = previous[kind];
+    if (
+      current.state === state &&
+      current.error === undefined &&
+      current.items.length === items.length &&
+      current.items.every((item, index) => {
+        const candidate = items[index];
+        return (
+          item.key === candidate.key &&
+          item.id === candidate.id &&
+          item.kind === candidate.kind &&
+          item.name === candidate.name &&
+          item.count === candidate.count
+        );
+      })
+    ) {
+      next[kind] = current;
+    } else {
+      next[kind].state = state;
+    }
+  }
+  return next.movie === previous.movie && next.series === previous.series ? previous : next;
+}
+
 const initialSearch = (): Record<LibraryKind, LibraryList<LibraryItem>> => ({
   movie: emptyList(),
   series: emptyList(),
 });
+const emptySearchItemsByCategory = (): Record<LibraryKind, Record<string, LibraryItem[]>> => ({
+  movie: {},
+  series: {},
+});
+const indexItemsByCategory = (items: readonly LibraryItem[]) => {
+  const indexed: Record<string, LibraryItem[]> = {};
+  for (const item of items) {
+    indexed[item.categoryKey] ??= [];
+    indexed[item.categoryKey].push(item);
+  }
+  return indexed;
+};
 
 let selected: Playlist | undefined;
 let generation = 0;
@@ -516,6 +576,36 @@ function resourceError(frame: LibraryList<unknown>): LibraryError | undefined {
   return "network";
 }
 
+function sameLibraryItem(left: LibraryItem, right: LibraryItem): boolean {
+  if (
+    left.key !== right.key ||
+    left.categoryKey !== right.categoryKey ||
+    left.name !== right.name ||
+    left.logo !== right.logo ||
+    left.year !== right.year ||
+    left.rating !== right.rating
+  )
+    return false;
+  if ("streamId" in left && "streamId" in right) {
+    return (
+      left.streamId === right.streamId &&
+      left.directSource === right.directSource &&
+      left.extension === right.extension
+    );
+  }
+  return "seriesId" in left && "seriesId" in right && left.seriesId === right.seriesId;
+}
+
+function sameLibraryItems(
+  left: readonly LibraryItem[],
+  right: readonly LibraryItem[],
+): boolean {
+  return (
+    left.length === right.length &&
+    left.every((item, index) => sameLibraryItem(item, right[index]))
+  );
+}
+
 function favouriteItem(snapshot: FavouriteSnapshot): LibraryItem {
   if (snapshot.kind === "movie") {
     return {
@@ -572,6 +662,7 @@ function progressItem(entry: ResolvedPlaybackProgress): LibraryItem | null {
 /** Resolve the movie records a complete index can prove, and drop the ones it disproves. */
 function resolveMovieProgress(playlist: Playlist, items: readonly XtreamMovie[]) {
   const personal = usePersonal.getState();
+  if (!personal.progress.some((entry) => "legacyOrder" in entry)) return;
   personal.resolveLegacyProgress(items.map((movie) => movieSeed(playlist.id, movie)));
   personal.removeAbsentLegacyProgress(
     playlist.id,
@@ -582,11 +673,11 @@ function resolveMovieProgress(playlist: Playlist, items: readonly XtreamMovie[])
 
 /** Resolve the episode records one loaded series detail can prove; it proves nothing absent. */
 function resolveEpisodeProgress(playlist: Playlist, detail: XtreamSeriesDetail) {
-  usePersonal
-    .getState()
-    .resolveLegacyProgress(
-      detail.episodes.map((episode) => episodeSeed(playlist.id, detail, episode)),
-    );
+  const personal = usePersonal.getState();
+  if (!personal.progress.some((entry) => "legacyOrder" in entry)) return;
+  personal.resolveLegacyProgress(
+    detail.episodes.map((episode) => episodeSeed(playlist.id, detail, episode)),
+  );
 }
 
 export const useLibrary = create<LibraryState>((set, get) => ({
@@ -595,6 +686,7 @@ export const useLibrary = create<LibraryState>((set, get) => ({
   categories: initialCategories(),
   categoryItems: {},
   searchItems: initialSearch(),
+  searchItemsByCategory: emptySearchItemsByCategory(),
   movieDetails: {},
   seriesDetails: {},
   guides: {},
@@ -611,21 +703,24 @@ export const useLibrary = create<LibraryState>((set, get) => ({
       categories: initialCategories(),
       categoryItems: {},
       searchItems: initialSearch(),
+      searchItemsByCategory: emptySearchItemsByCategory(),
       movieDetails: {},
       seriesDetails: {},
       guides: {},
     });
   },
 
+  adoptSession(playlist, session) {
+    if (selected && selectionKey(selected) === selectionKey(playlist)) {
+      sessions.set(selectionKey(playlist), session);
+    }
+  },
+
   async loadCategories(kind) {
     const playlist = selected;
-    if (
-      !playlist ||
-      get().categories[kind].state === "loading" ||
-      get().categories[kind].state === "loaded"
-    )
-      return;
+    if (!playlist || get().categories[kind].state === "loaded") return;
     const frameKey = `categories:${kind}`;
+    if (get().categories[kind].state === "loading") return requests.get(frameKey);
     return deduplicate(frameKey, async () => {
       const owned = generation;
       const key = `${cachePrefix(playlist)}:categories`;
@@ -645,12 +740,9 @@ export const useLibrary = create<LibraryState>((set, get) => ({
               .map((category) => ({ ...category, channels: [] })),
           );
           if (owned !== generation || controller.signal.aborted) return;
-          const next = { ...get().categories };
-          for (const contentKind of ["movie", "series"] as const) {
-            const items = all.filter((category) => category.kind === contentKind);
-            next[contentKind] = { state: items.length ? "loaded" : "empty", items };
-          }
-          set({ categories: next });
+          const previous = get().categories;
+          const next = categoryListsFor(all, previous);
+          if (next !== previous) set({ categories: next });
           void writeDisk(key, JSON.stringify(all), "catalogue");
           write(stampKey(key), String(Date.now()));
         } catch (error) {
@@ -677,13 +769,9 @@ export const useLibrary = create<LibraryState>((set, get) => ({
             .map((category) => ({ ...category, channels: [] })),
         );
         if (owned !== generation) return;
-        const items = fromCache.filter((category) => category.kind === kind);
-        set({
-          categories: {
-            ...get().categories,
-            [kind]: { state: items.length ? "loaded" : "empty", items },
-          },
-        });
+        const previous = get().categories;
+        const next = categoryListsFor(fromCache, previous);
+        if (next !== previous) set({ categories: next });
         if (!fresh(key)) refreshWhenIdle(key, owned, refresh);
         return;
       }
@@ -702,13 +790,12 @@ export const useLibrary = create<LibraryState>((set, get) => ({
           ? "series"
           : undefined;
     if (!playlist || !kind) return;
+    const indexState = get().searchItems[kind].state;
+    if (indexState === "loading") return requests.get(`search:${kind}`);
+    if (loadedSearches.has(`${selectionKey(playlist)}:${kind}`)) return;
     const current = get().categoryItems[categoryKey];
-    if (
-      current?.state === "loading" ||
-      current?.state === "loaded" ||
-      current?.state === "empty"
-    )
-      return;
+    if (current?.state === "loaded" || current?.state === "empty") return;
+    if (current?.state === "loading") return requests.get(categoryKey);
     return deduplicate(categoryKey, async () => {
       const owned = generation;
       set({
@@ -730,14 +817,21 @@ export const useLibrary = create<LibraryState>((set, get) => ({
               ? await loadXtreamMovies(session, playlist.id, id, controller.signal)
               : await loadXtreamSeries(session, playlist.id, id, controller.signal);
           if (owned !== generation || controller.signal.aborted) return;
-          set({
-            categoryItems: {
-              ...get().categoryItems,
-              [categoryKey]: { state: items.length ? "loaded" : "empty", items },
-            },
-          });
+          const previous = get().categoryItems[categoryKey];
+          if (
+            !previous ||
+            (previous.state !== "loaded" && previous.state !== "empty") ||
+            !sameLibraryItems(previous.items, items)
+          ) {
+            set({
+              categoryItems: {
+                ...get().categoryItems,
+                [categoryKey]: { state: items.length ? "loaded" : "empty", items },
+              },
+            });
+            void writeDisk(key, JSON.stringify(items), "catalogue");
+          }
           staleResources.delete(categoryKey);
-          void writeDisk(key, JSON.stringify(items), "catalogue");
           write(stampKey(key), String(Date.now()));
         } catch (error) {
           if (owned === generation && !controller.signal.aborted && !showingCache) {
@@ -801,17 +895,28 @@ export const useLibrary = create<LibraryState>((set, get) => ({
               : await loadXtreamSeries(session, playlist.id, "", controller.signal);
           if (owned !== generation || controller.signal.aborted) return;
           loadedSearches.add(owner);
-          set({
-            searchItems: {
-              ...get().searchItems,
-              [kind]: { state: items.length ? "loaded" : "empty", items },
-            },
-          });
-          if (kind === "movie" && !controller.signal.aborted && owned === generation) {
-            resolveMovieProgress(playlist, items as XtreamMovie[]);
+          const previous = get().searchItems[kind];
+          if (
+            !previous ||
+            (previous.state !== "loaded" && previous.state !== "empty") ||
+            !sameLibraryItems(previous.items, items)
+          ) {
+            set({
+              searchItems: {
+                ...get().searchItems,
+                [kind]: { state: items.length ? "loaded" : "empty", items },
+              },
+              searchItemsByCategory: {
+                ...get().searchItemsByCategory,
+                [kind]: indexItemsByCategory(items),
+              },
+            });
+            if (kind === "movie" && !controller.signal.aborted && owned === generation) {
+              resolveMovieProgress(playlist, items as XtreamMovie[]);
+            }
+            void writeDisk(key, JSON.stringify(items), "catalogue");
           }
           staleResources.delete(`${kind}:all`);
-          void writeDisk(key, JSON.stringify(items), "catalogue");
           write(stampKey(key), String(Date.now()));
         } catch (error) {
           if (owned === generation && !controller.signal.aborted && !showingCache) {
@@ -835,6 +940,10 @@ export const useLibrary = create<LibraryState>((set, get) => ({
           searchItems: {
             ...get().searchItems,
             [kind]: { state: fromCache.length ? "loaded" : "empty", items: fromCache },
+          },
+          searchItemsByCategory: {
+            ...get().searchItemsByCategory,
+            [kind]: indexItemsByCategory(fromCache),
           },
         });
         if (kind === "movie") resolveMovieProgress(playlist, fromCache as XtreamMovie[]);
@@ -992,18 +1101,34 @@ export const useLibrary = create<LibraryState>((set, get) => ({
       const fromCache = await cached<XtreamSeriesDetail>(key);
       if (owned !== generation) return;
       if (fromCache) {
+        const value = {
+          ...fromCache,
+          seasons: [...fromCache.seasons].sort(compareXtreamSeasonKeys),
+        };
         set({
           seriesDetails: {
             ...get().seriesDetails,
-            [seriesKey]: { state: "loaded", value: fromCache },
+            [seriesKey]: { state: "loaded", value },
           },
         });
-        resolveEpisodeProgress(playlist, fromCache);
+        resolveEpisodeProgress(playlist, value);
         if (!fresh(key)) refreshWhenIdle(key, owned, refresh);
         return;
       }
       await refresh();
     });
+  },
+
+  categoryCountFor(kind, categoryKey, declared) {
+    const state = get();
+    const indexed = !!selected && loadedSearches.has(`${selectionKey(selected)}:${kind}`);
+    return knownCategoryCount(
+      categoryKey,
+      declared,
+      state.categoryItems[categoryKey],
+      indexed ? state.searchItems[kind].state : undefined,
+      indexed ? state.searchItemsByCategory[kind][categoryKey] : undefined,
+    );
   },
 
   categoriesFor(kind) {
@@ -1029,24 +1154,21 @@ export const useLibrary = create<LibraryState>((set, get) => ({
         count: favourites.length,
       });
     }
-    rows.push({
-      key: `${kind}:all`,
-      source: "all",
-      name: "All",
-      count: get().searchItems[kind].items.length,
-    });
     const effective = useLineup.getState();
+    const providerCategories = get().categories[kind].items;
+    const providerByKey = new Map(providerCategories.map((item) => [item.key, item]));
     const categories =
       effective.playlistId === get().playlistId
         ? effective.categories.filter((category) => category.kind === kind && !category.hidden)
-        : get().categories[kind].items;
+        : providerCategories;
     for (const category of categories) {
-      const provider = get().categories[kind].items.find((item) => item.key === category.key);
+      const provider = providerByKey.get(category.key);
+      const count = get().categoryCountFor(kind, category.key, provider?.count);
       rows.push({
         key: category.key,
         source: "provider",
         name: category.name,
-        count: get().categoryItems[category.key]?.items.length ?? provider?.count ?? 0,
+        ...(count !== undefined ? { count } : {}),
       });
     }
     return rows;
@@ -1066,10 +1188,19 @@ export const useLibrary = create<LibraryState>((set, get) => ({
         .map(favouriteItem);
       return { state: value.length ? "loaded" : "empty", value, stale: false };
     }
-    const frame =
+    const index = get().searchItems[kind];
+    const indexed = !!selected && loadedSearches.has(`${selectionKey(selected)}:${kind}`);
+    const indexedItems = indexed ? (get().searchItemsByCategory[kind][categoryKey] ?? []) : [];
+    const frame: LibraryList<LibraryItem> | undefined =
       categoryKey === `${kind}:all`
-        ? get().searchItems[kind]
-        : get().categoryItems[categoryKey];
+        ? index
+        : indexed
+          ? {
+              ...index,
+              state: index.state === "loaded" && !indexedItems.length ? "empty" : index.state,
+              items: indexedItems,
+            }
+          : get().categoryItems[categoryKey];
     if (!frame) return { state: "idle", value: [], stale: false };
     return {
       state: frame.state === "too-large" ? "failed" : frame.state,
@@ -1079,7 +1210,7 @@ export const useLibrary = create<LibraryState>((set, get) => ({
         (item) => item.key,
         (item) => item.name,
       ),
-      stale: staleResources.has(categoryKey),
+      stale: staleResources.has(categoryKey) || (indexed && staleResources.has(`${kind}:all`)),
       ...(resourceError(frame) ? { error: resourceError(frame) } : {}),
     };
   },
@@ -1193,7 +1324,25 @@ export const useLibrary = create<LibraryState>((set, get) => ({
     if (frameKey === "search:movie" || frameKey === "search:series") {
       const kind = frameKey.slice("search:".length) as LibraryKind;
       loadedSearches.delete(`${selected ? selectionKey(selected) : ""}:${kind}`);
-      set({ searchItems: { ...get().searchItems, [kind]: emptyList() } });
+      set({
+        searchItems: { ...get().searchItems, [kind]: emptyList() },
+        searchItemsByCategory: {
+          ...get().searchItemsByCategory,
+          [kind]: {},
+        },
+      });
+      return get().loadSearch(kind);
+    }
+    if (frameKey === "movie:all" || frameKey === "series:all") {
+      const kind = frameKey.slice(0, frameKey.indexOf(":")) as LibraryKind;
+      loadedSearches.delete(`${selected ? selectionKey(selected) : ""}:${kind}`);
+      set({
+        searchItems: { ...get().searchItems, [kind]: emptyList() },
+        searchItemsByCategory: {
+          ...get().searchItemsByCategory,
+          [kind]: {},
+        },
+      });
       return get().loadSearch(kind);
     }
     if (frameKey.startsWith("movie:") || frameKey.startsWith("series:")) {
@@ -1221,6 +1370,7 @@ export const useLibrary = create<LibraryState>((set, get) => ({
       categories: initialCategories(),
       categoryItems: {},
       searchItems: initialSearch(),
+      searchItemsByCategory: emptySearchItemsByCategory(),
       movieDetails: {},
       seriesDetails: {},
       guides: {},

@@ -159,6 +159,46 @@ test("category visibility uses the playlist's exact category text", () => {
   );
 });
 
+test("empty categories stay hidden unless the viewer asks to keep them", () => {
+  const empty = { key: "Empty", name: "Empty", channels: [] as Channel[] };
+  const channels = [...news.channels, ...sport.channels];
+  const categories = [news, empty, sport];
+  const names = (visibility: {
+    hiddenCategories: string[];
+    hiddenChannels?: string[];
+    hideEmptyCategories?: boolean;
+  }) => lineupOf(channels, categories, [], visibility).lists.map((list) => list.name);
+
+  assert.deepEqual(names({ hiddenCategories: [] }), ["News", "Sport"]);
+  assert.deepEqual(names({ hiddenCategories: [], hideEmptyCategories: true }), [
+    "News",
+    "Sport",
+  ]);
+  assert.deepEqual(names({ hiddenCategories: [], hideEmptyCategories: false }), [
+    "News",
+    "Empty",
+    "Sport",
+  ]);
+  assert.deepEqual(names({ hiddenCategories: ["Empty"], hideEmptyCategories: false }), [
+    "News",
+    "Sport",
+  ]);
+
+  const lineup = lineupOf(channels, categories, [], {
+    hiddenCategories: [],
+    hiddenChannels: ["d"],
+    hideEmptyCategories: false,
+  });
+  assert.deepEqual(
+    lineup.browsableChannels.map((item) => item.id),
+    ["a", "b", "c"],
+  );
+  assert.deepEqual(
+    lineup.lists.find((list) => list.key === "Sport")?.channels.map((item) => item.id),
+    [],
+  );
+});
+
 test("channel up and down move by one", () => {
   assert.equal(nextChannel(news.channels, "a", 1), 1);
   assert.equal(nextChannel(news.channels, "b", -1), 0);

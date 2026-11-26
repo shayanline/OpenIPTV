@@ -1,13 +1,12 @@
-import { memo, useRef } from "react";
+import { memo, useRef, useState } from "react";
+import { pointerOnly, usePointerInput } from "../hooks/usePointerAwake";
 import { useLocale } from "../hooks/useLocale";
 import { Icon } from "./Icon";
 import { Text } from "./Text";
 import { ScrollIndicator } from "./ScrollIndicator";
 import { KeyGuide, SettingsPath } from "./KeyGuide";
-import { RAIL_ROW_BASE, useWindowed } from "../hooks/useWindowed";
+import { RAIL_ROW_BASE, useNavigableWindow } from "../hooks/useWindowed";
 import { useViewport } from "../hooks/useViewport";
-import type { AppMode } from "../services/surfaceStack";
-import { ContentSelector } from "./ContentSelector";
 
 /**
  * The category rail.
@@ -36,14 +35,8 @@ interface Props {
   allHidden: boolean;
   focused: boolean;
   scale: number;
-  content?: {
-    value: AppMode;
-    focus: AppMode;
-    available: readonly AppMode[];
-    focused: boolean;
-    onChange: (value: AppMode) => void;
-  };
   /** Must be stable, or every row rebuilds on every press. */
+  onFocus: (index: number) => void;
   onSelect: (index: number) => void;
   onWheel: (direction: -1 | 1) => void;
 }
@@ -52,41 +45,54 @@ const Row = memo(function Row({
   name,
   count,
   index,
-  selected,
+  cursor,
+  pointerMode,
   showing,
   hidden,
   top,
   height,
+  onFocus,
   onPick,
 }: {
   name: string;
   count: number;
   index: number;
-  selected: boolean;
+  cursor: boolean;
+  pointerMode: boolean;
   showing: boolean;
   hidden: boolean;
   top: number;
   height: number;
+  onFocus: (index: number) => void;
   onPick: (index: number) => void;
 }) {
   const { t, number } = useLocale();
+  const [hovered, setHovered] = useState(false);
   return (
     <button
       type="button"
-      className={`row ${selected ? "selected" : ""} ${showing ? "showing" : ""} ${hidden ? "hidden" : ""}`}
+      className={`row ${cursor ? "cursor" : ""} ${showing ? "showing" : ""} ${hidden ? "hidden" : ""}`}
       style={{ top, height }}
+      onPointerEnter={() =>
+        pointerOnly(() => {
+          setHovered(true);
+          onFocus(index);
+        })
+      }
+      onPointerLeave={() => setHovered(false)}
       onClick={() => onPick(index)}
     >
-      {/* Wrapped to two lines rather than cut with an ellipsis. A playlist that names its
-          groups in two scripts, "News | اخبار", truncates catastrophically: the ellipsis
-          removes the logical end of the string, which in a right to left run is its visual
-          beginning, so what is left on screen is the middle of a word. */}
-      <Text value={name} className="row-label two-line" marquee />
+      <Text
+        value={name}
+        className="row-label"
+        marquee
+        active={pointerMode ? hovered : cursor}
+      />
       {hidden && (
         <span className="hidden-state" role="img" aria-label={t("channel.hidden")}>
           <Icon name="hidden" />
         </span>
-      )}
+      )}{" "}
       <span className="count">{number(count)}</span>
     </button>
   );
@@ -108,16 +114,16 @@ export const Sidebar = memo(function Sidebar({
   allHidden,
   focused,
   scale,
-  content,
+  onFocus,
   onSelect,
   onWheel,
 }: Props) {
   const { t, number, direction } = useLocale();
+  const pointerMode = usePointerInput();
   const viewport = useRef<HTMLDivElement>(null);
   const height = useViewport(viewport);
   // Cursor zero is the Settings key in the header, so the list's own cursor is one behind.
-  // Taller rows here than in the channel list, because a group title wraps to two lines.
-  const win = useWindowed(
+  const win = useNavigableWindow(
     categories.length,
     Math.max(0, cursor - 1),
     height,
@@ -133,11 +139,13 @@ export const Sidebar = memo(function Sidebar({
         name={categories[i].name}
         count={categories[i].count}
         index={i}
-        selected={cursor === i + 1}
+        cursor={focused && cursor === i + 1}
+        pointerMode={pointerMode}
         showing={i === selected}
         hidden={categories[i].hidden}
         top={i * win.row}
         height={win.row}
+        onFocus={onFocus}
         onPick={onSelect}
       />,
     );
@@ -145,17 +153,6 @@ export const Sidebar = memo(function Sidebar({
 
   return (
     <nav className={`rail pane ${focused ? "focused" : ""}`}>
-      {content && (
-        <div className="rail-content-switcher">
-          <ContentSelector
-            value={content.value}
-            focus={content.focus}
-            available={content.available}
-            focused={content.focused}
-            onChange={content.onChange}
-          />
-        </div>
-      )}
       {/*
        * What this column is, and how many are in it.
        *
@@ -182,10 +179,15 @@ export const Sidebar = memo(function Sidebar({
         className="viewport"
         ref={viewport}
         onWheel={(event) => {
-          if (event.deltaY) onWheel(event.deltaY > 0 ? 1 : -1);
+          if (!event.deltaY) return;
+          if (win.onWheel(event.deltaY, event.deltaMode)) {
+            event.preventDefault();
+            return;
+          }
+          onWheel(event.deltaY > 0 ? 1 : -1);
         }}
       >
-        <div className="window" style={{ transform: `translateY(${-win.offset}px)` }}>
+        <div className="window" style={{ transform: `translateY(${-win.scrollOffset}px)` }}>
           {rows}
         </div>
         {!loading &&
@@ -207,7 +209,11 @@ export const Sidebar = memo(function Sidebar({
           ) : (
             <p className="empty">{t("channel.noCategories")}</p>
           ))}
-        <ScrollIndicator count={categories.length} first={win.first} visible={win.visible} />
+        <ScrollIndicator
+          count={categories.length}
+          first={win.indicatorFirst}
+          visible={win.visible}
+        />
       </div>
     </nav>
   );

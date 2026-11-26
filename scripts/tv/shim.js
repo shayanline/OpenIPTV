@@ -10,7 +10,7 @@
  * imitated: AVPlay's state machine rejects calls made in the wrong state exactly as the
  * real one does, so an ordering mistake fails here instead of silently on the TV.
  *
- * Playback is real. AVPlay itself is Samsung firmware and cannot exist here, but nothing
+ * Interactive playback is real. AVPlay itself is Samsung firmware and cannot exist here, but nothing
  * says the imitation has to be hollow, so each call is carried out by hls.js against a
  * video element hidden behind the page, in the place the hardware plane would occupy. The
  * app cannot tell the difference: it calls open, prepareAsync and play, and a picture
@@ -19,6 +19,8 @@
  * What that does not reproduce is the hardware: a TV decodes in silicon on a plane below
  * the browser, and here a software decoder paints into the page. Timing and cost differ,
  * and the real AVPlay error names cannot be produced at all.
+ * Measurements use an explicit clock and state mode so browser demuxing does not contaminate
+ * the application's CPU timings. Fault journeys can hold preparation until completed manually.
  */
 (() => {
   const log = (...a) => console.log("[tv]", ...a);
@@ -131,7 +133,10 @@
   let frameSample = null;
   const originalHidden = Object.getOwnPropertyDescriptor(document, "hidden");
   const originalVisibility = Object.getOwnPropertyDescriptor(document, "visibilityState");
-  let controlled = false;
+  const nativeTiming = window.__openiptvNativeTiming === true;
+  let controlled = nativeTiming;
+  let autoPrepare = nativeTiming;
+  let prepareTimer = 0;
   let connections = 0;
   let seeks = [];
   let buffering = false;
@@ -180,7 +185,8 @@
       pendingPrepare = null;
       if (cancelledPrepare) cancelledPrepare.fail?.("PLAYER_ERROR_OPERATION_ABORTED");
       listener = {};
-      controlled = false;
+      controlled = nativeTiming;
+      autoPrepare = nativeTiming;
       connections = 0;
       seeks = [];
       buffering = false;
@@ -202,6 +208,7 @@
     },
     useControlledPlayback() {
       controlled = true;
+      autoPrepare = false;
       controlledTime = 0;
       controlledAt = performance.now();
     },
@@ -276,6 +283,11 @@
 
   /** Give back the decoder, whichever engine happens to be driving it. */
   const release = () => {
+    window.clearTimeout(prepareTimer);
+    prepareTimer = 0;
+    const cancelledPrepare = pendingPrepare;
+    pendingPrepare = null;
+    cancelledPrepare?.fail?.("PLAYER_ERROR_OPERATION_ABORTED");
     frameSample = null;
     if (hls) {
       try {
@@ -378,10 +390,8 @@
         log("restore");
       },
       /**
-       * Join the stream for real, and report it the way the set would.
-       *
-       * READY is reached when there is actually something to show rather than after a
-       * made up delay, so the app's loading states last as long as loading does.
+       * Measurement timing excludes media loading and decoding. Interactive playback waits
+       * for real metadata, while a controlled fault journey owns preparation completion.
        */
       prepareAsync(ok, fail) {
         guard("prepareAsync");
@@ -389,6 +399,12 @@
           buffering = true;
           pendingPrepare = { ok, fail };
           listener.onbufferingstart?.();
+          if (autoPrepare) {
+            prepareTimer = window.setTimeout(() => {
+              prepareTimer = 0;
+              window.__openiptvTvFaults.completePrepare();
+            }, 100);
+          }
           return;
         }
         const v = video();

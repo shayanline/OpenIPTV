@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useLayoutEffect, useRef } from "react";
 
 /**
  * Samsung remote key codes. The arrows and Enter match a desktop keyboard, so the whole
@@ -158,9 +158,14 @@ export function useRemote(
   handler: (code: number, event: KeyboardEvent) => void,
   capture = false,
 ) {
+  const current = useRef(handler);
+  useLayoutEffect(() => {
+    current.current = handler;
+  }, [handler]);
+  // Keep long press listeners ahead of this stable listener when effects are installed.
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => handler(e.keyCode, e);
+    const onKey = (e: KeyboardEvent) => current.current(e.keyCode, e);
     window.addEventListener("keydown", onKey, capture);
     return () => window.removeEventListener("keydown", onKey, capture);
-  }, [capture, handler]);
+  }, [capture]);
 }

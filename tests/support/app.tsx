@@ -1,4 +1,5 @@
 import { act, render } from "@testing-library/react";
+import { StrictMode } from "react";
 import { afterEach, vi } from "vitest";
 import type { LocalePreference } from "../../src/services/locale";
 import type { PlaylistSource } from "../../src/services/playlistUrl";
@@ -98,7 +99,7 @@ function keyEvent(type: "keydown" | "keyup", code: number) {
   const event = new KeyboardEvent(type, { bubbles: true, cancelable: true });
   Object.defineProperty(event, "keyCode", { get: () => code });
   Object.defineProperty(event, "which", { get: () => code });
-  window.dispatchEvent(event);
+  (document.activeElement ?? window).dispatchEvent(event);
 }
 
 export function pressDown(code: number, repeat = false) {
@@ -106,7 +107,7 @@ export function pressDown(code: number, repeat = false) {
     const event = new KeyboardEvent("keydown", { bubbles: true, cancelable: true, repeat });
     Object.defineProperty(event, "keyCode", { get: () => code });
     Object.defineProperty(event, "which", { get: () => code });
-    window.dispatchEvent(event);
+    (document.activeElement ?? window).dispatchEvent(event);
   });
 }
 
@@ -128,7 +129,10 @@ export async function hold(code: number, ms = 600) {
 }
 
 /** Whether the channel panel is open, which the app expresses by removing the away class. */
-export const panelOpen = () => !document.querySelector(".panel")?.classList.contains("away");
+export const panelOpen = () => {
+  const panel = document.querySelector(".panel");
+  return !!panel && !panel.classList.contains("away");
+};
 
 /**
  * Let a debounce land.
@@ -140,7 +144,8 @@ export const panelOpen = () => !document.querySelector(".panel")?.classList.cont
  */
 export async function settle(ms = 260) {
   await act(async () => {
-    await vi.advanceTimersByTimeAsync(ms);
+    if (vi.isFakeTimers()) await vi.advanceTimersByTimeAsync(ms);
+    else await new Promise((resolve) => setTimeout(resolve, ms));
   });
 }
 
@@ -156,6 +161,8 @@ export interface MountOptions {
    * those was the old behaviour.
    */
   awaitPlaylist?: boolean;
+  /** Seed no playlists at all, so the app opens on first setup instead of the library. */
+  emptyPlaylists?: boolean;
   /**
    * How long the stand in player takes to report a picture, in milliseconds.
    *
@@ -171,15 +178,27 @@ export interface MountOptions {
   liveDvr?: boolean;
   faultPicture?: boolean;
   seekFails?: boolean;
+  /**
+   * Take over what a native seek resolves to, so a test can hold one open and decide
+   * exactly when it lands, like a real engine taking a moment to move.
+   */
+  seekImplementation?: (target: number) => Promise<boolean>;
   playerTracks?: MediaTrack[];
   trackFails?: boolean;
   locale?: LocalePreference;
   hiddenCategories?: string[];
+  appearance?: {
+    hideEmptyCategories?: boolean;
+    showLive?: boolean;
+    showMovies?: boolean;
+    showSeries?: boolean;
+  };
   personalLineup?: unknown;
   personalWrite?: (playlistId: string, value: unknown) => Promise<void>;
   source?: PlaylistSource;
   fetchImplementation?: (input: string | URL, init?: RequestInit) => Promise<unknown>;
   playbackUrl?: (item: XtreamMovie | XtreamEpisode) => Promise<string>;
+  strict?: boolean;
 }
 
 export async function mountApp(
@@ -187,20 +206,24 @@ export async function mountApp(
   {
     resume,
     awaitPlaylist = true,
+    emptyPlaylists = false,
     slowPicture = 0,
     continuousReconnect = false,
     liveDvr = false,
     faultPicture = false,
     seekFails = false,
+    seekImplementation,
     playerTracks = [],
     trackFails = false,
     locale,
     hiddenCategories = [],
+    appearance,
     personalLineup = null,
     personalWrite = async () => {},
     source,
     fetchImplementation,
     playbackUrl,
+    strict = false,
   }: MountOptions = {},
 ) {
   if (!vi.isFakeTimers()) vi.useFakeTimers();
@@ -211,7 +234,7 @@ export async function mountApp(
   muted = false;
   volumeChanges = [];
   playbackPosition = 0;
-  playbackDuration = 120;
+  playbackDuration = liveDvr ? 3600 : 120;
   playbackEvent = null;
 
   vi.doMock("../../src/services/personalDisk", () => ({
@@ -219,6 +242,7 @@ export async function mountApp(
     writeLineup: personalWrite,
     removeLineup: async () => {},
     clearLineups: async () => {},
+    writeLineupIfAbsent: async () => true,
   }));
 
   if (playbackUrl) {
@@ -283,6 +307,7 @@ export async function mountApp(
       }
       seekTo(target: number) {
         seekChanges.push(target - playbackPosition);
+        if (seekImplementation) return seekImplementation(target);
         if (seekFails) return Promise.resolve(false);
         playbackPosition = Math.max(0, Math.min(playbackDuration, target));
         return Promise.resolve(true);
@@ -342,15 +367,18 @@ export async function mountApp(
   localStorage.setItem(
     "openiptv.settings",
     JSON.stringify({
-      playlists: [
-        {
-          id: "pl-1",
-          name: "Test",
-          ...(source ? { source, sourceVersion: 1 } : { url: "http://list.invalid/a.m3u" }),
-          hiddenCategories,
-        },
-      ],
-      activePlaylistId: "pl-1",
+      ...(appearance ?? {}),
+      playlists: emptyPlaylists
+        ? []
+        : [
+            {
+              id: "pl-1",
+              name: "Test",
+              ...(source ? { source, sourceVersion: 1 } : { url: "http://list.invalid/a.m3u" }),
+              hiddenCategories,
+            },
+          ],
+      activePlaylistId: emptyPlaylists ? "" : "pl-1",
       resumeLast: !!resume,
       continuousReconnect,
       ...(locale ? { locale } : {}),
@@ -369,7 +397,15 @@ export async function mountApp(
 
   const { default: App, preloadVodScreen } = await import("../../src/App");
   await preloadVodScreen();
-  const view = render(<App />);
+  const view = render(
+    strict ? (
+      <StrictMode>
+        <App />
+      </StrictMode>
+    ) : (
+      <App />
+    ),
+  );
   if (!awaitPlaylist) return view;
   // Let the playlist land.
   await act(async () => {

@@ -145,12 +145,11 @@ jobs:
         run: npm run tv:engines
 
   # ---------------------------------------------------------------------------------
-  # Frame times on the weakest set Samsung has sold since 2020.
+  # Frame timings under the primary estimated Everyday TV hardware target.
   #
-  # One budget, on the floor, because everything newer is faster. Allowed to fail the
-  # build: the throttle is a ratio between two machines and a CI runner is not the
-  # machine it was calibrated against, so this is a regression alarm rather than an
-  # absolute measurement. Read the numbers, do not merge on the tick alone.
+  # CPU throughput is calibrated on this runner and checked again after the journeys.
+  # The shared runner job remains informational, while the harness rejects mismatched
+  # CPU controls and uncontrolled networking. Compatibility has a separate engine gate.
   # ---------------------------------------------------------------------------------
   budget:
     runs-on: ubuntu-latest
@@ -179,7 +178,7 @@ jobs:
       # Written to the run summary as well as the log, because a job that is allowed to fail reports
       # itself green in the checks list: without this, the numbers nobody is supposed to merge on the
       # tick alone are buried in the log of a job that looks like it passed.
-      - name: Within the floor profile's budget
+      - name: Measure the estimated Everyday TV performance target
         run: |
           set -o pipefail
           npm run tv:budget 2>&1 | tee /tmp/budget.txt
@@ -188,10 +187,10 @@ jobs:
       - name: Put the numbers where they can be read
         if: always()
         run: |
-          echo '## Performance budget, on the floor profile' >> "$GITHUB_STEP_SUMMARY"
+          echo '## Performance budget, on the estimated Everyday TV target' >> "$GITHUB_STEP_SUMMARY"
           echo '' >> "$GITHUB_STEP_SUMMARY"
-          echo 'A regression alarm rather than a verdict: the throttle is a ratio between two named' >> "$GITHUB_STEP_SUMMARY"
-          echo 'machines and a shared runner is neither of them.' >> "$GITHUB_STEP_SUMMARY"
+          echo 'This estimated hardware target calibrates CPU throughput on the current runner.' >> "$GITHUB_STEP_SUMMARY"
+          echo 'CPU control and network isolation must pass. Browser compatibility is checked separately.' >> "$GITHUB_STEP_SUMMARY"
           echo '' >> "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
           tail -40 /tmp/budget.txt >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || echo "the run produced nothing" >> "$GITHUB_STEP_SUMMARY"

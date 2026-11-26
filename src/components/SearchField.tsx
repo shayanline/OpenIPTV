@@ -1,6 +1,8 @@
 import { useEffect, useRef } from "react";
+import { KEY } from "../hooks/useRemote";
 import { useLocale } from "../hooks/useLocale";
 import { Icon } from "./Icon";
+import { TextInput } from "./TextInput";
 
 /**
  * The query, in the channel column's header, where that column's heading otherwise goes.
@@ -26,8 +28,8 @@ export function SearchField({
   onExitUp,
   onExitDown,
   onExitStart,
+  onExitEnd,
   onDismissKeyboard,
-  onSubmit,
   showCount = true,
 }: {
   value: string;
@@ -43,11 +45,11 @@ export function SearchField({
   onExitUp?: () => void;
   onExitDown?: () => void;
   onExitStart?: () => void;
+  onExitEnd?: () => void;
   onDismissKeyboard?: () => void;
-  onSubmit?: () => void;
   showCount?: boolean;
 }) {
-  const { t, number, direction } = useLocale();
+  const { t, number } = useLocale();
   const field = useRef<HTMLInputElement>(null);
 
   /*
@@ -70,16 +72,20 @@ export function SearchField({
       <span className="search-icon">
         <Icon name="search" />
       </span>
-      <input
+      <TextInput
         ref={field}
+        variant="embedded"
         className="search-field"
         value={value}
         onChange={(e) => onChange(e.target.value)}
+        onExitStart={onExitStart}
+        onExitEnd={onExitEnd}
+        onExitUp={onExitUp}
+        onExitDown={onExitDown}
         onKeyDown={(event) => {
-          if (event.keyCode === 13 && onSubmit) {
+          if (event.keyCode === KEY.ENTER) {
             event.preventDefault();
             event.stopPropagation();
-            onSubmit();
             return;
           }
           if ((event.keyCode === 10009 || event.keyCode === 27) && onDismissKeyboard) {
@@ -89,22 +95,6 @@ export function SearchField({
             onDismissKeyboard();
             return;
           }
-          const start = direction === "rtl" ? 39 : 37;
-          if (
-            event.keyCode === start &&
-            event.currentTarget.selectionStart === 0 &&
-            event.currentTarget.selectionEnd === 0
-          ) {
-            event.preventDefault();
-            event.stopPropagation();
-            onExitStart?.();
-            return;
-          }
-          if (event.keyCode !== 38 && event.keyCode !== 40) return;
-          event.preventDefault();
-          event.stopPropagation();
-          if (event.keyCode === 38) onExitUp?.();
-          else onExitDown?.();
         }}
         placeholder={placeholder ?? t("search.channelName")}
         aria-label={ariaLabel ?? t("search.ariaLabel")}

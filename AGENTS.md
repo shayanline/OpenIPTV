@@ -16,6 +16,12 @@ Node 22.18 or newer, pinned in `.nvmrc`.
 
 Keep implementation decisions, internal architecture, cache and retry timing, socket lifecycle, and engineering rationale in [the design notes](docs/design.md), [the testing notes](docs/testing.md), source code, or contributor documentation. Include technical detail in the README only when a user needs it to try, install, configure, or recover the application. Use GitHub links, alerts, tables, keycaps, and collapsed details when they make the user path faster to scan.
 
+## Changelog
+
+Keep each release entry as a short, flat list of the major user facing changes. Use complete sentences, and omit minor interface details and implementation mechanics.
+
+Cover the full change since the previous released version by checking its release reference, subsequent commits and pending work. Preserve existing release history.
+
 ## Verification
 
 Verification is a separate final phase that starts only after the task author approves the finished implementation. Do not run verification commands during implementation, including lint, type checks, tests, builds, TV gates, WebAssembly checks, XML validation, or `git diff --check`. Reading files and reviewing the diff while editing do not replace final verification.
@@ -41,11 +47,9 @@ floating Smart Remote with the D-pad, the transport keys, the coloured keys and 
 dispatches the same key events the TV sends rather than calling handlers directly, and the bundler
 drops it from a production build, so it cannot be conjured onto a television.
 
-`npm run tv` runs the built app under the reference set's measured constraints, with `webapis.avplay`
-and `tizen` shimmed so the Tizen paths actually run, and `npm run tv:floor` does it on the weakest
-supported set. Judge speed there and nowhere else.
+`npm run tv` runs the built app with the estimated Everyday TV performance profile and Tizen APIs shimmed. `npm run tv:floor` retains the original floor as a separate performance comparison. Both CPU workloads are calibrated on the current host. `npm run tv:engines` verifies browser compatibility independently. Hardware assumptions and measurement limits are documented in [testing and measurement](docs/testing.md).
 
-`npm run tv:quick` gives a shorter sample of every benchmark journey without a budget verdict. It is an optional diagnostic rather than an automatic step while working, it runs only inside the approved final verification phase like every other check, and `npm run tv:budget` remains the final measurement.
+`npm run tv:quick` gives a short sample of Live navigation, VOD grid and cached startup against the same UX goals. Its verdict covers only that sample. It runs only inside the approved final verification phase, and `npm run tv:budget` remains the complete functional and performance gate.
 
 `npm run tv:on-set` measures the app on a real television over sdb: the launch marks, the CPU at
 rest, and, given `--stream=<url>`, what a picture costs and whether the playhead actually moves.
@@ -75,7 +79,8 @@ src/
   services/remoteServer.ts the private network server lifecycle and API boundary
   services/manifest.ts     reading and repairing a playlist, as pure functions
   services/repair.ts       serving a repaired playlist to AVPlay over a loopback socket
-  services/artwork.ts      two lane poster and logo decode queue, bitmap limits and backdrop leases
+  services/artwork.ts      bounded poster and logo queues, bitmap limits and backdrop leases
+  services/workload.ts     device hints, adaptive artwork limits and owned frame sampling
   services/logos.ts        the channel logo adapter over the shared artwork service
   services/capabilities.ts what the engine can actually do, measured rather than assumed
   services/metrics.ts      the measurements the stylesheet shares with the code
@@ -112,9 +117,9 @@ scripts/
   store-assets.mjs         the six pictures Samsung's store form asks for, from the real build
   screenshots.mjs          the six pictures in the README, from the real build
   stamp-version.mjs        write package.json's version into config.xml at package time
-  tv/                      run the app under the TV's measured constraints
+  tv/                      run the app under documented TV approximations
   tv/platforms.json        Samsung's engine matrix, the only copy of it
-  tv/floor.json            the weakest supported set, with a source for every figure
+  tv/floor.json            base TV facts, estimated CPU target and resource stress limits
   tv/profile.json          what the reference set reports about itself, rewritten by calibrate
   tv/harness.mjs           serve the build, walk every screen, measure the boxes
   tv/gap-parity.mjs        spacing is the same with and without flex gap
@@ -133,18 +138,14 @@ Break one of these and the app fails on hardware no test here owns. The reasonin
 - **Provider catalogues remain immutable.** `stores/lineup` reconciles sparse personal overlays, then publishes the only Live category, channel, search, channel change and number index views that presentation may consume. Launch reads the cached catalogue and personal record together, so provider order never appears before personal order. Television management and paired phone management both call `applyLineupMutation`, while the effective number index owns dialling.
 - **No IndexedDB work occurs on a direction input path.** Interaction handlers read materialised arrays, sets and maps. Committed personal writes and cache work use `services/idle`, while a failed personal transaction restores the latest durable lineup revision and retains a recoverable management error. Playlist owner changes, removal and reset invalidate queued work, drain its promises and wait for an active write before destructive cleanup. Legacy settings disappear only after the replacement personal record commits.
 - **The cursor answers the press, the expensive work follows.** The rail waits 150ms before the channel column rebuilds, the search waits 150ms before it queries, and the tuner waits 450ms before it retunes. Anything expensive added to a held key needs the same treatment.
-- **VOD category focus is immediate.** Catalogue replacement settles after 150ms, poster requests begin 120ms later, and each accepted vertical wheel gesture moves one item in linear order before the 120ms guard begins.
+- **VOD category focus is immediate.** Catalogue replacement settles after 150ms, while normal poster requests wait for the usual 120ms poster permission. Only bounded preparation of the first 18 nearby posters in the committed grid window can begin before that permission. Each accepted vertical wheel gesture moves one item in linear order before the 120ms wheel guard begins.
 - **VOD never keeps a hidden provider connection.** Entering Movies or Series stops playback and releases the decoder, while returning to Live retunes the remembered channel through the playback controller.
 - **The 24 MiB disk cache has isolated classes.** Playlist and catalogue data use 12 MiB, poster derivatives use 8 MiB, and logo derivatives use 4 MiB. One class cannot evict another. Cache clearing never clears `openiptv-personal`.
 - **Phone lineup state stays bounded and revision bound.** Ordinary remote snapshots contain only active lineup readiness and revision. Queries default to 50 items and reject limits above 100. Every cursor binds playlist, revision, scope, category, search and hidden inclusion. A stale page or mutation returns the current revision and a fresh bounded snapshot, while repeated mutation request identifiers return their first result.
 - **Television fault controls exist only in the simulator shim.** `window.__openiptvTvFaults` can control prepare completion, buffering, playhead progress, seeks, faults, Live windows and visibility after a harness opts in. Production code does not create this interface.
 - **Cached playlists are keyed by address**, not by playlist id, or editing a URL serves the
   previous playlist from a cache that believes itself current.
-- **One artifact, no branching by model year.** The build targets es2019 and the stylesheet uses
-  nothing newer than Chromium 69, so every later set runs a strict superset. There is exactly
-  one runtime capability branch, the flex gap probe, and `tv:gap` covers it. Every branch added
-  costs an engine in the matrix, because the years in between stop being unreachable the moment
-  code can tell them apart.
+- **One artifact, no branching by model year.** The build targets es2019 and the stylesheet uses nothing newer than Chromium 69, so every later set runs a strict superset. The flex gap probe remains the layout compatibility branch covered by `tv:gap`. Artwork workload limits adapt through one shared scheduler using available hardware hints and observed responsiveness, while retaining the same hard resource ceilings. Additional engine specific behavior needs coverage in the engine matrix.
 - **esbuild lowers syntax and not methods**, so `?.` is safe on an old engine and `Array.at`
   would ship and throw. `tv:engines` is what catches that.
 - **`scripts/tv/platforms.json` is the only place the engine matrix is written down.** Do not
@@ -194,5 +195,4 @@ Break one of these and the app fails on hardware no test here owns. The reasonin
   No frames looks the same either way.
 - **Piping a long run through `grep` into a file block buffers it**, so a hanging run looks the
   same as a quiet one. Write the full output per run and extract afterwards.
-- **A quarter of the machine being busy moves the benchmark numbers by a third.** If a run
-  fails, read the load in the header before reading the failure.
+- Treat exceeded performance budgets as failures. Load average alone does not establish their cause or justify dismissing them as noise. Investigate with a controlled baseline comparison under identical simulator settings.

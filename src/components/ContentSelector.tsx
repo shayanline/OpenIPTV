@@ -36,7 +36,7 @@ export const ContentSelector = memo(function ContentSelector({
         <button
           key={kind}
           type="button"
-          className={`content-option ${kind === value ? "selected" : ""} ${focused && kind === focus ? "focused" : ""}`}
+          className={`content-option ${kind === value ? "selected" : ""} ${focused && kind === focus ? "cursor" : ""}`}
           aria-label={t(LABELS[kind])}
           aria-pressed={kind === value}
           onClick={() => onChange(kind)}

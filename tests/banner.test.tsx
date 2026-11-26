@@ -1,22 +1,25 @@
-import { afterEach, beforeEach, test, vi } from "vitest";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { act, cleanup, render, renderHook, screen } from "@testing-library/react";
-import { KEY } from "../src/hooks/useRemote";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  renderHook,
+  screen,
+  waitFor,
+} from "@testing-library/react";
+import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { Logo } from "../src/components/Logo";
+import { PlaybackBanner, PlaybackIdentity } from "../src/components/PlaybackBanner";
+import { DEFAULT_MARQUEE_DWELL_MS } from "../src/components/Text";
 import { useChrome } from "../src/hooks/useChrome";
-import { PlaybackBanner } from "../src/components/PlaybackBanner";
-import { mountApp, press, settle } from "./support/app";
+import { KEY } from "../src/hooks/useRemote";
+import { emitPlayback, mountApp, press, settle } from "./support/app";
 
 /**
- * The banner names the channel and then goes away, and this is about the second half.
- *
- * A viewer reported it staying up for ever, occasionally, with no reproduction, and going away only
- * on right or back, which clear every overlay at once and so hide a fault rather than fix one. The
- * mechanism turned out to be exact. While a channel is joining the banner is held with no countdown,
- * deliberately, because a stream that takes fifteen seconds to arrive should keep saying which
- * channel it is. The countdown was then restarted by the picture arriving, and an arrival is
- * announced once per channel, also deliberately. So anything that made the app busy again on a
- * channel it had already announced left the banner held with nothing left to lower it.
+ * The banner names an explicit selection and expires on its own schedule.
+ * Engine readiness and recovery must not keep it open or raise it again.
  */
 
 const PLAYLIST = `#EXTM3U
@@ -55,10 +58,13 @@ const past = async () => {
 
 beforeEach(() => {
   vi.useFakeTimers({ shouldAdvanceTime: true });
+  vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(null);
 });
 afterEach(() => {
   cleanup();
   localStorage.clear();
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
   vi.useRealTimers();
 });
 
@@ -75,59 +81,6 @@ test("a raised banner counts itself down", () => {
     vi.advanceTimersByTime(8600);
   });
   assert.equal(result.current.banner, false);
-});
-
-test("a held banner stays up, because a channel still joining should keep saying which it is", () => {
-  const { result } = renderHook(() => useChrome());
-  act(() => {
-    result.current.holdBanner();
-  });
-
-  act(() => {
-    vi.advanceTimersByTime(30000);
-  });
-  assert.equal(
-    result.current.banner,
-    true,
-    "a held banner must not time out while it is holding",
-  );
-});
-
-test("settling a held banner gives it the count it never had", () => {
-  // The fix. Whatever ends the waiting starts the five seconds, rather than only a picture arriving.
-  const { result } = renderHook(() => useChrome());
-  act(() => {
-    result.current.holdBanner();
-  });
-  act(() => {
-    result.current.settleBanner();
-  });
-
-  assert.equal(result.current.banner, true, "settling must not hide it immediately");
-  act(() => {
-    vi.advanceTimersByTime(8600);
-  });
-  assert.equal(result.current.banner, false, "a settled banner stayed up for ever");
-});
-
-test("settling does not raise a banner that is down", () => {
-  /*
-   * The other half of the same problem, and why this refuses to raise rather than simply restarting
-   * the count. A stall recovering used to be treated as an arrival, the banner rose from the dead,
-   * and since OK dismisses an arrival, OK could not get past it to open the channel list.
-   */
-  const { result } = renderHook(() => useChrome());
-  act(() => {
-    result.current.lowerBanner();
-  });
-  act(() => {
-    result.current.settleBanner();
-  });
-  assert.equal(
-    result.current.banner,
-    false,
-    "it resurrected a banner the viewer had dismissed",
-  );
 });
 
 // ---- and in the application, on a channel that takes a moment to arrive -----------------
@@ -169,6 +122,69 @@ test("the banner goes away on its own after a channel starts", async () => {
   await past();
   assert.equal(bannerUp(), false, "the banner stayed up past its eight seconds");
 });
+
+test("the selection banner expires while loading and stays down when the first picture arrives", async () => {
+  await mountApp(PLAYLIST, { slowPicture: 12000, strict: true });
+  press(KEY.ENTER);
+  await settle(0);
+  expect(bannerUp()).toBe(true);
+  await past();
+  expect(bannerUp()).toBe(false);
+  expect(document.querySelector(".picture-state .spinner")).toBeTruthy();
+  await settle(4000);
+  expect(document.querySelector(".picture-state .spinner")).toBeNull();
+  expect(bannerUp()).toBe(false);
+});
+
+test("buffering, recovery and retuning do not reopen the selection banner", async () => {
+  await mountApp(PLAYLIST, { slowPicture: 300, strict: true });
+  press(KEY.ENTER);
+  await settle(500);
+  await past();
+  expect(bannerUp()).toBe(false);
+  emitPlayback({ type: "buffering-start" });
+  await settle(1600);
+  expect(document.querySelector(".recovery-status")).toBeTruthy();
+  expect(bannerUp()).toBe(false);
+  emitPlayback({ type: "buffering-complete" });
+  emitPlayback({ type: "playing" });
+  expect(bannerUp()).toBe(false);
+  press(KEY.FORWARD);
+  await settle(500);
+  expect(bannerUp()).toBe(false);
+});
+
+test("returning from the channel list does not repeat the selection banner", async () => {
+  await mountApp(PLAYLIST, { strict: true });
+  press(KEY.ENTER);
+  await settle(0);
+  await past();
+  press(KEY.LEFT);
+  await settle(500);
+  press(KEY.BACK);
+  await settle(0);
+  expect(bannerUp()).toBe(false);
+});
+
+test.each(["SD", "HD"])(
+  "the %s badge keeps the same identity in the banner and controls",
+  (quality) => {
+    const view = render(
+      <PlaybackIdentity variant="banner" title="Channel" group="News" quality={quality} />,
+    );
+    const badge = view.container.querySelector<HTMLElement>('[data-playback-part="quality"]');
+    expect(badge?.dataset.playbackValue).toBe(quality);
+    expect(badge?.classList.contains("pb-quality")).toBe(true);
+    view.rerender(
+      <PlaybackIdentity variant="deck" title="Channel" group="News" quality={quality} />,
+    );
+    const destination = view.container.querySelector<HTMLElement>(
+      '.deck-tags [data-playback-part="quality"]',
+    );
+    expect(destination?.dataset.playbackValue).toBe(quality);
+    expect(destination?.textContent).toBe(quality);
+  },
+);
 
 test("the banner still goes away after pausing and playing the same channel", async () => {
   /*
@@ -227,6 +243,118 @@ test("the banner reports the channel number, name and group only", () => {
   assert.equal(banner.querySelector(".pb-group")?.textContent, "News");
 });
 
+test("the banner reserves a visible TV logo placeholder", () => {
+  render(
+    <PlaybackBanner
+      channel={{
+        id: "channel-1",
+        name: "News",
+        logo: "",
+        group: "News",
+        url: "http://example.invalid/live.m3u8",
+        quality: "HD",
+        number: 7,
+      }}
+    />,
+  );
+
+  const placeholder = document.querySelector<HTMLElement>(".pb-logo.placeholder");
+  expect(placeholder?.getAttribute("aria-label")).toBe("News");
+  expect(placeholder?.querySelector(".icon-tv")).toBeTruthy();
+  expect(getComputedStyle(placeholder!).display).toBe("flex");
+  expect(appCss).not.toMatch(/\.pb-logo\.placeholder\s*\{[^}]*display:\s*none/);
+  expect(appCss).not.toMatch(/\.logo-artwork\s*\{[^}]*background:/);
+  expect(appCss).toMatch(/\.logo-artwork\.placeholder\s*\{[^}]*background:\s*var\(--tonal\)/);
+});
+
+test("failed and absent channel logos keep the same accessible placeholder", async () => {
+  vi.useRealTimers();
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => {
+      throw new Error("missing");
+    }),
+  );
+  const view = render(
+    <Logo
+      src="https://images.example.invalid/failed-logo.png"
+      alt="Failed channel"
+      width={132}
+      height={68}
+    />,
+  );
+  await waitFor(() => expect(fetch).toHaveBeenCalled());
+
+  const failed = view.container.querySelector(".ch-logo.placeholder");
+  expect(failed?.getAttribute("aria-label")).toBe("Failed channel");
+  expect(failed?.querySelector(".icon-tv")).toBeTruthy();
+  view.rerender(<Logo src="" alt="Missing channel" width={132} height={68} />);
+  expect(view.container.querySelector(".ch-logo.placeholder")?.getAttribute("aria-label")).toBe(
+    "Missing channel",
+  );
+});
+
+test("valid channel logos keep the requested footprint and accessible name", async () => {
+  vi.useRealTimers();
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => new Response(new Blob(["logo"]))),
+  );
+  vi.stubGlobal(
+    "createImageBitmap",
+    vi.fn(async () => ({ width: 132, height: 68, close: vi.fn() }) as unknown as ImageBitmap),
+  );
+  render(
+    <Logo
+      src="https://images.example.invalid/valid-logo.png"
+      alt="Valid channel"
+      width={132}
+      height={68}
+    />,
+  );
+
+  await waitFor(() => expect(document.querySelector("canvas.ch-logo")).toBeTruthy());
+  const logo = document.querySelector<HTMLCanvasElement>("canvas.ch-logo")!;
+  expect(logo.width).toBe(132);
+  expect(logo.height).toBe(68);
+  expect(logo.getAttribute("aria-label")).toBe("Valid channel");
+});
+
+test("the banner opens the deck through one shared identity surface", async () => {
+  vi.spyOn(Element.prototype, "getBoundingClientRect").mockReturnValue(
+    new DOMRect(40, 700, 800, 160),
+  );
+  await mountApp(PLAYLIST);
+  fireEvent.click(screen.getByRole("button", { name: /First Channel/ }));
+  await settle(0);
+  const identity = document.querySelector("[data-playback-identity]");
+  expect(identity).toBeTruthy();
+  expect(identity?.textContent).toContain("First Channel");
+
+  press(KEY.RIGHT);
+
+  expect(document.querySelector(".pb-stack")).toBeNull();
+  expect(document.querySelectorAll("[data-playback-identity]")).toHaveLength(1);
+  expect(document.querySelector("[data-playback-identity]")?.textContent).toContain(
+    "First Channel",
+  );
+  expect(document.querySelector(".playback-deck")?.getAttribute("data-entrance")).toBe(
+    "banner",
+  );
+});
+
+test("the deck uses an ordinary entrance after the banner was dismissed", async () => {
+  await mountApp(PLAYLIST);
+  fireEvent.click(screen.getByRole("button", { name: /First Channel/ }));
+  press(KEY.BACK);
+
+  press(KEY.RIGHT);
+
+  expect(document.querySelector(".playback-deck")?.getAttribute("data-entrance")).toBe(
+    "ordinary",
+  );
+});
+
 test("the banner hides beneath the deck", async () => {
   await mountApp(PLAYLIST);
   press(KEY.ENTER);
@@ -238,7 +366,7 @@ test("the banner hides beneath the deck", async () => {
   assert.ok(document.querySelector(".playback-deck"));
 });
 
-test("a live banner shows current and next programme names when available", () => {
+test("a live banner shows only the current programme after its category and quality", () => {
   render(
     <PlaybackBanner
       channel={{
@@ -247,13 +375,167 @@ test("a live banner shows current and next programme names when available", () =
         logo: "",
         group: "News",
         url: "http://example.invalid/live.m3u8",
-        quality: "",
+        quality: "HD",
         number: 1,
       }}
-      programme={{ current: "News at Noon", next: "Weather" }}
+      programme={{ current: "News at Noon" }}
     />,
   );
 
   assert.ok(screen.getByText("Now: News at Noon"));
-  assert.ok(screen.getByText("Next: Weather"));
+  expect(screen.queryByText(/^Next:/)).toBeNull();
+  expect(document.querySelector(".pb-quality")?.textContent).toBe("HD");
+  const fields = document.querySelectorAll(
+    ".pb-group.teleprompter.active, .pb-programme.teleprompter.active",
+  );
+  expect(Array.from(fields, (field) => field.textContent)).toEqual([
+    "News",
+    "Now: News at Noon",
+  ]);
+  expect(fields[0].classList.contains("pb-group")).toBe(true);
+  expect(fields[1].classList.contains("pb-programme")).toBe(true);
+  const row = document.querySelector(".pb-meta");
+  expect(row?.querySelector(":scope > .pb-group")).toBe(fields[0]);
+  expect(fields[1].previousElementSibling).toBe(row);
+});
+
+test("the deck identity retains category and tags without programme information", () => {
+  render(
+    <PlaybackIdentity
+      variant="deck"
+      title="News"
+      group="World news"
+      quality="HD"
+      year="2024"
+      rating="8.5"
+      currentProgramme="News at Noon"
+    />,
+  );
+
+  const fields = document.querySelectorAll(".deck-context .teleprompter.active");
+  expect(Array.from(fields, (field) => field.textContent)).toEqual(["World news"]);
+  expect(fields[0].classList.contains("deck-group")).toBe(true);
+  expect(screen.queryByText(/Now:/)).toBeNull();
+  expect(document.querySelector(".playback-programme-row")).toBeNull();
+  expect(document.querySelector(".deck-context > .deck-tags")?.textContent).toBe("HD20248.5");
+  expect(document.querySelector(".deck-tags .deck-rating .icon-star")).toBeTruthy();
+});
+
+test.each(["banner", "deck"] as const)(
+  "the %s metadata fields use measured teleprompter overflow",
+  async (variant) => {
+    vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(100);
+    vi.spyOn(HTMLElement.prototype, "scrollWidth", "get").mockReturnValue(260);
+    render(
+      <PlaybackIdentity
+        variant={variant}
+        title="News"
+        group="World news and current affairs"
+        currentProgramme="A long programme title"
+      />,
+    );
+    const fields = document.querySelectorAll<HTMLElement>(
+      '[data-playback-part="category"], [data-playback-part="now"]',
+    );
+    expect(fields.length).toBe(variant === "banner" ? 2 : 1);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(DEFAULT_MARQUEE_DWELL_MS - 1);
+    });
+    for (const field of fields) {
+      expect(field.classList.contains("overflowing")).toBe(false);
+    }
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(17);
+    });
+    for (const field of fields) {
+      expect(field.classList.contains("active")).toBe(true);
+      expect(field.classList.contains("overflowing")).toBe(true);
+      expect(field.style.getPropertyValue("--teleprompter-shift")).toBe("-160px");
+    }
+  },
+);
+
+test.each(["banner", "deck"] as const)(
+  "the %s metadata row omits absent group and programme fields",
+  (variant) => {
+    const view = render(<PlaybackIdentity variant={variant} title="News" quality="HD" />);
+    const row = variant === "banner" ? ".pb-meta" : ".deck-context";
+    expect(view.container.querySelectorAll(`${row} .teleprompter`).length).toBe(0);
+    expect(view.container.querySelector(".playback-programmes")).toBeNull();
+    expect(view.container.querySelector(".playback-programme-row")).toBeNull();
+
+    view.rerender(
+      <PlaybackIdentity variant={variant} title="News" currentProgramme="Weather" />,
+    );
+    const fields = view.container.querySelectorAll(
+      '[data-playback-part="category"], [data-playback-part="now"]',
+    );
+    expect(Array.from(fields, (field) => field.textContent)).toEqual(
+      variant === "banner" ? ["Now: Weather"] : [],
+    );
+  },
+);
+
+test("metadata that fits does not start the teleprompter", () => {
+  vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(260);
+  vi.spyOn(HTMLElement.prototype, "scrollWidth", "get").mockReturnValue(100);
+  render(
+    <PlaybackIdentity variant="banner" title="News" group="News" currentProgramme="Weather" />,
+  );
+
+  const fields = document.querySelectorAll<HTMLElement>(
+    ".pb-group.teleprompter, .pb-programme.teleprompter",
+  );
+  expect(fields.length).toBe(2);
+  for (const field of fields) {
+    expect(field.classList.contains("overflowing")).toBe(false);
+    expect(field.style.getPropertyValue("--teleprompter-shift")).toBe("0px");
+  }
+});
+
+test.each(["banner", "deck"] as const)(
+  "the %s identity keeps category and quality when programme information changes",
+  (variant) => {
+    const view = render(
+      <PlaybackIdentity variant={variant} title="News" group="World news" quality="HD" />,
+    );
+    const row = view.container.querySelector(
+      variant === "banner" ? ".pb-meta" : ".deck-context",
+    );
+    expect(row?.classList.contains("playback-programme-row")).toBe(false);
+    expect(row?.querySelector(".playback-programmes")).toBeNull();
+
+    view.rerender(
+      <PlaybackIdentity
+        variant={variant}
+        title="News"
+        group="World news"
+        quality="HD"
+        currentProgramme="Weather"
+      />,
+    );
+    expect(view.container.querySelector(".pb-programme")?.textContent).toBe(
+      variant === "banner" ? "Now: Weather" : undefined,
+    );
+    expect(row?.querySelector(".pb-programme")).toBeNull();
+    expect(
+      row?.querySelector(variant === "banner" ? ".pb-quality" : ".deck-tags")?.textContent,
+    ).toBe("HD");
+  },
+);
+
+test("an empty current title leaves the banner category and quality intact", () => {
+  const view = render(
+    <PlaybackIdentity
+      variant="banner"
+      title="News"
+      group="World news"
+      quality="HD"
+      currentProgramme=""
+    />,
+  );
+  expect(view.container.querySelector(".pb-programme")).toBeNull();
+  expect(view.container.querySelector(".playback-programme-row")).toBeNull();
+  expect(view.container.querySelector(".pb-group")?.textContent).toBe("World news");
+  expect(view.container.querySelector(".pb-quality")?.textContent).toBe("HD");
 });

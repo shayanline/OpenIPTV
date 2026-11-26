@@ -52,6 +52,12 @@ const DIST = join(ROOT, "dist");
  */
 const LAYOUT = [
   ".app",
+  ".app-navigation",
+  ".app-navigation-brand",
+  ".app-navigation-action",
+  ".app-navigation-search-content",
+  ".app-navigation-icon",
+  ".app-navigation-label",
   ".panel",
   ".panel-cols",
   ".rail",
@@ -67,6 +73,11 @@ const LAYOUT = [
   ".splash",
   ".hints",
   ".actions",
+  ".pb-stack",
+  ".playback-deck",
+  ".playback-identity",
+  ".scrollbar",
+  ".scrollbar-thumb",
   ".field",
   ".pl",
   ".pad",
@@ -82,6 +93,8 @@ const LAYOUT = [
   ".episode-panel",
   ".season-row",
   ".episode-list",
+  ".episode-row",
+  ".episode-row-content",
 ];
 
 /**
@@ -215,7 +228,15 @@ async function attempt(tv, binary, pinned, port) {
         }
       });
 
-      const shots = await walk(cdp, port, LAYOUT);
+      let shots;
+      try {
+        shots = await walk(cdp, port, LAYOUT);
+      } catch (error) {
+        if (!complaints.length) throw error;
+        throw new Error(`${error.message}\nBrowser complaints:\n${complaints.join("\n")}`, {
+          cause: error,
+        });
+      }
       // The app has to have actually got somewhere. Every box agreeing because both engines
       // rendered nothing is the failure mode this gate would otherwise be blind to.
       const rows = await cdp

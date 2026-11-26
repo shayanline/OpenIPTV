@@ -1,7 +1,9 @@
-import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import assert from "node:assert/strict";
-import { act, cleanup, fireEvent, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { PictureState } from "../src/components/PictureState";
 import { KEY } from "../src/hooks/useRemote";
+import { SEEK_SETTLE_MS } from "../src/services/playbackRange";
 import type { MediaTrack } from "../src/types";
 import {
   emitPlayback,
@@ -10,10 +12,12 @@ import {
   muted,
   panelOpen,
   playCalls,
-  setPlaybackTime,
   played,
   press,
+  pressDown,
+  release,
   seekChanges,
+  setPlaybackTime,
   settle,
   volumeChanges,
   XTREAM_SOURCE,
@@ -48,8 +52,22 @@ http://example.invalid/c.m3u8`;
 
 const mount = (options: Parameters<typeof mountApp>[1] = {}) => mountApp(PLAYLIST, options);
 
+async function finishPageEntry() {
+  await vi.waitFor(
+    async () => {
+      await settle(0);
+      expect(document.querySelector(".app")?.getAttribute("data-page-transition")).toBe("idle");
+    },
+    { interval: 10 },
+  );
+}
+
 beforeEach(() => {
   localStorage.clear();
+  const clientHeight = Object.getOwnPropertyDescriptor(Element.prototype, "clientHeight")!.get!;
+  vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockImplementation(function () {
+    return this.classList.contains("poster-grid-region") ? 400 : clientHeight.call(this);
+  });
 });
 
 afterEach(() => {
@@ -57,6 +75,31 @@ afterEach(() => {
   vi.useRealTimers();
   vi.unstubAllGlobals();
   vi.doUnmock("../src/services/player");
+  vi.doUnmock("../src/stores/library");
+});
+
+test("finite terminal errors teach Back for both OK and Return", () => {
+  vi.useFakeTimers();
+  render(
+    <PictureState
+      channel="Brothers · S01 E02 · Pilot"
+      busy={false}
+      filling={null}
+      waited={0}
+      fault="FINITE_FORMAT_UNSUPPORTED"
+      finite
+    />,
+  );
+  act(() => vi.advanceTimersByTime(500));
+
+  const guide = document.querySelector(".picture-state-keys");
+  expect(guide).toBeTruthy();
+  expect([...guide!.querySelectorAll("kbd")].map((item) => item.textContent)).toEqual([
+    "OK",
+    "Return",
+  ]);
+  expect(guide?.textContent).toContain("Back");
+  expect(guide?.textContent).not.toContain("Close the app");
 });
 
 test("the playlist arrives and the panel opens on it", async () => {
@@ -66,6 +109,11 @@ test("the playlist arrives and the panel opens on it", async () => {
   expect(document.querySelectorAll(".panel")).toHaveLength(1);
   assert.ok(panelOpen(), "the app should open on the channel list");
   expect(screen.getByText("Alpha")).toBeTruthy();
+});
+
+test("the Live channel header shows the selected category total", async () => {
+  await mount();
+  expect(document.querySelector(".list .pane-head .count")?.textContent).toBe("3");
 });
 
 test("law 2: OK on a channel starts it and puts the list away", async () => {
@@ -115,6 +163,68 @@ test("Live picture law 1 holds when the channel on screen has failed", async () 
   assert.ok(played.length >= 2, "channel up did nothing on a failed channel");
 });
 
+test("a terminal playback error preserves browser navigation without opening controls", async () => {
+  await mount({ strict: true });
+  press(KEY.ENTER);
+  await settle(0);
+  press(KEY.LEFT);
+  emitPlayback({ type: "error", code: "PLAYER_ERROR_NOT_SUPPORTED_FILE", warmKind: null });
+  await settle(600);
+  expect(panelOpen()).toBe(true);
+  expect(document.querySelector(".playback-deck")).toBeNull();
+  const started = played.length;
+  press(KEY.DOWN);
+  await settle(500);
+  expect(played).toHaveLength(started);
+  expect(panelOpen()).toBe(true);
+  press(KEY.ENTER);
+  await settle(0);
+  expect(played[played.length - 1]).toContain("/b.m3u8");
+  expect(panelOpen()).toBe(false);
+  expect(document.querySelector(".playback-deck")).toBeNull();
+});
+
+test("Right on a failed picture cannot strand navigation in an invisible deck", async () => {
+  await mount({ strict: true });
+  press(KEY.ENTER);
+  await settle(0);
+  emitPlayback({ type: "error", code: "PLAYER_ERROR_NOT_SUPPORTED_FILE", warmKind: null });
+  await settle(600);
+  press(KEY.RIGHT);
+  expect(document.querySelector(".playback-deck")).toBeNull();
+  press(KEY.ENTER);
+  expect(panelOpen()).toBe(true);
+  press(KEY.DOWN);
+  await settle(500);
+  expect(played).toHaveLength(1);
+});
+
+test("Play and Pause update playback without taking focus from the Live browser", async () => {
+  await mount({ strict: true });
+  press(KEY.ENTER);
+  await settle(0);
+  const { Player } = await import("../src/services/player");
+  const pause = vi.spyOn(Player.prototype, "pause");
+  const resume = vi.spyOn(Player.prototype, "resumePlayback");
+  press(KEY.LEFT);
+  press(KEY.PAUSE);
+  await settle(0);
+  expect(pause).toHaveBeenCalled();
+  expect(panelOpen()).toBe(true);
+  expect(document.querySelector(".playback-deck")).toBeNull();
+  const beforeResume = played.length;
+  press(KEY.PLAY);
+  await settle(0);
+  expect(resume).not.toHaveBeenCalled();
+  expect(played).toHaveLength(beforeResume + 1);
+  expect(panelOpen()).toBe(true);
+  expect(document.querySelector(".playback-deck")).toBeNull();
+  press(KEY.BACK);
+  await settle(0);
+  expect(panelOpen()).toBe(false);
+  expect(document.querySelector(".playback-deck")).toBeNull();
+});
+
 test("law 3: left at the Live picture opens the channel list", async () => {
   await mount();
   press(KEY.ENTER);
@@ -143,14 +253,54 @@ test("right at the uncovered Live picture opens the deck, and Back closes it", a
   assert.equal(panelOpen(), false);
 });
 
-test("OK at the Live picture answers on the press, with no held action", async () => {
+test("left at the leading playback control stays inside the deck", async () => {
+  await mount();
+  press(KEY.ENTER);
+  press(KEY.RIGHT);
+  press(KEY.LEFT);
+  press(KEY.LEFT);
+
+  expect(document.querySelector('[data-control="previous"][data-selected]')).toBeTruthy();
+  expect(document.querySelector(".playback-deck")).toBeTruthy();
+  expect(document.querySelector(".app-navigation.expanded")).toBeNull();
+});
+
+test("up dismisses a Live playback deck with no seek action", async () => {
+  await mount();
+  press(KEY.ENTER);
+  press(KEY.RIGHT);
+  expect(document.querySelector(".playback-deck")).toBeTruthy();
+
+  press(KEY.UP);
+
+  expect(document.querySelector(".playback-deck")).toBeNull();
+  expect(panelOpen()).toBe(false);
+});
+
+test("holding OK at the Live picture toggles compact playback diagnostics", async () => {
   await mount();
   press(KEY.ENTER);
   press(KEY.BACK);
 
   await hold(KEY.ENTER);
 
-  assert.ok(panelOpen(), "OK did not reach the browser a plain press reaches");
+  assert.ok(document.querySelector(".playback-info.visible"));
+  assert.equal(panelOpen(), false);
+});
+
+test("application navigation hides playback diagnostics", async () => {
+  await mount();
+  press(KEY.ENTER);
+  press(KEY.BACK);
+  await hold(KEY.ENTER);
+  assert.ok(document.querySelector(".playback-info.visible"));
+
+  press(KEY.LEFT);
+  press(KEY.LEFT);
+  press(KEY.LEFT);
+
+  expect(document.querySelector(".app-navigation.expanded")).toBeTruthy();
+  expect(document.querySelector(".playback-info")).toBeNull();
 });
 
 test("OK at the Live picture opens the browser while a stream is joining", async () => {
@@ -169,6 +319,20 @@ test("Play or Pause at the Live picture pauses and opens the deck", async () => 
 
   press(KEY.PLAY_PAUSE);
   assert.ok(document.querySelector(".playback-deck"), "Play or Pause did not open the deck");
+});
+
+test("Back dismisses a paused Live deck to a quiet paused picture card", async () => {
+  await mount();
+  press(KEY.ENTER);
+  press(KEY.PAUSE);
+  await settle(5_000);
+
+  expect(document.querySelector(".playback-deck")).toBeTruthy();
+  press(KEY.BACK);
+
+  expect(document.querySelector(".dialog")).toBeNull();
+  expect(document.querySelector(".playback-deck")).toBeNull();
+  expect(screen.getByRole("status", { name: "Play or pause" }).textContent).toContain("Play");
 });
 
 test("the channel keys still change channel with the deck open", async () => {
@@ -231,9 +395,8 @@ test("law 4 returns from the Xtream Guide to the same live row", async () => {
 
   press(KEY.ENTER);
   await settle(0);
-  // Right opens the deck; Guide is the leading action, one step left of Play or Pause.
   press(KEY.RIGHT);
-  press(KEY.LEFT);
+  press(KEY.RIGHT);
   press(KEY.ENTER);
   await settle(0);
   expect(document.querySelector(".guide-drawer")).toBeTruthy();
@@ -244,46 +407,74 @@ test("law 4 returns from the Xtream Guide to the same live row", async () => {
   expect(document.querySelector(".guide-drawer")).toBeNull();
   /* The drawer came from the deck, so Back lands back on the deck with Guide focused. */
   expect(document.querySelector(".playback-deck")).toBeTruthy();
+  expect(
+    document
+      .querySelector(".deck-programme-panel [data-selected]")
+      ?.getAttribute("data-control"),
+  ).toBe("guide");
   expect(panelOpen()).toBe(false);
 
   press(KEY.BACK);
   press(KEY.LEFT);
-  expect(document.querySelector(".list .row.selected .row-label")?.textContent).toBe(
+  expect(document.querySelector(".list .row.cursor .row-label")?.textContent).toBe(
     "Provider One",
   );
   expect(panelOpen()).toBe(true);
 });
 
-test("law 4 returns from a Guide opened in the browser to the same channel row", async () => {
+test("the Guide drawer consumes Right without acting and closes on Left", async () => {
+  await guideDrawer();
+  await settle(0);
+  expect(document.querySelector(".guide-drawer")).toBeTruthy();
+  expect(
+    [...document.querySelectorAll(".guide-drawer-hints kbd")].map((key) => key.textContent),
+  ).toContain("\u2190");
+
+  press(KEY.RIGHT);
+  await settle(0);
+  expect(document.querySelector(".guide-drawer")).toBeTruthy();
+  expect(document.querySelector(".guide-drawer.closing")).toBeNull();
+
+  press(KEY.LEFT);
+  expect(document.querySelector(".guide-drawer.closing")).toBeTruthy();
+  await settle(180);
+  expect(document.querySelector(".guide-drawer")).toBeNull();
+});
+
+test("the Guide drawer closes on physical Left in RTL as well", async () => {
   await mountApp("", {
     source: XTREAM_SOURCE,
+    locale: "ar",
     fetchImplementation: xtreamFetch(
       [{ category_id: "10", category_name: "News" }],
       [{ stream_id: "1", name: "Provider One", category_id: "10", stream_type: "live" }],
     ),
   });
-
   press(KEY.ENTER);
+  await settle(200);
+  press(KEY.LEFT);
   await settle(0);
-  press(KEY.LEFT); // the panel, standing on the channel row
-  await settle(200); // the focused channel's guide settles first, so the bar offers Guide
-  fireEvent.click(screen.getByRole("button", { name: "Guide" }));
+  const guideControl = document.querySelector<HTMLElement>(
+    '.deck-programme-panel [data-control="guide"]',
+  );
+  expect(guideControl).toBeTruthy();
+  expect(guideControl?.getAttribute("aria-disabled")).not.toBe("true");
+  fireEvent.click(guideControl!);
+  await settle(0);
+  expect(document.documentElement.dir).toBe("rtl");
+  expect(document.querySelector(".guide-drawer")).toBeTruthy();
+
+  press(KEY.RIGHT);
   await settle(0);
   expect(document.querySelector(".guide-drawer")).toBeTruthy();
-  expect(panelOpen()).toBe(false);
 
-  press(KEY.BACK);
+  press(KEY.LEFT);
   expect(document.querySelector(".guide-drawer.closing")).toBeTruthy();
   await settle(180);
   expect(document.querySelector(".guide-drawer")).toBeNull();
-  /* The drawer came from the browser, so Back lands back on the browser channel row. */
-  expect(panelOpen()).toBe(true);
-  expect(document.querySelector(".list .row.selected .row-label")?.textContent).toBe(
-    "Provider One",
-  );
 });
 
-test("Catchup Details returns to the Guide that started playback", async () => {
+test("Catchup Details shows the programme without restarting playback", async () => {
   const baseFetch = xtreamFetch(
     [{ category_id: "10", category_name: "News" }],
     [
@@ -329,48 +520,76 @@ test("Catchup Details returns to the Guide that started playback", async () => {
   press(KEY.ENTER);
   await settle(0);
   press(KEY.RIGHT);
-  press(KEY.LEFT);
+  press(KEY.RIGHT);
   press(KEY.ENTER);
   await settle(0);
   fireEvent.click(screen.getByRole("button", { name: "Play from start" }));
-  await settle(0);
+  await vi.waitFor(
+    async () => {
+      await settle(0);
+      expect(playCalls.filter((call) => call[3] === "finite")).toHaveLength(1);
+    },
+    { interval: 10 },
+  );
   press(KEY.BACK);
   await settle(180);
   press(KEY.ENTER);
+  const starts = playCalls.length;
   fireEvent.click(screen.getByRole("button", { name: "Details" }));
-  await settle(0);
-
-  expect(document.querySelector(".guide-drawer")).toBeTruthy();
-  expect(document.querySelector(".panel")).toBeTruthy();
-  expect(panelOpen()).toBe(false);
-  expect(screen.getByText("Morning News")).toBeTruthy();
-});
-
-test("law 4 returns from the VOD root to the Live picture", async () => {
-  await mountApp("", {
-    source: XTREAM_SOURCE,
-    fetchImplementation: xtreamFetch(
-      [{ category_id: "10", category_name: "News" }],
-      [
-        {
-          stream_id: "1",
-          name: "Provider One",
-          category_id: "10",
-          stream_type: "live",
-        },
-      ],
-    ),
-  });
-
-  fireEvent.click(screen.getByRole("button", { name: "Movies" }));
-  expect(screen.getByRole("button", { name: "Movies" }).getAttribute("aria-pressed")).toBe(
-    "true",
+  await vi.waitFor(
+    async () => {
+      await settle(0);
+      expect(document.querySelector(".playback-details")).toBeTruthy();
+    },
+    { interval: 10 },
   );
-
-  press(KEY.BACK);
+  expect(document.querySelector(".playback-details")?.textContent).toContain("Morning News");
+  expect(document.querySelector(".guide-drawer")).toBeNull();
   expect(panelOpen()).toBe(false);
-  expect(document.querySelector(".dialog")).toBeNull();
+  press(KEY.BACK);
+  await settle(0);
+  expect(document.querySelector(".playback-details")).toBeNull();
+  expect(document.querySelector(".playback-deck")).toBeTruthy();
+  expect(playCalls).toHaveLength(starts);
 });
+
+test.each(["Movies", "Series"] as const)(
+  "law 4 offers Exit from the %s root and restores the same mode on Cancel",
+  async (mode) => {
+    await mountApp("", {
+      source: XTREAM_SOURCE,
+      fetchImplementation: xtreamFetch(
+        [{ category_id: "10", category_name: "News" }],
+        [
+          {
+            stream_id: "1",
+            name: "Provider One",
+            category_id: "10",
+            stream_type: "live",
+          },
+        ],
+      ),
+    });
+
+    const selectedMode = screen.getByRole("button", { name: mode });
+    selectedMode.focus();
+    fireEvent.click(selectedMode);
+    expect(selectedMode.getAttribute("aria-current")).toBe("page");
+    press(KEY.RIGHT);
+
+    press(KEY.BACK);
+    expect(document.querySelector(".dialog")).toBeTruthy();
+    expect(selectedMode.getAttribute("aria-current")).toBe("page");
+    expect(panelOpen()).toBe(false);
+    fireEvent.click(screen.getByRole("button", { name: "Stay here" }));
+    expect(document.querySelector(".dialog")).toBeNull();
+    expect(screen.getByRole("button", { name: mode }).getAttribute("aria-current")).toBe(
+      "page",
+    );
+    expect(document.querySelector(".vod-host:not(.hidden) .vod-screen")).toBeTruthy();
+    expect(panelOpen()).toBe(false);
+  },
+);
 
 test("law 4 removes Movie details before it leaves the VOD root", async () => {
   const fetchImplementation = async (input: string | URL) => {
@@ -398,20 +617,52 @@ test("law 4 removes Movie details before it leaves the VOD root", async () => {
     });
   };
   await mountApp("", { source: XTREAM_SOURCE, fetchImplementation });
-  fireEvent.click(screen.getByRole("button", { name: "Movies" }));
+  const movies = screen.getByRole("button", { name: "Movies" });
+  movies.focus();
+  fireEvent.click(movies);
   await settle(300);
-  fireEvent.click(screen.getByRole("button", { name: /Film/ }));
+  press(KEY.RIGHT);
+  const film = screen.getByRole("button", { name: /Film/ });
+  film.focus();
+  fireEvent.click(film);
   await settle(0);
 
   press(KEY.BACK);
   expect(document.querySelector(".vod-details")).toBeNull();
-  expect(document.querySelector(".vod-screen")).toBeTruthy();
+  expect(document.querySelector(".vod-host:not(.hidden) .vod-screen")).toBeTruthy();
   expect(screen.getByText("Film")).toBeTruthy();
 
   press(KEY.BACK);
-  expect(document.querySelector(".vod-screen")).toBeNull();
+  expect(document.querySelector(".vod-host:not(.hidden) .vod-screen")).toBeTruthy();
   expect(panelOpen()).toBe(false);
+  expect(document.querySelector(".dialog")).toBeTruthy();
 });
+
+test.each(["Enter", "Return", "pointer"] as const)(
+  "dismissing Live Exit with %s preserves the hidden panel and its motion frame",
+  async (input) => {
+    await livePictureCalm();
+    expect(panelOpen()).toBe(false);
+    expect(document.querySelector(".app.live-panel-motion")).toBeTruthy();
+    press(KEY.BACK);
+    expect(document.querySelector(".dialog")).toBeTruthy();
+    expect(document.querySelector(".app.live-panel-motion")).toBeTruthy();
+    if (input === "pointer") {
+      const cancel = screen.getByRole("button", { name: "Keep watching" });
+      fireEvent.pointerDown(cancel);
+      fireEvent.click(cancel);
+    } else {
+      press(input === "Enter" ? KEY.ENTER : KEY.BACK);
+    }
+    expect(document.querySelector(".dialog")).toBeNull();
+    expect(document.querySelector(".app.live-panel-motion")).toBeTruthy();
+    expect(document.querySelector(".app.app-navigation-visible")).toBeNull();
+    expect(panelOpen()).toBe(false);
+    await settle(400);
+    expect(panelOpen()).toBe(false);
+    expect(document.querySelector(".app.app-navigation-visible")).toBeNull();
+  },
+);
 
 test("RETURN closes the channel panel before offering to exit when nothing is playing", async () => {
   await mount();
@@ -467,10 +718,25 @@ test("OK finishes a dialled number rather than waiting it out", async () => {
   assert.match(played[played.length - 1], /b\.m3u8$/);
 });
 
-test("the yellow key opens settings from anywhere", async () => {
+test("the yellow key opens settings without a page transition", async () => {
   await mount();
   press(KEY.YELLOW);
-  assert.ok(document.querySelector(".sheet"), "the settings sheet did not open");
+  assert.ok(
+    document.querySelector(".settings-host:not(.hidden) .sheet"),
+    "the settings sheet did not open",
+  );
+  expect(document.querySelector(".app.page-transition-entering")).toBeNull();
+});
+
+test("closing Settings does not start a page transition", async () => {
+  await mount();
+  press(KEY.YELLOW);
+  expect(document.querySelector(".app.page-transition-entering")).toBeNull();
+
+  press(KEY.BACK);
+
+  expect(document.querySelector(".settings-host:not(.hidden) .sheet")).toBeNull();
+  expect(document.querySelector(".app.page-transition-entering")).toBeNull();
 });
 
 test("opening Settings cancels a pending numeric dial", async () => {
@@ -482,7 +748,7 @@ test("opening Settings cancels a pending numeric dial", async () => {
   press(KEY.YELLOW);
   await settle(2_100);
 
-  expect(document.querySelector(".sheet")).toBeTruthy();
+  expect(document.querySelector(".settings-host:not(.hidden) .sheet")).toBeTruthy();
   expect(document.querySelector(".digits")).toBeNull();
   expect(played).toHaveLength(started);
 });
@@ -546,30 +812,43 @@ test("the debug Smart Remote's Select opens the browser like the remote's OK", a
   assert.ok(panelOpen(), "the remote's Select did not reach the browser");
 });
 
-test("double clicking the browser video toggles application fullscreen", async () => {
+test("double clicking anywhere in the app toggles browser fullscreen", async () => {
   await mount();
   const video = document.querySelector("video");
   const app = document.querySelector(".app");
+  const panel = document.querySelector(".panel");
   assert.ok(video, "the browser video was not rendered");
   assert.ok(app, "the application root was not rendered");
+  assert.ok(panel, "the channel panel was not rendered");
 
   let fullscreen: Element | null = null;
   Object.defineProperty(document, "fullscreenElement", {
     configurable: true,
     get: () => fullscreen,
   });
-  app.requestFullscreen = vi.fn(async () => {
-    fullscreen = app;
+  document.documentElement.requestFullscreen = vi.fn(async () => {
+    fullscreen = document.documentElement;
   });
   document.exitFullscreen = vi.fn(async () => {
     fullscreen = null;
   });
 
-  video.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
-  assert.equal(app.requestFullscreen.mock.calls.length, 1);
+  act(() => panel.dispatchEvent(new MouseEvent("dblclick", { bubbles: true })));
+  assert.equal(document.documentElement.requestFullscreen.mock.calls.length, 1);
+  assert.equal(fullscreen, document.documentElement);
   assert.equal(document.exitFullscreen.mock.calls.length, 0);
 
-  video.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
+  act(() => document.dispatchEvent(new Event("fullscreenchange")));
+  press(KEY.ESC);
+  assert.equal(document.exitFullscreen.mock.calls.length, 0);
+
+  pressDown(KEY.ESC);
+  await settle(500);
+  assert.equal(document.exitFullscreen.mock.calls.length, 1);
+  pressDown(KEY.ESC, true);
+  release(KEY.ESC);
+
+  act(() => panel.dispatchEvent(new MouseEvent("dblclick", { bubbles: true })));
   assert.equal(document.exitFullscreen.mock.calls.length, 1);
 });
 
@@ -579,64 +858,59 @@ test("the green key favourites the highlighted channel and says so", async () =>
   expect(screen.getByText("Added to favourites")).toBeTruthy();
 });
 
-test("playback information lives in the More drawer above the deck", async () => {
+test("playback diagnostics remain available without a More drawer", async () => {
   await mount();
   press(KEY.ENTER);
   press(KEY.BACK);
 
   press(KEY.RIGHT);
   assert.ok(document.querySelector(".playback-deck"), "the deck did not open");
-  press(KEY.RIGHT); // play-pause to More, the last control
-  press(KEY.ENTER);
+  expect(screen.queryByRole("button", { name: "More" })).toBeNull();
+  expect(document.querySelector(".playback-drawer")).toBeNull();
+  press(KEY.BACK);
+  await hold(KEY.ENTER);
 
   const info = screen.getByRole("complementary", { name: "Playback information" });
   expect(info.textContent).toContain("hls.js");
   expect(info.textContent).toMatch(/1920.*1080/);
-  expect(info.textContent).toContain("avc1.640028");
-  expect(info.textContent).toContain("4.5 Mbps");
-  expect(info.textContent).toContain("12.4 s");
-  expect(info.textContent).toContain("2 / 1000");
-  expect(info.textContent).toContain("3 / 5");
+  expect(info.textContent).toContain("50 fps");
 });
 
-test("Back from the More drawer lands on the deck, then Back closes it", async () => {
-  await mount();
+test("Back from an Audio drawer lands on the deck, then Back closes it", async () => {
+  await mount({ playerTracks: MATRIX_TRACKS });
   press(KEY.ENTER);
-
   press(KEY.RIGHT);
-  press(KEY.RIGHT);
-  press(KEY.ENTER);
-  assert.ok(
-    screen.getByRole("complementary", { name: "Playback information" }),
-    "the More drawer did not open",
-  );
+  fireEvent.click(screen.getByRole("button", { name: "Audio" }));
+  expect(document.querySelector(".playback-drawer")).toBeTruthy();
 
   press(KEY.BACK);
-  assert.equal(
-    Boolean(screen.queryByRole("complementary", { name: "Playback information" })),
-    false,
-    "Back did not close the drawer",
+  await vi.waitFor(
+    async () => {
+      await settle(0);
+      expect(document.querySelector(".playback-drawer")).toBeNull();
+    },
+    { interval: 10 },
   );
   assert.ok(document.querySelector(".playback-deck"), "Back closed the deck under the drawer");
+  expect(document.querySelector('[data-control="audio"][data-selected]')).toBeTruthy();
 
   press(KEY.BACK);
   assert.equal(Boolean(document.querySelector(".playback-deck")), false);
 });
 
 test("Back above a playback drawer closes one modal surface", async () => {
-  await mount();
+  await mount({ playerTracks: MATRIX_TRACKS });
   press(KEY.ENTER);
   press(KEY.RIGHT);
-  press(KEY.RIGHT);
-  press(KEY.ENTER);
+  fireEvent.click(screen.getByRole("button", { name: "Audio" }));
   expect(document.querySelector(".playback-drawer")).toBeTruthy();
 
   press(KEY.YELLOW);
-  expect(document.querySelector(".sheet")).toBeTruthy();
+  expect(document.querySelector(".settings-host:not(.hidden) .sheet")).toBeTruthy();
   expect(document.querySelector(".playback-drawer")).toBeNull();
   press(KEY.BACK);
   await settle(0);
-  expect(document.querySelector(".sheet")).toBeNull();
+  expect(document.querySelector(".settings-host:not(.hidden) .sheet")).toBeNull();
   expect(document.querySelector(".playback-drawer")).toBeTruthy();
 });
 
@@ -649,13 +923,16 @@ test("the blue key does not open playback surfaces", async () => {
   assert.equal(Boolean(document.querySelector(".playback-drawer")), false);
 });
 
-test("a terminal failure is reported on the picture and the banner stays down", async () => {
+test("a terminal failure closes the deck and keeps Play or Pause inert", async () => {
   await mount({ faultPicture: true });
   press(KEY.ENTER);
   await settle(600);
 
   assert.equal(Boolean(document.querySelector(".pb-stack")), false);
   assert.ok(document.querySelector(".picture-state"), "no failure card showed");
+  assert.equal(Boolean(document.querySelector(".playback-deck")), false);
+  press(KEY.PLAY_PAUSE);
+  assert.equal(Boolean(document.querySelector(".playback-deck")), false);
 });
 
 test("no key that leaves you at the picture can strand you there", async () => {
@@ -683,6 +960,7 @@ test("no key that leaves you at the picture can strand you there", async () => {
   for (const code of staysAtThePicture) {
     press(code);
     assert.ok(!panelOpen(), `key ${code} was expected to leave the viewer watching`);
+    if (code === KEY.PAUSE) press(KEY.PLAY);
     if (document.querySelector(".playback-deck")) press(KEY.BACK);
     const before = played.length;
     press(KEY.UP);
@@ -702,7 +980,7 @@ const VOD_FETCH = async (input: string | URL) => {
     },
     get_live_categories: [{ category_id: "1", category_name: "Live" }],
     get_vod_categories: [{ category_id: "10", category_name: "Cinema" }],
-    get_series_categories: [],
+    get_series_categories: [{ category_id: "20", category_name: "Drama" }],
     get_live_streams: [{ stream_id: "1", category_id: "1", name: "Live One" }],
     get_vod_streams: [
       { stream_id: "100", category_id: "10", name: "Film", container_extension: "mp4" },
@@ -711,6 +989,21 @@ const VOD_FETCH = async (input: string | URL) => {
       info: { name: "Film", plot: "Plot" },
       movie_data: { stream_id: "100", category_id: "10", container_extension: "mp4" },
     },
+    get_series: [{ series_id: "200", category_id: "20", name: "Show" }],
+    get_series_info: {
+      info: { name: "Show", category_id: "20" },
+      episodes: {
+        "1": [
+          {
+            id: "201",
+            episode_num: 1,
+            title: "Pilot",
+            container_extension: "mp4",
+            info: { duration_secs: 1800 },
+          },
+        ],
+      },
+    },
   };
   return new Response(JSON.stringify(body[action]), {
     status: 200,
@@ -718,14 +1011,32 @@ const VOD_FETCH = async (input: string | URL) => {
   });
 };
 
-async function startMovie() {
-  await mountApp("", { source: XTREAM_SOURCE, fetchImplementation: VOD_FETCH });
-  fireEvent.click(screen.getByRole("button", { name: "Movies" }));
+async function startMovie(slowPicture = 0, faultPicture = false) {
+  await mountApp("", {
+    source: XTREAM_SOURCE,
+    fetchImplementation: VOD_FETCH,
+    slowPicture,
+    faultPicture,
+  });
+  const movies = screen.getByRole("button", { name: "Movies" });
+  movies.focus();
+  fireEvent.click(movies);
   await settle(300);
-  fireEvent.click(screen.getByRole("button", { name: /Film/ }));
+  press(KEY.RIGHT);
+  const film = screen.getByRole("button", { name: /Film/ });
+  film.focus();
+  fireEvent.click(film);
   await settle(0);
-  fireEvent.click(screen.getByRole("button", { name: /Play|Resume/ }));
-  await settle(0);
+  const play = screen.getByRole("button", { name: /^(Play|Resume)\b/ });
+  play.focus();
+  fireEvent.click(play);
+  await vi.waitFor(
+    async () => {
+      await settle(0);
+      expect(playCalls.filter((call) => call[3] === "finite")).toHaveLength(1);
+    },
+    { interval: 10 },
+  );
 }
 
 async function startPendingMovie() {
@@ -738,14 +1049,287 @@ async function startPendingMovie() {
         resolveUrl = resolve;
       }),
   });
-  fireEvent.click(screen.getByRole("button", { name: "Movies" }));
+  const movies = screen.getByRole("button", { name: "Movies" });
+  movies.focus();
+  fireEvent.click(movies);
   await settle(300);
-  fireEvent.click(screen.getByRole("button", { name: /Film/ }));
+  press(KEY.RIGHT);
+  const film = screen.getByRole("button", { name: /Film/ });
+  film.focus();
+  fireEvent.click(film);
   await settle(0);
-  fireEvent.click(screen.getByRole("button", { name: /Play|Resume/ }));
+  const play = screen.getByRole("button", { name: /^(Play|Resume)\b/ });
+  play.focus();
+  fireEvent.click(play);
   await settle(0);
   return (url = "http://provider.example/movie/100.mp4") => resolveUrl?.(url);
 }
+
+test.each([
+  ["Movies", "Film", "en", KEY.LEFT, KEY.RIGHT],
+  ["Series", "Show", "en", KEY.LEFT, KEY.RIGHT],
+  ["Movies", "Film", "ar", KEY.RIGHT, KEY.LEFT],
+] as const)(
+  "%s details give %s a Back rail in %s",
+  async (mode, title, locale, inlineStart, inlineEnd) => {
+    await mountApp("", { source: XTREAM_SOURCE, fetchImplementation: VOD_FETCH, locale });
+    const { translate } = await import("../src/services/locale");
+    const navigationButton = screen.getByRole("button", {
+      name: translate(locale, mode === "Movies" ? "content.movies" : "content.series"),
+    });
+    navigationButton.focus();
+    fireEvent.click(navigationButton);
+    await settle(300);
+    expect(document.querySelector(".vod-detail-back")).toBeNull();
+    const poster = screen.getByRole("button", { name: title, exact: true });
+    poster.focus();
+    fireEvent.click(poster);
+    await settle(0);
+
+    const back = screen.getByRole("button", {
+      name: translate(locale, "common.back"),
+      exact: true,
+    });
+    expect(back.classList.contains("vod-detail-back")).toBe(true);
+    expect(back.textContent).toBe("");
+    expect(document.querySelectorAll(".vod-detail-back")).toHaveLength(1);
+    const firstAction = document.querySelector<HTMLButtonElement>(".vod-action")!;
+    firstAction.focus();
+    const callsBeforeBack = playCalls.length;
+    press(inlineStart);
+    expect(back.hasAttribute("data-selected")).toBe(true);
+    expect(document.querySelector(".app-navigation.expanded")).toBeNull();
+    press(KEY.DOWN);
+    expect(back.hasAttribute("data-selected")).toBe(true);
+    press(inlineEnd);
+    expect(firstAction.classList.contains("cursor")).toBe(true);
+    press(inlineStart);
+    press(KEY.ENTER);
+    await settle(0);
+
+    expect(document.querySelector(".vod-details")).toBeNull();
+    expect(document.querySelector(".vod-detail-back")).toBeNull();
+    expect(document.querySelector(".poster-card.cursor")?.textContent).toContain(title);
+    expect(playCalls).toHaveLength(callsBeforeBack);
+    const { usePersonal } = await import("../src/stores/personal");
+    expect(usePersonal.getState().favourites).toHaveLength(0);
+  },
+);
+
+test("pointer Back restores the movie catalogue selection and its rendered window", async () => {
+  await mountApp("", {
+    source: XTREAM_SOURCE,
+    fetchImplementation: async (input) => {
+      if (new URL(String(input)).searchParams.get("action") === "get_vod_streams") {
+        return new Response(
+          JSON.stringify(
+            Array.from({ length: 40 }, (_, index) => ({
+              stream_id: String(100 + index),
+              category_id: "10",
+              name: `Film ${index}`,
+              container_extension: "mp4",
+            })),
+          ),
+          { headers: { "Content-Type": "application/json" } },
+        );
+      }
+      return VOD_FETCH(input);
+    },
+  });
+  const movies = screen.getByRole("button", { name: "Movies" });
+  movies.focus();
+  fireEvent.click(movies);
+  await settle(300);
+  await finishPageEntry();
+  const first = screen.getByRole("button", { name: /^Film 0$/ });
+  first.focus();
+  press(KEY.RIGHT);
+  press(KEY.DOWN);
+  press(KEY.DOWN);
+  press(KEY.DOWN);
+  await settle(32);
+  const selected = document.querySelector<HTMLButtonElement>(".poster-card.cursor")!;
+  const index = selected.dataset.posterIndex;
+  expect(Number(index)).toBeGreaterThan(0);
+  const windowTransform = document.querySelector<HTMLElement>(".poster-grid")!.style.transform;
+  const renderedIndices = Array.from(document.querySelectorAll(".poster-card")).map((card) =>
+    card.getAttribute("data-poster-index"),
+  );
+  fireEvent.click(selected);
+  await settle(0);
+  fireEvent.click(screen.getByRole("button", { name: "Back", exact: true }));
+  await settle(0);
+  expect(document.querySelector(".poster-card.cursor")?.getAttribute("data-poster-index")).toBe(
+    index,
+  );
+  expect(document.querySelector<HTMLElement>(".poster-grid")!.style.transform).toBe(
+    windowTransform,
+  );
+  expect(
+    Array.from(document.querySelectorAll(".poster-card")).map((card) =>
+      card.getAttribute("data-poster-index"),
+    ),
+  ).toEqual(renderedIndices);
+});
+
+test("pointer Back restores the movie search query, selection and rendered window", async () => {
+  await mountApp("", { source: XTREAM_SOURCE, fetchImplementation: VOD_FETCH });
+  const movies = screen.getByRole("button", { name: "Movies" });
+  movies.focus();
+  fireEvent.click(movies);
+  await settle(300);
+  fireEvent.click(screen.getByRole("button", { name: /^Search/ }));
+  expect(document.querySelector(".vod-detail-back")).toBeNull();
+  const input = screen.getByRole("textbox", { name: "Search Movies" });
+  fireEvent.change(input, { target: { value: "Film" } });
+  await settle(300);
+  const film = screen.getByRole("button", { name: /^Film$/ });
+  film.focus();
+  const index = film.getAttribute("data-poster-index");
+  const windowTransform = document.querySelector<HTMLElement>(".poster-grid")!.style.transform;
+  fireEvent.click(film);
+  await settle(0);
+  fireEvent.click(screen.getByRole("button", { name: "Back", exact: true }));
+  await settle(0);
+  expect(document.querySelector(".vod-search")).toBeTruthy();
+  expect(screen.getByRole("textbox", { name: "Search Movies" })).toHaveProperty(
+    "value",
+    "Film",
+  );
+  expect(document.querySelector(".poster-card.cursor")?.getAttribute("data-poster-index")).toBe(
+    index,
+  );
+  expect(document.querySelector<HTMLElement>(".poster-grid")!.style.transform).toBe(
+    windowTransform,
+  );
+  expect(document.querySelector(".vod-detail-back")).toBeNull();
+});
+
+test("Series pointer Back collapses episodes before restoring the catalogue", async () => {
+  await mountApp("", { source: XTREAM_SOURCE, fetchImplementation: VOD_FETCH });
+  const series = screen.getByRole("button", { name: "Series" });
+  series.focus();
+  fireEvent.click(series);
+  await settle(300);
+  const show = screen.getByRole("button", { name: "Show", exact: true });
+  show.focus();
+  fireEvent.click(show);
+  await settle(0);
+  const episodes = screen.getByRole("button", { name: /Episodes/ });
+  episodes.focus();
+  fireEvent.click(episodes);
+  expect(document.querySelector(".series-details.panel-open")).toBeTruthy();
+  const back = screen.getByRole("button", { name: "Back", exact: true });
+  fireEvent.click(back);
+  expect(document.querySelector(".series-details.panel-open")).toBeNull();
+  expect(document.querySelector(".vod-details")).toBeTruthy();
+  expect(back.hasAttribute("data-selected")).toBe(true);
+  fireEvent.click(back);
+  expect(document.querySelector(".vod-details")).toBeNull();
+  expect(document.querySelector(".poster-card.cursor")?.textContent).toContain("Show");
+
+  fireEvent.click(screen.getByRole("button", { name: "Show", exact: true }));
+  await settle(0);
+  fireEvent.click(screen.getByRole("button", { name: /Episodes/ }));
+  press(KEY.BACK);
+  expect(document.querySelector(".series-details.panel-open")).toBeNull();
+  expect(document.querySelector(".vod-details")).toBeTruthy();
+  press(KEY.BACK);
+  expect(document.querySelector(".vod-details")).toBeNull();
+  expect(document.querySelector(".poster-card.cursor")?.textContent).toContain("Show");
+});
+
+test.each([
+  ["Movies", "Film", "get_vod_info"],
+  ["Series", "Show", "get_series_info"],
+] as const)(
+  "%s keeps Back available during loading and failure without activating Retry",
+  async (mode, title, detailAction) => {
+    let finishDetail: ((response: Response) => void) | undefined;
+    let detailRequests = 0;
+    await mountApp("", {
+      source: XTREAM_SOURCE,
+      fetchImplementation: (input) => {
+        if (new URL(String(input)).searchParams.get("action") === detailAction) {
+          detailRequests += 1;
+          return new Promise<Response>((resolve) => {
+            finishDetail = resolve;
+          });
+        }
+        return VOD_FETCH(input);
+      },
+    });
+    const route = screen.getByRole("button", { name: mode });
+    route.focus();
+    fireEvent.click(route);
+    await settle(300);
+    const poster = screen.getByRole("button", { name: title, exact: true });
+    poster.focus();
+    fireEvent.click(poster);
+    await settle(0);
+    const back = screen.getByRole("button", { name: "Back", exact: true });
+    expect(document.querySelector(".vod-details.loading")).toBeTruthy();
+    press(KEY.LEFT);
+    expect(back.hasAttribute("data-selected")).toBe(true);
+    press(KEY.RIGHT);
+    expect(back.hasAttribute("data-selected")).toBe(true);
+    finishDetail!(new Response("{}", { status: 503 }));
+    await settle(0);
+    expect(document.querySelector(".vod-details.failed")).toBeTruthy();
+    expect(back.hasAttribute("data-selected")).toBe(true);
+    press(KEY.RIGHT);
+    expect(document.querySelector(".vod-retry")?.hasAttribute("data-selected")).toBe(true);
+    press(KEY.LEFT);
+    const beforeBack = detailRequests;
+    press(KEY.ENTER);
+    await settle(0);
+    expect(document.querySelector(".vod-details")).toBeNull();
+    expect(detailRequests).toBe(beforeBack);
+    expect(playCalls).toHaveLength(0);
+  },
+);
+
+test("pointer Back cancels pending VOD resolution before returning to its poster", async () => {
+  const resolveUrl = await startPendingMovie();
+  const back = screen.getByRole("button", { name: "Back", exact: true });
+  expect(back.hasAttribute("disabled")).toBe(false);
+  fireEvent.click(back);
+  resolveUrl();
+  await settle(0);
+  expect(document.querySelector(".vod-details")).toBeNull();
+  expect(playCalls).toHaveLength(0);
+  expect(document.querySelector(".poster-card.cursor")?.textContent).toContain("Film");
+});
+
+test.each(["empty", "too-large"] as const)(
+  "Back returns to Retry when the raw movie detail resource is %s without a value",
+  async (state) => {
+    await mountApp("", { source: XTREAM_SOURCE, fetchImplementation: VOD_FETCH });
+    const movies = screen.getByRole("button", { name: "Movies" });
+    movies.focus();
+    fireEvent.click(movies);
+    await settle(300);
+    const film = screen.getByRole("button", { name: /Film/ });
+    film.focus();
+    fireEvent.click(film);
+    await settle(0);
+    const { useLibrary } = await import("../src/stores/library");
+    const itemKey = Object.keys(useLibrary.getState().movieDetails)[0];
+    act(() =>
+      useLibrary.setState({
+        movieDetails: { ...useLibrary.getState().movieDetails, [itemKey]: { state } },
+      }),
+    );
+    const back = screen.getByRole("button", { name: "Back", exact: true });
+    fireEvent.focus(back);
+    press(KEY.RIGHT);
+    expect(document.querySelector(".vod-retry")?.hasAttribute("data-selected")).toBe(true);
+    press(KEY.LEFT);
+    press(KEY.ENTER);
+    expect(document.querySelector(".vod-details")).toBeNull();
+    expect(playCalls).toHaveLength(0);
+  },
+);
 
 test("Stop invalidates a pending asynchronous VOD start", async () => {
   const resolveUrl = await startPendingMovie();
@@ -792,11 +1376,10 @@ test("pending VOD resolution owns arrows, channel keys and digits", async () => 
 });
 
 test.each([
-  ["Live", [KEY.LEFT], ".vod-screen", false],
-  ["Movies", [], ".vod-screen[data-mode='movie']", true],
-  ["Series", [KEY.RIGHT], ".vod-screen[data-mode='series']", true],
-  ["Search", [KEY.RIGHT, KEY.RIGHT], ".vod-search", true],
-  ["Settings", [KEY.RIGHT, KEY.RIGHT, KEY.RIGHT], ".sheet", true],
+  ["Live", [KEY.UP], ".vod-host:not(.hidden) .vod-screen", false],
+  ["Series", [KEY.DOWN], ".vod-host:not(.hidden) .vod-screen[data-mode='series']", true],
+  ["Search", [KEY.DOWN, KEY.DOWN], ".search-field", true],
+  ["Settings", [KEY.DOWN, KEY.DOWN, KEY.DOWN], ".settings-host:not(.hidden) .sheet", true],
 ] as const)(
   "remote %s activation cancels pending VOD resolution",
   async (_name, directions, selector, expected) => {
@@ -804,10 +1387,15 @@ test.each([
 
     press(KEY.UP);
     for (const direction of directions) press(direction);
-    expect(screen.getByRole("button", { name: _name }).classList.contains("selected")).toBe(
-      true,
-    );
-    press(KEY.ENTER);
+    const action = screen.queryByRole("button", {
+      name: _name === "Search" ? /^Search/ : _name,
+    });
+    if (action) {
+      expect(action.classList.contains("cursor")).toBe(true);
+      press(KEY.ENTER);
+    } else {
+      expect(_name).toBe("Settings");
+    }
     resolveUrl();
     await settle(0);
 
@@ -817,14 +1405,19 @@ test.each([
   },
 );
 
-test("the uncovered finite picture quick seeks on Left and Right and ignores Up and Down", async () => {
+test("finite picture seek opens the deck on its target and Up and Down remain inert after it closes", async () => {
   await startMovie();
-  assert.equal(panelOpen(), false, "the movie did not start at the picture");
+  expect(playCalls).toHaveLength(1);
+  expect(document.querySelector(".vod-host")?.classList.contains("hidden")).toBe(true);
 
   press(KEY.RIGHT);
-  expect(document.querySelector(".quick-seek")).toBeTruthy();
-  await settle(400);
+  expect(document.querySelector(".playback-deck")).toBeTruthy();
+  expect(document.querySelector('[data-control="seek"][data-selected]')).toBeTruthy();
+  await settle(SEEK_SETTLE_MS - 1);
+  expect(seekChanges).toEqual([]);
+  await settle(1);
   expect(seekChanges).toEqual([10]);
+  press(KEY.BACK);
 
   const started = played.length;
   press(KEY.UP);
@@ -844,11 +1437,53 @@ test("the uncovered finite picture quick seeks on Left and Right and ignores Up 
   );
 });
 
+test("the finite seek deck previews reversals immediately and sends only the settled target", async () => {
+  await startMovie();
+  press(KEY.RIGHT);
+  await settle(SEEK_SETTLE_MS);
+  expect(seekChanges).toEqual([10]);
+  const seekbar = screen.getByRole("slider");
+  expect(seekbar.getAttribute("aria-valuenow")).toBe("10");
+  expect(seekbar.hasAttribute("data-selected")).toBe(true);
+
+  press(KEY.RIGHT);
+  expect(seekbar.getAttribute("aria-valuenow")).toBe("20");
+  await settle(600);
+  expect(seekChanges).toEqual([10]);
+  press(KEY.RIGHT);
+  expect(seekbar.getAttribute("aria-valuenow")).toBe("30");
+  await settle(600);
+  expect(seekChanges).toEqual([10]);
+  press(KEY.LEFT);
+  expect(seekbar.getAttribute("aria-valuenow")).toBe("20");
+  expect(seekbar.hasAttribute("data-selected")).toBe(true);
+  expect(seekChanges).toEqual([10]);
+
+  await settle(SEEK_SETTLE_MS - 1);
+  expect(seekChanges).toEqual([10]);
+  expect(seekbar.getAttribute("aria-valuenow")).toBe("20");
+  expect(seekbar.hasAttribute("data-selected")).toBe(true);
+  await settle(1);
+  expect(seekChanges).toEqual([10, 10]);
+  expect(seekbar.hasAttribute("data-selected")).toBe(true);
+});
+
 test("Play or Pause at the finite picture opens the deck", async () => {
   await startMovie();
 
   press(KEY.PLAY_PAUSE);
   assert.ok(document.querySelector(".playback-deck"), "Play or Pause did not open the deck");
+});
+
+test("Play or Pause remains available while a finite movie loads", async () => {
+  await startMovie(2_000);
+
+  press(KEY.PLAY_PAUSE);
+
+  const control = document.querySelector<HTMLButtonElement>('[data-control="play-pause"]');
+  expect(control).toBeTruthy();
+  expect(control?.disabled).toBe(false);
+  expect(control?.hasAttribute("data-selected")).toBe(true);
 });
 
 test("Stop at the finite picture returns to the details it came from", async () => {
@@ -869,9 +1504,9 @@ test("natural VOD completion releases playback and returns to its details", asyn
   await settle(0);
 
   expect(document.querySelector(".vod-details")).toBeTruthy();
-  expect(document.querySelector(".panel")).toBeNull();
+  expect(document.querySelector('.live-panel-host[aria-hidden="false"] .panel')).toBeNull();
   press(KEY.YELLOW);
-  expect(document.querySelector(".sheet")).toBeTruthy();
+  expect(document.querySelector(".settings-host:not(.hidden) .sheet")).toBeTruthy();
   expect(muted).toBe(false);
 });
 
@@ -901,7 +1536,7 @@ test("a rebuffer under the delay stays quiet and a real one shows compact status
 });
 
 test("the deck, a drawer, the browser and a modal hide the compact status", async () => {
-  await mount();
+  await mount({ playerTracks: MATRIX_TRACKS });
   press(KEY.ENTER); // start the focused channel
   await settle(0);
 
@@ -926,12 +1561,8 @@ test("the deck, a drawer, the browser and a modal hide the compact status", asyn
     "status showed under the deck",
   );
 
-  press(KEY.RIGHT); // play-pause to More
-  press(KEY.ENTER); // the More drawer
-  assert.ok(
-    screen.getByRole("complementary", { name: "Playback information" }),
-    "the More drawer did not open",
-  );
+  fireEvent.click(screen.getByRole("button", { name: "Audio" }));
+  assert.ok(document.querySelector(".playback-drawer"), "the Audio drawer did not open");
   assert.equal(
     Boolean(document.querySelector(".recovery-status")),
     false,
@@ -939,6 +1570,13 @@ test("the deck, a drawer, the browser and a modal hide the compact status", asyn
   );
 
   press(KEY.BACK); // drawer to deck
+  await vi.waitFor(
+    async () => {
+      await settle(0);
+      expect(document.querySelector(".playback-drawer")).toBeNull();
+    },
+    { interval: 10 },
+  );
   press(KEY.BACK); // deck to picture, status returns
   assert.ok(document.querySelector(".recovery-status"), "status did not come back");
 
@@ -991,7 +1629,11 @@ const MATRIX_TRACKS: MediaTrack[] = [
 
 /** Which surface owns the next keypress, and which control inside it. */
 function readFocusOwner(): string {
-  if (document.querySelector(".dialog") || document.querySelector(".sheet")) return "modal";
+  if (
+    document.querySelector(".dialog") ||
+    document.querySelector(".settings-host:not(.hidden) .sheet")
+  )
+    return "modal";
   if (document.querySelector(".playback-drawer")) return "drawer";
   const deck = document.querySelector(".playback-deck");
   if (deck) {
@@ -1020,6 +1662,7 @@ const liveDeck = async () => {
 const liveDeckSeek = async () => {
   await mount({ liveDvr: true });
   press(KEY.ENTER);
+  await settle(2_100);
   press(KEY.RIGHT);
   press(KEY.UP);
 };
@@ -1037,7 +1680,7 @@ const liveDeckWithGuide = async () => {
 };
 const guideDrawer = async () => {
   await liveDeckWithGuide();
-  press(KEY.LEFT);
+  press(KEY.RIGHT);
   press(KEY.ENTER);
 };
 const audioDrawer = async () => {
@@ -1053,11 +1696,6 @@ const subtitlesDrawer = async () => {
   press(KEY.RIGHT);
   await settle(0);
   fireEvent.click(screen.getByRole("button", { name: "Subtitles" }));
-};
-const moreDrawer = async () => {
-  await liveDeck();
-  press(KEY.RIGHT); // Play or Pause to More, the trailing control
-  press(KEY.ENTER);
 };
 const finitePicture = startMovie;
 const finiteDeck = async () => {
@@ -1163,21 +1801,21 @@ const TRANSITIONS: {
     focus: "play-pause",
     key: KEY.LEFT,
     arrange: liveDeck,
-    expected: "deck:play-pause",
+    expected: "deck:previous",
   },
   {
     surface: "live deck",
     focus: "play-pause",
     key: KEY.RIGHT,
     arrange: liveDeck,
-    expected: "deck:more",
+    expected: "deck:next",
   },
   {
     surface: "live deck",
     focus: "play-pause",
     key: KEY.UP,
     arrange: liveDeck,
-    expected: "deck:play-pause",
+    expected: "picture",
   },
   {
     surface: "live deck",
@@ -1189,22 +1827,22 @@ const TRANSITIONS: {
   {
     surface: "live deck",
     focus: "guide",
-    key: KEY.LEFT,
+    key: KEY.RIGHT,
     arrange: async () => {
       await liveDeckWithGuide();
-      press(KEY.LEFT);
+      press(KEY.RIGHT);
     },
-    expected: "deck:guide", // the leading edge clamps rather than wrapping
+    expected: "deck:guide", // the trailing edge clamps rather than wrapping
   },
   {
     surface: "live deck",
-    focus: "more",
+    focus: "next",
     key: KEY.RIGHT,
     arrange: async () => {
       await liveDeck();
       press(KEY.RIGHT);
     },
-    expected: "deck:more", // the trailing edge clamps rather than wrapping
+    expected: "deck:next",
   },
 
   // The delayed Live seek bar, and Go live one step past its edge
@@ -1225,10 +1863,17 @@ const TRANSITIONS: {
   {
     surface: "live deck",
     focus: "seek",
+    key: KEY.UP,
+    arrange: liveDeckSeek,
+    expected: "picture",
+  },
+  {
+    surface: "live deck",
+    focus: "seek",
     key: KEY.RIGHT,
     arrange: async () => {
       await mount({ liveDvr: true });
-      setPlaybackTime(100, 120);
+      setPlaybackTime(3580, 3600);
       press(KEY.ENTER);
       await settle(2_100); // let the live clock publish the playhead before the deck reads it
       press(KEY.RIGHT); // the deck, and its bar starts at the playhead
@@ -1244,12 +1889,11 @@ const TRANSITIONS: {
     key: KEY.LEFT,
     arrange: async () => {
       await mount({ liveDvr: true });
-      setPlaybackTime(100, 120);
+      setPlaybackTime(3580, 3600);
       press(KEY.ENTER);
       await settle(2_100);
       press(KEY.RIGHT);
       press(KEY.UP);
-      press(KEY.RIGHT);
       press(KEY.RIGHT);
       press(KEY.RIGHT); // one step past the end, onto Go live
     },
@@ -1286,13 +1930,6 @@ const TRANSITIONS: {
     expected: "drawer",
   },
   {
-    surface: "more drawer",
-    focus: "info",
-    key: KEY.BACK,
-    arrange: moreDrawer,
-    expected: "deck:more",
-  },
-  {
     surface: "guide drawer",
     focus: "rows",
     key: KEY.BACK,
@@ -1313,14 +1950,14 @@ const TRANSITIONS: {
     focus: "playhead",
     key: KEY.LEFT,
     arrange: finitePicture,
-    expected: "picture",
+    expected: "deck:seek",
   },
   {
     surface: "finite picture",
     focus: "playhead",
     key: KEY.RIGHT,
     arrange: finitePicture,
-    expected: "picture",
+    expected: "deck:seek",
   },
   {
     surface: "finite picture",
@@ -1350,7 +1987,7 @@ const TRANSITIONS: {
     focus: "play-pause",
     key: KEY.LEFT,
     arrange: finiteDeck,
-    expected: "deck:previous",
+    expected: "deck:details",
   },
   {
     surface: "finite deck",
@@ -1394,4 +2031,169 @@ test.each(TRANSITIONS)("$surface $focus handles $key", async ({ arrange, key, ex
   press(key);
   await settle(0);
   expect(readFocusOwner()).toEqual(expected);
+});
+
+const finishContentMotion = async () => {
+  await settle(400);
+  await settle(64);
+  await settle(400);
+};
+
+const vodWindowFetch = async (input: string | URL) => {
+  const action = new URL(String(input)).searchParams.get("action") ?? "authenticate";
+  if (action === "get_vod_streams") {
+    return new Response(
+      JSON.stringify(
+        Array.from({ length: 40 }, (_, index) => ({
+          stream_id: String(100 + index),
+          category_id: "10",
+          name: `Film ${index}`,
+          container_extension: "mp4",
+        })),
+      ),
+      { headers: { "Content-Type": "application/json" } },
+    );
+  }
+  if (action === "get_series") {
+    return new Response(
+      JSON.stringify(
+        Array.from({ length: 40 }, (_, index) => ({
+          series_id: String(200 + index),
+          category_id: "20",
+          name: `Show ${index}`,
+        })),
+      ),
+      { headers: { "Content-Type": "application/json" } },
+    );
+  }
+  return VOD_FETCH(input);
+};
+
+test.each([
+  ["Movies", "Film"],
+  ["Series", "Show"],
+] as const)(
+  "%s details motion covers entry and Back without touching the catalogue",
+  async (mode, title) => {
+    await mountApp("", {
+      source: XTREAM_SOURCE,
+      fetchImplementation: vodWindowFetch,
+    });
+    const navigationButton = screen.getByRole("button", { name: mode });
+    navigationButton.focus();
+    fireEvent.click(navigationButton);
+    await settle(300);
+    await finishPageEntry();
+
+    document.documentElement.style.setProperty("--t-navigation", "180ms");
+    try {
+      const first = screen.getByRole("button", {
+        name: new RegExp(`^${title} 0$`),
+      });
+      first.focus();
+      press(KEY.RIGHT);
+      press(KEY.DOWN);
+      press(KEY.DOWN);
+      press(KEY.DOWN);
+      await settle(32);
+      const selected = document.querySelector<HTMLButtonElement>(".poster-card.cursor")!;
+      const index = selected.dataset.posterIndex;
+      expect(Number(index)).toBeGreaterThan(0);
+      const transform = document.querySelector<HTMLElement>(".poster-grid")!.style.transform;
+      const rendered = Array.from(document.querySelectorAll(".poster-card")).map((card) =>
+        card.getAttribute("data-poster-index"),
+      );
+      const plays = playCalls.length;
+
+      fireEvent.click(selected);
+      expect(document.querySelector(".vod-details")).toBeNull();
+      expect(
+        document
+          .querySelector(".vod-host .content-transition-shade")
+          ?.getAttribute("data-phase"),
+      ).toBe("leaving");
+      expect(
+        document.querySelector(".poster-card.cursor")?.getAttribute("data-poster-index"),
+      ).toBe(index);
+
+      press(KEY.DOWN);
+      press(KEY.ENTER);
+      press(KEY.BACK);
+      await settle(0);
+      expect(document.querySelector(".vod-details")).toBeNull();
+      expect(
+        document.querySelector(".poster-card.cursor")?.getAttribute("data-poster-index"),
+      ).toBe(index);
+      expect(playCalls.length).toBe(plays);
+
+      await finishContentMotion();
+      expect(screen.queryByRole("dialog")).toBeNull();
+      expect(document.querySelector(".vod-details")).toBeNull();
+      fireEvent.click(document.querySelector<HTMLButtonElement>(".poster-card.cursor")!);
+      await finishContentMotion();
+      expect(document.querySelector(".vod-details")).toBeTruthy();
+      expect(document.querySelector(".vod-action.cursor")).toBeTruthy();
+      expect(document.querySelector(".vod-detail-back")?.hasAttribute("data-selected")).toBe(
+        false,
+      );
+
+      press(KEY.BACK);
+      expect(document.querySelector(".vod-details")).toBeNull();
+      await finishContentMotion();
+      expect(document.querySelector(".vod-details")).toBeNull();
+      expect(
+        document.querySelector(".poster-card.cursor")?.getAttribute("data-poster-index"),
+      ).toBe(index);
+      expect(document.querySelector<HTMLElement>(".poster-grid")!.style.transform).toBe(
+        transform,
+      );
+      expect(
+        Array.from(document.querySelectorAll(".poster-card")).map((card) =>
+          card.getAttribute("data-poster-index"),
+        ),
+      ).toEqual(rendered);
+      expect(playCalls.length).toBe(plays);
+    } finally {
+      document.documentElement.style.removeProperty("--t-navigation");
+    }
+  },
+);
+
+test("a source replacement during pending details entry keeps the obsolete title closed", async () => {
+  await mountApp("", {
+    source: XTREAM_SOURCE,
+    fetchImplementation: vodWindowFetch,
+  });
+  const movies = screen.getByRole("button", { name: "Movies" });
+  movies.focus();
+  fireEvent.click(movies);
+  await settle(300);
+  await finishPageEntry();
+
+  document.documentElement.style.setProperty("--t-navigation", "180ms");
+  try {
+    const poster = screen.getByRole("button", { name: /^Film 0$/ });
+    poster.focus();
+    fireEvent.click(poster);
+    expect(
+      document.querySelector(".vod-host .content-transition-shade")?.getAttribute("data-phase"),
+    ).toBe("leaving");
+
+    const { useSettings } = await import("../src/stores/settings");
+    const playlist = useSettings.getState().activePlaylist()!;
+    act(() => {
+      useSettings.setState({
+        playlists: useSettings
+          .getState()
+          .playlists.map((item) =>
+            item.id === playlist.id ? { ...item, sourceVersion: item.sourceVersion + 1 } : item,
+          ),
+      });
+    });
+    await settle(0);
+    await finishContentMotion();
+    expect(document.querySelector(".vod-details")).toBeNull();
+  } finally {
+    document.documentElement.style.removeProperty("--t-navigation");
+  }
 });

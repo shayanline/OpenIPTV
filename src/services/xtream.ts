@@ -63,6 +63,32 @@ export interface EpisodeMetadata {
  */
 export type XtreamSeasonKey = number | "unassigned";
 
+export function compareXtreamSeasonKeys(left: XtreamSeasonKey, right: XtreamSeasonKey): number {
+  if (left === "unassigned") return right === "unassigned" ? 0 : 1;
+  if (right === "unassigned") return -1;
+  const leftNumbered = left > 0;
+  const rightNumbered = right > 0;
+  if (leftNumbered !== rightNumbered) return leftNumbered ? -1 : 1;
+  return left - right;
+}
+
+export function formatEpisodePlaybackName(
+  parentName: string | undefined,
+  episodeName: string,
+  season?: number,
+  episode?: number,
+): string {
+  const reference = [
+    season !== undefined ? `S${String(Math.max(0, Math.floor(season))).padStart(2, "0")}` : "",
+    episode !== undefined
+      ? `E${String(Math.max(0, Math.floor(episode))).padStart(2, "0")}`
+      : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+  return [parentName?.trim(), reference, episodeName.trim()].filter(Boolean).join(" · ");
+}
+
 export interface XtreamMovie {
   key: string;
   streamId: string;
@@ -672,7 +698,10 @@ const trimProviderNoise = (value: string) => {
 };
 
 const comparableTitle = (value: string) =>
-  value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLocaleLowerCase();
+  value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLocaleLowerCase();
 
 const seriesAliases = (seriesName: string) => {
   const aliases = new Set([seriesName]);
@@ -700,13 +729,21 @@ const matchesSeriesName = (value: string, seriesName: string) =>
 const withoutSeriesName = (value: string, seriesName: string, allowWhitespace = false) => {
   if (!seriesName || comparableTitle(value) === comparableTitle(seriesName)) return value;
   const leadingWrapper = /^\s*[[(]\s*([^\])]+?)\s*[\])]\s*/.exec(value);
-  if (leadingWrapper?.[1] && comparableTitle(leadingWrapper[1]) === comparableTitle(seriesName)) {
+  if (
+    leadingWrapper?.[1] &&
+    comparableTitle(leadingWrapper[1]) === comparableTitle(seriesName)
+  ) {
     const remainder = trimEpisodeSeparators(value.slice(leadingWrapper[0].length));
     if (remainder) return remainder;
   }
   const trailingWrapper = /\s*[[(]\s*([^\])]+?)\s*[\])]\s*$/.exec(value);
-  if (trailingWrapper?.[1] && comparableTitle(trailingWrapper[1]) === comparableTitle(seriesName)) {
-    const prefix = trimEpisodeSeparators(value.slice(0, value.length - trailingWrapper[0].length));
+  if (
+    trailingWrapper?.[1] &&
+    comparableTitle(trailingWrapper[1]) === comparableTitle(seriesName)
+  ) {
+    const prefix = trimEpisodeSeparators(
+      value.slice(0, value.length - trailingWrapper[0].length),
+    );
     if (prefix) return prefix;
   }
   const lower = comparableTitle(value);
@@ -1091,7 +1128,7 @@ export async function loadXtreamSeriesDetail(
     const declared = integer(season.season_number);
     if (declared !== undefined) seasonNumbers.add(declared);
   }
-  const seasons: XtreamSeasonKey[] = [...seasonNumbers].sort((left, right) => left - right);
+  const seasons: XtreamSeasonKey[] = [...seasonNumbers].sort(compareXtreamSeasonKeys);
   if (episodes.some((episode) => episode.seasonKey === "unassigned")) {
     seasons.push("unassigned");
   }

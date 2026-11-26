@@ -229,14 +229,16 @@ export async function routeRemoteRequest(request: RemoteRequest): Promise<Remote
     const input = parseJson(request.body);
     if (input === null) return json(400, { error: "invalidRequest" });
     if (request.path === "/api/v1/lineup/query") {
-      const result = queryRemoteLineup(input);
+      const result = await queryRemoteLineup(input);
       const status = result.ok
         ? 200
         : result.reason === "conflict"
           ? 409
           : result.reason === "notFound"
             ? 404
-            : 400;
+            : result.reason === "unavailable"
+              ? 503
+              : 400;
       return json(
         status,
         !result.ok && result.reason === "conflict"

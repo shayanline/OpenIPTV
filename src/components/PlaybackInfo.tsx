@@ -15,20 +15,23 @@ export function PlaybackInfo({
   read,
   recovery,
   visible = true,
+  seekable,
 }: {
   read: () => PlaybackStats | null;
   /** What the coordinator is doing about a fault, when there is one. */
   recovery?: { cause: RecoveryCause | null; attempt: number; continuous?: boolean };
   visible?: boolean;
+  seekable?: boolean;
 }) {
   const { t } = useLocale();
-  const [stats, setStats] = useState(read);
+  const [stats, setStats] = useState(() => (visible ? read() : null));
 
   useEffect(() => {
+    if (!visible) return;
     setStats(read());
     const timer = window.setInterval(() => setStats(read()), 1000);
     return () => window.clearInterval(timer);
-  }, [read]);
+  }, [read, visible]);
 
   const missing = t("diagnostics.notReported");
   const rows = [
@@ -38,6 +41,10 @@ export function PlaybackInfo({
           [
             t("playbackInfo.resolution"),
             stats.width && stats.height ? `${stats.width} × ${stats.height}` : missing,
+          ],
+          [
+            t("playbackInfo.dynamicRange"),
+            stats.dynamicRange === "PQ" ? "PQ (HDR)" : (stats.dynamicRange ?? missing),
           ],
           [t("playbackInfo.scan"), stats.scan ? t(`playbackInfo.${stats.scan}`) : missing],
           [t("playbackInfo.videoCodec"), stats.videoCodec ?? missing],
@@ -60,7 +67,10 @@ export function PlaybackInfo({
             t("playbackInfo.droppedFrames"),
             stats.droppedFrames === undefined || stats.totalFrames === undefined
               ? missing
-              : `${stats.droppedFrames} / ${stats.totalFrames}`,
+              : t("playbackInfo.frameCounts", {
+                  dropped: stats.droppedFrames,
+                  total: stats.totalFrames,
+                }),
           ],
           [
             t("playbackInfo.level"),
@@ -97,6 +107,7 @@ export function PlaybackInfo({
       className={`playback-info ${visible ? "visible" : ""}`.trim()}
       aria-label={t("playbackInfo.title")}
       data-recovery-cause={recovery?.cause ?? ""}
+      data-seekable={seekable}
     >
       <h2>{t("playbackInfo.title")}</h2>
       <dl>

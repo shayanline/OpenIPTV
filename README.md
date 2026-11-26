@@ -5,112 +5,169 @@
 [![Downloads](https://img.shields.io/github/downloads/shayanline/OpenIPTV/total)](https://github.com/shayanline/OpenIPTV/releases)
 [![Licence](https://img.shields.io/github/license/shayanline/OpenIPTV)](LICENSE)
 [![Tizen](https://img.shields.io/badge/Tizen-5.5%2B-00a4ef)](https://developer.samsung.com/smarttv/develop/specifications/tv-model-groups.html)
-[![Node](https://img.shields.io/badge/Node-22.18%2B-339933?logo=nodedotjs&logoColor=white)](https://nodejs.org/)
 
-OpenIPTV is a private, open source IPTV player for Samsung TVs. Add an [extended M3U playlist or Xtream login](#add-playlists), then browse and play your channels through an interface designed for the television.
+OpenIPTV is an open source IPTV player for Samsung Tizen TVs. Add an [extended M3U playlist](#add-playlists) to watch live channels, or connect an Xtream account to browse the live TV, movies and series your provider offers.
 
-Your playlists, preferences, and favourites stay on your device. OpenIPTV has no accounts, analytics, advertising, or project operated service.
+Use your TV remote to browse, search and organise channels. You can also [pair a phone or tablet](#remote-access) on the same local network to manage playlists and control playback.
+
+Your playlists, preferences and favourites stay on your device. No OpenIPTV account is required, and the app has no advertising, analytics or project operated service.
 
 > [!TIP]
-> **[Try OpenIPTV in your browser](https://shayanline.github.io/OpenIPTV).** Use the arrow keys and Enter as the directional pad and OK button. If you need a sample, copy the address of the [demo playlist](https://shayanline.github.io/OpenIPTV/demo/nasa.m3u) into the playlist field.
+> [Try OpenIPTV in your browser](https://shayanline.github.io/OpenIPTV) using the arrow keys and Enter as the directional pad and OK button. To try a sample, copy the address of the [demo playlist](https://shayanline.github.io/OpenIPTV/demo/nasa.m3u) into the playlist field. Some providers work only in the TV app because of [browser limitations](#browser-limitations).
 
 > [!IMPORTANT]
-> OpenIPTV is a player and provides no channels or other content. The project is not affiliated with any broadcaster, channel, streaming service, or playlist provider. Make sure you have the right to access what you add.
+> OpenIPTV includes no channels, subscriptions or other content. You provide your own playlist or provider account and must have the right to access that content. The project is not affiliated with any broadcaster, channel, streaming service or playlist provider.
 
 ## See OpenIPTV
 
 ### On the television
 
-|  |  |
-|:--|:--|
-| [<img src="docs/screenshots/01-first-run.png" alt="OpenIPTV setup on a television with M3U, Xtream, and setup from another device">](docs/screenshots/01-first-run.png) | [<img src="docs/screenshots/02-channels.png" alt="The channel panel on a television with categories and channel rows">](docs/screenshots/02-channels.png) |
-| [**Set up OpenIPTV**](#add-playlists) | **Browse channels** |
-| [<img src="docs/screenshots/04-search.png" alt="Search on a television with the query news and matching channels">](docs/screenshots/04-search.png) | [<img src="docs/screenshots/06-settings.png" alt="Settings on a television with the Playback section open">](docs/screenshots/06-settings.png) |
-| **Search channels** | **Change Playback settings** |
+[<img src="docs/screenshots/02-channels.png" alt="OpenIPTV channel browser with playlist categories and channel numbers" width="960">](docs/screenshots/02-channels.png)
 
 <details>
-<summary>More television screenshots</summary>
+<summary>Setup, search, favourites and settings screenshots</summary>
 
 |  |  |
 |:--|:--|
-| [<img src="docs/screenshots/03-categories.png" alt="The Categories list on a television with Sport selected">](docs/screenshots/03-categories.png) | [<img src="docs/screenshots/05-favourites.png" alt="A channel added to Favourites on a television">](docs/screenshots/05-favourites.png) |
-| [**Browse Categories**](#add-playlists) | **Add channels to Favourites** |
-| [<img src="docs/screenshots/07-category-management.png" alt="Settings on a television with Categories for a playlist open">](docs/screenshots/07-category-management.png) | [<img src="docs/screenshots/08-playback-information.png" alt="Playback information over a channel on a television">](docs/screenshots/08-playback-information.png) |
-| [**Manage Categories for a playlist**](#add-playlists) | **View Playback information** |
+| [<img src="docs/screenshots/01-first-run.png" alt="OpenIPTV setup with M3U, Xtream and setup from another device">](docs/screenshots/01-first-run.png) | [<img src="docs/screenshots/03-categories.png" alt="Playlist categories with Sport selected">](docs/screenshots/03-categories.png) |
+| [Set up a playlist](#add-playlists) | Browse playlist categories. |
+| [<img src="docs/screenshots/04-search.png" alt="Channel search results for news">](docs/screenshots/04-search.png) | [<img src="docs/screenshots/05-favourites.png" alt="A channel saved to Favourites">](docs/screenshots/05-favourites.png) |
+| Search channels. | Save favourites. |
+| [<img src="docs/screenshots/06-settings.png" alt="Settings with the Playback section open">](docs/screenshots/06-settings.png) | [<img src="docs/screenshots/07-category-management.png" alt="Category management for a playlist">](docs/screenshots/07-category-management.png) |
+| Change playback settings. | Manage playlist categories. |
+| [<img src="docs/screenshots/08-playback-information.png" alt="Playback information displayed over a channel">](docs/screenshots/08-playback-information.png) |  |
+| View playback information. |  |
 
 </details>
 
 ### Remote access on a phone
 
+<details>
+<summary>Phone management and Smart Remote screenshots</summary>
+
 |  |  |
 |:--:|:--:|
-| [<img src="docs/screenshots/09-remote-access.png" alt="Remote access on a phone showing Playlists, Devices, and About" width="215">](docs/screenshots/09-remote-access.png) | [<img src="docs/screenshots/10-smart-remote.png" alt="Both Smart Remote pages showing navigation, channel, volume, number, colour, and playback controls" width="410">](docs/screenshots/10-smart-remote.png) |
-| [**Manage OpenIPTV from another device**](#remote-access) | [**Use every Smart Remote control**](#remote-button-reference) |
+| [<img src="docs/screenshots/09-remote-access.png" alt="Paired phone showing saved playlists and management controls" width="215">](docs/screenshots/09-remote-access.png) | [<img src="docs/screenshots/10-smart-remote.png" alt="Smart Remote pages with navigation, channel, volume, number, colour and playback controls" width="410">](docs/screenshots/10-smart-remote.png) |
+| [Manage OpenIPTV from another device](#remote-access) | [Use the Smart Remote](#remote-button-reference) |
+
+</details>
 
 ## What you can do
 
-- Browse original playlist categories, rename or number channels, hide items, choose an order, create personal categories, and keep Favourites.
-- Search every live channel or tune directly with effective channel numbers.
-- Watch Xtream Live television, Movies, Series, episodes, programme information, and provider catchup.
-- Continue movies and episodes from saved progress, then find them through Continue watching or Favourites.
-- Open one playback deck for seeking, Guide, audio tracks, subtitles, diagnostics, and transport controls.
-- Resume the last channel or finite video, then pause or seek movies, episodes, and catchup in ten second steps.
-- Use the television or a paired phone to manage the same lineup without changing the provider playlist.
-- Use 17 translated interfaces, including complete right to left layouts for Arabic and Persian.
+- Watch live TV, movies, series and episodes from your Xtream provider, including programme information and catchup when available.
+- Search every live channel, tune using the channel numbers shown in the list, and save favourites.
+- Browse the original playlist categories, rename or number channels, hide items and change their order.
+- Continue movies and episodes from saved progress through Continue watching or Favourites, and resume the last channel or video.
+- Pause movies, episodes and catchup, or seek in ten second steps. The playback controls also provide the Guide, audio tracks, subtitles, diagnostics and transport controls.
+- Use the TV or a paired phone to manage the same saved channel organisation without changing the provider playlist.
+- Choose from 17 interface languages, including complete right to left layouts for Arabic and Persian.
 
 OpenIPTV does not provide recording management or provider administration.
 
 ## Install on a Samsung TV
 
-OpenIPTV supports Samsung TVs from 2020 onwards, running Tizen 5.5 or later. The television and computer used for installation must share the same local network.
+OpenIPTV supports Samsung TVs from 2020 onwards, running Tizen 5.5 or later. Keep the TV and the device used for installation on the same local network.
 
-Two installers can put OpenIPTV on a television, and both start with [Prepare the television](#prepare-the-television).
-
-| Installer | Runs on | Worth knowing |
-|:--|:--|:--|
-| **[Apps2Samsung](#install-with-apps2samsung)** | Windows, macOS, and Linux, with an Android application as well | Signs the widget for the connected television on every supported Tizen version. You download the release yourself. |
-| **[TizenBrew Installer Desktop](#install-with-tizenbrew)** | Windows, macOS, and Linux | Reads this repository and fetches the release for you, so there is no file to find. |
+The steps below use Apps2Samsung, which is available for Windows, macOS, Linux and Android. [Other installation options](#other-installation-options) are described later.
 
 ### Prepare the television
 
-1. Open Apps and press `12345` on the remote.
+1. Open Apps on the TV and press `12345` on the remote.
 2. Turn Developer mode on and enter the computer's IP address.
-3. Restart the television. If an installer cannot reach it afterwards, unplug the television for ten to fifteen seconds, because a full power cycle is what opens the port it installs through.
+3. Restart the TV. If the installer cannot connect afterwards, unplug the TV for ten to fifteen seconds before turning it on again.
 
 ### Install with Apps2Samsung
 
-1. Install [Apps2Samsung](https://github.com/Apps2Samsung/Apps2Samsung/releases/latest) on the computer, open it, and let it find the television or enter the television's IP address.
+1. Install [Apps2Samsung](https://github.com/Apps2Samsung/Apps2Samsung/releases/latest) on your computer, then let it find the TV or enter the TV's IP address.
 2. Download `OpenIPTV.wgt` from the [latest release](https://github.com/shayanline/OpenIPTV/releases/latest).
-3. Turn **Custom WGT** on under Advanced options, then choose the file you downloaded.
-4. Install OpenIPTV, then launch it from the television application list.
+3. Turn **Custom WGT** on under Advanced options and select the downloaded file.
+4. Install OpenIPTV, then launch it from the TV's application list.
 
-> [!NOTE]
-> A retail television only accepts a widget signed for itself, so Apps2Samsung signs OpenIPTV for the connected set before installing it. It asks for a Samsung account only when it has to create a certificate, then reuses that certificate for later installations. Its Android application can run the same installation from a phone, in which case Developer mode needs the phone's IP address rather than the computer's.
+Apps2Samsung signs the package for your TV because retail TVs require a signature for the connected set. It asks for a Samsung account when it needs to create a certificate, which it reuses for later installations.
+
+You can also install through the Apps2Samsung Android app. When installing from a phone, enter the phone's IP address in Developer mode instead of the computer's.
+
+## Add playlists
+
+On first launch, choose M3U playlist or Xtream login and enter the details below. To add another playlist later, open Settings, then Playlists.
+
+| Source | What to enter | Available content |
+|:--|:--|:--|
+| **Extended M3U** | A complete HTTP or HTTPS playlist address. | Live channels from the playlist. |
+| **Xtream login** | The server address, username and password. Choose HLS or MPEG TS for the live stream format. | Live TV, movies, series, episodes, programme information and catchup supplied by your provider. |
+
+You can save several playlists and activate one at a time. Each playlist keeps its own category visibility, and passwords stay concealed in the interface.
+
+For Xtream sources, choose Live, Movies or Series from the navigation. You can search the full movie or series catalogue and view category counts without opening each category.
+
+## Remote access
+
+Open Remote access from the first run screen or from Settings. Keep OpenIPTV running and connect your phone or tablet to the same trusted local network, then scan the QR code or enter the displayed address and pairing code.
+
+From a paired device, you can manage playlists, settings, application data and authorised devices. You can also control playback or rename, number, hide and reorder channels. The TV and phone use the same saved channel organisation, which leaves the provider playlist unchanged.
+
+The TV serves the interface at its private network address, with no hosted relay or cloud copy. Provider credentials and stream addresses remain on the TV. Pair devices only on a trusted local network.
+
+The [Smart Remote](#remote-button-reference) includes navigation, number, colour, channel, volume and playback controls.
+
+### Remote button reference
+
+<details>
+<summary>TV and Smart Remote controls</summary>
+
+| Key | Live TV picture | Movies, episodes and catchup | Browsing and forms |
+|:--|:--|:--|:--|
+| <kbd>↑</kbd> <kbd>↓</kbd> | Change channel. | No action. | Move between items in the current section. |
+| <kbd>←</kbd> | Open the Live channel browser. | Seek back ten seconds. | Move to the previous section or move the text cursor. |
+| <kbd>→</kbd> | Open the playback controls. | Seek forward ten seconds. | Move to the next section or move the text cursor. |
+| <kbd>OK</kbd> | Open the Live channel browser. | Open the playback controls. | Activate the selected item. |
+| <kbd>Return</kbd> | Clear any message, then offer to close the app. | Return to the details page that opened the video. | Go back one level. |
+| <kbd>Ch+</kbd> <kbd>Ch-</kbd> | Change channel. | No action. | Change channel while Live TV is playing. |
+| <kbd>0</kbd> to <kbd>9</kbd> | Tune to the channel number shown in the list. | No action. | Enter numbers when a text field is active. |
+| <kbd>Green</kbd> | Add or remove a favourite. | Use the favourite action where available. | Add or remove a favourite where available. |
+| <kbd>Yellow</kbd> | Open Settings. | Open Settings. | Open Settings. |
+
+<kbd>Play</kbd>, <kbd>Pause</kbd>, <kbd>Stop</kbd>, <kbd>Rewind</kbd>, <kbd>Fast Forward</kbd>, <kbd>Previous</kbd> and <kbd>Next</kbd> keep their playback functions throughout the app. Back closes the topmost open controls, panel or dialog before it changes playback or leaves the app.
+
+</details>
+
+## Update an installed copy
+
+Install the new release from the same computer and through the same installer to keep your playlists, favourites and settings.
+
+If another computer or installer uses a different author certificate, the TV will refuse to install it over the existing copy. Remove OpenIPTV from the TV's Apps screen before installing the replacement.
+
+> [!WARNING]
+> Removing OpenIPTV deletes its saved data, and the app does not create a backup file. Keep your playlist addresses and provider logins before uninstalling. You will need to add your playlists again after reinstalling, either on the TV or through [remote access](#remote-access).
+
+## Other installation options
+
+Both options start with [preparing the television](#prepare-the-television).
 
 ### Install with TizenBrew
 
-1. Open [TizenBrew Installer Desktop](https://github.com/reisxd/TizenBrewInstaller/releases/latest).
-2. Enter the television's IP address from its Network Status screen and connect.
+<details>
+<summary>TizenBrew Installer Desktop instructions</summary>
+
+[TizenBrew Installer Desktop](https://github.com/reisxd/TizenBrewInstaller/releases/latest) runs on Windows, macOS and Linux. It downloads the release from this repository for you, so you do not need to find the package yourself.
+
+1. Open TizenBrew Installer Desktop.
+2. Enter the TV's IP address from its Network Status screen and connect.
 3. Enter `shayanline/OpenIPTV` as the GitHub repository.
-4. Follow the certificate prompts, install OpenIPTV, and launch it from the television application list.
+4. Follow the certificate prompts, install OpenIPTV and launch it from the TV's application list.
 
-> [!NOTE]
-> Tizen 7 and later can resign the released widget for the connected television. Earlier versions may need a [locally signed build](#build-and-sign-manually).
+Tizen 7 and later can sign the released package for the connected TV. Earlier versions may need a [locally signed build](#build-and-sign-manually).
 
-### Update an installed copy
-
-Install the new release exactly as before, from the same computer and through the same installer, and the television keeps your playlists, favourites, and settings.
-
-A copy installed from a different computer, or through a different installer, carries a different author certificate, which the television refuses to install over. Remove OpenIPTV from Apps on the television first, then install again. OpenIPTV writes no backup file, so add the playlist again afterwards, which [remote access](#remote-access) makes quick from a phone.
+</details>
 
 ### Build and sign manually
 
 <details>
-<summary>Show manual build instructions</summary>
+<summary>Manual build and signing instructions</summary>
 
-Install Node 22.18 or later and Tizen Studio. In Certificate Manager, create an author certificate and a Samsung distributor certificate for your television. Install the Samsung Certificate Extension, sign in with a Samsung account, and keep the television on and connected while creating the certificate.
+Install [Node.js 22.18 or later](https://nodejs.org/) and Tizen Studio. Install the Samsung Certificate Extension, then use Certificate Manager to create an author certificate and a Samsung distributor certificate for your TV. Sign in with a Samsung account and keep the TV on and connected while creating the certificate.
 
-Call the signing profile `OpenIPTV`, or set `SIGNING_PROFILE` to its name.
+Name the signing profile `OpenIPTV`, or set `SIGNING_PROFILE` to its name.
 
 ```bash
 git clone https://github.com/shayanline/OpenIPTV.git
@@ -123,67 +180,34 @@ Run `npm run package` when you only need `build/OpenIPTV.wgt`.
 
 </details>
 
-## Add playlists
-
-| Source | What to enter |
-|:--|:--|
-| **Extended M3U** | A complete HTTP or HTTPS playlist address. |
-| **Xtream login** | The server address, username, password, and HLS or MPEG TS live stream format. Live television, movies, series, episodes, programme information, and provider catchup are supported. |
-
-Save several playlists and activate one at a time. Each playlist keeps its own category visibility, and password values stay concealed in the interface. For Xtream sources, choose Live, Movies, or Series from the content switcher. Movie and series summary indexes provide complete search and category counts without opening every category.
-
-## Remote access
-
-Remote access is available from the first run screen or Settings, then Remote access. Keep OpenIPTV open and connect a phone or tablet to the same trusted local network, then scan the QR code or enter the displayed address and pairing code.
-
-A paired device can manage playlists, ordinary settings, application data, authorised devices, playback, and the active lineup. Lineup pages stay bounded while the phone renames, numbers, hides, orders, and groups channels through the same saved personalisation used by the television. Provider playlists remain unchanged.
-
-The interface is served by the television on its private network address. Pair only on a trusted local network because OpenIPTV has no hosted relay or cloud copy. The phone receives effective names and opaque identifiers, while provider credentials and stream addresses remain on the television. [Smart Remote](#remote-button-reference) provides navigation, number, colour, channel, volume, and playback controls.
-
-### Remote button reference
-
-<details>
-<summary>Show remote controls</summary>
-
-| Key | Live picture | Finite picture | Browsing and forms |
-|:--|:--|:--|:--|
-| <kbd>↑</kbd> <kbd>↓</kbd> | Change channel | No action | Move focus within the active region |
-| <kbd>←</kbd> | Open the Live browser | Seek back ten seconds | Move toward the logical previous region or move the caret |
-| <kbd>→</kbd> | Open the playback deck | Seek forward ten seconds | Move toward the logical next region or move the caret |
-| <kbd>OK</kbd> | Open the Live browser | Open the playback deck | Activate the focused item |
-| <kbd>Return</kbd> | Clear feedback, then offer exit | Return to the launching detail | Remove one visible depth |
-| <kbd>Ch+</kbd> <kbd>Ch-</kbd> | Change channel | No action | Change the Live channel when Live owns playback |
-| <kbd>0</kbd> to <kbd>9</kbd> | Tune to an effective channel number | No action | Type when a field owns input |
-| <kbd>Green</kbd> | Toggle Favourites | Use the visible favourite action | Toggle Favourites where offered |
-| <kbd>Yellow</kbd> | Open Settings | Open Settings | Open Settings |
-
-<kbd>Play</kbd>, <kbd>Pause</kbd>, <kbd>Stop</kbd>, <kbd>Rewind</kbd>, <kbd>Fast Forward</kbd>, <kbd>Previous</kbd>, and <kbd>Next</kbd> keep their media meaning on every surface. Back always removes the highest visible depth before it affects playback or leaves the application.
-
-</details>
-
 ## Help
 
-> [!NOTE]
-> The hosted HTTPS demo can use only provider API, artwork, and stream addresses that support HTTPS and permit browser access through Cross Origin Resource Sharing. A provider that lacks either can still work in the packaged television app. Browser codec and container support can also be narrower than Samsung AVPlay support, especially for movie and episode files.
+### Browser limitations
+
+The hosted HTTPS demo requires provider API, artwork and stream addresses to support HTTPS and allow browser access through Cross Origin Resource Sharing (CORS). A provider that does not meet these requirements can still work in the packaged TV app.
+
+Browsers can also support fewer codecs and containers than the TV's Samsung AVPlay player, especially for movie and episode files.
+
+### Common issues
 
 <details>
-<summary>Common issues</summary>
+<summary>Installation, playlist and playback troubleshooting</summary>
 
-- **An installer cannot connect to the television.** Repeat [Prepare the television](#prepare-the-television), including the restart, and avoid guest networks that isolate devices. Some televisions store the address in reverse, so enter your IP address backwards if the installer still cannot find the set.
-- **Installation reports certificate error 118 or -12.** The widget was not signed for your television. [Apps2Samsung](#install-with-apps2samsung) signs it for the connected set on any supported version, [TizenBrew](#install-with-tizenbrew) does so from Tizen 7 onwards, and otherwise follow [Build and sign manually](#build-and-sign-manually).
-- **Installation reports that the author certificate does not match.** An earlier copy was signed by a different computer or installer, so [update an installed copy](#update-an-installed-copy) explains what to remove first.
-- **A playlist address is refused.** Review the supported details under [Add playlists](#add-playlists).
-- **An Xtream stream will not play.** Try the other live stream format under [Add playlists](#add-playlists). The packaged television app retries eligible HTTPS connection failures once over HTTP. Local development and the TV simulator route that retry through a same origin relay so Chromium cannot upgrade it through HSTS, while the hosted HTTPS demo cannot downgrade because browsers block mixed content.
+- **The installer cannot connect to the TV.** Repeat [Prepare the television](#prepare-the-television), including the restart, and avoid guest networks that isolate devices. Some TVs store the address in reverse, so try entering the IP address backwards if the installer still cannot find the set.
+- **Installation reports certificate error 118 or -12.** The package was not signed for your TV. [Apps2Samsung](#install-with-apps2samsung) signs it for the connected set on every supported version. [TizenBrew](#install-with-tizenbrew) does so from Tizen 7 onwards. Otherwise, follow [Build and sign manually](#build-and-sign-manually).
+- **Installation reports that the author certificate does not match.** The existing copy and the replacement use different author certificates. Follow [Update an installed copy](#update-an-installed-copy), including its warning about saved data.
+- **A playlist address is refused.** Check the supported source details under [Add playlists](#add-playlists).
+- **An Xtream stream will not play.** Try the other live stream format under [Add playlists](#add-playlists). The packaged TV app retries eligible HTTPS connection failures once over HTTP. The hosted HTTPS demo cannot do this because browsers block mixed content. See the [design notes](docs/design.md) and [testing notes](docs/testing.md) for development and simulator behaviour.
 - **A channel shows one frame and stops.** Turn on Compatibility mode under Settings, then Playback.
-- **A remote key does nothing.** Open Settings, About, Support, Diagnostics, then Remote buttons, then compare it with the [remote button reference](#remote-button-reference).
+- **A remote key does nothing.** Open Settings, About, Support, Diagnostics, then Remote buttons. Compare the result with the [remote button reference](#remote-button-reference).
 - **Logos are slow to appear.** Turn Show channel logos off under Settings, then Appearance.
 
 </details>
 
 ## Contributing
 
-Issues and pull requests are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md) for the development workflow, [the design notes](docs/design.md) for interface decisions, and [the testing notes](docs/testing.md) for compatibility checks. Report security problems through [SECURITY.md](SECURITY.md).
+Issues and pull requests are welcome. Read the [contributing guide](CONTRIBUTING.md) for the development workflow, the [design notes](docs/design.md) for interface decisions, and the [testing notes](docs/testing.md) for compatibility checks. Report security problems through the [security policy](SECURITY.md).
 
 ## Licence
 
-OpenIPTV uses the MIT licence in [LICENSE](LICENSE). Runtime projects included in the application are listed in [THIRD-PARTY-NOTICES.md](public/THIRD-PARTY-NOTICES.md).
+OpenIPTV is available under the [MIT licence](LICENSE). Runtime projects included in the app are listed in the [third party notices](public/THIRD-PARTY-NOTICES.md).

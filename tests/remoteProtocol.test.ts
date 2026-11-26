@@ -5,6 +5,7 @@ vi.mock("../src/services/personalDisk", () => ({
   writeLineup: vi.fn().mockResolvedValue(undefined),
   removeLineup: vi.fn().mockResolvedValue(undefined),
   clearLineups: vi.fn().mockResolvedValue(undefined),
+  writeLineupIfAbsent: vi.fn().mockResolvedValue(true),
 }));
 
 const m3u = (url: string) => ({ kind: "m3u" as const, url });
@@ -14,6 +15,7 @@ const PLAYLIST = `#EXTM3U
 http://example.invalid/a.m3u8`;
 
 const disk = new Map<string, Blob | string>();
+const serviceOrder: string[] = [];
 let cleared = 0;
 let repairStops = 0;
 let forgottenRepairHosts = 0;
@@ -37,6 +39,7 @@ async function load() {
       return removed;
     },
     forgetAll: async () => {
+      serviceOrder.push("disk.forgetAll");
       cleared += 1;
       disk.clear();
     },
@@ -46,9 +49,11 @@ async function load() {
   }));
   vi.doMock("../src/services/repair", () => ({
     stopRepair: () => {
+      serviceOrder.push("repair.stopRepair");
       repairStops += 1;
     },
     forgetRepairHosts: () => {
+      serviceOrder.push("repair.forgetRepairHosts");
       forgottenRepairHosts += 1;
     },
     forgetRepairSource: () => {},
@@ -63,10 +68,27 @@ async function load() {
 beforeEach(() => {
   localStorage.clear();
   disk.clear();
+  serviceOrder.length = 0;
   cleared = 0;
   repairStops = 0;
   forgottenRepairHosts = 0;
   vi.unstubAllGlobals();
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (input: string | URL) => {
+      const url = new URL(String(input));
+      if (url.pathname.endsWith("player_api.php")) {
+        return new Response(
+          JSON.stringify({
+            user_info: { auth: 1, status: "Active" },
+            server_info: { server_protocol: "http", url: "provider.invalid" },
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      return new Response(PLAYLIST, { status: 200 });
+    }),
+  );
 });
 
 describe("remote command parsing", () => {
@@ -79,13 +101,16 @@ describe("remote command parsing", () => {
       { type: "setting", key: "showLogos", value: false },
       { type: "setting", key: "aspectId", value: "fit" },
       { type: "setting", key: "showClock", value: false },
+      { type: "setting", key: "showPlaybackStats", value: true },
       { type: "setting", key: "resumeLast", value: false },
-      { type: "setting", key: "lineupOrderMode", value: "provider" },
-      { type: "setting", key: "lineupOrderMode", value: "alphabetical" },
-      { type: "setting", key: "lineupOrderMode", value: "number" },
-      { type: "setting", key: "lineupOrderMode", value: "custom" },
       { type: "setting", key: "compatibility", value: true },
       { type: "setting", key: "continuousReconnect", value: true },
+      { type: "setting", key: "hideEmptyCategories", value: false },
+      { type: "setting", key: "playlistShortcut", value: false },
+      { type: "setting", key: "showLive", value: false },
+      { type: "setting", key: "showMovies", value: false },
+      { type: "setting", key: "showSeries", value: true },
+      { type: "app.reset" },
       {
         type: "setup.preview",
         name: "News",
@@ -105,14 +130,25 @@ describe("remote command parsing", () => {
       parseRemoteCommand({ type: "setting", key: "sortAlphabetically", value: true }),
     ).toBeNull();
     expect(
-      parseRemoteCommand({ type: "setting", key: "lineupOrderMode", value: "recent" }),
+      parseRemoteCommand({ type: "setting", key: "lineupOrderMode", value: "provider" }),
+    ).toBeNull();
+    expect(parseRemoteCommand({ type: "playlist.refresh" })).toBeNull();
+    expect(
+      parseRemoteCommand({ type: "playlist.refresh", id: "pl-1", extra: true }),
     ).toBeNull();
     expect(
       parseRemoteCommand({ type: "setting", key: "continuousReconnect", value: "yes" }),
     ).toBeNull();
+    expect(parseRemoteCommand({ type: "setting", key: "showLive", value: "yes" })).toBeNull();
     expect(
-      parseRemoteCommand({ type: "setting", key: "showPlaybackStats", value: true }),
+      parseRemoteCommand({ type: "setting", key: "playlistShortcut", value: "yes" }),
     ).toBeNull();
+    expect(parseRemoteCommand({ type: "setting", key: "showMovies", value: 1 })).toBeNull();
+    expect(
+      parseRemoteCommand({ type: "setting", key: "hideEmptyCategories", value: "on" }),
+    ).toBeNull();
+    expect(parseRemoteCommand({ type: "app.reset", extra: true })).toBeNull();
+    expect(parseRemoteCommand({ type: "app.reset", id: "pl-1" })).toBeNull();
     expect(parseRemoteCommand({ type: "play", url: "http://example.invalid" })).toBeNull();
     expect(
       parseRemoteCommand({ type: "playlist.remove", id: "pl-1", credential: "leak" }),
@@ -152,10 +188,11 @@ describe("remote command application", () => {
     );
     vi.stubGlobal("fetch", fetchMock);
 
+    const playlist = s.useSettings.getState().playlists[0];
     const first = s.applyRemoteCommand({
       id: "refresh-first",
       revision: 0,
-      command: { type: "playlist.refresh" },
+      command: { type: "playlist.refresh", id: playlist.id },
     });
     const second = s.applyRemoteCommand({
       id: "setting-second",
@@ -168,6 +205,96 @@ describe("remote command application", () => {
     expect((await first).ok).toBe(true);
     expect(await second).toMatchObject({ ok: false, reason: "conflict" });
     expect(s.useSettings.getState().showClock).toBe(true);
+  });
+
+  test("playlist refresh targets the selected playlist without activating it", async () => {
+    const s = await load();
+    s.useSettings.getState().addPlaylist("One", m3u("http://example.invalid/one.m3u"));
+    s.useSettings.getState().addPlaylist("Two", m3u("http://example.invalid/two.m3u"));
+    const [first, second] = s.useSettings.getState().playlists;
+    const fetchMock = vi.fn(async (input: string | URL) => {
+      const url = String(input);
+      const body = url.includes("two.m3u")
+        ? '#EXTM3U\n#EXTINF:-1 group-title="Other",Two\nhttp://example.invalid/t2.m3u8'
+        : PLAYLIST;
+      return new Response(body, { status: 200 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    await s.useChannels.getState().activatePlaylist(first.id);
+    expect(s.useChannels.getState().channels).toHaveLength(1);
+
+    const refreshed = await s.applyRemoteCommand({
+      id: "refresh-inactive",
+      revision: 0,
+      command: { type: "playlist.refresh", id: second.id },
+    });
+
+    expect(refreshed.ok).toBe(true);
+    expect(refreshed.message).toBe("Refreshed, 1 channel.");
+    expect(s.useSettings.getState().activePlaylistId).toBe(first.id);
+    expect(s.useChannels.getState().channels).toHaveLength(1);
+    expect(s.useChannels.getState().loading).toBe(false);
+    expect(fetchMock.mock.calls.some((call) => String(call[0]).includes("two.m3u"))).toBe(true);
+
+    const missing = await s.applyRemoteCommand({
+      id: "refresh-missing",
+      revision: refreshed.snapshot.revision,
+      command: { type: "playlist.refresh", id: "pl-missing" },
+    });
+    expect(missing).toMatchObject({ ok: false, reason: "notFound" });
+
+    const active = await s.applyRemoteCommand({
+      id: "refresh-active",
+      revision: refreshed.snapshot.revision,
+      command: { type: "playlist.refresh", id: first.id },
+    });
+
+    expect(active.ok).toBe(true);
+    expect(active.message).toBe("Refreshed, 1 channel.");
+    expect(s.useSettings.getState().activePlaylistId).toBe(first.id);
+    expect(s.useChannels.getState().channels).toHaveLength(1);
+    expect(s.useChannels.getState().loading).toBe(false);
+  });
+
+  test("playlist feedback uses the same localized messages as the main app", async () => {
+    const s = await load();
+    const { translate } = await import("../src/services/locale");
+    s.useSettings.getState().set("locale", "fa");
+    s.useSettings.getState().addPlaylist("One", m3u("http://example.invalid/one.m3u"));
+    s.useSettings.getState().addPlaylist("Two", m3u("http://example.invalid/two.m3u"));
+    const [first, second] = s.useSettings.getState().playlists;
+    await s.useChannels.getState().activatePlaylist(first.id);
+    const refreshed = await s.applyRemoteCommand({
+      id: "feedback-refresh",
+      revision: 0,
+      command: { type: "playlist.refresh", id: second.id },
+    });
+    expect(refreshed.message).toBe(translate("fa", "playlist.refreshed", { count: 1 }));
+    const activated = await s.applyRemoteCommand({
+      id: "feedback-activate",
+      revision: refreshed.snapshot.revision,
+      command: { type: "playlist.activate", id: second.id },
+    });
+    expect(activated.message).toBe(
+      translate("fa", "playlist.loaded", { name: "Two", count: 1 }),
+    );
+    const updated = await s.applyRemoteCommand({
+      id: "feedback-update",
+      revision: activated.snapshot.revision,
+      command: {
+        type: "playlist.update",
+        id: second.id,
+        name: "Renamed",
+        source: second.source,
+      },
+    });
+    expect(updated.message).toBe(translate("fa", "playlist.updated", { name: "Renamed" }));
+    const removed = await s.applyRemoteCommand({
+      id: "feedback-remove",
+      revision: updated.snapshot.revision,
+      command: { type: "playlist.remove", id: second.id },
+    });
+    expect(removed.message).toBe(translate("fa", "playlist.removed", { name: "Renamed" }));
   });
 
   test("mirrors an in-memory setup draft without adding a playlist", async () => {
@@ -195,9 +322,9 @@ describe("remote command application", () => {
     });
     expect(result.snapshot.revision).toBe(0);
     expect(result.snapshot.settings.continuousReconnect).toBe(false);
-    expect(result.snapshot.settings.lineupOrderMode).toBe("provider");
+    expect("lineupOrderMode" in result.snapshot.settings).toBe(false);
     expect("sortAlphabetically" in result.snapshot.settings).toBe(false);
-    expect("showPlaybackStats" in result.snapshot.settings).toBe(false);
+    expect(result.snapshot.settings.showPlaybackStats).toBe(false);
     const setting = await s.applyRemoteCommand({
       id: "after-preview",
       revision: 0,
@@ -253,7 +380,7 @@ describe("remote command application", () => {
     expect(s.useChannels.getState().channels).toHaveLength(1);
   });
 
-  test("first setup commits only after a nonempty playlist validates", async () => {
+  test("first setup commits only after a playlist validates, empty included", async () => {
     const failed = await load();
     vi.stubGlobal(
       "fetch",
@@ -273,6 +400,25 @@ describe("remote command application", () => {
     expect(failed.useSettings.getState().playlists).toEqual([]);
     expect(failed.useSettings.getState().locale).toBe("system");
 
+    const empty = await load();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({ ok: true, text: async () => "#EXTM3U\n# no channels yet\n" }),
+    );
+    const emptyResult = await empty.applyRemoteCommand({
+      id: "empty-setup",
+      revision: 0,
+      command: {
+        type: "setup",
+        locale: "fr",
+        name: "Empty",
+        source: m3u("http://example.invalid/empty.m3u"),
+      },
+    });
+    expect(emptyResult.ok).toBe(true);
+    expect(empty.useSettings.getState().playlists).toHaveLength(1);
+
+    localStorage.clear();
     const good = await load();
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, text: async () => PLAYLIST }));
     const result = await good.applyRemoteCommand({
@@ -288,6 +434,112 @@ describe("remote command application", () => {
     expect(result.ok).toBe(true);
     expect(good.useSettings.getState().locale).toBe("fr");
     expect(good.useSettings.getState().playlists[0].name).toBe("News");
+  });
+
+  test("a late remote setup cannot overwrite playlists added while it validated", async () => {
+    const s = await load();
+    const pendingFetches: Array<(response: Response) => void> = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        () =>
+          new Promise<Response>((resolve) => {
+            pendingFetches.push(resolve);
+          }),
+      ),
+    );
+    const pending = s.applyRemoteCommand({
+      id: "late-setup",
+      revision: 0,
+      command: {
+        type: "setup",
+        locale: "en",
+        name: "Remote",
+        source: m3u("http://example.invalid/remote.m3u"),
+      },
+    });
+    await vi.waitFor(() => expect(pendingFetches.length).toBeGreaterThan(0));
+
+    s.useSettings.getState().addPlaylist("Local", m3u("http://example.invalid/local.m3u"));
+    for (const resolve of pendingFetches.splice(0)) {
+      resolve(new Response(PLAYLIST, { status: 200 }));
+    }
+    const result = await pending;
+
+    expect(result.ok).toBe(false);
+    expect(result.reason).toBe("conflict");
+    expect(s.useSettings.getState().playlists.map((playlist) => playlist.name)).toEqual([
+      "Local",
+    ]);
+  });
+
+  test("a remote playlist update cannot overwrite credentials changed during validation", async () => {
+    const s = await load();
+    s.useSettings.getState().addPlaylist("Provider", {
+      kind: "xtream",
+      server: "https://provider.example",
+      username: "viewer",
+      password: "secret",
+      output: "m3u8",
+    });
+    const playlist = s.useSettings.getState().playlists[0];
+    const pendingFetches: Array<(response: Response) => void> = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        () =>
+          new Promise<Response>((resolve) => {
+            pendingFetches.push(resolve);
+          }),
+      ),
+    );
+    const pending = s.applyRemoteCommand({
+      id: "stale-update",
+      revision: 0,
+      command: {
+        type: "playlist.update",
+        id: playlist.id,
+        name: "Provider",
+        source: {
+          kind: "xtream",
+          server: "https://provider.example",
+          username: "viewer",
+          password: "",
+          output: "ts",
+        },
+      },
+    });
+    await vi.waitFor(() => expect(pendingFetches.length).toBeGreaterThan(0));
+
+    await s.useSettings.getState().updatePlaylist(playlist.id, "Provider", {
+      kind: "xtream",
+      server: "https://provider.example",
+      username: "viewer",
+      password: "new-secret",
+      output: "m3u8",
+    });
+    for (const resolve of pendingFetches.splice(0)) {
+      resolve(
+        new Response(
+          JSON.stringify({
+            user_info: { auth: 1, status: "Active" },
+            server_info: { server_protocol: "http", url: "provider.example" },
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      );
+    }
+    const result = await pending;
+
+    expect(result.ok).toBe(false);
+    expect(result.reason).toBe("conflict");
+    expect(s.useSettings.getState().playlists[0].source).toEqual({
+      kind: "xtream",
+      server: "https://provider.example",
+      username: "viewer",
+      password: "new-secret",
+      output: "m3u8",
+    });
   });
 
   test("Xtream snapshots omit passwords and blank remote edits preserve them", async () => {
@@ -518,37 +770,260 @@ describe("remote command application", () => {
 
 test("keeps complete catalogues out of remote snapshots", async () => {
   const s = await load();
-  const { useLineup } = await import("../src/stores/lineup");
-  useLineup.setState({
-    playlistId: "large",
-    revision: 7,
-    managedChannels: Array.from({ length: 12_000 }, (_, index) => ({
-      ref: { id: `channel-${index}` },
-      providerName: `Channel ${index}`,
-      providerNumber: index + 1,
-      effective: {
-        id: `channel-${index}`,
-        name: `Channel ${index}`,
-        number: index + 1,
-        group: "All",
-        categoryKey: "All",
-        logo: "",
-        quality: "",
-        url: `http://example.invalid/${index}`,
-      },
-      hidden: false,
-      categoryKeys: ["All"],
-    })),
-  });
+  const lineup = await import("../src/stores/lineup");
+  s.useSettings.getState().addPlaylist("Large", m3u("http://example.invalid/large.m3u"));
+  const playlist = s.useSettings.getState().playlists[0];
+  const channels = Array.from({ length: 12_000 }, (_, index) => ({
+    id: `channel-${index}`,
+    name: `Channel ${index}`,
+    number: index + 1,
+    group: "All",
+    categoryKey: "All",
+    logo: "",
+    quality: "",
+    url: `http://example.invalid/${index}`,
+  }));
+  await lineup.adoptCatalogue(
+    playlist,
+    { channels, categories: [] },
+    lineup.prepareLineup(playlist),
+  );
+  expect(lineup.useLineup.getState().managedChannels).toHaveLength(12_000);
   const snapshot = s.remoteSnapshot();
-  expect(snapshot.lineup).toEqual({ playlistId: "large", revision: 7, ready: true });
+  expect(snapshot.lineup).toEqual({ playlistId: playlist.id, revision: 0, ready: true });
   expect(JSON.stringify(snapshot)).not.toContain("channel-11999");
+});
+
+test("remote locale options pair native names with translated labels", async () => {
+  const s = await load();
+  const locale = await import("../src/services/locale");
+  const chosenLocale = "fr";
+  s.useSettings.setState({ locale: chosenLocale });
+  const snapshot = s.remoteSnapshot();
+  expect(snapshot.locale).toBe(chosenLocale);
+  expect(snapshot.localeOptions).toEqual(
+    locale.LOCALE_OPTIONS.map((option) => ({
+      id: option.id,
+      label: option.nativeLabel,
+      secondary: locale.translate(chosenLocale, locale.localeLabelKey(option.id)),
+    })),
+  );
 });
 
 test("publishes the active lineup readiness and revision", async () => {
   const s = await load();
-  const { useLineup } = await import("../src/stores/lineup");
   expect(s.remoteSnapshot().lineup).toBeNull();
-  useLineup.setState({ playlistId: "active", revision: 4 });
-  expect(s.remoteSnapshot().lineup).toEqual({ playlistId: "active", revision: 4, ready: true });
+  s.useSettings.getState().addPlaylist("Active", m3u("http://example.invalid/active.m3u"));
+  const playlist = s.useSettings.getState().playlists[0];
+  await s.useChannels.getState().activatePlaylist(playlist.id);
+  expect(s.remoteSnapshot().lineup).toEqual({
+    playlistId: playlist.id,
+    revision: 0,
+    ready: true,
+  });
+});
+
+test("localizes the management section and playlist list labels", async () => {
+  const s = await load();
+  const { labels } = s.remoteSnapshot();
+  expect(labels.appearance).toBe("Appearance");
+  expect(labels.playback).toBe("Playback");
+  expect(labels.playlists).toBe("Playlists");
+  expect(labels.devices).toBe("Remote access");
+  expect(labels.about).toBe("About");
+  expect(labels.savedPlaylists).toBe("Saved playlists");
+  expect(labels.lineupGrab).toBe("Move");
+  expect(labels.lineupRelease).toBe("Place here");
+  expect(labels.lineupReorder).toBe("Custom Order");
+  expect(labels.orderCustom).toBe("Custom Order");
+  expect(labels.lineupReorderHelp).toBe(
+    "Drag the handle to move an item, or select an item and then select where to place it.",
+  );
+  expect(labels.lineupPlaylistSettings).toBe("Playlist settings");
+  expect(labels.lineupCategoryVisibility).toBe("Category visibility");
+  expect(labels.lineupChannelVisibility).toBe("Channel visibility");
+  expect(labels.lineupChannelOrder).toBe("Channel order");
+  expect(labels.lineupMovieOrder).toBe("Movie order");
+  expect(labels.lineupSeriesOrder).toBe("Series order");
+  expect(labels.lineupEditCustomOrder).toBe("Edit custom order");
+  expect(labels.lineupAllCategoriesIn).toBe("All categories in {section}");
+  expect(labels.lineupHideAllQuestion).toBe("Hide all categories?");
+  expect(labels.lineupHideAllBody).toBe(
+    "This hides all categories in {section} for {playlist}, including other pages and categories outside the current search.",
+  );
+  expect(labels.lineupBulkShow).toBe("Show all categories");
+  expect(labels.lineupBulkHide).toBe("Hide all categories");
+  expect(labels.playlistUnavailable).toBe("Unavailable");
+  expect(labels.playlistSavedContent).toBe("Saved content");
+  expect(labels.playlistUpdated).toBe("{name} updated.");
+  expect(labels.refreshing).toBe("Refreshing…");
+});
+
+test("content section snapshots expose the new switches", async () => {
+  const s = await load();
+  const result = await s.applyRemoteCommand({
+    id: "snapshot-sections",
+    revision: 0,
+    command: { type: "setting", key: "hideEmptyCategories", value: false },
+  });
+
+  expect(result.ok).toBe(true);
+  expect(result.snapshot.settings.hideEmptyCategories).toBe(false);
+  expect(result.snapshot.settings.playlistShortcut).toBe(true);
+  expect(result.snapshot.settings.showLive).toBe(true);
+  expect(result.snapshot.settings.showMovies).toBe(true);
+  expect(result.snapshot.settings.showSeries).toBe(true);
+  expect(s.useSettings.getState().hideEmptyCategories).toBe(false);
+});
+
+test("the playlist shortcut preference can be changed through remote commands", async () => {
+  const s = await load();
+  const result = await s.applyRemoteCommand({
+    id: "disable-playlist-shortcut",
+    revision: 0,
+    command: { type: "setting", key: "playlistShortcut", value: false },
+  });
+  expect(result.ok).toBe(true);
+  expect(result.snapshot.settings.playlistShortcut).toBe(false);
+  expect(s.useSettings.getState().playlistShortcut).toBe(false);
+});
+
+test("the last supported section guard holds through remote commands", async () => {
+  const s = await load();
+  const xtream = {
+    kind: "xtream" as const,
+    server: "http://provider.invalid",
+    username: "viewer",
+    password: "secret",
+    output: "m3u8" as const,
+  };
+
+  let rev = 0;
+  const command = async (
+    name: string,
+    key: "showLive" | "showMovies" | "showSeries",
+    value: boolean,
+  ) => {
+    const result = await s.applyRemoteCommand({
+      id: name,
+      revision: rev,
+      command: { type: "setting", key, value },
+    });
+    rev = result.snapshot.revision;
+    return result;
+  };
+
+  // M3U supports only Live, so switching it off is rejected outright while the
+  // unsupported section switches still record their values.
+  s.useSettings.getState().addPlaylist("M3U", m3u("http://example.invalid/list.m3u"));
+  expect(
+    (await command("m3u-movies-off", "showMovies", false)).snapshot.settings.showMovies,
+  ).toBe(false);
+  expect((await command("m3u-live-off", "showLive", false)).snapshot.settings.showLive).toBe(
+    true,
+  );
+  expect(s.useSettings.getState().showLive).toBe(true);
+  expect(s.useSettings.getState().showMovies).toBe(false);
+
+  // Xtream supports all three: the last one standing can never be switched off.
+  s.useSettings.setState({
+    playlists: [
+      {
+        id: "pl-x",
+        name: "Provider",
+        source: xtream,
+        sourceVersion: 1,
+      },
+    ],
+    activePlaylistId: "pl-x",
+    showLive: true,
+    showMovies: true,
+    showSeries: true,
+  });
+  await command("x-movies-off", "showMovies", false);
+  await command("x-series-off", "showSeries", false);
+  const liveOff = await command("x-live-off", "showLive", false);
+  expect(liveOff.snapshot.settings.showLive).toBe(true);
+  expect(liveOff.snapshot.settings.showMovies).toBe(false);
+  expect(liveOff.snapshot.settings.showSeries).toBe(false);
+  expect(s.useSettings.getState().showLive).toBe(true);
+});
+
+test("app reset clears every store in order and reloads channels", async () => {
+  const s = await load();
+  const { createPairingSession, pairDevice, listPairedDevices } = await import(
+    "../src/services/deviceAccess"
+  );
+  s.useSettings.getState().addPlaylist("One", m3u("http://example.invalid/one.m3u"));
+  disk.set("cached-logo", "blob");
+  const session = createPairingSession();
+  const paired = await pairDevice({ secret: session.secret, name: "Handset" });
+  if (!paired.ok) throw new Error("pairing failed");
+  expect(listPairedDevices()).toHaveLength(1);
+
+  const innerReset = s.useSettings.getState().reset;
+  s.useSettings.setState({
+    reset: async () => {
+      serviceOrder.push("settings.reset");
+      return innerReset();
+    },
+  });
+  const innerLoad = s.useChannels.getState().load;
+  s.useChannels.setState({
+    load: async (...args: Parameters<typeof innerLoad>) => {
+      serviceOrder.push("channels.load");
+      expect(listPairedDevices()).toEqual([]);
+      return innerLoad(...args);
+    },
+  });
+
+  const result = await s.applyRemoteCommand({
+    id: "reset-all",
+    revision: 0,
+    command: { type: "app.reset" },
+  });
+
+  expect(result.ok).toBe(true);
+  expect(serviceOrder).toEqual([
+    "settings.reset",
+    "disk.forgetAll",
+    "repair.stopRepair",
+    "repair.forgetRepairHosts",
+    "channels.load",
+  ]);
+  expect(cleared).toBe(1);
+  expect(forgottenRepairHosts).toBe(1);
+  expect(disk.size).toBe(0);
+  expect(listPairedDevices()).toEqual([]);
+  expect(s.useSettings.getState().playlists).toEqual([]);
+  expect(s.useSettings.getState().hideEmptyCategories).toBe(true);
+  expect(s.useChannels.getState().channels).toEqual([]);
+});
+
+test("a failed app reset stops before touching the other stores", async () => {
+  const s = await load();
+  const { createPairingSession, pairDevice, listPairedDevices } = await import(
+    "../src/services/deviceAccess"
+  );
+  s.useSettings.getState().addPlaylist("One", m3u("http://example.invalid/one.m3u"));
+  disk.set("cached-logo", "blob");
+  const session = createPairingSession();
+  const paired = await pairDevice({ secret: session.secret, name: "Handset" });
+  if (!paired.ok) throw new Error("pairing failed");
+  s.useSettings.setState({ reset: async () => false });
+
+  const result = await s.applyRemoteCommand({
+    id: "reset-fails",
+    revision: 0,
+    command: { type: "app.reset" },
+  });
+
+  expect(result.ok).toBe(false);
+  expect(result.reason).toBe("failed");
+  expect(serviceOrder).toEqual([]);
+  expect(cleared).toBe(0);
+  expect(forgottenRepairHosts).toBe(0);
+  expect(disk.size).toBe(1);
+  expect(listPairedDevices()).toHaveLength(1);
+  expect(s.useSettings.getState().playlists).toHaveLength(1);
 });

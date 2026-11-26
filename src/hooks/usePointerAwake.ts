@@ -1,7 +1,33 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { KEY } from "./useRemote";
 
 /** How long the pointer's pad waits before withdrawing. */
 const POINTER_IDLE_MS = 5000;
+const REMOTE_KEY_CODES = new Set<number>(Object.values(KEY));
+
+export const pointerInputActive = () =>
+  document.documentElement.dataset.inputMode === "pointer";
+
+const subscribeInputMode = (listener: () => void) => {
+  const observer = new MutationObserver(listener);
+  observer.observe(document.documentElement, {
+    attributes: true,
+    attributeFilter: ["data-input-mode"],
+  });
+  return () => observer.disconnect();
+};
+
+export const usePointerInput = () =>
+  useSyncExternalStore(subscribeInputMode, pointerInputActive);
+
+export const pointerOnly = (callback: () => void) => {
+  if (pointerInputActive()) callback();
+};
+
+export const activatePointerInput = () => {
+  const root = document.documentElement;
+  if (root.dataset.inputMode !== "pointer") root.dataset.inputMode = "pointer";
+};
 
 /**
  * Whether a mouse is being used just now.
@@ -20,17 +46,30 @@ export function usePointerAwake(): boolean {
   const timer = useRef<number | undefined>(undefined);
 
   useEffect(() => {
+    const root = document.documentElement;
     const wake = () => {
+      activatePointerInput();
       setAwake(true);
       window.clearTimeout(timer.current);
       timer.current = window.setTimeout(() => setAwake(false), POINTER_IDLE_MS);
     };
-    window.addEventListener("pointermove", wake, { passive: true });
+    const movePointer = () => {
+      wake();
+    };
+    const activateRemote = (event?: KeyboardEvent) => {
+      if (event && !REMOTE_KEY_CODES.has(event.keyCode)) return;
+      if (root.dataset.inputMode !== "remote") root.dataset.inputMode = "remote";
+    };
+    activateRemote();
+    window.addEventListener("pointermove", movePointer, { passive: true });
     window.addEventListener("pointerdown", wake, { passive: true });
+    window.addEventListener("keydown", activateRemote, true);
     return () => {
       window.clearTimeout(timer.current);
-      window.removeEventListener("pointermove", wake);
+      window.removeEventListener("pointermove", movePointer);
       window.removeEventListener("pointerdown", wake);
+      window.removeEventListener("keydown", activateRemote, true);
+      delete root.dataset.inputMode;
     };
   }, []);
 

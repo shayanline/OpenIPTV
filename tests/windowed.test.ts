@@ -1,13 +1,17 @@
+import { act, renderHook } from "@testing-library/react";
 import { test } from "vitest";
 import assert from "node:assert/strict";
 import {
+  normalizeWheelDelta,
   POSTER_COLUMNS,
   posterColumnsForViewport,
   posterWindowOf,
   RAIL_ROW_BASE,
+  useNavigableWindow,
   wheelStep,
   windowOf,
 } from "../src/hooks/useWindowed";
+import { usePointerAwake } from "../src/hooks/usePointerAwake";
 
 /**
  * The windowing arithmetic, which decides which rows exist at all. Getting it wrong shows
@@ -17,6 +21,42 @@ import {
  */
 const VIEW = 912;
 const ROW = 76;
+
+test.each(["remote", "pointer"])(
+  "an unmeasured %s rail retains its saved window until measurement",
+  (inputMode) => {
+    document.documentElement.dataset.inputMode = inputMode;
+    const restored = renderHook(
+      ({ height }) => useNavigableWindow(100, 35, height, 1, RAIL_ROW_BASE, 2, 30),
+      { initialProps: { height: 0 } },
+    );
+    try {
+      assert.equal(restored.result.current.first, 30);
+      assert.equal(restored.result.current.scrollOffset, 30 * RAIL_ROW_BASE);
+      restored.rerender({ height: 840 });
+      assert.equal(restored.result.current.first, 30);
+      assert.equal(restored.result.current.scrollOffset, 30 * RAIL_ROW_BASE);
+    } finally {
+      restored.unmount();
+      delete document.documentElement.dataset.inputMode;
+    }
+  },
+);
+
+test("fractional poster scrolling renders the full viewport and keeps unique row slots", () => {
+  document.documentElement.dataset.inputMode = "remote";
+  const { result, unmount } = renderHook(() => useNavigableWindow(10, 0, 500, 1, 376, 1));
+  try {
+    act(() => result.current.onWheel(300));
+    assert.equal(result.current.pointerMode, true);
+    assert.equal(result.current.scrollOffset, 300);
+    assert.equal(result.current.end, 4);
+    assert.ok(result.current.slots >= result.current.end - result.current.start);
+  } finally {
+    unmount();
+    delete document.documentElement.dataset.inputMode;
+  }
+});
 const win = (count: number, cursor: number, previousFirst = 0) =>
   windowOf(count, cursor, VIEW, 1, previousFirst);
 
@@ -51,6 +91,48 @@ test("the list holds still while the cursor is inside it", () => {
   const steps = walk(200, [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
   for (const [i, w] of steps.entries()) {
     assert.equal(w.offset, 0, `cursor ${i} should not have moved the list`);
+  }
+});
+
+test("pointer windows follow a new stored row without replaying their own scroll update", () => {
+  document.documentElement.dataset.inputMode = "remote";
+  const { result, rerender, unmount } = renderHook(
+    ({ first, cursor }) => useNavigableWindow(10, cursor, 752, 1, 376, 1, first),
+    { initialProps: { first: 0, cursor: 0 } },
+  );
+  try {
+    act(() => result.current.onWheel(752));
+    assert.equal(result.current.scrollOffset, 752);
+    rerender({ first: 2, cursor: 0 });
+    assert.equal(result.current.scrollOffset, 752);
+    rerender({ first: 5, cursor: 5 });
+    assert.equal(result.current.scrollOffset, 1880);
+    assert.equal(result.current.first, 5);
+  } finally {
+    unmount();
+    delete document.documentElement.dataset.inputMode;
+  }
+});
+
+test("pointer offsets retain partial rows through their own updates and external restoration", () => {
+  document.documentElement.dataset.inputMode = "pointer";
+  const initialOffset = 30 * RAIL_ROW_BASE + 37;
+  const { result, rerender, unmount } = renderHook(
+    ({ offset }) => useNavigableWindow(100, 5, 840, 1, RAIL_ROW_BASE, 2, 30, undefined, offset),
+    { initialProps: { offset: initialOffset } },
+  );
+  try {
+    assert.equal(result.current.first, 30);
+    assert.equal(result.current.scrollOffset, initialOffset);
+    act(() => result.current.onWheel(19.5));
+    assert.equal(result.current.scrollOffset, initialOffset + 19.5);
+    rerender({ offset: initialOffset + 19.5 });
+    assert.equal(result.current.scrollOffset, initialOffset + 19.5);
+    rerender({ offset: initialOffset + 1.25 });
+    assert.equal(result.current.scrollOffset, initialOffset + 1.25);
+  } finally {
+    unmount();
+    delete document.documentElement.dataset.inputMode;
   }
 });
 
@@ -179,6 +261,37 @@ test("larger text changes poster row height without changing columns", () => {
   assert.equal(regular.itemEnd % POSTER_COLUMNS, 0);
   assert.equal(large.itemEnd % POSTER_COLUMNS, 0);
   assert.ok(large.visible < regular.visible);
+});
+
+test("input mode changes only for physical pointer and remote input", () => {
+  const { unmount } = renderHook(() => usePointerAwake());
+  assert.equal(document.documentElement.dataset.inputMode, "remote");
+
+  act(() => window.dispatchEvent(new MouseEvent("pointerover", { bubbles: true })));
+  assert.equal(document.documentElement.dataset.inputMode, "remote");
+
+  const button = document.body.appendChild(document.createElement("button"));
+  act(() => button.dispatchEvent(new MouseEvent("pointermove", { bubbles: true })));
+  assert.equal(document.documentElement.dataset.inputMode, "pointer");
+  assert.notEqual(document.activeElement, button);
+
+  act(() => window.dispatchEvent(new KeyboardEvent("keydown", { key: "a", keyCode: 65 })));
+  assert.equal(document.documentElement.dataset.inputMode, "pointer");
+
+  act(() =>
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", keyCode: 40 })),
+  );
+  assert.equal(document.documentElement.dataset.inputMode, "remote");
+
+  act(() => window.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true })));
+  assert.equal(document.documentElement.dataset.inputMode, "pointer");
+  unmount();
+});
+
+test("wheel deltas preserve pixels and normalize line and page modes", () => {
+  assert.equal(normalizeWheelDelta(24, 0, 720), 24);
+  assert.equal(normalizeWheelDelta(3, 1, 720), 120);
+  assert.equal(normalizeWheelDelta(-1, 2, 720), -720);
 });
 
 test("wheel movement advances one linear item across row boundaries", () => {

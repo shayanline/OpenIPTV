@@ -1,7 +1,7 @@
 export type AppMode = "live" | "movie" | "series";
 export type PictureSurface = "picture";
-export type PrimarySurface = "panel" | "playback-deck" | "vod";
-export type DrawerSurface = "guide" | "audio" | "subtitles" | "more";
+export type PrimarySurface = "panel" | "playback-deck" | "vod" | "playlists";
+export type DrawerSurface = "guide" | "audio" | "subtitles" | "details";
 export type PlaybackDrawerSurface = Exclude<DrawerSurface, "guide">;
 export type ModalSurface = "settings" | "onboarding" | "exit";
 export type PopupSurface = "confirmation";

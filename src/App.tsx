@@ -1,5 +1,6 @@
 import {
   lazy,
+  memo,
   Suspense,
   useCallback,
   useEffect,
@@ -9,39 +10,54 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
+import {
+  AppNavigation,
+  type AppNavigationAction,
+  type AppNavigationItem,
+  appNavigationItems as buildAppNavigationItems,
+} from "./components/AppNavigation";
 import { Clock } from "./components/Clock";
 import { ExitDialog, exitApp } from "./components/ExitDialog";
 import { Onboarding } from "./components/Onboarding";
+import { PlaylistShortcut } from "./components/PlaylistShortcut";
 import { PointerPad } from "./components/PointerPad";
-import { Settings } from "./components/Settings";
-import { SmartRemote, remoteVisible } from "./components/SmartRemote";
-import { RecoveryStatus } from "./components/playback/RecoveryStatus";
+import { isRecoveryStatusVisible, RecoveryStatus } from "./components/playback/RecoveryStatus";
+import { Settings, type SettingsEntry, type SettingsSection } from "./components/Settings";
+import { remoteVisible, SmartRemote } from "./components/SmartRemote";
+import { ToastHost } from "./components/ToastHost";
 import { useChrome } from "./hooks/useChrome";
 import { useLocale } from "./hooks/useLocale";
-import { usePointerAwake } from "./hooks/usePointerAwake";
+import { useLongPress } from "./hooks/useLongPress";
+import { usePageTransition } from "./hooks/usePageTransition";
+import { usePlaybackController } from "./hooks/usePlaybackController";
+import { pointerInputActive, usePointerAwake } from "./hooks/usePointerAwake";
 import { KEY, registerRemoteKeys, useRemote } from "./hooks/useRemote";
 import { useRemoteAccess } from "./hooks/useRemoteAccess";
-import { usePlaybackController } from "./hooks/usePlaybackController";
+import { useToast } from "./hooks/useToast";
 import { LiveScreen } from "./screens/LiveScreen";
 import type { VodPlaybackRequest, VodScreenHandle } from "./screens/VodScreen";
+import { availableContentModes } from "./services/contentSections";
 import { hasPairedDevices, subscribePairedDevices } from "./services/deviceAccess";
 import { whenIdle } from "./services/idle";
 import { applyDocumentLocale, type MessageKey } from "./services/locale";
 import { onTizen } from "./services/player";
+import { PlaylistEntryFeedbackError } from "./services/playlistEntry";
 import { developmentRemoteAccess } from "./services/remoteServer";
 import { read, write } from "./services/store";
 import {
-  activeSurface,
   type AppMode,
-  type PlaybackDrawerSurface,
+  activeSurface,
   type LiveSurface,
+  type PlaybackDrawerSurface,
   type SurfaceId,
   type SurfaceStack,
 } from "./services/surfaceStack";
+import { formatEpisodePlaybackName } from "./services/xtream";
 import { useChannels } from "./stores/channels";
 import { useLineup } from "./stores/lineup";
 import { usePersonal } from "./stores/personal";
 import { useSettings } from "./stores/settings";
+import { useSetup } from "./stores/setup";
 import type { PlaybackTarget } from "./types";
 
 let loadedVodScreen: typeof import("./screens/VodScreen").VodScreen | null = null;
@@ -56,10 +72,11 @@ export const preloadVodScreen = async () => {
 };
 
 const rememberedMode = (): AppMode => {
-  const playlist = useSettings.getState().activePlaylist();
-  if (playlist?.source.kind !== "xtream") return "live";
-  const saved = read(`app:last-mode:${playlist.id}`);
-  return saved === "movie" || saved === "series" ? saved : "live";
+  const settings = useSettings.getState();
+  const playlist = settings.activePlaylist();
+  const modes = availableContentModes(playlist?.source.kind ?? "m3u", settings);
+  const saved = playlist ? read(`app:last-mode:${playlist.id}`) : null;
+  return modes.find((mode) => mode === saved) ?? modes[0];
 };
 
 const rememberedLiveChannel = () => {
@@ -72,17 +89,61 @@ const rememberedLiveChannel = () => {
 
 export default function App() {
   const VodScreen = loadedVodScreen ?? LazyVodScreen;
-  const { load, sweep, error, errorKey, errorDetail } = useChannels();
-  const { channels } = useLineup();
-  const settings = useSettings();
-  const configured = settings.playlists.length > 0;
+  const MemoVodScreen = useMemo(() => memo(VodScreen), [VodScreen]);
+  const load = useChannels((state) => state.load);
+  const activatePlaylist = useChannels((state) => state.activatePlaylist);
+  const validatePlaylist = useChannels((state) => state.validatePlaylist);
+  const sweep = useChannels((state) => state.sweep);
+  const loading = useChannels((state) => state.loading);
+  const error = useChannels((state) => state.error);
+  const errorKey = useChannels((state) => state.errorKey);
+  const errorDetail = useChannels((state) => state.errorDetail);
+  const channels = useLineup((state) => state.channels);
+  const playlists = useSettings((state) => state.playlists);
+  const activePlaylist = useSettings((state) => state.activePlaylist());
+  const aspectId = useSettings((state) => state.aspectId);
+  const compatibility = useSettings((state) => state.compatibility);
+  const continuousReconnect = useSettings((state) => state.continuousReconnect);
+  const scale = useSettings((state) => state.scale());
+  const showClock = useSettings((state) => state.showClock);
+  const showLive = useSettings((state) => state.showLive);
+  const showMovies = useSettings((state) => state.showMovies);
+  const showSeries = useSettings((state) => state.showSeries);
+  const playlistShortcut = useSettings((state) => state.playlistShortcut);
+  const playlistShortcutAvailable = playlistShortcut && playlists.length > 1;
+  const addPlaylist = useSettings((state) => state.addPlaylist);
+  const configured = playlists.length > 0;
   const { locale, direction, t } = useLocale();
+  const appNavigationSourceKind = activePlaylist?.source.kind ?? "m3u";
+  const enabledModes = useMemo(
+    () => availableContentModes(appNavigationSourceKind, { showLive, showMovies, showSeries }),
+    [appNavigationSourceKind, showLive, showMovies, showSeries],
+  );
+  const appNavigationItems = useMemo(
+    () =>
+      buildAppNavigationItems(
+        enabledModes,
+        t,
+        playlistShortcutAvailable && activePlaylist
+          ? {
+              name: activePlaylist.name,
+              number: playlists.findIndex((item) => item.id === activePlaylist.id) + 1,
+            }
+          : undefined,
+      ),
+    [activePlaylist, enabledModes, playlistShortcutAvailable, playlists, t],
+  );
   const [liveSurface, setLiveSurface] = useState<LiveSurface>(() =>
     useSettings.getState().resumeLast && usePersonal.getState().hasRememberedLast()
       ? "picture"
       : "panel",
   );
-  const [appMode, setAppMode] = useState<AppMode>(rememberedMode);
+  const [liveEntryId, setLiveEntryId] = useState(0);
+  const initialMode = rememberedMode();
+  const [appMode, setAppMode] = useState<AppMode>(initialMode);
+  const [vodMode, setVodMode] = useState<"movie" | "series">(
+    initialMode === "series" ? "series" : "movie",
+  );
   const [vodPhase, setVodPhase] = useState<"browsing" | "resolving" | "starting" | "playing">(
     "browsing",
   );
@@ -94,18 +155,65 @@ export default function App() {
   const [deckOpen, setDeckOpen] = useState(false);
   const [playbackDrawer, setPlaybackDrawer] = useState<PlaybackDrawerSurface | null>(null);
   const [showSettings, setShowSettings] = useState(false);
+  const [settingsEntry, setSettingsEntry] = useState<SettingsEntry>({
+    session: 0,
+    section: "appearance",
+  });
   const [settingsPopupOpen, setSettingsPopupOpen] = useState(false);
+  const [playlistShortcutOpen, setPlaylistShortcutOpen] = useState(false);
+  const [appNavigationFocused, setAppNavigationFocused] = useState(false);
+  const [appNavigationAction, setAppNavigationAction] = useState<AppNavigationAction>("live");
+  const appNavigationActionRef = useRef<AppNavigationAction>("live");
+  const [livePanelHost, setLivePanelHost] = useState<HTMLDivElement | null>(null);
+  const [searchRequest, setSearchRequest] = useState<{
+    id: number;
+    mode: AppMode;
+    open: boolean;
+  }>({ id: 0, mode: "live", open: false });
+  useLayoutEffect(() => {
+    if (appNavigationItems.some((item) => item.id === appNavigationActionRef.current)) return;
+    const preferred = showSettings
+      ? "settings"
+      : (appNavigationItems.find((item) => item.id === appMode)?.id ?? enabledModes[0]);
+    appNavigationActionRef.current = preferred;
+    setAppNavigationAction(preferred);
+  }, [appNavigationItems, appMode, enabledModes, showSettings]);
+  useLayoutEffect(() => {
+    if (!playlistShortcutOpen || playlistShortcutAvailable) return;
+    setPlaylistShortcutOpen(false);
+    setAppNavigationFocused(configured && !pointerInputActive());
+  }, [configured, playlistShortcutAvailable, playlistShortcutOpen]);
   const [showExit, setShowExit] = useState(false);
   const requestExit = useCallback(() => setShowExit(true), []);
-  const chrome = useChrome();
-  const openSettings = useCallback(() => {
-    vodToken.current += 1;
-    setVodPhase((phase) =>
-      phase === "resolving" || phase === "starting" ? "browsing" : phase,
-    );
-    chrome.cancelDigits();
-    setShowSettings(true);
-  }, [chrome.cancelDigits]);
+  const chrome = useChrome(
+    `playback:${activePlaylist?.id ?? "setup"}:${activePlaylist?.sourceVersion ?? 0}`,
+  );
+  const entryToast = useToast("playlist-entry-completion");
+  const openSettings = useCallback(
+    (
+      destination?: { section?: SettingsSection; playlistId?: string; loadError?: string },
+      preserveNavigationFocus = false,
+    ) => {
+      setPlaylistShortcutOpen(false);
+      vodToken.current += 1;
+      setVodPhase((phase) =>
+        phase === "resolving" || phase === "starting" ? "browsing" : phase,
+      );
+      chrome.cancelDigits();
+      if (!preserveNavigationFocus) {
+        setAppNavigationFocused(false);
+        if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+      }
+      setSettingsEntry((current) => ({
+        session: current.session + 1,
+        section: destination?.section ?? "appearance",
+        ...(destination?.playlistId ? { playlistId: destination.playlistId } : {}),
+        ...(destination?.loadError ? { loadError: destination.loadError } : {}),
+      }));
+      setShowSettings(true);
+    },
+    [chrome.cancelDigits],
+  );
   const pointerAwake = usePointerAwake();
 
   const developmentRemoteAccessEnabled = developmentRemoteAccess();
@@ -126,18 +234,36 @@ export default function App() {
 
   useEffect(() => {
     registerRemoteKeys();
-    void load();
+    const playlist = useSettings.getState().activePlaylist();
+    if (playlist) void activatePlaylist(playlist.id, false);
+    else void load();
     return whenIdle(() => void sweep(), 8000);
-  }, [load, sweep]);
+  }, [activatePlaylist, load, sweep]);
 
   const appRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const [browserFullscreen, setBrowserFullscreen] = useState(false);
+  useEffect(() => {
+    const syncFullscreen = () =>
+      setBrowserFullscreen(document.fullscreenElement === document.documentElement);
+    syncFullscreen();
+    document.addEventListener("fullscreenchange", syncFullscreen);
+    return () => document.removeEventListener("fullscreenchange", syncFullscreen);
+  }, []);
+  useLongPress({
+    code: KEY.ESC,
+    enabled: browserFullscreen,
+    capture: true,
+    onShortPress: () => undefined,
+    onLongPress: () => void document.exitFullscreen(),
+  });
   const toggleFullscreen = useCallback(() => {
+    if (onTizen()) return;
     if (document.fullscreenElement) {
       void document.exitFullscreen();
       return;
     }
-    void appRef.current?.requestFullscreen?.();
+    void document.documentElement.requestFullscreen?.();
   }, []);
 
   const rememberLive = useCallback((itemKey: string) => {
@@ -154,8 +280,7 @@ export default function App() {
     });
   }, []);
 
-  const named = useCallback(() => chrome.holdBanner(), [chrome.holdBanner]);
-  const pictured = useCallback(() => chrome.raiseBanner(), [chrome.raiseBanner]);
+  const named = useCallback(() => chrome.raiseBanner(), [chrome.raiseBanner]);
   const message = useCallback((key: MessageKey) => chrome.say(t(key)), [chrome.say, t]);
   const playbackEnded = useCallback((target: PlaybackTarget) => {
     if (target.mode !== "finite") return;
@@ -179,17 +304,18 @@ export default function App() {
   );
 
   const playback = usePlaybackController({
-    fit: settings.aspectId,
+    fit: aspectId,
     video: videoRef,
-    compatibility: settings.compatibility,
-    continuousReconnect: settings.continuousReconnect,
+    compatibility,
+    continuousReconnect,
     onNamed: named,
-    onPicture: pictured,
     onMessage: message,
     onEnded: playbackEnded,
     onStopped: playbackStopped,
     rememberLast: rememberLive,
   });
+  const playbackOwner = useRef(activePlaylist?.id ?? "");
+  const resumeInitialLive = useRef(true);
 
   useEffect(() => {
     playback.setMuted(showSettings && !!playback.snapshot.target);
@@ -208,19 +334,33 @@ export default function App() {
 
   const changeMode = useCallback(
     (mode: AppMode) => {
+      const settings = useSettings.getState();
+      if (
+        !availableContentModes(
+          settings.activePlaylist()?.source.kind ?? "m3u",
+          settings,
+        ).includes(mode)
+      ) {
+        return;
+      }
       if (mode === appMode) {
         cancelPendingVod();
+        vodRef.current?.closeDetails();
         return;
       }
       vodToken.current += 1;
       chrome.cancelDigits();
+      vodRef.current?.closeSearch();
+      setSearchRequest((request) => ({ id: request.id + 1, mode, open: false }));
+      if (mode !== "live") setVodMode(mode);
       const playlist = useSettings.getState().activePlaylist();
       if (playlist) write(`app:last-mode:${playlist.id}`, mode);
       if (mode === "live") {
         setAppMode("live");
         setVodPhase("browsing");
         vodRequest.current = null;
-        setLiveSurface("picture");
+        setLiveSurface("panel");
+        setLiveEntryId((value) => value + 1);
         const channel =
           channels.find((item) => item.id === rememberedLive.current) ?? channels[0];
         if (channel) {
@@ -253,14 +393,245 @@ export default function App() {
     ],
   );
 
+  const playlistRecovery =
+    configured && !!error && errorKey !== "playlist.refreshFailed" && !loading;
+
+  useEffect(() => {
+    if (playlistRecovery || enabledModes.includes(appMode)) return;
+    changeMode(enabledModes[0]);
+  }, [appMode, changeMode, enabledModes, playlistRecovery]);
+
+  const releaseAppNavigation = useCallback(() => {
+    setAppNavigationFocused(false);
+    if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+  }, []);
+
+  const focusPlaylistShortcut = useCallback(() => {
+    appNavigationActionRef.current = "playlists";
+    setAppNavigationAction("playlists");
+    setAppNavigationFocused(true);
+  }, []);
+
+  const openPlaylistShortcut = useCallback(() => {
+    if (!playlistShortcutAvailable) return;
+    setShowSettings(false);
+    setSettingsPopupOpen(false);
+    setDeckOpen(false);
+    setPlaybackDrawer(null);
+    setGuideChannelId("");
+    setPlaylistShortcutOpen(true);
+    appNavigationActionRef.current = "playlists";
+    setAppNavigationAction("playlists");
+    releaseAppNavigation();
+  }, [playlistShortcutAvailable, releaseAppNavigation]);
+
+  const selectShortcutPlaylist = useCallback(
+    (id: string) => {
+      if (id === useSettings.getState().activePlaylist()?.id) return;
+      void activatePlaylist(id).catch((cause: unknown) => {
+        chrome.say(cause instanceof Error ? cause.message : t("playlist.unavailable"), true);
+      });
+    },
+    [activatePlaylist, chrome.say, t],
+  );
+
+  const focusAppNavigation = useCallback(() => {
+    const preferred = playlistShortcutOpen
+      ? "playlists"
+      : showSettings
+        ? "settings"
+        : searchRequest.open && searchRequest.mode === appMode
+          ? "search"
+          : (appNavigationItems.find((item) => item.id === appMode)?.id ?? enabledModes[0]);
+    appNavigationActionRef.current = preferred;
+    setAppNavigationAction(preferred);
+    setAppNavigationFocused(true);
+  }, [
+    appMode,
+    appNavigationItems,
+    enabledModes,
+    playlistShortcutOpen,
+    searchRequest.mode,
+    searchRequest.open,
+    showSettings,
+  ]);
+
+  const commitAppNavigation = useCallback(
+    (item: AppNavigationItem) => {
+      if (item.id === "playlists") {
+        if (playlistShortcut) openPlaylistShortcut();
+        return;
+      }
+      setPlaylistShortcutOpen(false);
+      if (item.id === "search") {
+        setShowSettings(false);
+        if (!searchRequest.open || searchRequest.mode !== appMode) {
+          setSearchRequest((request) => ({ id: request.id + 1, mode: appMode, open: true }));
+        }
+        return;
+      }
+      setSearchRequest((request) => ({ id: request.id + 1, mode: appMode, open: false }));
+      if (item.id === "settings") {
+        openSettings(undefined, true);
+        return;
+      }
+      setShowSettings(false);
+      appNavigationActionRef.current = item.id;
+      setAppNavigationAction(item.id);
+      if (item.id === "live" && appMode === "live" && liveSurface === "picture") {
+        setLiveSurface("panel");
+      }
+      changeMode(item.id);
+    },
+    [
+      appMode,
+      changeMode,
+      liveSurface,
+      openPlaylistShortcut,
+      openSettings,
+      playlistShortcut,
+      searchRequest.mode,
+      searchRequest.open,
+    ],
+  );
+
+  const pageTransition = usePageTransition<AppNavigationItem>({
+    ownerKey: `${activePlaylist?.id ?? ""}:${activePlaylist?.sourceVersion ?? 0}`,
+    onCommit: commitAppNavigation,
+  });
+  const {
+    phase: pageTransitionPhase,
+    motion: pageTransitionMotion,
+    settlingRevision,
+    request: requestPageTransition,
+    cancel: cancelPageTransition,
+    ready: readyPageTransition,
+    onTransitionEnd: onPageTransitionEnd,
+  } = pageTransition;
+
+  useLayoutEffect(() => {
+    const next = activePlaylist?.id ?? "";
+    if (playbackOwner.current === next) return;
+    const switched = !!playbackOwner.current;
+    if (switched) resumeInitialLive.current = false;
+    playbackOwner.current = next;
+    vodToken.current += 1;
+    cancelPageTransition();
+    chrome.clear();
+    if (playback.snapshot.target) playback.stop();
+    rememberedLive.current = rememberedLiveChannel();
+    vodRequest.current = null;
+    setDeckOpen(false);
+    setPlaybackDrawer(null);
+    setGuideChannelId("");
+    setShowExit(false);
+    setAppNavigationFocused(false);
+    setVodPhase("browsing");
+    setLiveSurface(switched ? "picture" : "panel");
+    setLiveEntryId(switched ? 0 : 1);
+    const mode =
+      playlistShortcutOpen && enabledModes.includes(appMode) ? appMode : rememberedMode();
+    if (playlistShortcutOpen && next) write(`app:last-mode:${next}`, mode);
+    setAppMode(mode);
+    if (mode !== "live") setVodMode(mode);
+    setSearchRequest((request) => ({ id: request.id + 1, mode: "live", open: false }));
+  }, [
+    activePlaylist?.id,
+    appMode,
+    cancelPageTransition,
+    chrome.clear,
+    enabledModes,
+    playback.snapshot.target,
+    playback.stop,
+    playlistShortcutOpen,
+  ]);
+
+  const activateAppNavigation = useCallback(
+    (item: AppNavigationItem) => {
+      const active = playlistShortcutOpen
+        ? "playlists"
+        : showSettings
+          ? "settings"
+          : searchRequest.open && searchRequest.mode === appMode
+            ? "search"
+            : appMode;
+      if (item.id === active) {
+        cancelPageTransition();
+        if (item.id === "settings") openSettings(undefined, true);
+        if (item.id === "movie" || item.id === "series") vodRef.current?.closeDetails();
+        releaseAppNavigation();
+        return;
+      }
+      appNavigationActionRef.current = item.id;
+      setAppNavigationAction(item.id);
+      releaseAppNavigation();
+      if (playlistRecovery) {
+        commitAppNavigation(item);
+        return;
+      }
+      if (item.id === "movie" || item.id === "series") void loadVodScreen();
+      requestPageTransition(item, {
+        leaving: !showSettings && !playlistShortcutOpen && appMode === "live" ? "rail" : "fade",
+        entering:
+          item.id === "live" || (item.id === "search" && appMode === "live") ? "rail" : "fade",
+      });
+    },
+    [
+      appMode,
+      cancelPageTransition,
+      commitAppNavigation,
+      openSettings,
+      playlistShortcutOpen,
+      playlistRecovery,
+      releaseAppNavigation,
+      requestPageTransition,
+      searchRequest.mode,
+      searchRequest.open,
+      showSettings,
+    ],
+  );
+
+  const onSearchClosed = useCallback((mode: AppMode, requestId: number) => {
+    setSearchRequest((request) =>
+      request.id === requestId && request.mode === mode && request.open
+        ? { ...request, open: false }
+        : request,
+    );
+  }, []);
+
   const playVod = useCallback(
-    async (request: VodPlaybackRequest) => {
+    async (request: VodPlaybackRequest, replacement = false) => {
+      const settings = useSettings.getState();
+      const targetMode = request.kind === "movie" ? "movie" : "series";
+      if (
+        !availableContentModes(
+          settings.activePlaylist()?.source.kind ?? "m3u",
+          settings,
+        ).includes(targetMode)
+      ) {
+        return;
+      }
       const token = ++vodToken.current;
       chrome.cancelDigits();
-      vodRequest.current = null;
-      setVodPhase("resolving");
-      setDeckOpen(false);
-      setPlaybackDrawer(null);
+      setLiveSurface("picture");
+      if (replacement) {
+        setDeckOpen(true);
+        setPlaybackDrawer(null);
+      } else {
+        vodRequest.current = null;
+        setVodPhase("resolving");
+        setDeckOpen(false);
+        setPlaybackDrawer(null);
+      }
+      const displayName =
+        request.kind === "episode"
+          ? formatEpisodePlaybackName(
+              request.progress.parentName,
+              request.name,
+              request.progress.season,
+              request.progress.episode,
+            )
+          : request.name;
       const item =
         request.kind === "movie"
           ? {
@@ -271,8 +642,8 @@ export default function App() {
               logo: request.poster,
               directSource: request.directSource,
               ...(request.extension ? { extension: request.extension } : {}),
-              year: "",
-              rating: "",
+              year: request.year,
+              rating: request.rating,
             }
           : {
               key: request.itemKey,
@@ -290,7 +661,7 @@ export default function App() {
               ...(request.progress.episode !== undefined
                 ? { number: request.progress.episode }
                 : {}),
-              name: request.name,
+              name: displayName,
               ...(request.extension ? { extension: request.extension } : {}),
               providerOrder: 0,
               metadata: { rating: "", plot: "", releaseDate: "", image: "" },
@@ -301,12 +672,12 @@ export default function App() {
         url = await libraryPlaybackUrl(item);
       } catch {
         if (vodToken.current !== token) return;
-        setVodPhase("browsing");
+        if (!replacement) setVodPhase("browsing");
         chrome.say(t("library.failed"));
         return;
       }
       if (vodToken.current !== token) return;
-      setVodPhase("starting");
+      if (!replacement) setVodPhase("starting");
       window.setTimeout(() => {
         if (vodToken.current !== token) return;
         vodRequest.current = request;
@@ -325,9 +696,11 @@ export default function App() {
             playlistId: request.progress.playlistId,
             mode: "finite",
             kind: request.kind,
-            name: request.name,
+            name: displayName,
             group: request.categoryName,
             logo: request.poster,
+            year: request.year,
+            rating: request.rating,
             url,
             resumeAt: request.resumeAt,
             progress: request.progress,
@@ -348,6 +721,8 @@ export default function App() {
       const at = request.siblingKeys.indexOf(request.itemKey);
       const itemKey = request.siblingKeys[at + delta];
       if (at < 0 || !itemKey) return;
+      setDeckOpen(true);
+      setPlaybackDrawer(null);
       const { useLibrary } = await import("./stores/library");
       const library = useLibrary.getState();
       if (request.kind === "movie") {
@@ -359,18 +734,30 @@ export default function App() {
         if (!progress || vodToken.current !== token) return;
         const saved = usePersonal.getState().progressFor(itemKey);
         if (vodToken.current !== token) return;
-        void playVod({
-          ...request,
-          itemKey,
-          name: detail.name,
-          poster: detail.logo,
-          directSource: detail.directSource,
-          extension: detail.extension,
-          providerId: detail.streamId,
-          resumeAt: saved && !("legacyOrder" in saved) ? saved.seconds : 0,
-          restart: false,
-          progress,
-        });
+        const categoryName =
+          useLibrary
+            .getState()
+            .categoriesFor("movie")
+            .find((category) => category.key === detail.categoryKey)?.name ??
+          request.categoryName;
+        void playVod(
+          {
+            ...request,
+            itemKey,
+            name: detail.name,
+            categoryName,
+            poster: detail.logo,
+            year: detail.year,
+            rating: detail.rating,
+            directSource: detail.directSource,
+            extension: detail.extension,
+            providerId: detail.streamId,
+            resumeAt: saved && !("legacyOrder" in saved) ? saved.seconds : 0,
+            restart: false,
+            progress,
+          },
+          true,
+        );
         return;
       }
       const parent = request.progress.parentKey
@@ -382,22 +769,32 @@ export default function App() {
       if (!progress) return;
       const saved = usePersonal.getState().progressFor(itemKey);
       if (vodToken.current !== token) return;
-      void playVod({
-        ...request,
-        itemKey,
-        name: episode.name,
-        directSource: episode.directSource,
-        extension: episode.extension,
-        providerId: episode.episodeId,
-        resumeAt: saved && !("legacyOrder" in saved) ? saved.seconds : 0,
-        restart: false,
-        progress,
-      });
+      void playVod(
+        {
+          ...request,
+          itemKey,
+          name: episode.name,
+          directSource: episode.directSource,
+          extension: episode.extension,
+          providerId: episode.episodeId,
+          resumeAt: saved && !("legacyOrder" in saved) ? saved.seconds : 0,
+          restart: false,
+          progress,
+        },
+        true,
+      );
     },
     [playVod],
   );
 
   const guideChannel = channels.find((channel) => channel.id === guideChannelId);
+  const playlistWarning =
+    errorKey === "playlist.refreshFailed" && !loading && !playback.snapshot.fault
+      ? t(errorKey, { detail: errorDetail })
+      : "";
+  useEffect(() => {
+    if (playlistWarning) chrome.say(playlistWarning, true);
+  }, [chrome.say, playlistWarning]);
   const modalSurface = showSettings
     ? "settings"
     : showExit
@@ -408,14 +805,17 @@ export default function App() {
   const surfaceStack = useMemo<SurfaceStack>(
     () => ({
       picture: "picture",
-      primary:
-        appMode !== "live" && vodPhase !== "playing"
-          ? "vod"
-          : deckOpen
-            ? "playback-deck"
-            : liveSurface === "panel"
-              ? "panel"
-              : null,
+      primary: playlistShortcutOpen
+        ? "playlists"
+        : playlistRecovery
+          ? null
+          : appMode !== "live" && vodPhase !== "playing"
+            ? "vod"
+            : deckOpen && !playback.snapshot.fault
+              ? "playback-deck"
+              : liveSurface === "panel"
+                ? "panel"
+                : null,
       drawer: guideChannel ? "guide" : playbackDrawer,
       modal: modalSurface,
       popup: settingsPopupOpen ? "confirmation" : null,
@@ -424,136 +824,533 @@ export default function App() {
       appMode,
       deckOpen,
       guideChannel,
+      playback.snapshot.fault,
       liveSurface,
       modalSurface,
       playbackDrawer,
+      playlistRecovery,
+      playlistShortcutOpen,
       settingsPopupOpen,
       vodPhase,
     ],
   );
   const surface: SurfaceId = activeSurface(surfaceStack);
+  const handleAppNavigationKey = useCallback(
+    (code: number, event: KeyboardEvent): boolean => {
+      if (!appNavigationFocused) return false;
+      const index = appNavigationItems.findIndex(
+        (item) => item.id === appNavigationActionRef.current,
+      );
+      const item = appNavigationItems[index];
+      const inlineStart = direction === "rtl" ? KEY.RIGHT : KEY.LEFT;
+      const inlineEnd = direction === "rtl" ? KEY.LEFT : KEY.RIGHT;
+      if (code === KEY.UP || code === KEY.DOWN) {
+        const next = Math.max(
+          0,
+          Math.min(appNavigationItems.length - 1, index + (code === KEY.DOWN ? 1 : -1)),
+        );
+        const nextItem = appNavigationItems[next];
+        if (nextItem && next !== index) {
+          appNavigationActionRef.current = nextItem.id;
+          setAppNavigationAction(nextItem.id);
+        }
+        event.preventDefault();
+        return true;
+      }
+      if (code === inlineStart) {
+        event.preventDefault();
+        return true;
+      }
+      if (code === inlineEnd) {
+        event.preventDefault();
+        const active = playlistShortcutOpen
+          ? "playlists"
+          : showSettings
+            ? "settings"
+            : searchRequest.open && searchRequest.mode === appMode
+              ? "search"
+              : appMode;
+        if (item && item.id !== active) activateAppNavigation(item);
+        else {
+          cancelPageTransition();
+          releaseAppNavigation();
+        }
+        return true;
+      }
+      if (code === KEY.BACK || code === KEY.ESC) {
+        cancelPageTransition();
+        setAppNavigationFocused(false);
+        event.preventDefault();
+        return true;
+      }
+      if (code === KEY.ENTER) {
+        event.preventDefault();
+        if (item) activateAppNavigation(item);
+        return true;
+      }
+      return false;
+    },
+    [
+      activateAppNavigation,
+      appMode,
+      appNavigationFocused,
+      cancelPageTransition,
+      releaseAppNavigation,
+      appNavigationItems,
+      direction,
+      playlistShortcutOpen,
+      searchRequest.mode,
+      searchRequest.open,
+      showSettings,
+    ],
+  );
+
   useRemote(
     useCallback(
       (code, event) => {
         if (event.defaultPrevented) return;
-        if (surface === "vod") {
-          if (code === KEY.YELLOW) {
-            openSettings();
+        if (pageTransitionPhase === "leaving") {
+          if (code === KEY.BACK || code === KEY.ESC) {
+            cancelPageTransition();
             event.preventDefault();
             return;
           }
-          vodRef.current?.handleKey(code, event);
+          if (
+            code === KEY.UP ||
+            code === KEY.DOWN ||
+            code === KEY.LEFT ||
+            code === KEY.RIGHT ||
+            code === KEY.ENTER
+          )
+            event.preventDefault();
           return;
         }
+        if (appNavigationFocused) handleAppNavigationKey(code, event);
       },
-      [openSettings, surface],
+      [appNavigationFocused, cancelPageTransition, handleAppNavigationKey, pageTransitionPhase],
+    ),
+    true,
+  );
+  useRemote(
+    useCallback(
+      (code, event) => {
+        if (event.defaultPrevented || pageTransitionPhase === "leaving") return;
+        if (surface !== "vod" && surface !== "playlists") return;
+        if (code === KEY.YELLOW) {
+          openSettings();
+          event.preventDefault();
+          return;
+        }
+        if (surface === "vod") vodRef.current?.handleKey(code, event);
+      },
+      [openSettings, pageTransitionPhase, surface],
     ),
   );
+
+  useEffect(() => {
+    if (!playlistRecovery || appMode === "live") return;
+    setAppMode("live");
+    setVodPhase("browsing");
+    setLiveSurface("panel");
+    setAppNavigationFocused(false);
+  }, [appMode, playlistRecovery]);
+
   /*
-   * The compact status belongs to an uncovered live picture only: the deck, a drawer, the
-   * browser and every modal cover it, finite playback answers faults through its own deck,
-   * and connecting, paused and failed already own the middle of the picture.
+   * The compact status belongs to an uncovered picture with something already shown: the
+   * deck, a drawer, the browser and every modal cover it, connecting, paused and failed
+   * own the middle of the picture, and a target that has never played gets the full
+   * panel instead of a corner note.
    */
-  const recoveryHidden =
-    surface !== "picture" ||
-    playback.snapshot.target?.mode !== "live" ||
-    !playback.recovery.hasPlayed;
-  const activePlaylist = settings.activePlaylist();
+  const recoveryHidden = surface !== "picture" || !playback.recovery.hasPlayed;
+  const compactRecoveryVisible = isRecoveryStatusVisible(playback.recovery, recoveryHidden);
+  const loadingSplashVisible =
+    loading && !channels.length && !showSettings && !playlistShortcutOpen;
+  // Exit covers the picture without changing the rail's animation coordinates.
+  const livePanelMotion =
+    appMode === "live" &&
+    !playlistShortcutOpen &&
+    !showSettings &&
+    !loadingSplashVisible &&
+    !playlistRecovery;
+  const appNavigationVisible =
+    configured &&
+    !showExit &&
+    (playlistRecovery ||
+      loading ||
+      playlistShortcutOpen ||
+      showSettings ||
+      appNavigationFocused ||
+      (appMode !== "live" ? vodPhase !== "playing" : liveSurface === "panel"));
+  const activeNavigationAction =
+    (playlistShortcutOpen ? "playlists" : pageTransition.requestedTarget?.id) ??
+    (showSettings
+      ? "settings"
+      : playlistRecovery
+        ? "none"
+        : searchRequest.open && searchRequest.mode === appMode
+          ? "search"
+          : appMode);
+  const appNavigationExpanded = appNavigationFocused && pageTransitionPhase === "idle";
+
+  const vodPageReadyContext = useRef({
+    appMode,
+    pageTransitionPhase,
+    readyPageTransition,
+    showSettings,
+  });
+  vodPageReadyContext.current = {
+    appMode,
+    pageTransitionPhase,
+    readyPageTransition,
+    showSettings,
+  };
+  // A new revision must still wake the child's readiness effect. Phase changes need not.
+  const vodPageReady = useCallback(
+    (readyMode: AppMode) => {
+      const context = vodPageReadyContext.current;
+      if (
+        context.pageTransitionPhase === "settling" &&
+        !context.showSettings &&
+        context.appMode !== "live" &&
+        readyMode === context.appMode
+      ) {
+        context.readyPageTransition(settlingRevision);
+      }
+    },
+    [settlingRevision],
+  );
+  const vodReturnLive = useCallback(() => {
+    if (enabledModes.includes("live")) changeMode("live");
+    else focusAppNavigation();
+  }, [changeMode, enabledModes, focusAppNavigation]);
+  const vodPlayRequest = useCallback(
+    (request: VodPlaybackRequest) => void playVod(request),
+    [playVod],
+  );
+
+  useLayoutEffect(() => {
+    if (pageTransitionPhase === "idle") return;
+    if (playlistRecovery || loadingSplashVisible || showExit || settingsPopupOpen) {
+      cancelPageTransition();
+    }
+  }, [
+    cancelPageTransition,
+    loadingSplashVisible,
+    pageTransitionPhase,
+    playlistRecovery,
+    settingsPopupOpen,
+    showExit,
+  ]);
+  const liveVisible =
+    playlistRecovery || appMode === "live" || vodPhase === "starting" || vodPhase === "playing";
+  const vodVisible =
+    !playlistRecovery &&
+    activePlaylist?.source.kind === "xtream" &&
+    appMode !== "live" &&
+    vodPhase !== "playing";
+  const vodPageVisible = vodVisible && !showSettings && !playlistShortcutOpen;
+
+  /*
+   * A visible VOD screen answers readiness itself through onPageReady once mounted,
+   * lazy chunk included. Every other committed destination is already in the DOM.
+   */
+  useLayoutEffect(() => {
+    if (pageTransitionPhase !== "settling" || vodPageVisible) return;
+    readyPageTransition(settlingRevision);
+  }, [pageTransitionPhase, readyPageTransition, settlingRevision, vodPageVisible]);
 
   return (
-    <div ref={appRef} className="app" dir={direction}>
-      {(appMode === "live" || vodPhase === "starting" || vodPhase === "playing") && (
-        <LiveScreen
-          surface={surface}
-          liveSurface={liveSurface}
-          onLiveSurfaceChange={setLiveSurface}
-          guideChannelId={guideChannelId}
-          onGuideChannelChange={setGuideChannelId}
-          deckOpen={deckOpen}
-          onDeckOpenChange={setDeckOpen}
-          playbackDrawer={playbackDrawer}
-          onPlaybackDrawerChange={setPlaybackDrawer}
-          playback={playback}
-          chrome={chrome}
-          videoRef={videoRef}
-          onToggleFullscreen={toggleFullscreen}
-          onOpenSettings={openSettings}
-          onRequestExit={requestExit}
-          onModeChange={changeMode}
-          onFiniteReturn={
-            vodPhase === "playing"
-              ? () => {
-                  vodToken.current += 1;
-                  playback.stop();
-                  vodRequest.current = null;
-                  setVodPhase("browsing");
-                  setLiveSurface("picture");
-                  setDeckOpen(false);
-                  setPlaybackDrawer(null);
-                }
-              : undefined
-          }
-          onFiniteStep={vodPhase === "playing" ? (delta) => void stepVod(delta) : undefined}
-          finiteStepAvailable={
-            vodPhase === "playing"
-              ? (delta) => {
-                  const request = vodRequest.current;
-                  if (!request) return false;
-                  const at = request.siblingKeys.indexOf(request.itemKey);
-                  return at >= 0 && !!request.siblingKeys[at + delta];
-                }
-              : undefined
-          }
-          resumeLiveOnMount={appMode === "live"}
-          inputEnabled={appMode === "live" || vodPhase === "playing"}
-        />
-      )}
-      {appMode !== "live" && activePlaylist?.source.kind === "xtream" && (
-        <div className={`vod-host ${vodPhase === "playing" ? "hidden" : ""}`}>
-          <Suspense fallback={null}>
-            <VodScreen
-              ref={vodRef}
-              mode={appMode}
-              playlist={activePlaylist}
-              scale={settings.scale()}
-              active={vodPhase !== "playing"}
+    <div
+      ref={appRef}
+      className={`app ${appNavigationVisible ? "app-navigation-visible" : ""} ${appNavigationExpanded ? "app-navigation-expanded" : ""} ${showSettings ? "settings-open" : ""} ${showSettings && settingsPopupOpen ? "settings-popup-open" : ""} ${livePanelMotion ? "live-panel-motion" : ""} ${pageTransitionPhase !== "idle" ? "page-transition-active" : ""}`}
+      data-page-transition={pageTransitionPhase}
+      data-page-leave-motion={pageTransitionMotion.leaving}
+      data-page-enter-motion={pageTransitionMotion.entering}
+      dir={direction}
+      onPointerDownCapture={(event) => {
+        const target = event.target;
+        const focused = document.activeElement;
+        if (
+          !(target instanceof Element) ||
+          target.closest("button, input, select, textarea, a, [tabindex]") ||
+          !(focused instanceof HTMLButtonElement) ||
+          !event.currentTarget.contains(focused)
+        )
+          return;
+        window.setTimeout(() => {
+          if (focused.isConnected) focused.focus();
+        }, 0);
+      }}
+      onDoubleClick={toggleFullscreen}
+    >
+      <div className="app-content">
+        {configured && (
+          <div
+            className={`live-host ${liveVisible ? "" : "hidden"}`.trim()}
+            aria-hidden={!liveVisible || playlistShortcutOpen}
+          >
+            <LiveScreen
+              key={activePlaylist?.id}
+              hostVisible={liveVisible}
+              surface={surface}
+              liveSurface={liveSurface}
+              onLiveSurfaceChange={setLiveSurface}
+              panelHost={livePanelHost}
+              entryRequestId={liveEntryId}
+              guideChannelId={guideChannelId}
+              onGuideChannelChange={setGuideChannelId}
+              deckOpen={deckOpen}
+              compactRecoveryVisible={compactRecoveryVisible}
+              onDeckOpenChange={setDeckOpen}
+              playbackDrawer={playbackDrawer}
+              onPlaybackDrawerChange={setPlaybackDrawer}
+              playback={playback}
+              chrome={chrome}
+              videoRef={videoRef}
+              onAppNavigationFocus={focusAppNavigation}
+              searchRequest={searchRequest}
+              onSearchClosed={onSearchClosed}
+              navigationTransitionActive={pageTransitionPhase !== "idle"}
+              onOpenSettings={openSettings}
+              onChoosePlaylist={() =>
+                openSettings({
+                  section: "playlists",
+                  playlistId: activePlaylist?.id,
+                  loadError: errorKey ? t(errorKey, { detail: errorDetail }) : error,
+                })
+              }
+              onRequestExit={requestExit}
+              onFiniteReturn={
+                vodPhase === "playing"
+                  ? () => {
+                      vodToken.current += 1;
+                      playback.stop();
+                      vodRequest.current = null;
+                      setVodPhase("browsing");
+                      setLiveSurface("picture");
+                      setDeckOpen(false);
+                      setPlaybackDrawer(null);
+                    }
+                  : undefined
+              }
+              onFiniteStep={vodPhase === "playing" ? (delta) => void stepVod(delta) : undefined}
+              finiteStepAvailable={
+                vodPhase === "playing"
+                  ? (delta) => {
+                      const request = vodRequest.current;
+                      if (!request) return false;
+                      const at = request.siblingKeys.indexOf(request.itemKey);
+                      return at >= 0 && !!request.siblingKeys[at + delta];
+                    }
+                  : undefined
+              }
               playbackPending={vodPhase === "resolving" || vodPhase === "starting"}
-              onCancelPending={cancelPendingVod}
-              onModeChange={changeMode}
-              onSettings={openSettings}
-              onReturnLive={() => changeMode("live")}
-              onPlay={(request) => void playVod(request)}
+              resumeLiveOnMount={
+                resumeInitialLive.current &&
+                playbackOwner.current === activePlaylist?.id &&
+                appMode === "live" &&
+                showLive
+              }
+              inputEnabled={
+                pageTransitionPhase !== "leaving" &&
+                !appNavigationFocused &&
+                !showSettings &&
+                !showExit &&
+                !playlistShortcutOpen &&
+                (playlistRecovery || appMode === "live" || vodPhase === "playing")
+              }
             />
-          </Suspense>
+          </div>
+        )}
+        {configured && activePlaylist?.source.kind === "xtream" && (
+          <div
+            className={`vod-host ${vodVisible ? "" : "hidden"}`.trim()}
+            aria-hidden={!vodVisible || playlistShortcutOpen}
+          >
+            <Suspense fallback={null}>
+              <MemoVodScreen
+                key={activePlaylist.id}
+                ref={vodRef}
+                mode={vodMode}
+                playlist={activePlaylist}
+                scale={scale}
+                active={
+                  vodVisible &&
+                  pageTransitionPhase !== "leaving" &&
+                  !appNavigationFocused &&
+                  !playlistShortcutOpen &&
+                  !showSettings &&
+                  !showExit
+                }
+                visible={vodPageVisible}
+                playbackPending={vodPhase === "resolving" || vodPhase === "starting"}
+                onCancelPending={cancelPendingVod}
+                onAppNavigationFocus={focusAppNavigation}
+                searchRequest={searchRequest}
+                onSearchClosed={onSearchClosed}
+                onPageReady={vodPageReady}
+                onModeChange={changeMode}
+                onSettings={openSettings}
+                onRequestExit={requestExit}
+                onReturnLive={vodReturnLive}
+                onPlay={vodPlayRequest}
+              />
+            </Suspense>
+          </div>
+        )}
+        {configured && playlistShortcutOpen && (
+          <PlaylistShortcut
+            playlists={playlists}
+            activePlaylistId={activePlaylist?.id ?? ""}
+            scale={scale}
+            inputEnabled={
+              surface === "playlists" &&
+              !appNavigationFocused &&
+              pageTransitionPhase !== "leaving"
+            }
+            onSelect={selectShortcutPlaylist}
+            onRequestExit={requestExit}
+            onNavigation={focusPlaylistShortcut}
+            onContentFocus={() => setAppNavigationFocused(false)}
+          />
+        )}
+        <div className="top-strip">
+          <RecoveryStatus state={playback.recovery} hidden={recoveryHidden} />
+          {showClock && !showSettings && !playlistShortcutOpen && <Clock />}
+        </div>
+      </div>
+      {configured && (
+        <div className="app-navigation-motion">
+          <AppNavigation
+            visible={appNavigationVisible}
+            activeMode={appMode}
+            items={appNavigationItems}
+            focused={appNavigationFocused}
+            expanded={appNavigationExpanded}
+            activeAction={activeNavigationAction}
+            focusedAction={appNavigationFocused ? appNavigationAction : undefined}
+            onActivate={activateAppNavigation}
+            onHover={(item) => {
+              appNavigationActionRef.current = item.id;
+              setAppNavigationAction(item.id);
+              setAppNavigationFocused(true);
+            }}
+            onFocusChange={(focused) => {
+              if (focused && !appNavigationFocused) focusAppNavigation();
+              else if (!focused && pageTransitionPhase === "idle") {
+                setAppNavigationFocused(focused);
+              }
+            }}
+          />
+          <div
+            className="live-panel-host"
+            ref={setLivePanelHost}
+            hidden={playlistShortcutOpen}
+            aria-hidden={!livePanelMotion || playlistShortcutOpen}
+            onTransitionEnd={onPageTransitionEnd}
+          />
         </div>
       )}
 
-      <div className="top-strip">
-        <RecoveryStatus state={playback.recovery} hidden={recoveryHidden} />
-        {settings.showClock && !showSettings && <Clock />}
-      </div>
-
-      {showSettings && (
-        <Settings
-          onClose={() => setShowSettings(false)}
-          onPopupChange={setSettingsPopupOpen}
-          remoteAccess={remoteAccess}
-          showRemoteAccess={remoteAccessSupported}
+      {configured && (
+        <div
+          className={`settings-host ${showSettings ? "" : "hidden"}`.trim()}
+          aria-hidden={!showSettings}
+        >
+          <Settings
+            key={settingsEntry.session}
+            entry={settingsEntry}
+            onClose={() => setShowSettings(false)}
+            onAppNavigationFocus={focusAppNavigation}
+            onPopupChange={setSettingsPopupOpen}
+            remoteAccess={remoteAccess}
+            showRemoteAccess={remoteAccessSupported}
+            inputEnabled={
+              showSettings && !appNavigationFocused && pageTransitionPhase !== "leaving"
+            }
+          />
+        </div>
+      )}
+      {configured && (
+        <div
+          className="page-transition-shade"
+          aria-hidden="true"
+          onTransitionEnd={onPageTransitionEnd}
         />
       )}
       {showExit && (
         <ExitDialog
-          watching={!!playback.snapshot.target && !playback.snapshot.fault}
+          watching={
+            (appMode === "live" || vodPhase === "playing") &&
+            !!playback.snapshot.target &&
+            !playback.snapshot.fault
+          }
           onConfirm={() => playback.stop()}
           onCancel={() => setShowExit(false)}
         />
       )}
       {!configured && (
         <Onboarding
-          onAdd={(name, url) => {
-            settings.addPlaylist(name, url);
-            void load(true);
+          onAdd={async (name, source, onState, signal) => {
+            const validation = await validatePlaylist(name, source, signal);
+            if (validation.cancelled || signal?.aborted) {
+              throw new DOMException("Aborted", "AbortError");
+            }
+            if (validation.error) {
+              throw new PlaylistEntryFeedbackError(
+                validation.errorKey ?? "playlist.entryNetwork",
+              );
+            }
+            if (useSettings.getState().playlists.length > 0) {
+              throw new DOMException("Aborted", "AbortError");
+            }
+            onState?.("saving");
+            addPlaylist(name, source);
+            const playlist = useSettings.getState().activePlaylist();
+            if (!playlist) return;
+            const savedId = playlist.id;
+            const savedVersion = playlist.sourceVersion;
+            let activation: Awaited<ReturnType<typeof activatePlaylist>> | null = null;
+            try {
+              activation = await activatePlaylist(playlist.id);
+            } catch {
+              activation = null;
+            }
+            const current = useSettings.getState();
+            const stillActive =
+              current.activePlaylistId === savedId &&
+              current.activePlaylist()?.sourceVersion === savedVersion;
+            if (!stillActive) return;
+            if (!activation) {
+              const message = t("playlist.entryNetwork");
+              useChannels.setState({
+                loading: false,
+                error: message,
+                errorKey: "playlist.entryNetwork",
+                errorDetail: "",
+              });
+              entryToast.show(message, "error");
+              return;
+            }
+            if (activation.error) {
+              entryToast.show(
+                activation.errorKey
+                  ? t(activation.errorKey, { detail: activation.errorDetail ?? "" })
+                  : activation.error,
+                "error",
+              );
+              return;
+            }
+            useSetup.getState().clear();
+            entryToast.show(
+              activation.count > 0
+                ? t("playlist.loaded", { name: playlist.name, count: activation.count })
+                : t("playlist.savedNoChannels", { name: playlist.name }),
+              activation.count > 0 ? "success" : "information",
+            );
           }}
+          onError={(message) => entryToast.show(message, "error")}
+          onClearFeedback={entryToast.clear}
           onExit={exitApp}
           remoteAccess={remoteAccess}
           onOpenPairing={remoteAccess.openPairing}
@@ -562,12 +1359,12 @@ export default function App() {
       )}
 
       {chrome.digits && <div className="digits">{chrome.digits}</div>}
-      {chrome.toast && <div className="toast">{chrome.toast}</div>}
-      {error && !playback.snapshot.fault && (
-        <div className="toast warn">
-          {errorKey ? t(errorKey, { detail: errorDetail }) : error}
-        </div>
-      )}
+      <ToastHost
+        avoidPlayback={
+          configured && !modalSurface && (appMode === "live" || vodPhase === "playing")
+        }
+        layoutKey={`${deckOpen}:${playbackDrawer}:${!!guideChannel}`}
+      />
 
       {configured && <PointerPad shown={pointerAwake} />}
       {import.meta.env.DEV && remoteVisible() && <SmartRemote />}

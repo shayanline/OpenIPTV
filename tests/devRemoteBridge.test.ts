@@ -84,12 +84,70 @@ test("a new laptop session replaces the previous owner", async () => {
   await expect(active).resolves.toMatchObject({ status: 200 });
 });
 
+test("relays lineup queries and mutations with headers and body intact", async () => {
+  const relay = createRemoteRelay({ address: "192.168.1.44" });
+  const sent: Array<Record<string, unknown>> = [];
+  relay.connect((message) => sent.push(message as Record<string, unknown>));
+
+  const queryBody = JSON.stringify({ playlistId: "pl-1", revision: 3, scope: "categories" });
+  const mutationBody = JSON.stringify({
+    id: "m-1",
+    playlistId: "pl-1",
+    revision: 3,
+    mutation: { type: "item-order.mode", categoryKey: "News", mode: "number" },
+  });
+  const query = relay.request(
+    request({
+      method: "POST",
+      path: "/api/v1/lineup/query",
+      headers: { authorization: "Bearer p:c", "content-type": "application/json" },
+      body: queryBody,
+    }),
+  );
+  const mutation = relay.request(
+    request({
+      method: "POST",
+      path: "/api/v1/lineup/mutation",
+      headers: { authorization: "Bearer p:c" },
+      body: mutationBody,
+    }),
+  );
+
+  expect(sent).toEqual([
+    {
+      id: 1,
+      method: "POST",
+      path: "/api/v1/lineup/query",
+      headers: { authorization: "Bearer p:c", "content-type": "application/json" },
+      body: queryBody,
+    },
+    {
+      id: 2,
+      method: "POST",
+      path: "/api/v1/lineup/mutation",
+      headers: { authorization: "Bearer p:c" },
+      body: mutationBody,
+    },
+  ]);
+  expect(
+    relay.respond(1, { status: 200, contentType: "application/json", body: '{"ok":true}' }),
+  ).toBe(true);
+  expect(
+    relay.respond(2, { status: 200, contentType: "application/json", body: '{"ok":true}' }),
+  ).toBe(true);
+  await expect(query).resolves.toMatchObject({ status: 200 });
+  await expect(mutation).resolves.toMatchObject({ status: 200 });
+});
+
 test("rejects unknown routes and oversized bodies before relay", async () => {
   const relay = createRemoteRelay({ address: "192.168.1.44" });
   const sent: unknown[] = [];
   relay.connect((message) => sent.push(message));
 
   await expect(relay.request(request({ path: "/config.xml" }))).resolves.toMatchObject({
+    status: 404,
+  });
+  await expect(relay.request(request({ path: "/api/v1/lineup" }))).resolves.toMatchObject({
     status: 404,
   });
   await expect(

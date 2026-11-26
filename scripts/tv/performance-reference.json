@@ -1,0 +1,24 @@
+{
+  "model": "Everyday TV, estimated qualified CPU class",
+  "cpuSpeedup": 4,
+  "width": 1920,
+  "height": 1080,
+  "deviceScaleFactor": 1,
+  "cores": 4,
+  "deviceMemoryGB": 1.5,
+  "jsHeapLimitMB": 160,
+  "cpuApproximation": "Estimated release workload with renderer throughput targeted at 4 times the original floor BenchmarkIndex, giving a target of 528. Three valid complete budget runs passed at this target. It is not a measured Samsung CPU score. Only the renderer main thread is throttled, so this does not simulate a faster GPU, decoder, worker or storage device.",
+  "why": "This is the lowest repeatably qualified tested CPU class, not an exact minimum or a certified Samsung model. The lower 396 target had a valid Live navigation failure. Independent resource assumptions remain fixed, and the original floor remains a separate comparison. Compatibility is checked independently on real browser engines.",
+  "sources": {
+    "speed": "Three valid complete runs passed all 15 phases using official Chrome for Testing 158.0.8127.88 on mac arm64. Initial CPU medians ranged from 519.5 to 529, and final medians ranged from 507.5 to 524.5, within 5% of 528. One intervening attempt was excluded because its final CPU median was 499.5. Each accepted run had zero network or browser startup violations. The approved cold category deadline is 2000 ms, while interaction goals remain unchanged. The current host is calibrated automatically against 4 times floor.json's estimated BenchmarkIndex of 132. Real TV validation is still required.",
+    "memory": "1.5 GB is an explicit engineering assumption for this estimated hardware class, not a measured Samsung specification. It is a navigator hint that can affect the application's adaptive artwork policy, not a physical RAM limit.",
+    "heap": "160 MB is an independent project V8 old space stress allowance for this hardware class. It is not inferred from the RAM hint or the CPU multiplier, and it does not cap total browser, native or GPU allocations.",
+    "cores": "Four cores are retained as a navigator hint. Higher CPU throughput does not imply more cores, and the hint does not constrain actual worker count.",
+    "viewport": "1920 by 1080 at device scale factor 1 retains the television application rendering workload. It is independent of the compatibility engine and physical panel resolution."
+  },
+  "caveats": [
+    "This is an estimated workload and memory pressure target, not emulation or certification of a named television.",
+    "CPU, RAM hints and the old space cap do not reproduce a TV GPU, decoder, worker speed, memory bandwidth, flash latency or thermals.",
+    "The benchmark uses the same Tizen API and playback timing fixture for both hardware profiles. Its user agent is a fixture input, not a claim that this hardware target runs a particular Tizen version."
+  ]
+}

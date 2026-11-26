@@ -39,6 +39,8 @@ export interface XtreamSource {
 }
 
 export type PlaylistSource = M3USource | XtreamSource;
+export type PlaylistSourceField = "url" | "server" | "username" | "password";
+export type PlaylistSourceProblems = Partial<Record<PlaylistSourceField, MessageKey>>;
 
 export function m3uSource(raw: string): M3USource | null {
   const url = raw.trim();
@@ -88,6 +90,35 @@ export function xtreamSource(
 ): XtreamSource | null {
   if (!username.trim() || !password) return null;
   return xtreamUncheckedSource(server, username, password, output);
+}
+
+export function validatePlaylistSource(source: PlaylistSource): {
+  source: PlaylistSource | null;
+  problems: PlaylistSourceProblems;
+} {
+  const problems: PlaylistSourceProblems = {};
+  if (source.kind === "m3u") {
+    const verdict = checkPlaylistUrl(source.url);
+    if (!verdict.ok) {
+      problems.url = verdict.problemKey ?? "validation.completeAddress";
+      return { source: null, problems };
+    }
+    return { source: { kind: "m3u", url: source.url.trim() }, problems };
+  }
+
+  const server = checkPlaylistUrl(source.server);
+  const normalized = xtreamUncheckedSource(
+    source.server,
+    source.username,
+    source.password,
+    source.output,
+  );
+  if (!source.server.trim()) problems.server = "validation.enterServer";
+  else if (!server.ok) problems.server = server.problemKey ?? "validation.completeAddress";
+  else if (!normalized) problems.server = "validation.serverWithoutCredentials";
+  if (!source.username.trim()) problems.username = "validation.enterUsername";
+  if (!source.password) problems.password = "validation.enterPassword";
+  return { source: Object.keys(problems).length ? null : normalized, problems };
 }
 
 export function sourceDisplay(source: PlaylistSource): string {

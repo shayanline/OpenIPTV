@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import type { XtreamSource } from "../src/services/playlistUrl";
 import {
   authenticateXtream,
+  formatEpisodePlaybackName,
   buildXtreamCatchupUrl,
   buildXtreamEpisodeUrl,
   buildXtreamLiveUrl,
@@ -28,6 +29,14 @@ const response = (value: unknown, status = 200) =>
     status,
     headers: { "Content-Type": "application/json" },
   });
+
+test("formats episode playback names with show and episode context", () => {
+  expect(formatEpisodePlaybackName("Brothers", "Pilot", 1, 2)).toBe(
+    "Brothers · S01 E02 · Pilot",
+  );
+  expect(formatEpisodePlaybackName("Brothers", "Pilot")).toBe("Brothers · Pilot");
+  expect(formatEpisodePlaybackName(undefined, "Pilot", 1, 2)).toBe("S01 E02 · Pilot");
+});
 
 const authentication = (overrides: Record<string, unknown> = {}) => ({
   user_info: {
@@ -707,7 +716,7 @@ describe("hostile provider data", () => {
       authenticate: authentication(),
       get_series_info: {
         info: { name: "Series", category_id: 9, episode_run_time: "45" },
-        seasons: [{ season_number: 3 }],
+        seasons: [{ season_number: 3 }, { season_number: 0 }],
         episodes: {
           "2": [
             { id: "e1", episode_num: 2, title: "Later" },
@@ -723,7 +732,7 @@ describe("hostile provider data", () => {
     const detail = await loadXtreamSeriesDetail(session, "playlist-1", "30");
 
     expect(fetch).toHaveBeenCalledTimes(2);
-    expect(detail.seasons).toEqual([2, 3, "unassigned"]);
+    expect(detail.seasons).toEqual([2, 3, 0, "unassigned"]);
     expect(
       detail.episodes.map((episode) => [
         episode.seasonKey,

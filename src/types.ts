@@ -6,6 +6,8 @@ export interface PlaybackTarget {
   name: string;
   group: string;
   logo: string;
+  year?: string;
+  rating?: string;
   url: string;
   resumeAt?: number;
   /** The seed progress records are written from, so persisted state never holds a media URL. */
@@ -63,6 +65,8 @@ export interface SeekRange {
 
 export interface PlaybackSnapshot {
   phase: PlaybackPhase;
+  /** The viewer's pause choice, independent of loading and temporary engine pauses. */
+  paused: boolean;
   target: PlaybackTarget | null;
   position: number | null;
   duration: number | null;

@@ -39,6 +39,13 @@ afterEach(() => {
  */
 const load = () => {
   vi.resetModules();
+  vi.doMock("../src/services/workload", () => ({
+    artworkWorkload: () => ({ loads: 18, decodes: 2, prefetch: 2 }),
+    observeArtworkWorkload: () => () => {},
+    recordArtworkDecode: () => {},
+    recordArtworkLoad: () => {},
+    trackArtworkWork: () => () => {},
+  }));
   return import("../src/services/logos");
 };
 

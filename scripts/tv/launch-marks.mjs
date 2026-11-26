@@ -22,16 +22,8 @@
  * reports when the watching loop looked rather than when the thing happened.
  */
 export const LAUNCH_MARKS = {
-  /*
-   * The engine having fetched, compiled and run the bundle, before the app has done anything.
-   *
-   * Here to make the rest attributable. Without it, a first paint that moves from 700ms to
-   * 2400ms could be the bundle getting bigger, the engine being busy, or the application doing
-   * something before it draws, and those have nothing in common except the symptom. With a
-   * module script, DOMContentLoaded is the point the module finished executing, so this is the
-   * engine's share and everything after it is ours.
-   */
-  "the bundle ran":
+  // A diagnostic navigation milestone, not isolated JavaScript compile or execution time.
+  "DOM content loaded":
     "(performance.getEntriesByType('navigation')[0] || {}).domContentLoadedEventEnd",
   /*
    * The browser's own answer rather than ours, since it is the only one that knows when it
@@ -52,7 +44,7 @@ export const LAUNCH_MARKS = {
   // `.window .row` is a real channel, not the eight skeletons: those are drawn straight into
   // the viewport, so a mark on `.row` alone would report the placeholder as the list and hide
   // the whole of the wait it is standing in for.
-  "the channel rows": "!!document.querySelector('.window .row')",
+  "the channel rows": "!!document.querySelector('.list .window .row')",
   "the channel named": "!!(document.querySelector('.pb-title') || {}).textContent",
 };
 
@@ -89,9 +81,7 @@ export function launchWatcher() {
       for (var i = tests.length - 1; i >= 0; i--) {
         var answer = tests[i][1]();
         if (answer) {
-          marks[tests[i][0]] = Math.round(
-            typeof answer === "number" ? answer : performance.now(),
-          );
+          marks[tests[i][0]] = typeof answer === "number" ? answer : performance.now();
           tests.splice(i, 1);
         }
       }

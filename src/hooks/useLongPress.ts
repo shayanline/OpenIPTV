@@ -4,6 +4,7 @@ export interface LongPressOptions {
   code: number;
   enabled: boolean;
   delayMs?: number;
+  capture?: boolean;
   onShortPress: () => void;
   onLongPress: () => void;
 }
@@ -12,6 +13,7 @@ export function useLongPress({
   code,
   enabled,
   delayMs = 500,
+  capture = false,
   onShortPress,
   onLongPress,
 }: LongPressOptions): void {
@@ -66,12 +68,12 @@ export function useLongPress({
       cancel();
       if (short) shortPressRef.current();
     };
-    window.addEventListener("keydown", onDown);
-    window.addEventListener("keyup", onUp);
+    window.addEventListener("keydown", onDown, capture);
+    window.addEventListener("keyup", onUp, capture);
     return () => {
       cancel();
-      window.removeEventListener("keydown", onDown);
-      window.removeEventListener("keyup", onUp);
+      window.removeEventListener("keydown", onDown, capture);
+      window.removeEventListener("keyup", onUp, capture);
     };
-  }, [cancel, code, delayMs]);
+  }, [cancel, capture, code, delayMs]);
 }

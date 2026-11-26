@@ -12,6 +12,7 @@ interface FakeHlsInstance {
   startPositions: number[];
   mediaRecoveries: number;
   audioTrack: number;
+  audioTracks: Array<{ name: string; lang: string; default: boolean }>;
   subtitleTrack: number;
   emit(event: string, data: unknown): void;
 }
@@ -31,6 +32,7 @@ vi.mock("hls.js", () => {
       LEVEL_SWITCHED: "levelSwitch",
       MANIFEST_PARSED: "manifestParsed",
       LEVEL_LOADED: "levelLoaded",
+      AUDIO_TRACKS_UPDATED: "audioTracksUpdated",
       SUBTITLE_TRACKS_UPDATED: "subtitleTracksUpdated",
     };
     static ErrorTypes = { NETWORK_ERROR: "networkError", MEDIA_ERROR: "mediaError" };
@@ -48,8 +50,13 @@ vi.mock("hls.js", () => {
         height: 1080,
         bitrate: 4_500_000,
         frameRate: 50,
-        videoCodec: "avc1.640028",
+        videoRange: "PQ",
+        videoCodec: "hvc1.2.4.L150.B0",
         audioCodec: "mp4a.40.2",
+        attrs: {
+          CODECS: "hvc1.2.4.L150.B0,mp4a.40.2",
+          "SUPPLEMENTAL-CODECS": "hvc1.2.4.L150.B0/cdm4",
+        },
       },
     ];
     handlers = new Map<string, HlsHandler>();
@@ -154,6 +161,7 @@ function fakeAVPlay() {
           FourCC: "H264",
           Bit_rate: 4_500_000,
           Frame_rate: 50,
+          Transfer_characteristics: 16,
         }),
       },
       {
@@ -259,6 +267,7 @@ const finiteRequest = (
 
 beforeEach(() => {
   vi.useFakeTimers();
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("", { status: 404 })));
   hlsMock.supported = false;
   hlsMock.instance = null;
   av = fakeAVPlay();
@@ -281,6 +290,7 @@ afterEach(() => {
   vi.useRealTimers();
   delete (window as unknown as { webapis?: unknown }).webapis;
   delete (window as unknown as { tizen?: unknown }).tizen;
+  vi.unstubAllGlobals();
   document.getElementById("avplay-surface")?.remove();
 });
 
@@ -343,6 +353,7 @@ test("AVPlay statistics normalize current engine values without using playlist l
     engine: "AVPlay",
     width: 1920,
     height: 1080,
+    dynamicRange: "PQ",
     scan: "progressive",
     videoCodec: "H264",
     audioCodec: "AAC",
@@ -368,12 +379,80 @@ test("AVPlay statistics stay available when newer optional firmware APIs are abs
     engine: "AVPlay",
     width: 1920,
     height: 1080,
+    dynamicRange: "PQ",
     videoCodec: "H264",
     audioCodec: "AAC",
     bitrate: 4_500_000,
     frameRate: 50,
     switches: 0,
   });
+});
+
+test("AVPlay preserves an explicit HDR format reported by the firmware", () => {
+  av.getCurrentStreamInfo = () => [
+    {
+      index: 0,
+      type: "VIDEO",
+      extra_info: JSON.stringify({ Hdr_type: "HDR10+" }),
+    },
+  ];
+  player.play(liveRequest());
+  av.prepared?.ok();
+
+  expect(player.getStats().dynamicRange).toBe("HDR10+");
+});
+
+test("AVPlay uses richer total track HDR metadata when current info omits it", () => {
+  av.getCurrentStreamInfo = () => [
+    {
+      index: 0,
+      type: "VIDEO",
+      extra_info: JSON.stringify({ Width: 1920, Height: 1080 }),
+    },
+  ];
+  av.getTotalTrackInfo = () => [
+    {
+      index: 0,
+      type: "VIDEO" as const,
+      extra_info: JSON.stringify({ Hdr_type: "Dolby Vision" }),
+    },
+  ];
+  player.play(liveRequest());
+  av.prepared?.ok();
+
+  expect(player.getStats().dynamicRange).toBe("Dolby Vision");
+  expect(player.getStats().dynamicRange).toBe("Dolby Vision");
+});
+
+test("AVPlay accepts a best effort HDR value from Samsung streaming properties", () => {
+  av.getCurrentStreamInfo = () => [];
+  av.getTotalTrackInfo = () => [];
+  av.getStreamingProperty = (key: string) => {
+    av.streamingReads.push(key);
+    return key === "GET_STREAM_INFO" ? JSON.stringify({ hdrType: "HLG" }) : "";
+  };
+  player.play(liveRequest());
+  av.prepared?.ok();
+
+  expect(player.getStats().dynamicRange).toBe("HLG");
+  expect(av.streamingReads).toContain("GET_STREAM_INFO");
+});
+
+test("AVPlay infers HDR10+ from the closest HLS rendition when metadata stops at PQ", async () => {
+  vi.mocked(fetch).mockResolvedValue(
+    new Response(`#EXTM3U
+#EXT-X-STREAM-INF:BANDWIDTH=2500000,RESOLUTION=1920x1080,VIDEO-RANGE=SDR,CODECS="hvc1.2.4.L120.B0,mp4a.40.2"
+sdr.m3u8
+#EXT-X-STREAM-INF:BANDWIDTH=4700000,AVERAGE-BANDWIDTH=4400000,RESOLUTION=1920x1080,VIDEO-RANGE=PQ,CODECS="hvc1.2.4.L150.B0,mp4a.40.2",SUPPLEMENTAL-CODECS="hvc1.2.4.L150.B0/cdm4"
+hdr.m3u8`),
+  );
+  player.play(liveRequest());
+  av.prepared?.ok();
+
+  expect(player.getStats().dynamicRange).toBe("PQ");
+  await vi.advanceTimersByTimeAsync(0);
+  expect(player.getStats().dynamicRange).toBe("HDR10+");
+  expect(fetch).toHaveBeenCalledTimes(1);
 });
 
 test("AVPlay counts actual adaptive bitrate changes rather than the initial selection", () => {
@@ -442,7 +521,8 @@ test("hls.js statistics report the rendition in use and count level changes", as
     engine: "hls.js",
     width: 1920,
     height: 1080,
-    videoCodec: "avc1.640028",
+    dynamicRange: "HDR10+",
+    videoCodec: "hvc1.2.4.L150.B0",
     audioCodec: "mp4a.40.2",
     bitrate: 4_500_000,
     bandwidth: 6_200_000,
@@ -828,6 +908,61 @@ test("browser finite HLS still uses hls.js", async () => {
   browser.stop();
 });
 
+test.each(["live", "finite"] as const)(
+  "HLS HTTP refusals preserve their status for %s playback",
+  async (mode) => {
+    delete (window as unknown as { webapis?: unknown }).webapis;
+    hlsMock.supported = true;
+    const browserEvents: PlayerEvent[] = [];
+    const browser = new Player((event) => browserEvents.push(event));
+    const video = document.createElement("video");
+    browser.attach(video);
+    browser.play(
+      mode === "finite" ? finiteRequest("http://example.invalid/movie/1.m3u8") : liveRequest(),
+    );
+    await vi.advanceTimersByTimeAsync(0);
+    const hls = hlsMock.instance;
+    assert.ok(hls);
+    hls.emit("error", {
+      fatal: true,
+      type: "networkError",
+      details: "manifestLoadError",
+      response: { code: 401 },
+    });
+    video.dispatchEvent(new Event("error"));
+
+    expect(browserEvents.filter((event) => event.type === "error")).toEqual([
+      { type: "error", code: "manifestLoadError (http 401)", warmKind: "network" },
+    ]);
+    browser.stop();
+  },
+);
+
+test.each(["live", "finite"] as const)(
+  "a native %s media error does not claim an unsupported format",
+  (mode) => {
+    delete (window as unknown as { webapis?: unknown }).webapis;
+    const browserEvents: PlayerEvent[] = [];
+    const browser = new Player((event) => browserEvents.push(event));
+    const video = document.createElement("video");
+    video.canPlayType = vi.fn().mockReturnValue("probably");
+    video.play = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(video, "error", { value: { code: 4 } });
+    browser.attach(video);
+    browser.play(mode === "finite" ? finiteRequest() : liveRequest());
+    video.dispatchEvent(new Event("error"));
+
+    expect(browserEvents.filter((event) => event.type === "error")).toEqual([
+      {
+        type: "error",
+        code: mode === "finite" ? "FINITE_SOURCE_UNAVAILABLE" : "NOT_SUPPORTED",
+        warmKind: null,
+      },
+    ]);
+    browser.stop();
+  },
+);
+
 test("browser finite unsupported containers report the media element failure", async () => {
   delete (window as unknown as { webapis?: unknown }).webapis;
   const browserEvents: PlayerEvent[] = [];
@@ -912,6 +1047,14 @@ test("pause support follows legal AVPlay states and a rejection does not tear pl
 
   expect(player.pause()).toBe(false);
   expect(av.calls).not.toContain("stop");
+});
+
+test("reapplying paused intent leaves an already paused AVPlay decoder alone", () => {
+  player.play(liveRequest());
+  av.prepared?.ok();
+  expect(player.pause()).toBe(true);
+  expect(player.pause()).toBe(true);
+  expect(av.calls.filter((call) => call === "pause")).toHaveLength(1);
 });
 
 test("an absolute AVPlay seek resolves from delayed callbacks", async () => {
@@ -1038,6 +1181,42 @@ test("native tracks are reported at loadedmetadata rather than the same tick", a
     ["subtitle"],
   );
   browser.stop();
+});
+
+test("hls.js publishes audio tracks that become available after manifest parsing", async () => {
+  delete (window as unknown as { webapis?: unknown }).webapis;
+  hlsMock.supported = true;
+  const browserEvents: PlayerEvent[] = [];
+  const browser = new Player((event) => browserEvents.push(event));
+  const video = document.createElement("video");
+  video.play = vi.fn().mockResolvedValue(undefined);
+  browser.attach(video);
+  browser.play(liveRequest());
+  await vi.advanceTimersByTimeAsync(0);
+  const hls = hlsMock.instance!;
+  hls.audioTracks = [];
+  hls.emit("manifestParsed", {});
+  expect(browser.getTracks().filter((track) => track.kind === "audio")).toEqual([]);
+
+  hls.audioTracks.push({ name: "Deutsch", lang: "de", default: true });
+  hls.emit("audioTracksUpdated", {});
+  expect(
+    browser
+      .getTracks()
+      .filter((track) => track.kind === "audio")
+      .map((track) => track.label),
+  ).toEqual(["Deutsch"]);
+  expect(
+    browserEvents.some(
+      (event) =>
+        event.type === "tracks" && event.tracks.some((track) => track.kind === "audio"),
+    ),
+  ).toBe(true);
+
+  browser.stop();
+  browserEvents.length = 0;
+  hls.emit("audioTracksUpdated", {});
+  expect(browserEvents).toEqual([]);
 });
 
 test("hls.js subtitle cues reach the app when the TextTrack appears after manifest parse", async () => {

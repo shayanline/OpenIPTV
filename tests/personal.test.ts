@@ -8,6 +8,7 @@ vi.mock("../src/services/personalDisk", () => ({
   writeLineup: vi.fn().mockResolvedValue(undefined),
   removeLineup: vi.fn().mockResolvedValue(undefined),
   clearLineups: vi.fn().mockResolvedValue(undefined),
+  writeLineupIfAbsent: vi.fn().mockResolvedValue(true),
 }));
 
 const m3uPlaylist = (id: string): Playlist => ({

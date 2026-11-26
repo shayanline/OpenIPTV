@@ -33,12 +33,16 @@ const MODES: AppMode[] = ["live", "movie", "series"];
 export const PanelHeader = memo(function PanelHeader(props: PanelHeaderProps) {
   const { t } = useLocale();
   const controls = availableModeControls(props.sourceKind, props.guideAvailable);
-  const modes = props.showModes === false ? [] : MODES.filter((mode) => controls.includes(mode));
+  const modes =
+    props.showModes === false ? [] : MODES.filter((mode) => controls.includes(mode));
   const actions = controls.filter(
-    (control): control is "search" | "guide" | "settings" => !MODES.includes(control as AppMode),
+    (control): control is "search" | "guide" | "settings" =>
+      !MODES.includes(control as AppMode),
   );
   const modeLabel = (mode: AppMode) =>
-    t(mode === "live" ? "content.live" : mode === "movie" ? "content.movies" : "content.series");
+    t(
+      mode === "live" ? "content.live" : mode === "movie" ? "content.movies" : "content.series",
+    );
 
   return (
     <div
@@ -55,7 +59,7 @@ export const PanelHeader = memo(function PanelHeader(props: PanelHeaderProps) {
             <button
               key={mode}
               type="button"
-              className={`panel-key mode-key ${props.focusedControl === mode ? "selected" : ""} ${props.activeMode === mode ? "on" : ""}`}
+              className={`panel-key mode-key ${props.focusedControl === mode ? "cursor" : ""} ${props.activeMode === mode ? "on" : ""}`}
               onClick={() => props.onModeChange(mode)}
               aria-label={modeLabel(mode)}
               aria-pressed={props.activeMode === mode}
@@ -79,7 +83,7 @@ export const PanelHeader = memo(function PanelHeader(props: PanelHeaderProps) {
             <button
               key={control}
               type="button"
-              className={`panel-key ${props.focusedControl === control ? "selected" : ""}`}
+              className={`panel-key ${props.focusedControl === control ? "cursor" : ""}`}
               onClick={
                 control === "guide"
                   ? props.onGuide

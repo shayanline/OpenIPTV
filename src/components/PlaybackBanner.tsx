@@ -3,6 +3,7 @@ import type { Channel } from "../types";
 import { Text } from "./Text";
 import { Logo } from "./Logo";
 import { KeyGuide } from "./KeyGuide";
+import { Icon } from "./Icon";
 
 /**
  * Which channel this is, and underneath it, what the keys do.
@@ -31,51 +32,162 @@ export const clock = (seconds: number): string => {
 
 interface PlaybackBannerProps {
   channel: Channel;
-  programme?: { current?: string; next?: string };
+  programme?: { current?: string };
+  /** Identity of the target this banner names, matched against the deck it expands into. */
+  targetKey?: string;
 }
 
-export function PlaybackBanner({ channel, programme }: PlaybackBannerProps) {
+export interface PlaybackIdentityProps {
+  variant: "banner" | "deck";
+  title: string;
+  number?: number;
+  logo?: string;
+  group?: string;
+  quality?: string;
+  year?: string;
+  rating?: string;
+  currentProgramme?: string;
+}
+
+export function PlaybackIdentity({
+  variant,
+  title,
+  number,
+  logo,
+  group,
+  quality,
+  year,
+  rating,
+  currentProgramme,
+}: PlaybackIdentityProps) {
+  const { t } = useLocale();
+  const banner = variant === "banner";
+  return (
+    <div
+      className={`playback-identity ${banner ? "pb" : "deck-identity"}`}
+      data-playback-identity
+    >
+      {number !== undefined && (
+        <span
+          className={banner ? "pb-number" : "deck-channel-number"}
+          data-playback-part="number"
+          data-playback-value={String(number)}
+        >
+          {number}
+        </span>
+      )}
+      {/* A fixed size slot carries the part identity so the image itself keeps its own
+          classes and artwork cache behaviour. */}
+      <span
+        className={banner ? "pb-logo-slot" : "deck-logo-slot"}
+        data-playback-part="logo"
+        data-playback-value={logo ?? title}
+      >
+        <Logo
+          src={logo}
+          alt={title}
+          className={banner ? "pb-logo" : "deck-artwork live"}
+          width={BANNER_LOGO.width}
+          height={BANNER_LOGO.height}
+        />
+      </span>
+      <div className={banner ? "pb-id" : "deck-copy"}>
+        <Text
+          value={title}
+          className={banner ? "pb-title" : "deck-title"}
+          marquee
+          active
+          part="title"
+          partValue={title}
+        />
+        {banner ? (
+          <>
+            {(quality || group) && (
+              <span className="pb-meta">
+                {quality && (
+                  <span
+                    className="pb-quality"
+                    data-playback-part="quality"
+                    data-playback-value={quality}
+                  >
+                    {quality}
+                  </span>
+                )}
+                {group && (
+                  <Text
+                    value={group}
+                    className="pb-group"
+                    marquee
+                    active
+                    part="category"
+                    partValue={group}
+                  />
+                )}
+              </span>
+            )}
+            {currentProgramme && (
+              <Text
+                value={t("banner.now", { title: currentProgramme })}
+                className="pb-meta pb-programme"
+                marquee
+                active
+                part="now"
+                partValue={currentProgramme}
+              />
+            )}
+          </>
+        ) : (
+          <div className="deck-context">
+            {(year || rating || quality) && (
+              <span className="deck-tags">
+                {quality && (
+                  <span data-playback-part="quality" data-playback-value={quality}>
+                    {quality}
+                  </span>
+                )}
+                {year && <span>{year}</span>}
+                {rating && (
+                  <span className="deck-rating">
+                    <Icon name="star" />
+                    {rating}
+                  </span>
+                )}
+              </span>
+            )}
+            {group && (
+              <Text
+                value={group}
+                className="deck-group"
+                marquee
+                active
+                part="category"
+                partValue={group}
+              />
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+export function PlaybackBanner({ channel, programme, targetKey }: PlaybackBannerProps) {
   const { t, direction } = useLocale();
   const inlineEndArrow = direction === "rtl" ? "←" : "→";
   const displayName = channel.name || t("channel.unnamed");
   return (
-    <div className="pb-stack">
-      <div className="pb">
-        {/* The number first and largest, because it is the one piece of a channel's identity a
-            viewer can type, and on a row with no artwork it is all there is. */}
-        <span className="pb-number">{String(channel.number)}</span>
-        <Logo
-          src={channel.logo}
-          alt={displayName}
-          className="pb-logo"
-          width={BANNER_LOGO.width}
-          height={BANNER_LOGO.height}
-          intrinsic
-        />
-        <div className="pb-id">
-          <Text value={displayName} className="pb-title" />
-          <span className="pb-meta">
-            {channel.quality && <span className="pb-quality">{channel.quality}</span>}
-            <Text value={channel.group} className="pb-group" />
-          </span>
-          {(programme?.current || programme?.next) && (
-            <span className="pb-programmes">
-              {programme.current && (
-                <Text
-                  value={t("banner.now", { title: programme.current })}
-                  className="pb-programme"
-                />
-              )}
-              {programme.next && (
-                <Text
-                  value={t("banner.next", { title: programme.next })}
-                  className="pb-programme"
-                />
-              )}
-            </span>
-          )}
-        </div>
-      </div>
+    <div className="pb-stack" data-playback-target={targetKey}>
+      {/* The number first and largest, because it is the one piece of a channel's identity a
+          viewer can type, and on a row with no artwork it is all there is. */}
+      <PlaybackIdentity
+        variant="banner"
+        title={displayName}
+        number={channel.number}
+        logo={channel.logo}
+        group={channel.group}
+        quality={channel.quality}
+        currentProgramme={programme?.current}
+      />
 
       {/* One guide for the one state this surface reports: channel up and down, the browser
           on OK, the deck on Right, and Return to put it away. The green key is no longer

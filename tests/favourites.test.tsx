@@ -61,7 +61,7 @@ const railRow = (name: string) =>
 
 /** The rail row the cursor is on, which moves on the press rather than after it. */
 const cursorOn = () =>
-  document.querySelector(".rail .row.selected .row-label")?.textContent ?? "";
+  document.querySelector(".rail .row.cursor .row-label")?.textContent ?? "";
 
 /**
  * Walk the rail to the named category and go into the list.
@@ -124,7 +124,7 @@ test("hiding every category says how to restore the list", async () => {
   assert.equal(empty?.querySelector("kbd")?.textContent, "Red");
   assert.equal(
     empty?.querySelector(".settings-path")?.textContent,
-    "Settings›Playlists›Lineup",
+    "Settings›Playlists›Content",
   );
 });
 
@@ -350,14 +350,11 @@ test("repeated keydown events reveal hidden categories only once", async () => {
 
 test("holding Red during search keeps focus in search", async () => {
   await mountApp(PLAYLIST, { hiddenCategories: ["News"] });
-  press(KEY.LEFT);
-  press(KEY.UP);
-  press(KEY.RIGHT);
-  press(KEY.ENTER);
+  fireEvent.click(screen.getByRole("button", { name: /^Search/ }));
 
   await hold(KEY.RED);
 
-  assert.equal(document.querySelector(".rail")?.classList.contains("focused"), false);
+  assert.equal(Boolean(document.querySelector(".rail")), false);
   assert.ok(screen.getByLabelText("Search channels by name"));
 });
 
@@ -407,12 +404,12 @@ test("a category hidden with Red stays hidden after the panel closes", async () 
   assert.deepEqual(rail(), ["Sport"]);
 });
 
-test("Red has no action or guide on the title bar", async () => {
+test("Red has no action while application navigation owns focus", async () => {
   await mountApp(PLAYLIST, { hiddenCategories: ["News"] });
   const { useLineup } = await import("../src/stores/lineup");
   press(KEY.LEFT);
-  press(KEY.UP);
-  assert.equal(document.querySelector(".panel-hints")?.textContent?.includes("Red"), false);
+  press(KEY.LEFT);
+  assert.ok(document.querySelector(".app-navigation.expanded"));
 
   press(KEY.RED);
   await hold(KEY.RED);
@@ -470,7 +467,7 @@ test("unfavouriting a hidden playing channel keeps the visible category selected
  * viewer's thumb. Nothing on screen says this has regressed except that it feels slow, so
  * the timing is asserted rather than left to be noticed.
  */
-test("walking the rail moves only the cursor until the category is committed", async () => {
+test("walking the rail moves the cursor immediately and settles the category once", async () => {
   await mountApp(PLAYLIST);
   press(KEY.LEFT); // into the rail, on News
 
@@ -479,11 +476,11 @@ test("walking the rail moves only the cursor until the category is committed", a
   assert.equal(showing(), "News", "the column was rebuilt while the key was still moving");
 
   await settle();
-  assert.equal(showing(), "News", "moving focus changed the displayed category");
+  assert.equal(showing(), "Sport", "the settled category did not follow the cursor");
 
   press(KEY.RIGHT);
   await settle();
-  assert.equal(showing(), "Sport", "committing the rail did not change the category");
+  assert.equal(showing(), "Sport", "entering the channel list changed the category");
 });
 
 test("a refresh that returns fewer categories brings the cursor back inside", async () => {
@@ -515,7 +512,11 @@ http://example.invalid/a.m3u8`);
       playlist,
       {
         channels: shorter,
-        categories: groupByCategory(shorter).map((item) => ({ key: item.name, ...item })),
+        categories: groupByCategory(shorter).map((item) => ({
+          key: item.name,
+          kind: "live" as const,
+          ...item,
+        })),
       },
       prepareLineup(playlist),
     );

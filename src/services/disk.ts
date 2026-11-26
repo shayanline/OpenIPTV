@@ -231,6 +231,11 @@ function commit(
  * one of them can be silently dropped when a later one replaces it.
  */
 let indexing: Promise<Map<string, Omit<Entry, "key">>> | null = null;
+let indexedUsage: Record<CacheClass, number> = {
+  catalogue: 0,
+  poster: 0,
+  logo: 0,
+};
 
 const classForKey = (key: string): CacheClass =>
   key.startsWith("poster:") ? "poster" : key.startsWith("logo:") ? "logo" : "catalogue";
@@ -251,6 +256,8 @@ function loadIndex(): Promise<Map<string, Omit<Entry, "key">>> {
         fresh.set(key, { ...value, class: value.class ?? classForKey(key) });
       }
     }
+    indexedUsage = { catalogue: 0, poster: 0, logo: 0 };
+    for (const value of fresh.values()) indexedUsage[value.class] += value.bytes;
     return fresh;
   })();
   return indexing;
@@ -373,10 +380,21 @@ export async function write(
   if (!db) return false;
 
   const bytes = sizeOf(value);
-  // From the mirror, so this costs no transaction. It used to read the whole store, twice.
-  const { evict, refused } = evictionPlan(await entries(), { key, class: cacheClass, bytes });
-  if (refused) return false;
-  if (evict.length) await forget((k) => evict.includes(k));
+  if (bytes > CACHE_BUDGET_BYTES[cacheClass]) return false;
+  const index = await loadIndex();
+  const previous = index.get(key);
+  const current =
+    indexedUsage[cacheClass] - (previous?.class === cacheClass ? previous.bytes : 0);
+  let evict: string[] = [];
+  if (current + bytes > CACHE_BUDGET_BYTES[cacheClass]) {
+    const candidates = [...index]
+      .filter(([candidate, meta]) => meta.class === cacheClass && candidate !== key)
+      .map(([candidate, meta]) => ({ key: candidate, ...meta }));
+    const plan = evictionPlan(candidates, { key, class: cacheClass, bytes });
+    if (plan.refused) return false;
+    evict = plan.evict;
+  }
+  if (evict.length) await forget((candidate) => evict.includes(candidate));
 
   const meta = { class: cacheClass, bytes, at: Date.now() };
   const ok = await commit(db, [VALUES, META], (tx) => {
@@ -386,7 +404,11 @@ export async function write(
   // Only recorded if it actually landed. Recording it either way is how the mirror comes to
   // claim the cache holds something it does not, and a quota failure is the likeliest way in.
   if (!ok) return false;
-  (await loadIndex()).set(key, meta);
+  const held = await loadIndex();
+  const old = held.get(key);
+  if (old) indexedUsage[old.class] -= old.bytes;
+  indexedUsage[cacheClass] += bytes;
+  held.set(key, meta);
   unflushed.delete(key); // just written through, so nothing outstanding for it
   return true;
 }
@@ -401,7 +423,8 @@ export async function write(
 export async function forget(doomed: (key: string) => boolean): Promise<number> {
   const db = await open();
   if (!db) return 0;
-  const going = (await entries()).filter((e) => doomed(e.key)).map((e) => e.key);
+  const held = await loadIndex();
+  const going = [...held].filter(([key]) => doomed(key)).map(([key]) => key);
   if (!going.length) return 0;
   const ok = await commit(db, [VALUES, META], (tx) => {
     for (const key of going) {
@@ -413,8 +436,9 @@ export async function forget(doomed: (key: string) => boolean): Promise<number> 
   // cache holding entries nothing knows the size of, so they could never be evicted and the
   // budget would drift permanently out of true.
   if (!ok) return 0;
-  const held = await loadIndex();
   for (const key of going) {
+    const meta = held.get(key);
+    if (meta) indexedUsage[meta.class] -= meta.bytes;
     held.delete(key);
     unflushed.delete(key);
   }

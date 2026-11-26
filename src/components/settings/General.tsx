@@ -4,7 +4,7 @@ import { useSettings } from "../../stores/settings";
 import { clearCache, useChannels } from "../../stores/channels";
 import { Confirm } from "../Confirm";
 import { forgetAll } from "../../services/disk";
-import { forgetRepairHosts } from "../../services/repair";
+import { forgetRepairHosts, stopRepair } from "../../services/repair";
 import { Row } from "./Field";
 import { clearDeviceAccess } from "../../services/deviceAccess";
 import { Icon } from "../Icon";
@@ -32,7 +32,7 @@ export function ApplicationData({ onAsking }: { onAsking: (asking: boolean) => v
       <Row label={t("settings.clearCache")} hint={t("settings.clearCacheHint")}>
         <button
           type="button"
-          className="btn flat"
+          className="btn tonal settings-about-action"
           aria-label={t("settings.clearCache")}
           onClick={() => askClear(true)}
         >
@@ -50,7 +50,7 @@ export function ApplicationData({ onAsking }: { onAsking: (asking: boolean) => v
       <Row label={t("settings.resetData")} hint={t("settings.resetDataHint")}>
         <button
           type="button"
-          className="btn flat danger"
+          className="btn tonal danger settings-about-action"
           aria-label={t("settings.resetData")}
           onClick={() => ask(true)}
         >
@@ -77,7 +77,7 @@ export function ApplicationData({ onAsking }: { onAsking: (asking: boolean) => v
       {confirming && (
         <Confirm
           title={t("settings.resetDataQuestion")}
-          body={`${t("settings.resetDataBody")}${resetError ? ` ${t("lineup.persistenceFailed")}` : ""}`}
+          body={`${t("settings.resetDataBody")} ${t("settings.resetRemoteHint")}${resetError ? ` ${t("lineup.persistenceFailed")}` : ""}`}
           confirmLabel={resetError ? t("remote.retry") : t("settings.resetData")}
           cancelLabel={t("common.cancel")}
           destructive
@@ -93,6 +93,7 @@ export function ApplicationData({ onAsking }: { onAsking: (asking: boolean) => v
               return;
             }
             await forgetAll();
+            stopRepair();
             // The fourth store follows the same rule, and which hosts this television cannot read
             // is a diagnosis it made rather than a fact.
             forgetRepairHosts();

@@ -1,4 +1,5 @@
 import type { FavouriteSnapshot } from "../stores/personal";
+import { recordFromEntries } from "./record";
 import type { Channel } from "../types";
 
 /**
@@ -70,6 +71,7 @@ export interface ProviderCategory {
   name: string;
   kind: "live" | "movie" | "series";
   channels: readonly Channel[];
+  count?: number;
 }
 
 export interface ProviderLineup {
@@ -98,7 +100,7 @@ export interface ManagedCategory {
   name: string;
   hidden: boolean;
   personal: boolean;
-  count: number;
+  count?: number;
 }
 
 export type UnavailableRecord =
@@ -194,6 +196,7 @@ export const isFavouritesList = (list: ChannelList | undefined) =>
 interface Visibility {
   hiddenCategories: readonly string[];
   hiddenChannels?: readonly string[];
+  hideEmptyCategories?: boolean;
 }
 
 const VISIBLE: Visibility = {
@@ -242,7 +245,9 @@ export function lineupOf(
           !hiddenChannels.has(channel.id) && !hiddenChannels.has(channelRef(channel).id),
       ),
     }))
-    .filter((category) => category.channels.length > 0);
+    .filter(
+      (category) => visibility.hideEmptyCategories === false || category.channels.length > 0,
+    );
   const searchableChannels = browsableChannels;
   const wanted = new Set(
     favourites.map((favourite) =>
@@ -447,6 +452,7 @@ export function parseStoredLineup(value: unknown): StoredLineupV1 {
         series: parsePlacements(savedCategoryOrders?.series),
       },
       personalCategories,
+      ...(source?.orderMode !== undefined ? { orderMode: orderMode(source.orderMode) } : {}),
     },
   };
 }
@@ -505,9 +511,32 @@ export function reconcilePersonalisation(
   const channelsByIdentity = new Map(
     catalogue.channels.map((channel) => [channelRef(channel).id, channel]),
   );
+  const channelsByProviderId = new Map(
+    catalogue.channels.map((channel) => [channel.id, channel]),
+  );
+  const channelsByFingerprint = new Map<string, Channel[]>();
+  const channelsByFingerprintBase = new Map<string, Channel[]>();
+  for (const channel of catalogue.channels) {
+    if (!channel.sourceFingerprint) continue;
+    const exact = channelsByFingerprint.get(channel.sourceFingerprint) ?? [];
+    exact.push(channel);
+    channelsByFingerprint.set(channel.sourceFingerprint, exact);
+    const base = fingerprintBase(channel.sourceFingerprint);
+    if (base) {
+      const matches = channelsByFingerprintBase.get(base) ?? [];
+      matches.push(channel);
+      channelsByFingerprintBase.set(base, matches);
+    }
+  }
   const categoriesByKey = new Map(
     catalogue.categories.map((category) => [category.key, category]),
   );
+  const categoryKeysByName = new Map<string, string[]>();
+  for (const category of catalogue.categories) {
+    const keys = categoryKeysByName.get(category.name) ?? [];
+    keys.push(category.key);
+    categoryKeysByName.set(category.name, keys);
+  }
   const reseatedChannels = new Map<string, string>();
   for (const channel of catalogue.channels) {
     const identity = channelRef(channel).id;
@@ -521,19 +550,12 @@ export function reconcilePersonalisation(
   const resolveChannel = (id: string, sourceFingerprint?: string) => {
     const identityMatch = channelsByIdentity.get(id);
     if (identityMatch) return identityMatch;
-    if (!sourceFingerprint) {
-      const providerMatch = catalogue.channels.find((channel) => channel.id === id);
-      return providerMatch;
-    }
-    const exact = catalogue.channels.filter(
-      (channel) => channel.sourceFingerprint === sourceFingerprint,
-    );
+    if (!sourceFingerprint) return channelsByProviderId.get(id);
+    const exact = channelsByFingerprint.get(sourceFingerprint) ?? [];
     if (exact.length === 1) return exact[0];
     if (sourceFingerprint.length !== 16) return undefined;
-    const base = fingerprintBase(sourceFingerprint);
-    const matches = catalogue.channels.filter(
-      (channel) => fingerprintBase(channel.sourceFingerprint) === base,
-    );
+    const matches =
+      channelsByFingerprintBase.get(fingerprintBase(sourceFingerprint) ?? "") ?? [];
     return matches.length === 1 ? matches[0] : undefined;
   };
   const unavailableChannelLabel = (
@@ -573,8 +595,8 @@ export function reconcilePersonalisation(
   for (const [key, override] of Object.entries(personalisation.categories)) {
     let nextKey = key;
     if (!categoriesByKey.has(key)) {
-      const matches = catalogue.categories.filter((category) => category.name === key);
-      if (matches.length === 1) nextKey = matches[0].key;
+      const matches = categoryKeysByName.get(key) ?? [];
+      if (matches.length === 1) nextKey = matches[0];
     }
     if (!categoriesByKey.has(nextKey) && !nextKey.startsWith("personal:")) {
       unavailable.push({
@@ -594,7 +616,7 @@ export function reconcilePersonalisation(
       ...(override.itemOrderMode || personalisation.orderMode
         ? { itemOrderMode: override.itemOrderMode ?? personalisation.orderMode }
         : {}),
-      ...(override.itemOrder ?? override.channelOrder
+      ...((override.itemOrder ?? override.channelOrder)
         ? {
             itemOrder: (override.itemOrder ?? override.channelOrder ?? []).map((placement) => {
               const itemId = reseatedChannels.get(placement.itemId) ?? placement.itemId;
@@ -648,30 +670,37 @@ export function reconcilePersonalisation(
     }
     return { ...category, channels: references };
   });
-  const categoryOrders = Object.fromEntries(
-    (["live", "movie", "series"] as const).map((section) => [
-      section,
-      (section === "live" && personalisation.categoryOrder
-        ? personalisation.categoryOrder
-        : personalisation.categoryOrders[section]
-      ).map((placement) => {
-        const itemId = reseatedCategories.get(placement.itemId) ?? placement.itemId;
-        const beforeId = placement.beforeId
-          ? (reseatedCategories.get(placement.beforeId) ?? placement.beforeId)
-          : undefined;
-        const afterId = placement.afterId
-          ? (reseatedCategories.get(placement.afterId) ?? placement.afterId)
-          : undefined;
-        if (
-          itemId !== placement.itemId ||
-          beforeId !== placement.beforeId ||
-          afterId !== placement.afterId
-        ) {
-          changed = true;
-        }
-        return { itemId, ...(beforeId ? { beforeId } : {}), ...(afterId ? { afterId } : {}) };
-      }),
-    ]),
+  const categoryOrders = recordFromEntries(
+    (["live", "movie", "series"] as const).map(
+      (section) =>
+        [
+          section,
+          (section === "live" && personalisation.categoryOrder
+            ? personalisation.categoryOrder
+            : personalisation.categoryOrders[section]
+          ).map((placement) => {
+            const itemId = reseatedCategories.get(placement.itemId) ?? placement.itemId;
+            const beforeId = placement.beforeId
+              ? (reseatedCategories.get(placement.beforeId) ?? placement.beforeId)
+              : undefined;
+            const afterId = placement.afterId
+              ? (reseatedCategories.get(placement.afterId) ?? placement.afterId)
+              : undefined;
+            if (
+              itemId !== placement.itemId ||
+              beforeId !== placement.beforeId ||
+              afterId !== placement.afterId
+            ) {
+              changed = true;
+            }
+            return {
+              itemId,
+              ...(beforeId ? { beforeId } : {}),
+              ...(afterId ? { afterId } : {}),
+            };
+          }),
+        ] as const,
+    ),
   ) as SectionOrders;
   return {
     personalisation: {
@@ -729,12 +758,16 @@ export function orderedItems<T>(
 ) {
   if (mode === "provider" || (mode === "number" && !numberOf)) return items.slice();
   if (mode === "alphabetical") {
-    return items.slice().sort((left, right) => naturalCompare(nameOf(left), nameOf(right), locale));
+    return items
+      .slice()
+      .sort((left, right) => naturalCompare(nameOf(left), nameOf(right), locale));
   }
   if (mode === "number" && numberOf) {
     return items
       .map((item, index) => ({ item, index }))
-      .sort((left, right) => numberOf(left.item) - numberOf(right.item) || left.index - right.index)
+      .sort(
+        (left, right) => numberOf(left.item) - numberOf(right.item) || left.index - right.index,
+      )
       .map((entry) => entry.item);
   }
   return applyPlacements(items, placements, idOf).items;
@@ -889,8 +922,12 @@ export function materialiseLineup(
       categoryKeys: managedCategoryByChannel.get(channel.id) ?? [],
     };
   });
+  const providerCategoryByKey = new Map(
+    catalogue.categories.map((category) => [category.key, category]),
+  );
   const managedCategories = categories.map((category) => {
-    const provider = catalogue.categories.find((item) => item.key === category.key);
+    const provider = providerCategoryByKey.get(category.key);
+    const count = category.kind === "live" ? category.channels.length : provider?.count;
     return {
       key: category.key,
       kind: category.kind,
@@ -898,7 +935,7 @@ export function materialiseLineup(
       name: category.name,
       hidden: category.hidden,
       personal: category.personal,
-      count: category.channels.length,
+      ...(count !== undefined ? { count } : {}),
     };
   });
   const unavailable = reconciled.unavailable.slice();

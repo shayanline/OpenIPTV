@@ -10,6 +10,9 @@ export interface RemoteSetupProps {
   onCancelPairing?: () => void;
   manualFallback?: boolean;
   headingLevel?: 2 | 4;
+  variant?: "onboarding" | "settings";
+  autoStart?: boolean;
+  embedded?: boolean;
 }
 
 export function RemoteSetup({
@@ -18,10 +21,14 @@ export function RemoteSetup({
   onCancelPairing,
   manualFallback = false,
   headingLevel = 2,
+  variant = "onboarding",
+  autoStart = true,
+  embedded = false,
 }: RemoteSetupProps) {
   const { t } = useLocale();
   useEffect(() => {
     if (
+      autoStart &&
       remoteAccess.status === "listening" &&
       !remoteAccess.pairing &&
       !remoteAccess.pairingError &&
@@ -31,6 +38,7 @@ export function RemoteSetup({
       onOpenPairing();
     }
   }, [
+    autoStart,
     remoteAccess.status,
     remoteAccess.pairing,
     remoteAccess.pairingError,
@@ -65,12 +73,13 @@ export function RemoteSetup({
         ? t("remote.waiting")
         : t("remote.starting");
   const Heading = headingLevel === 4 ? "h4" : "h2";
+  const variantClass = variant === "settings" ? " settings" : "";
 
   if (remoteAccess.connectedDevice) {
     return (
-      <section className="remote-setup connected" aria-live="polite">
-        <Heading>{status}</Heading>
-        <p className="remote-setup-lead">{t("remote.pairedHint")}</p>
+      <section className={"remote-setup connected" + variantClass} aria-live="polite">
+        {!embedded && <Heading>{status}</Heading>}
+        {!embedded && <p className="remote-setup-lead">{t("remote.pairedHint")}</p>}
       </section>
     );
   }
@@ -79,8 +88,8 @@ export function RemoteSetup({
     const unavailable = remoteAccess.status === "unavailable";
     const failed = remoteAccess.pairingError;
     return (
-      <section className="remote-setup">
-        <Heading>{t("remote.setupTitle")}</Heading>
+      <section className={"remote-setup" + variantClass}>
+        {!embedded && <Heading>{t("remote.setupTitle")}</Heading>}
         <p
           className={`remote-status ${remoteAccess.status}`}
           role={unavailable || failed ? "alert" : "status"}
@@ -104,9 +113,14 @@ export function RemoteSetup({
   }
 
   return (
-    <section className="remote-setup" aria-labelledby="remote-setup-title">
-      <Heading id="remote-setup-title">{t("remote.setupTitle")}</Heading>
-      <p className="remote-setup-lead">{t("remote.setupBody")}</p>
+    <section
+      className={
+        "remote-setup" + variantClass + (variant === "settings" && qr ? " has-qr" : "")
+      }
+      aria-labelledby={embedded ? undefined : "remote-setup-title"}
+    >
+      {!embedded && <Heading id="remote-setup-title">{t("remote.setupTitle")}</Heading>}
+      {!embedded && <p className="remote-setup-lead">{t("remote.setupBody")}</p>}
       {qr && (
         <div className="remote-qr" role="img" aria-label={t("remote.qrAlt")}>
           <svg viewBox={`0 0 ${qr.size} ${qr.size}`} aria-hidden="true" focusable="false">
@@ -116,16 +130,20 @@ export function RemoteSetup({
       )}
       {address && (
         <div className="remote-manual">
-          <span>{t("remote.addressHint")}</span>
-          <strong dir="ltr">{address}</strong>
+          <div className="remote-manual-group">
+            <span>{t("remote.addressHint")}</span>
+            <strong className="remote-address" dir="ltr">
+              {address}
+            </strong>
+          </div>
           {remoteAccess.pairing && (
-            <>
+            <div className="remote-manual-group">
               <span>{t("remote.codeHint")}</span>
               <strong className="remote-code" dir="ltr">
                 {`${remoteAccess.pairing.code.slice(0, 3)} ${remoteAccess.pairing.code.slice(3)}`}
               </strong>
               <span>{t("remote.expires")}</span>
-            </>
+            </div>
           )}
         </div>
       )}
@@ -138,6 +156,7 @@ export function RemoteSetup({
             type="button"
             className="btn tonal"
             data-cancel-pairing
+            data-settings-detail-first={variant === "settings" ? "" : undefined}
             onClick={onCancelPairing}
           >
             {t("remote.cancelPairing")}

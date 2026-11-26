@@ -5710,7 +5710,7 @@
 }
 
 :root {
-  --font: "Google Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font: "Google Sans", "Vazirmatn", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 }
 
 :root:lang(ar),
@@ -5719,13 +5719,13 @@
 }
 
 :root:lang(zh-CN) {
-  --font: "Noto Sans SC", "Google Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font: "Noto Sans SC", "Google Sans", "Vazirmatn", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 }
 
 :root:lang(ja) {
-  --font: "Noto Sans JP", "Google Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font: "Noto Sans JP", "Google Sans", "Vazirmatn", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 }
 
 :root:lang(ko) {
-  --font: "Noto Sans KR", "Google Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font: "Noto Sans KR", "Google Sans", "Vazirmatn", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 }

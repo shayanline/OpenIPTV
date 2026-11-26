@@ -159,15 +159,26 @@ export type PlayerEvent =
   | { type: "buffering-progress"; percent: number }
   | { type: "buffering-complete" }
   | { type: "playing" }
+  | { type: "paused" }
   | { type: "ended" }
   | { type: "error"; code: string; warmKind: "network" | "media" | null }
   | { type: "tracks"; tracks: MediaTrack[] }
   | { type: "subtitle"; text: string; durationMs: number };
 
+export type PlaybackDynamicRange =
+  | "SDR"
+  | "HDR"
+  | "PQ"
+  | "HLG"
+  | "HDR10"
+  | "HDR10+"
+  | "Dolby Vision";
+
 export interface PlaybackStats {
   engine: "AVPlay" | "hls.js" | "Native HLS";
   width?: number;
   height?: number;
+  dynamicRange?: PlaybackDynamicRange;
   scan?: "progressive" | "interlaced";
   videoCodec?: string;
   audioCodec?: string;
@@ -270,6 +281,118 @@ const streamInfo = (value: string): Record<string, unknown> => {
   }
 };
 
+const dynamicRange = (...values: unknown[]): PlaybackDynamicRange | undefined => {
+  for (const value of values) {
+    const raw = String(value ?? "").trim();
+    if (!raw) continue;
+    const code = Number(raw);
+    if (code === 16) return "PQ";
+    if (code === 18) return "HLG";
+    if ([1, 6, 13, 14, 15].includes(code)) return "SDR";
+    const name = raw
+      .toLowerCase()
+      .replace(/\+/g, "plus")
+      .replace(/[^a-z0-9]/g, "");
+    if (name.includes("hdr10plus") || name.includes("smpte209440")) return "HDR10+";
+    if (name.includes("dolbyvision") || /^(dvh1|dvhe|dav1)/.test(name)) return "Dolby Vision";
+    if (name.includes("hlg") || name.includes("aribstdb67")) return "HLG";
+    if (name.includes("hdr10")) return "HDR10";
+    if (name === "pq" || name.includes("smpte2084") || name.includes("st2084")) return "PQ";
+    if (name === "hdr") return "HDR";
+    if (name === "sdr" || name.includes("bt709")) return "SDR";
+  }
+  return undefined;
+};
+
+const streamDynamicRange = (video: Record<string, unknown>): PlaybackDynamicRange | undefined =>
+  dynamicRange(
+    video.hdrtype,
+    video.hdrformat,
+    video.dynamicrange,
+    video.videorange,
+    video.transferfunction,
+    video.transfercharacteristics,
+    video.transfercharacteristic,
+    video.colortransfer,
+    video.colourtransfer,
+  );
+
+const hlsDynamicRange = (
+  videoRange: unknown,
+  codecs: unknown,
+  supplementalCodecs: unknown,
+): PlaybackDynamicRange | undefined => {
+  const supplemental = String(supplementalCodecs ?? "");
+  if (/\/cdm4(?:\s*,|\s*$)/i.test(supplemental)) return "HDR10+";
+  if (/(?:^|[\s,"])(?:dvh1|dvhe|dav1)\./i.test(`${String(codecs ?? "")},${supplemental}`)) {
+    return "Dolby Vision";
+  }
+  const range = dynamicRange(videoRange);
+  return range === "PQ" ? "HDR10" : range;
+};
+
+interface HlsRange {
+  range: PlaybackDynamicRange;
+  width?: number;
+  height?: number;
+  bandwidth?: number;
+  averageBandwidth?: number;
+}
+
+const HLS_ATTRIBUTE = /([A-Z0-9-]+)=("[^"]*"|[^,]*)/gi;
+
+const manifestDynamicRange = (
+  text: string,
+  width?: number,
+  height?: number,
+  bitrate?: number,
+): PlaybackDynamicRange | undefined => {
+  const variants: HlsRange[] = [];
+  for (const line of text.split(/\r?\n/)) {
+    if (!line.startsWith("#EXT-X-STREAM-INF:")) continue;
+    const attributes: Record<string, string> = {};
+    HLS_ATTRIBUTE.lastIndex = 0;
+    let match = HLS_ATTRIBUTE.exec(line);
+    while (match) {
+      attributes[match[1].toUpperCase()] = match[2].replace(/^"|"$/g, "");
+      match = HLS_ATTRIBUTE.exec(line);
+    }
+    const range = hlsDynamicRange(
+      attributes["VIDEO-RANGE"],
+      attributes.CODECS,
+      attributes["SUPPLEMENTAL-CODECS"],
+    );
+    if (!range) continue;
+    const resolution = attributes.RESOLUTION?.split(/[xX]/).map(Number) ?? [];
+    variants.push({
+      range,
+      width: finite(resolution[0]),
+      height: finite(resolution[1]),
+      bandwidth: finite(attributes.BANDWIDTH),
+      averageBandwidth: finite(attributes["AVERAGE-BANDWIDTH"]),
+    });
+  }
+  if (!variants.length) return undefined;
+  let candidates = variants;
+  if (width && height) {
+    const sameSize = candidates.filter(
+      (item) => item.width === width && item.height === height,
+    );
+    if (sameSize.length) candidates = sameSize;
+  }
+  if (bitrate && candidates.length > 1) {
+    candidates = [...candidates].sort((left, right) => {
+      const leftRate = left.averageBandwidth ?? left.bandwidth ?? 0;
+      const rightRate = right.averageBandwidth ?? right.bandwidth ?? 0;
+      return Math.abs(leftRate - bitrate) - Math.abs(rightRate - bitrate);
+    });
+    return candidates[0].range;
+  }
+  return candidates.every((item) => item.range === candidates[0].range)
+    ? candidates[0].range
+    : undefined;
+};
+
 export class Player {
   private hls: InstanceType<typeof HlsType> | null = null;
   private video: HTMLVideoElement | null = null;
@@ -297,6 +420,12 @@ export class Player {
   private subtitlesEnabled = true;
   private textTrackCleanup: (() => void) | null = null;
   private metadataCleanup: (() => void) | null = null;
+  private sourceUrl = "";
+  private avPlayDynamicRange?: PlaybackDynamicRange;
+  private avPlayMetadataProbed = false;
+  private manifestRange?: PlaybackDynamicRange;
+  private manifestProbe: AbortController | null = null;
+  private manifestProbed = false;
 
   constructor(emit: (e: PlayerEvent) => void) {
     this.sink = emit;
@@ -420,6 +549,7 @@ export class Player {
     this.video = video;
     video.muted = this.muted;
     video.addEventListener("playing", this.onPlaying);
+    video.addEventListener("pause", this.onPaused);
     video.addEventListener("waiting", this.onWaiting);
     video.addEventListener("ended", this.onEnded);
     video.addEventListener("error", this.onMediaError);
@@ -428,6 +558,7 @@ export class Player {
   detach() {
     if (!this.video) return;
     this.video.removeEventListener("playing", this.onPlaying);
+    this.video.removeEventListener("pause", this.onPaused);
     this.video.removeEventListener("waiting", this.onWaiting);
     this.video.removeEventListener("ended", this.onEnded);
     this.video.removeEventListener("error", this.onMediaError);
@@ -435,10 +566,12 @@ export class Player {
   }
 
   private onPlaying = () => this.emit({ type: "playing" });
+  private onPaused = () => this.emit({ type: "paused" });
   private onWaiting = () => this.emit({ type: "buffering-start" });
   private onEnded = () => this.emit({ type: "ended" });
+  // Native media errors cannot establish whether access failed or the format is unsupported.
   private onMediaError = () =>
-    this.fail(this.mode === "finite" ? "FINITE_FORMAT_UNSUPPORTED" : "NOT_SUPPORTED");
+    this.fail(this.mode === "finite" ? "FINITE_SOURCE_UNAVAILABLE" : "NOT_SUPPORTED");
 
   play(request: PlayerOpenRequest): void {
     const { url, browserRepair, bufferSeconds, segmentSeconds, mode, startSeconds } = request;
@@ -465,6 +598,7 @@ export class Player {
     this.lastBitrate = "";
     this.lastLevel = -1;
     this.frameSample = null;
+    this.sourceUrl = url;
 
     // A hard bound on how long a channel may sit there doing nothing.
     /*
@@ -664,6 +798,7 @@ export class Player {
           const event = String(id);
           const value = String(data).trim();
           if (event === "PLAYER_MSG_HTTP_ERROR_CODE") status = value;
+          if (/PLAYER_MSG_AVPLAY_PAUSED?$/.test(event)) this.emit({ type: "paused" });
           if (event === "PLAYER_MSG_BITRATE_CHANGE") {
             if (this.lastBitrate && this.lastBitrate !== value) this.switches += 1;
             this.lastBitrate = value;
@@ -902,7 +1037,12 @@ export class Player {
           : data.type === Hls.ErrorTypes.MEDIA_ERROR
             ? "media"
             : null;
-      this.fail(data.details, warmKind);
+      const status = data.response?.code;
+      const code =
+        status != null && Number.isInteger(status) && status >= 400 && status <= 599
+          ? `${data.details} (http ${status})`
+          : data.details;
+      this.fail(code, warmKind);
     });
     hls.on(Hls.Events.LEVEL_SWITCHED, (_event, data) => {
       if (generation !== this.generation) return;
@@ -928,6 +1068,10 @@ export class Player {
       this.watchLoadedMetadata(video, generation, () => this.watchTextTracks(video));
       if (this.mode === "finite" && startSeconds > 0) video.currentTime = startSeconds;
       this.tryPlay(video, generation);
+    });
+    hls.on(Hls.Events.AUDIO_TRACKS_UPDATED, () => {
+      if (generation !== this.generation) return;
+      this.readHlsTracks(hls);
     });
     hls.on(Hls.Events.SUBTITLE_TRACKS_UPDATED, () => {
       if (generation !== this.generation) return;
@@ -1175,6 +1319,74 @@ export class Player {
     }
   }
 
+  private probeAVPlayDynamicRange(av: AVPlay): void {
+    if (this.avPlayMetadataProbed) return;
+    try {
+      const state = av.getState();
+      if (state !== "READY" && state !== "PLAYING" && state !== "PAUSED") return;
+    } catch {
+      return;
+    }
+    this.avPlayMetadataProbed = true;
+    const apply = (range?: PlaybackDynamicRange) => {
+      if (!range) return false;
+      if (
+        this.avPlayDynamicRange === "PQ" &&
+        range !== "HDR10" &&
+        range !== "HDR10+" &&
+        range !== "Dolby Vision"
+      ) {
+        return false;
+      }
+      this.avPlayDynamicRange = range;
+      return true;
+    };
+    try {
+      for (const track of av.getTotalTrackInfo?.() ?? []) {
+        if (track.type !== "VIDEO") continue;
+        if (apply(streamDynamicRange(streamInfo(track.extra_info)))) return;
+      }
+    } catch {}
+    for (const key of [
+      "GET_STREAM_INFO",
+      "PROPERTY_STREAMING_STATUS",
+      "PROPERTY_STREAMING_TYPE",
+      "PROPERTY_VR360_INFO",
+    ]) {
+      try {
+        if (apply(dynamicRange(av.getStreamingProperty?.(key)))) return;
+      } catch {}
+    }
+  }
+
+  private probeManifestDynamicRange(width?: number, height?: number, bitrate?: number): void {
+    if (
+      this.manifestProbed ||
+      !onTizen() ||
+      extensionOf(this.sourceUrl) !== "m3u8" ||
+      typeof fetch !== "function"
+    ) {
+      return;
+    }
+    this.manifestProbed = true;
+    const controller = new AbortController();
+    const generation = this.generation;
+    this.manifestProbe = controller;
+    const timeout = window.setTimeout(() => controller.abort(), 5000);
+    void fetch(this.sourceUrl, { cache: "no-store", signal: controller.signal })
+      .then((response) => (response.ok ? response.text() : Promise.reject()))
+      .then((text) => {
+        if (generation === this.generation) {
+          this.manifestRange = manifestDynamicRange(text, width, height, bitrate);
+        }
+      })
+      .catch(() => {})
+      .finally(() => {
+        window.clearTimeout(timeout);
+        if (this.manifestProbe === controller) this.manifestProbe = null;
+      });
+  }
+
   getStats(): PlaybackStats {
     if (onTizen()) {
       const stats: PlaybackStats = { engine: "AVPlay", switches: this.switches };
@@ -1196,6 +1408,21 @@ export class Player {
         String(audio.fourcc ?? audio.codec ?? audio.codectype ?? "") || undefined;
       stats.frameRate = finite(video.framerate);
       stats.bitrate = finite(video.bitrate);
+      const reportedRange = streamDynamicRange(video);
+      if (reportedRange && (reportedRange !== "PQ" || !this.avPlayDynamicRange)) {
+        this.avPlayDynamicRange = reportedRange;
+      }
+      if (!reportedRange || reportedRange === "PQ") this.probeAVPlayDynamicRange(av);
+      const engineRange = this.avPlayDynamicRange;
+      stats.dynamicRange =
+        engineRange === "PQ" ? (this.manifestRange ?? engineRange) : engineRange;
+      if (!stats.dynamicRange || stats.dynamicRange === "PQ") {
+        this.probeManifestDynamicRange(
+          stats.width,
+          stats.height,
+          finite(this.lastBitrate) ?? stats.bitrate,
+        );
+      }
 
       try {
         stats.bandwidth = finite(av.getStreamingProperty?.("CURRENT_BANDWIDTH"));
@@ -1234,6 +1461,11 @@ export class Player {
     stats.height = finite(video?.videoHeight) ?? finite(level?.height);
     stats.videoCodec = level?.videoCodec || undefined;
     stats.audioCodec = level?.audioCodec || undefined;
+    stats.dynamicRange = hlsDynamicRange(
+      level?.videoRange,
+      level?.attrs?.CODECS,
+      level?.attrs?.["SUPPLEMENTAL-CODECS"],
+    );
     stats.bitrate = finite(level?.bitrate);
     stats.bandwidth = finite(hls?.bandwidthEstimate);
     stats.frameRate = finite(level?.frameRate);
@@ -1332,6 +1564,7 @@ export class Player {
     if (onTizen()) {
       try {
         const av = window.webapis!.avplay!;
+        if (av.getState() === "PAUSED") return true;
         if (!av.pause) {
           this.held = false;
           return false;
@@ -1400,6 +1633,13 @@ export class Player {
     this.textTrackCleanup = null;
     this.metadataCleanup?.();
     this.metadataCleanup = null;
+    this.manifestProbe?.abort();
+    this.manifestProbe = null;
+    this.sourceUrl = "";
+    this.avPlayDynamicRange = undefined;
+    this.avPlayMetadataProbed = false;
+    this.manifestRange = undefined;
+    this.manifestProbed = false;
     this.tracks = [];
     this.segmentSeconds = null;
     this.engineLiveEdge = null;

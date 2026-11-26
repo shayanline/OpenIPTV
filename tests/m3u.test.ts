@@ -234,3 +234,48 @@ http://example.com/c.m3u8`);
   const at = channels.findIndex((c) => c.id === channels[1].id);
   assert.equal(at, 1);
 });
+
+test("a quoted attribute value may contain commas without ending the attributes", () => {
+  const [c] = parseM3U(`#EXTM3U
+#EXTINF:-1 tvg-id="101tvAntequera.es@SD" tvg-logo="http://example.com/antequera.png" http-user-agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" group-title="General",101tv Antequera (720p) [Geo-blocked]
+http://example.com/antequera.m3u8`);
+  assert.equal(c.id, "101tvAntequera.es@SD");
+  assert.equal(c.name, "101tv Antequera (720p) [Geo-blocked]");
+  assert.equal(c.group, "General");
+  assert.equal(c.categoryKey, "General");
+  assert.equal(c.logo, "http://example.com/antequera.png");
+});
+
+test("single quoted attribute values may contain commas and double quotes", () => {
+  const [c] = parseM3U(`#EXTM3U
+#EXTINF:-1 tvg-id='quoted.tv' http-user-agent='Agent "quoted", Next' group-title='News, "World"',Kid's News, Sport
+http://example.com/quoted.m3u8`);
+  assert.equal(c.id, "quoted.tv");
+  assert.equal(c.group, 'News, "World"');
+  assert.equal(c.name, "Kid's News, Sport");
+});
+
+test("an apostrophe inside a double quoted value does not close it", () => {
+  const [c] = parseM3U(`#EXTM3U
+#EXTINF:-1 group-title="Children's, Family",Kid's News, Sport
+http://example.com/kids.m3u8`);
+  assert.equal(c.group, "Children's, Family");
+  assert.equal(c.name, "Kid's News, Sport");
+});
+
+test("a line with no title comma still reads quoted commas as values", () => {
+  const [c] = parseM3U(`#EXTM3U
+#EXTINF:-1 tvg-name="News, Sport" group-title="General"
+http://example.com/news.m3u8`);
+  assert.equal(c.name, "News, Sport");
+  assert.equal(c.group, "General");
+  assert.equal(c.categoryKey, "General");
+});
+
+test("an apostrophe in unquoted metadata does not open a quoted value", () => {
+  const [c] = parseM3U(`#EXTM3U
+#EXTINF:-1 http-user-agent=Kid'sBrowser group-title="General",A
+http://example.com/a.m3u8`);
+  assert.equal(c.name, "A");
+  assert.equal(c.group, "General");
+});

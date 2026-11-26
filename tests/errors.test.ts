@@ -2,78 +2,58 @@ import { test } from "vitest";
 import assert from "node:assert/strict";
 import { explain, faultPolicy } from "../src/services/errors";
 
-/**
- * Checklist 4.6 asks a failure to say why it happened and what to do about it. These pin
- * the codes each engine actually emits to an answer, so a message cannot quietly rot into
- * the catch-all when a code changes.
- */
+/** Unknown causes stay generic while an actual HTTP response can explain the refusal. */
 const cases: [string, RegExp][] = [
-  // AVPlay, on the TV
-  ["PLAYER_ERROR_CONNECTION_FAILED", /could not reach/i],
-  ["PLAYER_ERROR_NOT_SUPPORTED_FILE", /cannot decode/i],
-  ["PLAYER_ERROR_INVALID_URI", /no longer points/i],
-  // hls.js, in a browser
-  ["manifestLoadError", /could not reach/i],
-  ["fragLoadTimeOut", /could not reach/i],
-  ["manifestParsingError", /cannot decode/i],
-  // Ours
-  ["TIMEOUT", /could not reach/i],
-  ["STREAM_ENDED", /stopped broadcasting/i],
-  ["NOT_SUPPORTED", /nothing playable/i],
-  ["FINITE_FORMAT_UNSUPPORTED", /video uses a format/i],
-  ["SEEK_UNSUPPORTED", /cannot seek/i],
-  ["SEEK_FAILED InvalidStateError", /cannot seek/i],
-  /*
-   * The status the server sent, which the TV reports separately from the fault and the player
-   * joins onto it. These have to beat the engine's own name for the failure, because a refusal
-   * and a dead host both arrive as CONNECTION_FAILED and only the status can tell them apart.
-   */
-  ["PLAYER_ERROR_CONNECTION_FAILED (http 403)", /refusing this connection/i],
-  ["PLAYER_ERROR_CONNECTION_FAILED (http 451)", /refusing this connection/i],
-  ["PLAYER_ERROR_CONNECTION_FAILED (http 404)", /no longer points/i],
-  ["PLAYER_ERROR_CONNECTION_FAILED (http 502)", /server is failing/i],
+  ["PLAYER_ERROR_CONNECTION_FAILED", /playback is unavailable/i],
+  ["PLAYER_ERROR_NOT_SUPPORTED_FILE", /playback is unavailable/i],
+  ["PLAYER_ERROR_INVALID_URI", /playback is unavailable/i],
+  ["manifestLoadError", /playback is unavailable/i],
+  ["fragLoadTimeOut", /playback is unavailable/i],
+  ["manifestParsingError", /playback is unavailable/i],
+  ["TIMEOUT", /playback is unavailable/i],
+  ["STREAM_ENDED", /playback is unavailable/i],
+  ["NOT_SUPPORTED", /playback is unavailable/i],
+  ["FINITE_FORMAT_UNSUPPORTED", /playback is unavailable/i],
+  ["FINITE_SOURCE_UNAVAILABLE", /playback is unavailable/i],
+  ["SEEK_UNSUPPORTED", /playback is unavailable/i],
+  ["SEEK_FAILED InvalidStateError", /playback is unavailable/i],
+  ["PLAYER_ERROR_CONNECTION_FAILED (http 401)", /access.*denied/i],
+  ["manifestLoadError (http 401)", /access.*denied/i],
+  ["FINITE_FORMAT_UNSUPPORTED (http 401)", /access.*denied/i],
+  ["PLAYER_ERROR_CONNECTION_FAILED (http 403)", /access.*denied/i],
+  ["PLAYER_ERROR_CONNECTION_FAILED (http 451)", /access.*denied/i],
+  ["PLAYER_ERROR_CONNECTION_FAILED (http 404)", /playback is unavailable/i],
+  ["PLAYER_ERROR_CONNECTION_FAILED (http 502)", /server returned an error/i],
 ];
 
 for (const [code, expected] of cases) {
   test(`${code} is explained`, () => {
-    const { why, fix } = explain(code);
+    const { why } = explain(code);
     assert.match(why, expected);
-    assert.ok(fix.length > 0, "every cause needs a remedy");
   });
 }
 
-test("an unknown code still gets a cause and a remedy rather than nothing", () => {
-  const { why, fix } = explain("SOME_FUTURE_CODE_42");
-  assert.ok(why.length > 0);
-  assert.ok(fix.length > 0);
+test("an unknown code reports unavailable playback without guessing its cause", () => {
+  assert.equal(explain("SOME_FUTURE_CODE_42").whyKey, "error.playbackUnavailable");
 });
 
 test("no explanation leaks a raw engine code into the prose", () => {
   for (const [code] of cases) {
-    const { why, fix } = explain(code);
-    assert.ok(!`${why} ${fix}`.includes(code), `${code} appeared in its own explanation`);
+    const { why } = explain(code);
+    assert.ok(!why.includes(code), `${code} appeared in its own explanation`);
   }
 });
 
-test("a refusal is blamed on the broadcaster rather than on the viewer's network", () => {
-  /*
-   * The point of this one is the blame, not the wording, which is why it no longer pins the
-   * sentence: it asked for "not allowing" and failed the day that became "refusing", which
-   * taught nobody anything. A viewer told to check their network over a 403 goes and reboots a
-   * router for a channel that was never going to play.
-   */
-  const { why, fix } = explain("403");
-  assert.match(why, /broadcaster/i);
-  assert.ok(
-    !/network|could not reach/i.test(`${why} ${fix}`),
-    `blamed the network: ${why} ${fix}`,
-  );
-});
+test.each(["401", "403", "451"])(
+  "HTTP %s reports denied access without a suggested cause",
+  (code) => {
+    const { why, whyKey } = explain(code);
+    assert.equal(whyKey, "error.accessDenied");
+    assert.doesNotMatch(why, /network|country|password|expired|format|try|check/i);
+  },
+);
 
-/**
- * faultPolicy is the recovery coordinator's reading of the same codes, so terminal here
- * must line up with what a viewer is told cannot be fixed by waiting.
- */
+/** Recovery policy remains independent of the generic display text. */
 const terminalCodes = [
   "PLAYER_ERROR_CONNECTION_FAILED (http 401)",
   "PLAYER_ERROR_CONNECTION_FAILED (http 403)",
@@ -85,6 +65,7 @@ const terminalCodes = [
   "manifestParsingError",
   "manifestIncompatible",
   "FINITE_FORMAT_UNSUPPORTED",
+  "FINITE_SOURCE_UNAVAILABLE",
 ];
 
 for (const code of terminalCodes) {

@@ -8,12 +8,51 @@ import { useLocale } from "../../hooks/useLocale";
  * are generic and they are shared, so they live on their own.
  */
 
-export function PageHeader({ title, description }: { title: string; description?: string }) {
+export function PageHeader({
+  title,
+  description,
+  auto = false,
+}: {
+  title: string;
+  description?: string;
+  auto?: boolean;
+}) {
   return (
     <header className="settings-page-header">
-      <h3>{title}</h3>
+      <h3 dir={auto ? "auto" : undefined}>{title}</h3>
       {description && <p>{description}</p>}
     </header>
+  );
+}
+
+/**
+ * Where the viewer is, without spending a focus target on it. Every entry is a
+ * static span inside an ordered list, so the remote's D-pad never lands here.
+ */
+export function SettingsBreadcrumbs({
+  items,
+}: {
+  items: readonly { label: string; auto?: boolean }[];
+}) {
+  const { t } = useLocale();
+  return (
+    <nav className="settings-breadcrumbs" aria-label={t("remote.breadcrumbs")}>
+      <ol>
+        {items.map((item, index) => (
+          <li
+            // biome-ignore lint/suspicious/noArrayIndexKey: Breadcrumbs are a positional path of stateless labels.
+            key={index}
+          >
+            {index > 0 && (
+              <span className="settings-breadcrumb-sep" aria-hidden="true">
+                /
+              </span>
+            )}
+            <span dir={item.auto ? "auto" : undefined}>{item.label}</span>
+          </li>
+        ))}
+      </ol>
+    </nav>
   );
 }
 
@@ -37,16 +76,19 @@ export function SettingsListHeader({
   count,
   children,
   className = "",
+  headingLevel = 4,
 }: {
   title: string;
   count?: string;
   children?: React.ReactNode;
   className?: string;
+  headingLevel?: 3 | 4;
 }) {
+  const Heading = headingLevel === 3 ? "h3" : "h4";
   return (
     <div className={`settings-list-header ${className}`.trim()}>
       <div className="settings-list-title">
-        <h4>{title}</h4>
+        <Heading>{title}</Heading>
         {count && <span className="count">{count}</span>}
       </div>
       {children && <div className="settings-list-actions">{children}</div>}
@@ -107,10 +149,12 @@ export function Toggle({
   label,
   value,
   onChange,
+  disabled = false,
 }: {
   label: string;
   value: boolean;
   onChange: (v: boolean) => void;
+  disabled?: boolean;
 }) {
   const { t } = useLocale();
   return (
@@ -119,6 +163,7 @@ export function Toggle({
       className={`switch ${value ? "on" : ""}`}
       aria-label={label}
       aria-pressed={value}
+      disabled={disabled}
       onClick={() => onChange(!value)}
     >
       <span className="switch-track">

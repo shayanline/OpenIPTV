@@ -4,13 +4,13 @@
  *
  * Samsung ships an x86 emulator that needs HAXM, which does not exist on Apple silicon,
  * and their simulator is a plain WebKit shell that tells you nothing about performance.
- * Neither is usable here. This is the alternative: ordinary Chrome, held down to the
- * measurements taken off the actual set over sdb.
+ * Neither is needed here. This uses ordinary Chrome with a host calibrated CPU proxy,
+ * conservative resource settings and a native playback state shim.
  *
  * What it reproduces, and does not:
  *
- *   CPU        throttled by a factor measured against the real TV, see calibrate.mjs
- *   memory     V8's old space capped to the set's real JS heap limit
+ *   CPU        floor workload calibrated on this host, with an explicitly estimated TV score
+ *   memory     a V8 old space stress cap, not emulated physical RAM or total process memory
  *   screen     1920x1080 at a device pixel ratio of 1
  *   engine     the TV's user agent, and ideally its Chromium version, see --chrome
  *   platform   webapis.avplay and tizen shimmed, so the Tizen code paths actually run
@@ -27,9 +27,11 @@
  *   node scripts/tv/sim.mjs --bench             measure frame times and exit
  *   node scripts/tv/sim.mjs --floor --bench --quick  shorter local sample of every journey
  *   node scripts/tv/sim.mjs --url=http://...    somewhere other than the preview server
+ *   node scripts/tv/sim.mjs --port=9433         a separate Chrome debugging port
  *   node scripts/tv/sim.mjs --playlist=http://... measure against that instead of the default
  *   node scripts/tv/sim.mjs --harsh            half the TV's hardware, on every axis
- *   node scripts/tv/sim.mjs --floor           the weakest set Samsung sells, not yours
+ *   node scripts/tv/sim.mjs --floor           calibrate to the estimated base TV workload
+ *   node scripts/tv/sim.mjs --floor --quick   short Live, VOD and startup quality sample
  *   node scripts/tv/sim.mjs --fit             lay out for this screen, not the set's 1080p
  *   node scripts/tv/sim.mjs --harsh=4          a quarter of it
  *   node scripts/tv/sim.mjs --harsh --software no GPU either, so paint cost shows up
@@ -37,16 +39,26 @@
  *   node scripts/tv/sim.mjs --net=off         no network throttling, even in harsh mode
  */
 import { spawn } from "node:child_process";
+import { createHash } from "node:crypto";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  statSync,
+  watch,
+  writeFileSync,
+} from "node:fs";
 import { createServer } from "node:http";
-import { deflateSync } from "node:zlib";
-import { readFileSync, writeFileSync, statSync, mkdirSync, existsSync, watch } from "node:fs";
-import { tmpdir } from "node:os";
-import { join, dirname } from "node:path";
+import { createServer as createPortProbe } from "node:net";
+import { arch, cpus, loadavg, tmpdir } from "node:os";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { cpus, arch, loadavg } from "node:os";
-import { connect, findChrome, arg, has, factor } from "./cdp.mjs";
-import { LAUNCH_MARKS, LAUNCH_DEADLINE_MS, launchWatcher } from "./launch-marks.mjs";
+import { deflateSync } from "node:zlib";
 import { XTREAM_FIXTURE, xtreamFixtureResponse } from "../present.mjs";
+import { computeBenchmarkIndex } from "./benchmark-index.mjs";
+import { arg, connect, factor, findChrome, has } from "./cdp.mjs";
+import { calibrateCpu, cpuControl, CPU_TOLERANCE } from "./cpu-model.mjs";
 import {
   benchmarkResult,
   createJourneyTracker,
@@ -56,23 +68,24 @@ import {
   REDESIGN_JOURNEYS,
   XTREAM_JOURNEYS,
 } from "./harness.mjs";
+import { LAUNCH_DEADLINE_MS, LAUNCH_MARKS, launchWatcher } from "./launch-marks.mjs";
+import {
+  initializeMeasurementProfile,
+  measurementOrigins,
+  startMeasurementNetwork,
+} from "./measurement-network.mjs";
+import { selectPerformanceProfile } from "./performance-profile.mjs";
+import {
+  assessPhase,
+  STARTUP_GOALS,
+  UI_GOALS,
+  vodCategoryReady,
+} from "./performance-goals.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const read = (name) => JSON.parse(readFileSync(join(here, name), "utf8"));
-const reference = read("profile.json");
 const shim = readFileSync(join(here, "shim.js"), "utf8");
 
-/**
- * Which television to be.
- *
- * The reference is the set in the room, read off it over sdb. The floor is the weakest
- * thing Samsung has sold since 2020, built from the minimum hardware they publish in their
- * own security filings, and it is the one worth developing against: a flagship has enough
- * headroom to hide almost any mistake.
- *
- * The floor's speed is expressed as a multiple of the reference rather than as its own
- * number, so calibrating against the real set moves both.
- */
 /**
  * The app's own hls.js, lent to the shim.
  *
@@ -85,12 +98,13 @@ const enginePath = join(here, "..", "..", "node_modules", "hls.js", "dist", "hls
 const engine = existsSync(enginePath) ? readFileSync(enginePath, "utf8") : null;
 
 const floor = has("floor");
-const profile = floor
-  ? {
-      ...read("floor.json"),
-      cpuThrottle: reference.cpuThrottle * read("floor.json").slowerThanReference,
-    }
-  : reference;
+const fasterReference = has("reference");
+const calibratedProfile = floor || fasterReference;
+const profile = selectPerformanceProfile(read, { floor, reference: fasterReference });
+const profileLabel = floor ? "Original floor" : fasterReference ? "Everyday TV" : "Device";
+const profileIdentity = createHash("sha256").update(JSON.stringify(profile)).digest("hex");
+// Hardware comparisons share one API fixture. Engine compatibility has its own gate.
+const fixtureUserAgent = calibratedProfile ? read("floor.json").userAgent : profile.userAgent;
 
 /**
  * Find the app.
@@ -102,8 +116,30 @@ const profile = floor
  */
 const DEV = "http://localhost:5173/";
 const PREVIEW = "http://localhost:4173/";
-const measuring = has("bench") || has("profile");
+const measuring = has("bench") || has("profile") || has("budget") || has("quick");
+const isolatedNetwork = measuring && !has("video") && !has("real-logos");
 const quick = has("quick");
+if (quick && (!calibratedProfile || has("profile"))) {
+  throw new Error(
+    "--quick requires --floor or --reference and cannot be combined with --profile.",
+  );
+}
+if (
+  has("budget") &&
+  (quick ||
+    !calibratedProfile ||
+    has("video") ||
+    has("profile") ||
+    has("real-logos") ||
+    arg("net") != null ||
+    arg("cpu") != null ||
+    arg("cpu-score") != null)
+) {
+  throw new Error(
+    "--budget requires a complete --floor or --reference run with automatic CPU calibration and native " +
+      "playback timing with isolated local fixtures. Use --bench for CPU, video or network diagnostics.",
+  );
+}
 
 const alive = async (candidate) => {
   try {
@@ -207,7 +243,10 @@ if (!url) {
   );
   process.exit(1);
 }
-if (measuring && url === DEV) {
+if (isolatedNetwork) measurementOrigins(url, url);
+const servedHtml = measuring ? await (await fetch(url)).text() : "";
+const buildIdentity = createHash("sha256").update(servedHtml).digest("hex");
+if (measuring && (url === DEV || /\/@vite\/client|\/src\/main\.[jt]sx?/.test(servedHtml))) {
   console.error(
     "\nRefusing to measure the dev server.\n\n" +
       "React validates every element in a development build, which came to half the main\n" +
@@ -215,6 +254,12 @@ if (measuring && url === DEV) {
       "  npm run build && npm run preview\n",
   );
   process.exit(1);
+}
+if (measuring && !/src="[^"]*\/assets\/[^"]+\.js"/.test(servedHtml)) {
+  throw new Error("The measurement URL does not serve a production application entry.");
+}
+if (has("budget") && servedHtml !== readFileSync(join(dist, "index.html"), "utf8")) {
+  throw new Error("The budget URL does not serve this worktree's production build.");
 }
 /**
  * The playlist, fetched once and then served from here.
@@ -367,11 +412,11 @@ function crc32(buffer) {
 }
 
 /**
- * Encoded on first request and then kept, rather than all of them up front.
+ * Encoded on first request for interactive runs, or before calibration when measuring.
  *
  * Thirty six large images is a couple of seconds of deflate, and a run that walks eighteen
  * categories asks for a handful of them. Building them on demand keeps that off the start of
- * every run, including the runs that are not measuring anything.
+ * interactive runs. Measurements prepare every variant before starting Chrome instead.
  */
 const logos = new Map();
 const logoFor = (size, hue) => {
@@ -427,6 +472,12 @@ await new Promise((settle) => {
   fixture.listen(4174, "127.0.0.1", settle);
 });
 const fixtureOrigin = `http://127.0.0.1:${fixture.address().port}`;
+if (isolatedNetwork) {
+  // Fixture encoding must finish before calibration or any measured loading journey.
+  for (const size of LOGO_SIZES) {
+    for (let hue = 0; hue < LOGO_HUES; hue++) logoFor(size, hue);
+  }
+}
 const playlist = `${fixtureOrigin}/playlist.m3u`;
 process.on("exit", () => fixture.close());
 
@@ -447,7 +498,7 @@ if (measuring && !has("real-logos")) {
   let nth = 0;
   benchText = playlistText.replace(/tvg-logo="[^"]*"/g, () => {
     const size = LOGO_SIZES[nth % LOGO_SIZES.length];
-    return `tvg-logo="http://localhost:${fixture.address().port}/logo/${nth++}/${size}.png"`;
+    return `tvg-logo="${fixtureOrigin}/logo/${nth++}/${size}.png"`;
   });
 }
 
@@ -460,7 +511,12 @@ if (measuring && !has("real-logos")) {
  * alone just moves the bottleneck somewhere unrealistic.
  */
 const harsh = factor("harsh", 2);
-const cpu = Number(arg("cpu") ?? profile.cpuThrottle) * harsh;
+const autoCpu = calibratedProfile && arg("cpu") == null;
+let cpu = Number(arg("cpu") ?? (autoCpu ? 1 : profile.cpuThrottle)) * harsh;
+let cpuCalibration = null;
+if (!Number.isFinite(cpu) || cpu < 1) {
+  throw new Error("--cpu must be a finite slowdown of at least 1.");
+}
 const heapMB = Math.max(32, Math.round(profile.jsHeapLimitMB / harsh));
 const cores = Math.max(1, Math.round(profile.cores / harsh));
 const memoryGB = Math.max(0.25, profile.deviceMemoryGB / harsh);
@@ -480,7 +536,22 @@ const netArg = arg("net");
  * default.
  */
 const video = has("video");
-const port = 9333;
+const port = Number(arg("port") || (measuring ? 9433 : 9333));
+if (!Number.isInteger(port) || port < 1 || port > 65535) {
+  throw new Error("--port must be an integer between 1 and 65535");
+}
+if (measuring && port === 9333) {
+  throw new Error(
+    "Measurements must use a separate debugging port, not the development port 9333.",
+  );
+}
+if (measuring) {
+  await new Promise((resolve, reject) => {
+    const probe = createPortProbe();
+    probe.once("error", () => reject(new Error(`Measurement port ${port} is already in use.`)));
+    probe.listen(port, "127.0.0.1", () => probe.close(resolve));
+  });
+}
 
 /**
  * Whether to run without a window, which measuring does and working does not.
@@ -566,13 +637,10 @@ const link = ({ mbps, latency }) => ({
 });
 
 /**
- * The connection, left alone unless asked for.
+ * Optional network shaping for diagnostics.
  *
- * Deliberately not scaled with the rest. The set is on household wifi, which is not much
- * worse than this laptop's, and starving the bandwidth alongside the processor conflates
- * two different problems: a stall waiting for a segment looks nothing like a dropped frame
- * and is not fixed by the same work. Ask for it explicitly with --net=3g or --net=slow when
- * that is the question.
+ * Regular measurements use only the owned loopback app and fixtures. --net=3g and
+ * --net=slow deliberately add latency and bandwidth constraints, so the budget rejects them.
  */
 const netProfile = netArg && NETWORKS[netArg] ? NETWORKS[netArg] : null;
 
@@ -582,90 +650,37 @@ if (!chrome) {
   process.exit(1);
 }
 
-/**
- * Wait for the machine to be quiet, because a measurement is not entitled to assume it is.
- *
- * The gate's own documented sequence is `npm run build && npm run tv:budget`, and on this laptop
- * a build leaves the endpoint protection scanning changed files with a load average of five or
- * six for minutes afterwards. That is not a footnote: of five runs of the same build, the four
- * on a quiet machine measured 0 or 1 stalls in every interface phase and the one taken straight
- * after a build measured eleven. A gate that fails because a virus scanner was busy is a gate
- * people learn to rerun until it passes, which is worse than not having one.
- *
- * So it waits, rather than compensating. There is no honest way to subtract someone else's CPU
- * time from a frame time, and a benchmark that waits ninety seconds and then measures something
- * true is worth more than one that answers immediately and sometimes lies.
- *
- * Checked before Chrome starts, because afterwards our own renderer is part of the load and the
- * threshold would have to guess at how much. Reported either way, so a run always records the
- * conditions it was taken under.
- */
-/** Set when a measurement had to go ahead on a busy machine, so the verdict can say so. */
-let busyWarning = null;
-if (measuring) {
-  /*
-   * Waiting for the load to stop falling, rather than for it to reach a number.
-   *
-   * An absolute threshold cannot be written down here, because it would have to be right for
-   * this laptop, a colleague's, and a two core CI runner. The first version asked for a load
-   * average under 2 and this machine idles at 2.3, so every run waited the full two minutes and
-   * then warned: a check that can never pass is worse than no check, since the only thing it
-   * teaches is to ignore it.
-   *
-   * What is portable is the shape. A build's aftermath is a load average on its way down, and
-   * the one minute average takes about a minute to drain, so a sample that is no longer falling
-   * means whatever was happening has finished. On an already quiet machine the first pair of
-   * samples agree and this costs three seconds.
-   */
-  const started = Date.now();
-  let load = loadavg()[0];
-  let dots = false;
-  while (Date.now() - started < 120000) {
-    await new Promise((r) => setTimeout(r, 3000));
-    const now = loadavg()[0];
-    const falling = load - now > 0.1;
-    load = now;
-    if (!falling) break;
-    if (!dots) process.stdout.write("  waiting for the machine to settle");
-    dots = true;
-    process.stdout.write(".");
-  }
-  if (dots) process.stdout.write("\n");
-
-  /*
-   * Settled and still busy is a different thing, and worth saying rather than waiting out.
-   *
-   * A quarter of the cores, not half, and the number was moved by being measured. Half was chosen
-   * by feel and let three runs through that were plainly noise: at a load of 2.1 this app reached
-   * its channel rows in 3969ms and compiled its bundle in 853ms, and at 3.5 to 4.3 on the same
-   * eleven core machine the same build took 5226ms and 1683ms. A third slower, on a measurement
-   * whose allowances are set a third above the worst quiet run, is the difference between a gate
-   * that means something and a gate that fails on a Tuesday afternoon.
-   *
-   * A warning rather than a refusal, because the numbers are still worth printing and the person
-   * reading them can judge. Said in the verdict as well as the header, since by then the header
-   * has scrolled away.
-   */
-  busyWarning =
-    load > cpus().length / 4
-      ? `the machine was busy throughout (load ${load.toFixed(1)} of ${cpus().length} cores), ` +
-        "so read these as noise rather than as a regression"
-      : null;
-}
-
+const measurementNetwork = isolatedNetwork
+  ? await startMeasurementNetwork({ appUrl: url, fixtureOrigin })
+  : null;
+let networkAuditReported = false;
+const reportNetworkAudit = () => {
+  const network = measurementNetwork?.snapshot();
+  console.log(`  network audit: ${JSON.stringify(network ?? { isolated: false })}`);
+  networkAuditReported = true;
+  return network;
+};
+process.on("exit", () => {
+  if (measurementNetwork && !networkAuditReported) reportNetworkAudit();
+  void measurementNetwork?.close();
+});
 // A stable profile, so a playlist added once stays added, the way it would on the set.
-const userDir = join(tmpdir(), "openiptv-tv-sim");
+const userDir = measuring
+  ? mkdtempSync(join(tmpdir(), "openiptv-tv-measure-"))
+  : join(tmpdir(), "openiptv-tv-sim");
 mkdirSync(userDir, { recursive: true });
+if (measurementNetwork) initializeMeasurementProfile(userDir);
 const child = spawn(
   chrome,
   [
     `--remote-debugging-port=${port}`,
     `--user-data-dir=${userDir}`,
+    ...(measurementNetwork?.chromeArgs ?? []),
     /* Sized to the set when the set's resolution is being simulated, and left to fill the display
      when it is not: a 1920 wide window on a 1512 wide screen is exactly what --fit is for
      getting rid of. */
     ...(fit ? ["--start-maximized"] : [`--window-size=${profile.width},${profile.height}`]),
-    // The set's own JS heap ceiling. Overrun it here and it would overrun there.
+    // A conservative project stress cap, not an emulation of total TV memory.
     `--js-flags=--max-old-space-size=${heapMB}`,
     "--no-first-run",
     "--no-default-browser-check",
@@ -689,7 +704,7 @@ const child = spawn(
      */
     "--disable-backgrounding-occluded-windows",
     "--disable-renderer-backgrounding",
-    "--disable-features=CalculateNativeWinOcclusion",
+    ...(measurementNetwork ? [] : ["--disable-features=CalculateNativeWinOcclusion"]),
     // The set's player fetches streams itself and knows nothing about the same origin
     // policy, so a browser refusing a playlist on CORS grounds is the simulator being
     // unfaithful rather than the app being wrong. Safe enough with a profile of its own,
@@ -713,6 +728,7 @@ process.on("exit", () => {
 });
 
 const cdp = await connect(port);
+const browserVersion = await cdp.send("Browser.getVersion");
 
 /*
  * Make sure the browser being driven is the one that was just started.
@@ -739,6 +755,36 @@ if (child.exitCode !== null) {
 await cdp.send("Page.enable");
 await cdp.send("Runtime.enable");
 await cdp.send("Network.enable");
+if (measurementNetwork) {
+  await cdp.send("Runtime.addBinding", { name: "__tvMeasurementNetworkSnapshot" });
+  cdp.on("Runtime.bindingCalled", (event) => {
+    if (event.name !== "__tvMeasurementNetworkSnapshot") return;
+    void cdp
+      .send("Runtime.evaluate", {
+        contextId: event.executionContextId,
+        expression: `window.__tvNetworkDone?.(${JSON.stringify(measurementNetwork.snapshot())})`,
+      })
+      .catch(() => console.error("The network audit snapshot could not be returned."));
+  });
+}
+if (autoCpu) {
+  console.log(
+    `Calibrating the laptop to the estimated ${profileLabel.toLowerCase()} CPU workload...`,
+  );
+  await cdp.send("Runtime.evaluate", {
+    expression: `window.__tvCpuIndex = ${computeBenchmarkIndex.toString()}`,
+  });
+  const targetScore = Number(arg("cpu-score") ?? profile.cpuBenchmarkIndex) / harsh;
+  cpuCalibration = await calibrateCpu(async (rate) => {
+    await cdp.send("Emulation.setCPUThrottlingRate", { rate });
+    const response = await cdp.send("Runtime.evaluate", {
+      expression: "window.__tvCpuIndex(250)",
+      returnByValue: true,
+    });
+    return evaluationValue(response, "CPU calibration");
+  }, targetScore);
+  cpu = cpuCalibration.rate;
+}
 
 /*
  * The set's resolution, unless --fit has asked for this display's, in which case nothing is
@@ -752,8 +798,36 @@ if (!fit) {
     mobile: false,
   });
 }
-await cdp.send("Emulation.setUserAgentOverride", { userAgent: profile.userAgent });
+await cdp.send("Emulation.setUserAgentOverride", { userAgent: fixtureUserAgent });
 await cdp.send("Emulation.setCPUThrottlingRate", { rate: cpu });
+if (measuring) {
+  await cdp.send("Page.addScriptToEvaluateOnNewDocument", {
+    source: `window.__tvSimulation = ${JSON.stringify({
+      cpu,
+      cpuCalibration,
+      browser: browserVersion,
+      buildIdentity,
+      profileLabel,
+      profileIdentity,
+      cpuApproximation: profile.cpuApproximation,
+      hardware: {
+        cores,
+        memoryGB,
+        heapMB,
+        width: profile.width,
+        height: profile.height,
+        deviceScaleFactor: profile.deviceScaleFactor,
+      },
+      fixtureUserAgent,
+      fixtureOrigin,
+      nativeTiming: !video,
+      networkIsolated: Boolean(measurementNetwork),
+      playlistIdentity: createHash("sha256").update(playlistText).digest("hex"),
+      width: profile.width,
+      height: profile.height,
+    })};`,
+  });
+}
 await cdp.send("Emulation.setHardwareConcurrencyOverride", { hardwareConcurrency: cores });
 // navigator.deviceMemory has no CDP override, so it is redefined in the page instead.
 await cdp.send("Page.addScriptToEvaluateOnNewDocument", {
@@ -761,7 +835,13 @@ await cdp.send("Page.addScriptToEvaluateOnNewDocument", {
 });
 if (netProfile) await cdp.send("Network.emulateNetworkConditions", link(netProfile));
 if (!video) {
-  if (engine) await cdp.send("Page.addScriptToEvaluateOnNewDocument", { source: engine });
+  if (measuring) {
+    await cdp.send("Page.addScriptToEvaluateOnNewDocument", {
+      source: "window.__openiptvNativeTiming = true;",
+    });
+  } else if (engine) {
+    await cdp.send("Page.addScriptToEvaluateOnNewDocument", { source: engine });
+  }
   await cdp.send("Page.addScriptToEvaluateOnNewDocument", { source: shim });
 }
 
@@ -866,11 +946,16 @@ cdp.on("Runtime.consoleAPICalled", ({ type, args }) => {
  * using any more.
  */
 const machine = `${cpus()[0]?.model ?? "unknown"} (${arch()})`;
-const trust = !profile.calibrated
-  ? "estimated, run npm run tv:calibrate"
-  : profile.calibratedMachine && profile.calibratedMachine !== machine
-    ? `calibrated on a different machine, ${profile.calibratedMachine}`
-    : `calibrated ${profile.calibratedOn}`;
+const trust =
+  arg("cpu") != null
+    ? "explicit diagnostic override"
+    : cpuCalibration
+      ? `host calibrated to an estimated TV proxy, not a measured TV`
+      : !profile.calibrated
+        ? "estimated, run npm run tv:calibrate"
+        : profile.calibratedMachine && profile.calibratedMachine !== machine
+          ? `calibrated on a different machine, ${profile.calibratedMachine}`
+          : `calibrated ${profile.calibratedOn}`;
 
 console.log(
   `TV simulator  ${profile.model}` +
@@ -878,24 +963,44 @@ console.log(
     `${quick ? ", quick sample" : ""}`,
 );
 console.log(
-  `  engine     ${profile.platform}, Chromium ${profile.chromium}` +
-    `${floor ? " (spoofed, the engine here is whatever Chrome is installed)" : ""}`,
+  calibratedProfile
+    ? "  APIs       shared Tizen fixture, engine compatibility checked separately by tv:engines"
+    : `  engine     ${profile.platform}, Chromium ${profile.chromium} (spoofed)`,
 );
+console.log(`  browser    ${browserVersion.product}, V8 ${browserVersion.jsVersion}`);
+if (measuring) console.log(`  build      index.html SHA256 ${buildIdentity}`);
+if (measuring) {
+  console.log(`  profile    ${profileLabel}, SHA256 ${profileIdentity}`);
+}
+if (calibratedProfile) console.log(`  estimate   ${profile.cpuApproximation}`);
 
 // Spelled out against what the set actually reports, because a bare throttle figure reads
 // like a multiple of the TV when it is a multiple of this laptop.
+console.log(`  cpu        ${cpu}x renderer main thread slowdown (${trust})`);
+if (cpuCalibration) {
+  console.log(
+    `  CPU index  host ${cpuCalibration.baselineScore}, target ${cpuCalibration.targetScore}, ` +
+      `achieved ${cpuCalibration.achievedScore}, sample spread ` +
+      `${Math.round(cpuCalibration.spread * 100)}%`,
+  );
+  console.log(
+    `  CPU match  within ${CPU_TOLERANCE * 100}% required before and after measurement`,
+  );
+}
 console.log(
-  `  cpu        ${cpu}x slower per core than this machine` +
-    `${floor ? `, ie ${profile.slowerThanReference}x slower than the reference set` : ""} (${trust})`,
+  `  heap       ${heapMB}MB old space stress cap${harsh > 1 ? ` of ${profile.jsHeapLimitMB}MB` : ""}`,
 );
-console.log(`  heap       ${heapMB}MB${harsh > 1 ? ` of ${profile.jsHeapLimitMB}MB` : ""}`);
 console.log(
   `  cores      ${cores}${harsh > 1 ? ` of ${profile.cores}` : ""}` +
-    `, though only the main thread is slowed`,
+    ` as a navigator hint, only the renderer main thread is slowed`,
 );
-console.log(`  memory     ${memoryGB}GB${harsh > 1 ? ` of ${profile.deviceMemoryGB}GB` : ""}`);
 console.log(
-  `  network    ${netProfile ? `${netProfile.mbps.toFixed(1)}Mbps, ${netProfile.latency}ms` : "unthrottled, as the set's wifi effectively is"}`,
+  `  memory     ${memoryGB}GB navigator hint${harsh > 1 ? ` of ${profile.deviceMemoryGB}GB` : ""}`,
+);
+console.log(
+  `  network    ${measurementNetwork ? "isolated loopback app and fixtures" : "unrestricted diagnostic"}${
+    netProfile ? `, ${netProfile.mbps.toFixed(1)}Mbps, ${netProfile.latency}ms` : ""
+  }`,
 );
 console.log(
   `  screen     ${
@@ -908,7 +1013,9 @@ console.log(
   `  player     ${
     video
       ? "the app's own browser path, Tizen paths skipped"
-      : `AVPlay carried out by hls.js or video, Tizen paths live${engine ? "" : ", no engine found so no decode"}`
+      : measuring
+        ? "AVPlay state and clock shim, native decoder cost excluded"
+        : `AVPlay carried out by hls.js or video, Tizen paths live${engine ? "" : ", no engine found so no decode"}`
   }`,
 );
 console.log(
@@ -937,9 +1044,10 @@ cdp.on("Page.frameNavigated", ({ frame }) => {
     mainNavigation = { count: mainNavigation.count + 1, url: frame.url, at: Date.now() };
   }
 });
+measurementNetwork?.beginAudit();
 await cdp.send("Page.navigate", { url });
 
-if (has("bench") || has("profile")) {
+if (has("bench") || has("budget") || quick) {
   let benchmarkNavigation = 0;
   const ev = async (expression, allowContextLoss = false) => {
     try {
@@ -1047,7 +1155,9 @@ if (has("bench") || has("profile")) {
     `\n  first launch, nothing cached: ${(firstLaunchMs / 1000).toFixed(1)}s to a rail`,
   );
 
-  await ev(readFileSync(join(here, "bench.js"), "utf8"));
+  await ev(
+    `${readFileSync(join(here, "bench.js"), "utf8")}\n//# sourceURL=openiptv-tv-recorder.js`,
+  );
   benchmarkNavigation = mainNavigation.count;
 
   /**
@@ -1092,6 +1202,7 @@ if (has("bench") || has("profile")) {
     stop: [413, "MediaStop"],
     0: [48, "0"],
     1: [49, "1"],
+    5: [53, "5"],
     8: [56, "8"],
   };
   let sent = 0;
@@ -1121,28 +1232,40 @@ if (has("bench") || has("profile")) {
     }
     sent += 1;
   };
+  const hold = async (name, milliseconds = 600) => {
+    await waitUntil(
+      "!document.querySelector('.playback-deck, .playback-drawer, .panel:not(.away), .vod-host:not(.hidden), .settings-host:not(.hidden), [role=\"dialog\"]')",
+    );
+    const [code, key] = KEYS[name];
+    await cdp.send("Input.dispatchKeyEvent", {
+      type: "rawKeyDown",
+      windowsVirtualKeyCode: code,
+      nativeVirtualKeyCode: code,
+      key,
+      code: key,
+    });
+    await new Promise((resolve) => setTimeout(resolve, milliseconds));
+    await cdp.send("Input.dispatchKeyEvent", {
+      type: "rawKeyDown",
+      windowsVirtualKeyCode: code,
+      nativeVirtualKeyCode: code,
+      key,
+      code: key,
+      autoRepeat: true,
+    });
+    await cdp.send("Input.dispatchKeyEvent", {
+      type: "keyUp",
+      windowsVirtualKeyCode: code,
+      nativeVirtualKeyCode: code,
+      key,
+      code: key,
+    });
+    sent += 2;
+  };
 
-  /**
-   * How fast the presses come, which is a claim about a remote and was never checked.
-   *
-   * 33ms is thirty presses a second. No Samsung remote repeats at anything like that: Samsung
-   * publishes no figure, and every set anyone has held waits about half a second and then
-   * repeats somewhere around ten a second. So this is between three and four times faster than
-   * the fastest thing a viewer can do with a finger.
-   *
-   * Kept anyway, at a rate now labelled for what it is, because the honest reading of it
-   * changed rather than the number. It is not "a held key", it is "presses arriving faster than
-   * the interface can possibly draw them", and that is worth measuring: it is what a viewer
-   * holding a key on a slower set than this one looks like, and the app's answer to it must be
-   * to stay level rather than to fall behind. The press to move latency this now records is
-   * what says whether it does.
-   *
-   * A realistic rate would not say much. One press every 120ms against a 95th percentile frame
-   * of around 100ms leaves the interface a frame per press, so the backlog these two phases are
-   * named after never forms and there is nothing to see. `--gap=120` is there for the day
-   * somebody wants to check that rather than take it on trust.
-   */
-  const GAP = Number(arg("gap") ?? 33);
+  // Pause 100ms after each dispatched press by default. --gap changes the input pressure.
+  const GAP = Number(arg("gap") ?? 100);
+  if (!Number.isFinite(GAP) || GAP < 1) throw new Error("--gap must be positive.");
   const drive = async (sequence, times, gap) => {
     for (let i = 0; i < times; i++) {
       for (const name of sequence) {
@@ -1171,6 +1294,24 @@ if (has("bench") || has("profile")) {
    */
   const results = [];
   const unmeasured = [];
+  const paintBoundary = () =>
+    ev(`new Promise(resolve => {
+      const timer = setTimeout(resolve, 1000);
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        clearTimeout(timer);
+        resolve();
+      }));
+    })`);
+  const printResult = (label, result) => {
+    const value = (number) => (number == null ? "-" : number.toFixed(1));
+    console.log(
+      `  ${label.padEnd(28)}${value(result.fps).padStart(8)}` +
+        `${value(result.p95).padStart(9)}${value(result.worst).padStart(9)}` +
+        `${value(result.inputP95).padStart(9)}${value(result.worstLag).padStart(9)}` +
+        `${value(result.stallTimePercent).padStart(9)}`,
+    );
+    console.log(`  phase measurement: ${JSON.stringify({ label, ...result })}`);
+  };
 
   /**
    * Resting is watched for long enough to see something.
@@ -1186,7 +1327,7 @@ if (has("bench") || has("profile")) {
    * Wait for the input queue to drain, which is not the same as waiting.
    *
    * A fixed delay cannot prove that the *browser* delivered keys it was holding. A renderer
-   * throttled sixty times over queues input, and on a busy machine it queues it for seconds. The
+   * under CPU throttling can queue input for seconds. The
    * presses that walk the harness into the channel list were arriving inside the first timed
    * phase, which then reported nine presses in a phase that presses nothing and eighteen moves
    * against nineteen presses in the phase after it.
@@ -1222,6 +1363,7 @@ if (has("bench") || has("profile")) {
     // something to read the rest against.
     if (sequence.length) await drive(sequence, times, gap);
     else await new Promise((r) => setTimeout(r, RESTING_MS));
+    await paintBoundary();
     const r = await readBenchmark(label, "window.__bench.stop()");
     if (!r?.of || r.hidden) {
       /*
@@ -1233,63 +1375,21 @@ if (has("bench") || has("profile")) {
        * six journeys once vanished from a run nobody noticed was empty. A measurement that
        * did not happen has to be louder than a measurement that came out badly.
        */
-      console.log(`  ${label.padEnd(22)}   window was hidden, nothing measurable here`);
+      console.log(`  ${label.padEnd(22)}   no visible animation frame sample`);
       unmeasured.push(label);
       return r;
     }
     results.push({ label, ...r });
-    const dash = (v) => (v === null ? "-" : String(v));
-    console.log(
-      `  ${label.padEnd(22)}${String(r.median).padStart(7)}${String(r.p95).padStart(7)}` +
-        `${String(r.stalls).padStart(7)}${dash(r.lag).padStart(7)}${dash(r.worstLag).padStart(7)}` +
-        `${(r.lag === null ? "-" : String(r.slow)).padStart(6)}` +
-        `${(r.presses && r.hadCursor ? `${r.moves}/${r.presses}` : "-").padStart(8)}`,
-    );
+    printResult(label, r);
     return r;
   };
 
-  /**
-   * The launch, which is the one journey every viewer takes and the only one nothing measured.
-   *
-   * Everything above starts three seconds after the application is already up, so a second
-   * added to the time between the viewer pressing the button and the channel list appearing
-   * would not have moved a single number in this file. That is the most visible second in the
-   * application. Measured on the floor with the playlist cached it is around two of them.
-   *
-   * Four marks rather than one, because "it took two seconds" does not say what to fix and
-   * these do. First paint is the engine getting anything at all onto the screen, which is
-   * mostly the cost of compiling and running the bundle. The interface is React having
-   * rendered. The rows are the playlist having been read off flash and parsed. The name is
-   * the resumed channel being announced, which is the point the set stops looking broken.
-   *
-   * The selector and the allowance sit together on purpose. The journey budget keeps its
-   * labels in two places, the phase calls and the STALLS table, which is why it needs three
-   * assertions to catch a label drifting out of one of them. There is nothing to drift here:
-   * this table is what the page watches for and what the budget spends against.
-   *
-   * The allowances are the floor's, like the journey table's, and about a third above the worst
-   * of three rounds: the bundle ran at 853 to 1123ms, the rows arrived at 3969 to 4347.
-   *
-   * They are a ceiling on what the application does today and emphatically not a target. Five
-   * seconds to a channel list is a bad launch, and writing it into a budget is how it stops
-   * getting worse while it is being worked on, which is a different job from making it good. The
-   * marks are split five ways so that the work has somewhere to aim: a second of it is the
-   * bundle being compiled before the app exists, and two and a half more are between the
-   * interface appearing and the rows arriving, which is the playlist being read off flash and
-   * parsed. Neither of those is a mystery and neither is measured anywhere else.
-   */
-  /*
-   * What each mark is allowed to cost on the floor. The marks themselves are defined in
-   * launch-marks.mjs, because on-set.mjs measures the same five on a real television, where
-   * these allowances mean nothing: they are this profile's, about a third above the worst of
-   * three quiet rounds.
-   */
+  // Keep navigation diagnostics while gating the milestones that make startup useful.
   const LAUNCH_ALLOWED = {
-    "the bundle ran": 1500,
-    "first paint": 1600,
-    "the interface": 2000,
-    "the channel rows": 5800,
-    "the channel named": 6200,
+    "DOM content loaded": null,
+    "first paint": null,
+    "the interface": null,
+    ...STARTUP_GOALS,
   };
 
   /*
@@ -1337,18 +1437,8 @@ if (has("bench") || has("profile")) {
    * journeys above have already played channels, so there is a last channel to resume and
    * artwork in the cache, which is the state a television is in every time after the first.
    *
-   * One known overstatement, left in deliberately and worth knowing the size of. The simulator
-   * puts hls.js into every document to carry out AVPlay's calls, which is half a megabyte of
-   * script the television never compiles, since its decoder is native. Measured without it in
-   * the page, the rows arrive at 1197ms against 1462 to 1656 with it, so these marks are
-   * pessimistic by something like a quarter of a second.
-   *
-   * Taking it out only for this navigation was tried on paper and is worse. Without an engine
-   * the shim falls back to a plain <video>, Chrome cannot play HLS, and the resumed channel
-   * fails: the launch being measured would then draw a fault card and start a retry, which is
-   * not the launch anybody gets. A uniform overstatement that can be stated in a comment beats
-   * a different application being measured, which is the same trade the GPU and the demuxer
-   * are already on the wrong side of.
+   * Native playback timing is used throughout, so neither this navigation nor the journeys
+   * compile the hls.js engine that a Tizen application would leave to native AVPlay.
    */
   const launch = async () => {
     const quiet = async (expression) => {
@@ -1425,6 +1515,7 @@ if (has("bench") || has("profile")) {
     const towards = pane === "rail" ? "left" : "right";
     for (let i = 0; i < 5; i++) {
       if (!(await ensurePanel())) return false;
+      if (await showing(".app-navigation.expanded")) await step("right");
       if (await showing(`.${pane}.focused`)) return true;
       await step(towards);
     }
@@ -1466,24 +1557,20 @@ if (has("bench") || has("profile")) {
     await readPage(
       "category landing state",
       `({
-        cursor: (document.querySelector('.rail .row.selected .row-label')||{}).textContent,
+        cursor: (document.querySelector('.rail .row.cursor .row-label')||{}).textContent,
         showing: (document.querySelector('.rail .row.showing .row-label')||{}).textContent,
       })`,
     );
 
-  /*
-   * Frame times first, then the two columns that say whether the remote was answered.
-   *
-   * `lag` is the median milliseconds from a press to the frame the highlight moved in, and
-   * `worst` beside it is the slowest one of the phase. `keys` is moves against presses: forty
-   * out of forty walked forty rows, and anything less did not walk the journey it is named
-   * after. The frame worst has gone, because between the 95th percentile and the stall count it
-   * was never the number anybody read, and these two are worth the width.
-   */
+  // Frame cadence and input tails are independent requirements.
   console.log(
-    `\n  ${"journey".padEnd(22)}${"frame".padStart(7)}${"p95".padStart(7)}` +
-      `${"stalls".padStart(7)}${"lag".padStart(7)}${"worst".padStart(7)}${"slow".padStart(6)}` +
-      `${"keys".padStart(8)}`,
+    `\n  ${"journey".padEnd(28)}${"mainFPS".padStart(8)}${"frame95".padStart(9)}` +
+      `${"maxFrame".padStart(9)}${"input95".padStart(9)}${"maxInput".padStart(9)}` +
+      `${"stall%".padStart(9)}`,
+  );
+  console.log(
+    `  goals: ${UI_GOALS.minFps}+ main thread FPS, frame p95 <= ${UI_GOALS.frameP95Ms}ms, ` +
+      `input p95 <= ${UI_GOALS.inputP95Ms}ms. Timing columns are milliseconds.`,
   );
 
   await phase("resting", [], 1);
@@ -1518,8 +1605,9 @@ if (has("bench") || has("profile")) {
    * highlight eighteen times or the phase is not the journey it is named after.
    */
   const mustWalk = (label, r) => {
-    if (!r || r.moves === r.presses) return;
-    console.error(`\n${label}: ${r.presses} presses moved the highlight ${r.moves} times, so`);
+    if (r && r.presses > 0 && r.distance === r.presses && r.answered === r.presses) return;
+    console.error(`\n${label}: ${r?.presses} presses advanced ${r?.distance} rows, so`);
+    console.error(`  cursor transitions: ${JSON.stringify(r?.steps ?? [])}`);
     console.error(
       "this phase did not walk the journey it is named after. Either the keys went",
     );
@@ -1584,7 +1672,7 @@ if (has("bench") || has("profile")) {
     450,
   );
 
-  const waitUntil = async (expression, timeout = 30000) => {
+  const tryUntil = async (expression, timeout = 30000) => {
     const deadline = Date.now() + timeout;
     while (Date.now() < deadline) {
       if (await ev(expression, true)) return true;
@@ -1592,7 +1680,7 @@ if (has("bench") || has("profile")) {
     }
     return false;
   };
-  const journey = async (label, action, ready) => {
+  const journey = async (label, action, ready, { kind = "interaction" } = {}) => {
     await settle();
     if (!(await inputDrained())) {
       console.error(`\n${label}: input did not settle before the journey.`);
@@ -1601,36 +1689,164 @@ if (has("bench") || has("profile")) {
     }
     await ev("window.__bench.start()");
     await action();
-    if (ready && !(await waitUntil(ready))) {
+    if (ready && !(await tryUntil(ready))) {
       console.error(`\n${label}: the expected screen did not appear.`);
       child.kill();
       process.exit(2);
     }
+    if (kind === "cold-category") await ev("window.__bench.markReady()");
     await new Promise((r) => setTimeout(r, 600));
+    await paintBoundary();
     const result = await readBenchmark(label, "window.__bench.stop()");
     if (!result?.of || result.hidden) {
       unmeasured.push(label);
       return result;
     }
-    results.push({ label, ...result });
-    console.log(
-      `  ${label.padEnd(22)}${String(result.median).padStart(7)}` +
-        `${String(result.p95).padStart(7)}${String(result.stalls).padStart(7)}` +
-        `${"-".padStart(7)}${"-".padStart(7)}${"-".padStart(6)}${"-".padStart(8)}`,
-    );
+    results.push({ label, kind, ...result });
+    printResult(label, { kind, ...result });
     return result;
   };
-  const clickNamed = (name) =>
-    waitUntil(`(() => {
-    var button = Array.prototype.slice.call(document.querySelectorAll("button")).filter(function (item) {
-      return item.textContent.trim() === ${JSON.stringify(name)};
-    })[0];
+  const clickNamed = async (name, rootSelector = "body") => {
+    await waitForSettingsInput();
+    const clicked = await tryUntil(`(() => {
+    var matches = function (item) {
+      return !item.disabled && item.getClientRects().length > 0
+        && (item.getAttribute('aria-label') === ${JSON.stringify(name)}
+        || item.textContent.trim() === ${JSON.stringify(name)});
+    };
+    var button = Array.prototype.slice.call(document.querySelectorAll(${JSON.stringify(`${rootSelector} button`)})).filter(matches)[0];
     if (!button) return false;
+    if (${JSON.stringify(name)} === 'Save') {
+      var global = Array.prototype.slice.call(document.querySelectorAll('button')).filter(matches)[0];
+      var editor = button.closest('[data-settings-dialog]');
+      var globalEditor = global && global.closest('[data-settings-dialog]');
+      window.__bench.lastSaveChoice = {
+        sameAsGlobal: button === global,
+        globalEditor: !!globalEditor && !!globalEditor.querySelector('.lineup-edit-form'),
+        editor: !!editor && !!editor.querySelector('.lineup-edit-form'),
+        dialog: !!button.closest('[role="dialog"]')
+      };
+    }
     button.click();
     return true;
   })()`);
+    if (!clicked) {
+      const controls =
+        await ev(`Array.prototype.slice.call(document.querySelectorAll(${JSON.stringify(`${rootSelector} button`)}))
+        .filter(function (item) { return item.getClientRects().length > 0; })
+        .map(function (item) {
+          return { label: item.getAttribute('aria-label'), text: item.textContent.trim().slice(0, 100), disabled: item.disabled };
+        })`);
+      throw new Error(
+        `The ${name} button is missing. The visible controls are ${JSON.stringify(controls)}.`,
+      );
+    }
+  };
+  const requireScreen = async (expression, label = expression, timeout = 30000) => {
+    if (!(await tryUntil(expression, timeout))) {
+      const state = await ev(`({
+        player: window.webapis.avplay.getState(),
+        faults: window.__openiptvTvFaults.snapshot(),
+        panel: document.querySelector('.panel')?.className,
+        vod: document.querySelector('.vod-host')?.className,
+        settings: document.querySelector('.settings-host')?.className,
+        info: document.querySelector('.playback-info')?.className,
+        infoCause: document.querySelector('.playback-info')?.getAttribute('data-recovery-cause'),
+        categoryNames: Array.from(document.querySelectorAll('.vod-host:not(.hidden) .vod-category-name'))
+          .map(node => node.textContent),
+        management: {
+          name: document.querySelector('#lineup-name')?.value,
+          number: document.querySelector('#lineup-number')?.value,
+          scope: document.querySelector('.lineup-manager') &&
+            document.querySelector('.lineup-manager').getAttribute('data-lineup-scope'),
+          lastSaveChoice: window.__bench.lastSaveChoice,
+          buttons: Array.from(document.querySelectorAll('[data-settings-dialog] button'))
+            .map(node => ({ text: node.textContent, disabled: node.disabled })),
+          problems: Array.from(document.querySelectorAll('.settings-host:not(.hidden) .field-problem, .settings-host:not(.hidden) [role="alert"], [role="dialog"] .field-problem'))
+            .map(node => node.textContent)
+        }
+      })`);
+      throw new Error(
+        `${label}: the expected screen did not appear. The current state is ${JSON.stringify(state)}.`,
+      );
+    }
+    return true;
+  };
+  const waitUntil = (expression, timeout = 30000) =>
+    requireScreen(expression, expression, timeout);
+  const settingsReady =
+    "!!document.querySelector('.settings-host:not(.hidden) .sheet:not(.input-suspended)')";
+  const settingsClosed = "!document.querySelector('.settings-host:not(.hidden)')";
+  const waitForSettingsInput = () =>
+    requireScreen(
+      "!document.querySelector('.settings-host:not(.hidden) .content-transition-shade:not([data-phase=\"idle\"])')",
+      "Settings content input readiness",
+    );
+  const clickControl = async (selector) => {
+    await waitForSettingsInput();
+    const clicked = await ev(`(() => {
+      var control = document.querySelector(${JSON.stringify(selector)});
+      if (!control || control.disabled || control.getClientRects().length === 0
+        || control.getAttribute('aria-disabled') === 'true') return false;
+      control.click();
+      return true;
+    })()`);
+    if (!clicked) throw new Error(`The ${selector} control is missing or unavailable.`);
+  };
+  const openLineupEditor = async (id) => {
+    await clickControl(`[data-lineup-edit=${JSON.stringify(id)}]`);
+    await requireScreen("!!document.querySelector('#lineup-name')", "Lineup name editor");
+  };
+  const requireLineupBrowse = (scope) =>
+    requireScreen(
+      `!document.querySelector('#lineup-name')
+        && !!document.querySelector('.lineup-manager[data-lineup-scope="${scope}"][data-lineup-mode="browse"]')`,
+      "Saved lineup fields",
+    );
+  const setChannelVisibility = async (id, visible) => {
+    await waitForSettingsInput();
+    const changed = await ev(`(() => {
+      var rows = Array.prototype.slice.call(document.querySelectorAll('[data-lineup-visibility]'));
+      var row = rows.filter(function (node) {
+        return node.getAttribute('data-lineup-visibility') === ${JSON.stringify(id)};
+      })[0];
+      if (!row || row.disabled || row.getAttribute('aria-disabled') === 'true'
+        || row.getAttribute('aria-checked') === ${JSON.stringify(String(visible))}) return false;
+      row.click();
+      return true;
+    })()`);
+    if (!changed)
+      throw new Error("The visibility row is missing or the fixture state is wrong.");
+    await requireScreen(
+      `(() => {
+        var row = Array.prototype.slice.call(document.querySelectorAll('[data-lineup-visibility]'))
+          .filter(function (node) {
+            return node.getAttribute('data-lineup-visibility') === ${JSON.stringify(id)};
+          })[0];
+        return !!row && row.getAttribute('aria-checked') === ${JSON.stringify(String(visible))}
+          && !row.disabled && row.getAttribute('aria-disabled') !== 'true';
+      })()`,
+      visible
+        ? "Shown channel in visibility management"
+        : "Hidden channel in visibility management",
+    );
+  };
+  const openSearch = async () => {
+    const clicked = await ev(`(() => {
+      var button = document.querySelector('[data-navigation-action="search"]');
+      if (!button) return false;
+      button.click();
+      return true;
+    })()`);
+    if (!clicked) throw new Error("The Search navigation action is missing.");
+    const focused = await tryUntil(`(() => {
+      var field = document.activeElement;
+      return !!field && field.matches(".search-field") && field.getClientRects().length > 0;
+    })()`);
+    if (!focused) throw new Error("The Search field did not take focus.");
+  };
   const setInputValue = (selector, value) =>
-    waitUntil(`(() => {
+    requireScreen(`(() => {
     var input = document.querySelector(${JSON.stringify(selector)});
     if (!input) return false;
     var setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
@@ -1639,15 +1855,90 @@ if (has("bench") || has("profile")) {
     return true;
   })()`);
   const clickVodStart = () =>
-    waitUntil(`(() => {
-      var button = document.querySelector('.vod-action');
-      if (!button) return false;
+    requireScreen(`(() => {
+      var button = document.querySelector('.vod-host:not(.hidden) .vod-action');
+      if (!button || button.disabled) return false;
       button.click();
       return true;
     })()`);
   const resetInputBaseline = async () => {
     await ev("window.__bench.delivered = 0; window.__bench.lastKeyAt = 0; true");
     sent = 0;
+  };
+  const setBenchmarkLocale = async (preference, direction) => {
+    await clickControl('[data-navigation-action="settings"]');
+    await requireScreen(settingsReady, "Locale settings");
+    await clickControl(".settings-host:not(.hidden) .rail-scroll .row");
+    await requireScreen(
+      `(() => {
+      var first = document.querySelector('.settings-host:not(.hidden) .rail-scroll .row');
+      return first && first.getAttribute('aria-current') === 'page'
+        && !!document.querySelector('.settings-host:not(.hidden) .sheet-body .option-picker-current');
+    })()`,
+      "Appearance language setting",
+    );
+    await clickControl(".settings-host:not(.hidden) .sheet-body .option-picker-current");
+    const option = `[data-option-picker-popup] .option-picker-option[data-value=${JSON.stringify(preference)}]`;
+    await requireScreen(
+      `!!document.querySelector(${JSON.stringify(option)})`,
+      "Language options",
+    );
+    await clickControl(option);
+    await requireScreen(
+      `JSON.parse(localStorage.getItem('openiptv.settings')).locale === ${JSON.stringify(preference)}
+      && document.documentElement.dir === ${JSON.stringify(direction)}`,
+      "Applied language preference",
+    );
+    await press("back");
+    await requireScreen(settingsClosed, "Locale settings return");
+    await requireScreen(
+      "!!document.querySelector('.vod-host:not(.hidden) .episode-row.cursor')",
+      "Episode focus after locale change",
+    );
+  };
+  const moveFirstLineupRow = async () => {
+    await clickControl('[data-lineup-preference="order"]');
+    await requireScreen(
+      "!!document.querySelector('[data-lineup-order-option=\"custom\"]')",
+      "Lineup order settings",
+    );
+    await clickControl('[data-lineup-order-option="custom"]');
+    await requireScreen(
+      "!document.querySelector('[data-lineup-order-dialog]') && !!document.querySelector('[data-lineup-preference=\"custom-order\"]:enabled')",
+      "Saved Custom Order preference",
+    );
+    await clickControl('[data-lineup-preference="custom-order"]');
+    await requireScreen(
+      "document.querySelectorAll('.lineup-manager-list.sorting .lineup-sort-row').length >= 2",
+      "Lineup sort list",
+    );
+    const order = await ev(`Array.prototype.slice.call(
+      document.querySelectorAll('.lineup-manager-list.sorting .lineup-sort-row'), 0, 2
+    ).map(function (row) { return row.getAttribute('data-sort-id'); })`);
+    if (!order[0] || !order[1]) throw new Error("The lineup sort rows have no identities.");
+    await clickControl(".lineup-manager-list.sorting .lineup-sort-row");
+    await requireScreen(
+      "!!document.querySelector('.lineup-sort-row.grabbed')",
+      "Grabbed lineup sort row",
+    );
+    await press("down");
+    await press("enter");
+    await requireScreen(
+      `(() => {
+      var rows = document.querySelectorAll('.lineup-manager-list.sorting .lineup-sort-row');
+      return rows.length >= 2
+        && !document.querySelector('.lineup-sort-row.grabbed')
+        && rows[0].getAttribute('data-sort-id') === ${JSON.stringify(order[1])}
+        && rows[1].getAttribute('data-sort-id') === ${JSON.stringify(order[0])};
+    })()`,
+      "Reordered lineup rows",
+    );
+    await press("back");
+    await requireScreen(
+      "!!document.querySelector('.lineup-list-header') && !document.querySelector('.lineup-manager-list.sorting')",
+      "Lineup sort return",
+    );
+    return order;
   };
 
   const xtreamJourneys = createXtreamJourneyTracker();
@@ -1668,11 +1959,25 @@ if (has("bench") || has("profile")) {
     });
     if (!db.objectStoreNames.contains('lineups')) {
       db.close();
-      return true;
+      throw new Error('The fixture personal lineup store is missing.');
     }
     await new Promise(function (resolve, reject) {
       var transaction = db.transaction(['lineups'], 'readwrite');
-      transaction.objectStore('lineups').delete('sim-xtream');
+      transaction.objectStore('lineups').put({
+        version: 1,
+        revision: 0,
+        personalisation: {
+          channels: {},
+          categories: {},
+          categoryOrderModes: { live: 'provider', movie: 'provider', series: 'provider' },
+          categoryOrders: { live: [], movie: [], series: [] },
+          personalCategories: [{
+            id: 'benchmark-existing',
+            name: 'Measured channels',
+            channels: []
+          }]
+        }
+      }, 'sim-xtream');
       transaction.oncomplete = resolve;
       transaction.onerror = reject;
       transaction.onabort = reject;
@@ -1715,12 +2020,13 @@ if (has("bench") || has("profile")) {
         progress: []
       }));
       localStorage.removeItem("openiptv.last");
+      localStorage.removeItem("app:last-mode:sim-xtream");
     })();`,
   });
   const xtreamLaunchAt = Date.now();
   await cdp.send("Page.reload", { ignoreCache: true });
   if (
-    !(await waitUntil(
+    !(await tryUntil(
       `(() => {
     var row = document.querySelector(".list .row-label");
     return row && row.textContent === "Live Channel 0001";
@@ -1752,7 +2058,9 @@ if (has("bench") || has("profile")) {
   const xtreamLaunchMs = Date.now() - xtreamLaunchAt;
   console.log(`\n  ${XTREAM_JOURNEYS.liveLaunch}: ${xtreamLaunchMs}ms`);
   xtreamJourneys.complete(XTREAM_JOURNEYS.liveLaunch);
-  await ev(readFileSync(join(here, "bench.js"), "utf8"));
+  await ev(
+    `${readFileSync(join(here, "bench.js"), "utf8")}\n//# sourceURL=openiptv-tv-recorder.js`,
+  );
   benchmarkNavigation = mainNavigation.count;
   sent = 0;
   settled = await heapState();
@@ -1762,106 +2070,158 @@ if (has("bench") || has("profile")) {
     await phase(XTREAM_JOURNEYS.heldRailWalk, ["down"], 18),
   );
   xtreamJourneys.complete(XTREAM_JOURNEYS.heldRailWalk);
-  await ev(
-    "window.__openiptvTvFaults.reset(); window.__openiptvTvFaults.useControlledPlayback(); window.__openiptvTvFaults.setLiveWindow(40000, 100000); true",
-  );
-  await ev(
-    "(() => { var row = document.querySelector('.list .row'); if (!row) return false; row.click(); return true; })()",
-  );
-  await waitUntil("window.__openiptvTvFaults.snapshot().connections >= 1");
-  await ev("window.__openiptvTvFaults.completePrepare(); true");
-  await waitUntil(
-    "window.webapis.avplay.getState() === 'PLAYING' && !document.querySelector('.panel:not(.away)')",
-  );
-  await press("right");
-  await waitUntil("!!document.querySelector('.playback-deck .seekbar')");
-  await clickNamed("Go live");
-  await waitUntil("window.__openiptvTvFaults.snapshot().seeks.length === 1");
-  await clickNamed("More");
-  await waitUntil("!!document.querySelector('[data-recovery-cause]')");
-  const liveConnections = await ev("window.__openiptvTvFaults.snapshot().connections");
-  const liveCause = await ev(
-    "document.querySelector('[data-recovery-cause]').getAttribute('data-recovery-cause')",
-  );
-  if (liveConnections !== 1 || liveCause !== "")
-    throw new Error("The Live DVR journey changed recovery state or provider connections.");
-  await press("back");
-  await waitUntil(
-    "!!document.querySelector('.playback-deck') && !document.querySelector('.playback-drawer')",
-  );
-  await press("stop");
-  await waitUntil("!!document.querySelector('.panel:not(.away)')");
-  redesignJourneys.complete(REDESIGN_JOURNEYS.liveDvrAndGoLive);
-  await ev("window.__openiptvTvFaults.reset(); true");
-  await clickNamed("Search");
-  await waitUntil("!!document.querySelector('.search-field')");
-  for (const ch of "3199") await cdp.send("Input.dispatchKeyEvent", { type: "char", text: ch });
-  await waitUntil(`(() => {
+  if (!quick) {
+    await press("stop");
+    await requireScreen(
+      "window.webapis.avplay.getState() === 'NONE'",
+      "Stopped startup Live session",
+    );
+    await ev(
+      "window.__openiptvTvFaults.reset(); window.__openiptvTvFaults.useControlledPlayback(); window.__openiptvTvFaults.setLiveWindow(40000, 1000000); true",
+    );
+    await clickControl(".list .row");
+    await waitUntil("window.__openiptvTvFaults.snapshot().connections >= 1");
+    await ev("window.__openiptvTvFaults.completePrepare(); true");
+    await waitUntil(
+      "window.webapis.avplay.getState() === 'PLAYING' && !document.querySelector('.panel:not(.away)')",
+    );
+    await ev("window.webapis.avplay.seekTo(60000, function () {}, function () {}); true");
+    await waitUntil("window.webapis.avplay.getCurrentTime() >= 60000");
+    const liveSetupSeeks = await ev("window.__openiptvTvFaults.snapshot().seeks.length");
+    await press("right");
+    await waitUntil("!!document.querySelector('.playback-deck .seekbar [role=\"slider\"]')");
+    await clickNamed("Go live");
+    await requireScreen(
+      `(() => {
+    var seeks = window.__openiptvTvFaults.snapshot().seeks;
+    return seeks.length === ${Number(liveSetupSeeks) + 1}
+      && seeks[seeks.length - 1] >= 990000 && seeks[seeks.length - 1] <= 1000000;
+  })()`,
+      "Go live from the controlled delayed position",
+    );
+    await press("back");
+    await waitUntil("!document.querySelector('.playback-deck')");
+    await hold("enter");
+    await waitUntil(`(() => {
+    const info = document.querySelector('.playback-info.visible[data-recovery-cause]');
+    return info && info.getAttribute('data-recovery-cause') === '';
+  })()`);
+    const liveConnections = await ev("window.__openiptvTvFaults.snapshot().connections");
+    if (liveConnections !== 1)
+      throw new Error(`The Live DVR journey opened ${liveConnections} provider connections.`);
+    if (await ev("!!document.querySelector('.playback-info.visible')")) {
+      await hold("enter");
+      await waitUntil("!document.querySelector('.playback-info.visible')");
+    }
+    await press("stop");
+    await waitUntil("!!document.querySelector('.panel:not(.away)')");
+    redesignJourneys.complete(REDESIGN_JOURNEYS.liveDvrAndGoLive);
+    await ev("window.__openiptvTvFaults.reset(); true");
+    await openSearch();
+    await waitUntil("!!document.querySelector('.search-field')");
+    for (const ch of "3199")
+      await cdp.send("Input.dispatchKeyEvent", { type: "char", text: ch });
+    await waitUntil(`(() => {
     var row = document.querySelector('.list .row-label');
     return row && row.textContent === 'Live Channel 3199';
   })()`);
-  await press("back");
-  await waitUntil(
-    "document.querySelector('.search-field') && document.querySelector('.search-field').value === ''",
-  );
-  await press("back");
-  await waitUntil("!document.querySelector('.search-field')");
-  xtreamJourneys.complete(XTREAM_JOURNEYS.liveSearch);
+    await press("back");
+    await waitUntil(
+      "document.querySelector('.search-field') && document.querySelector('.search-field').value === ''",
+    );
+    await press("back");
+    await waitUntil("!document.querySelector('.search-field')");
+    xtreamJourneys.complete(XTREAM_JOURNEYS.liveSearch);
+  }
   await resetInputBaseline();
   await journey(
     XTREAM_JOURNEYS.firstCategoryLoad,
     async () => clickNamed("Movies"),
-    "!!document.querySelector('.vod-screen .poster-card')",
+    vodCategoryReady("movie"),
+    { kind: "cold-category" },
   );
   xtreamJourneys.complete(XTREAM_JOURNEYS.firstCategoryLoad);
   xtreamJourneys.complete(XTREAM_JOURNEYS.coldPosterGrid);
   await press("right");
-  if (!(await waitUntil("!!document.querySelector('.poster-card.cursor')"))) {
+  if (!(await tryUntil("!!document.querySelector('.poster-card.cursor')"))) {
     throw new Error("The first VOD poster did not take focus before the grid journey.");
   }
   await resetInputBaseline();
   await journey(
     XTREAM_JOURNEYS.heldGridDirection,
     async () => {
-      for (let index = 0; index < 12; index += 1) await press("down");
+      for (let index = 0; index < 12; index += 1) {
+        await press("down");
+        await new Promise((resolve) => setTimeout(resolve, GAP));
+      }
     },
     "!!document.querySelector('.poster-card.cursor')",
   );
   xtreamJourneys.complete(XTREAM_JOURNEYS.heldGridDirection);
   redesignJourneys.complete(REDESIGN_JOURNEYS.posterBudget);
+  if (quick) await finishBenchmark(true);
   const rememberedPosterPosition = await ev(`(() => {
     var cursor = document.querySelector('.poster-card.cursor');
-    return cursor ? Number(cursor.parentElement.getAttribute('aria-posinset')) : 0;
+    return window.__bench.posterPosition(cursor) ?? 0;
   })()`);
+  const rememberedCategory = await ev(`(() => {
+    var host = document.querySelector('.vod-host:not(.hidden)');
+    var selected = host && host.querySelector('.vod-category.selected');
+    if (!selected) return null;
+    var name = selected.textContent;
+    var matches = Array.from(host.querySelectorAll('.vod-category'))
+      .filter(function (row) { return row.textContent === name; });
+    return matches.length === 1 ? name : null;
+  })()`);
+  if (typeof rememberedCategory !== "string" || !rememberedCategory) {
+    throw new Error("The VOD revisit journey needs one identifiable category origin.");
+  }
+  if (!Number.isInteger(rememberedPosterPosition) || rememberedPosterPosition <= 1) {
+    throw new Error("The VOD restore journey needs a poster beyond the first item.");
+  }
+  await press("left");
+  await requireScreen(vodCategoryReady("movie"), "Active category before restoring focus");
+  await press("right");
+  await requireScreen(
+    `(() => {
+      var cursor = document.querySelector('.vod-host:not(.hidden) .poster-card.cursor');
+      return window.__bench.posterPosition(cursor) === ${rememberedPosterPosition};
+    })()`,
+    "Active category poster focus after returning from the rail",
+  );
   await journey(
     XTREAM_JOURNEYS.categoryFocusSettle,
     async () => {
       await press("left");
       await press("down");
     },
-    "!!document.querySelector('.vod-category.cursor')",
+    `${vodCategoryReady("movie")}
+      && document.querySelector('.vod-host:not(.hidden) .vod-category.cursor').textContent
+        !== ${JSON.stringify(rememberedCategory)}`,
   );
   xtreamJourneys.complete(XTREAM_JOURNEYS.categoryFocusSettle);
   await journey(
     XTREAM_JOURNEYS.cachedCategoryRevisit,
     async () => press("up"),
-    "!!document.querySelector('.poster-card')",
+    `${vodCategoryReady("movie")}
+      && document.querySelector('.vod-host:not(.hidden) .vod-category.cursor').textContent
+        === ${JSON.stringify(rememberedCategory)}`,
   );
   await press("right");
-  if (!(await waitUntil("!!document.querySelector('.poster-card.cursor')"))) {
+  if (!(await tryUntil("!!document.querySelector('.poster-card.cursor')"))) {
     throw new Error("The revisited VOD category did not restore grid focus.");
   }
   await resetInputBaseline();
   const restoredPoster = await ev(`(() => {
     var cursor = document.querySelector('.poster-card.cursor');
     return {
-      position: cursor ? Number(cursor.parentElement.getAttribute('aria-posinset')) : 0,
+      position: window.__bench.posterPosition(cursor) ?? 0,
       loading: !!document.querySelector('.vod-loading, .poster-skeleton')
     };
   })()`);
-  if (restoredPoster.position !== rememberedPosterPosition) {
+  if (restoredPoster.position !== 1) {
     throw new Error(
-      `The VOD category revisit restored poster ${restoredPoster.position} instead of ${rememberedPosterPosition}.`,
+      `The VOD category revisit focused poster ${restoredPoster.position} instead of the first item.`,
     );
   }
   if (restoredPoster.loading)
@@ -1869,10 +2229,81 @@ if (has("bench") || has("profile")) {
   xtreamJourneys.complete(XTREAM_JOURNEYS.cachedCategoryRevisit);
   xtreamJourneys.complete(XTREAM_JOURNEYS.warmPosterGrid);
   xtreamJourneys.complete(XTREAM_JOURNEYS.categoryPositionRestore);
+  await press("left");
+  await requireScreen(
+    "!!document.querySelector('.vod-host:not(.hidden) .vod-rail.focused .vod-category.cursor')",
+    "Category rail focus before regional retry",
+  );
+  const failedCategoryVisible = `Array.prototype.some.call(
+    document.querySelectorAll('.vod-host:not(.hidden) .vod-category-name'),
+    function (item) { return item.textContent.trim() === 'Failed'; })`;
+  for (let step = 0; step < 6 && !(await ev(failedCategoryVisible)); step += 1) {
+    await press("down");
+  }
+  await requireScreen(
+    `(() => {
+      var labels = Array.prototype.slice.call(document.querySelectorAll('.vod-host:not(.hidden) .vod-category-name'));
+      var label = labels.filter(function (item) { return item.textContent.trim() === 'Failed'; })[0];
+      if (!label) return false;
+      label.closest('button').click();
+      return true;
+    })()`,
+    "Failed category before the bulk search index is loaded",
+  );
+  await waitUntil("!!document.querySelector('.vod-host:not(.hidden) .vod-retry')");
+  const retryMessage = await ev("document.querySelector('.poster-grid-region').textContent");
+  await clickNamed("Retry");
+  await waitUntil(
+    "!document.querySelector('.vod-retry') && !!document.querySelector('.poster-grid-region.loading')",
+  );
+  await waitUntil("!!document.querySelector('.vod-retry')");
+  const retriedRegion = await ev(`(() => {
+    var retry = document.querySelector('.vod-retry');
+    return {
+      message: document.querySelector('.poster-grid-region').textContent,
+      labelled: retry && retry.textContent.trim() === 'Retry'
+    };
+  })()`);
+  if (!retriedRegion.labelled || retriedRegion.message !== retryMessage) {
+    throw new Error("The regional retry did not complete a second failed request in place.");
+  }
+  xtreamJourneys.complete(XTREAM_JOURNEYS.regionalRetry);
+  await press("left");
+  await requireScreen(
+    "!!document.querySelector('.vod-host:not(.hidden) .vod-rail.focused .vod-category.cursor')",
+    "Category rail focus after regional retry",
+  );
+  const rememberedCategoryVisible = `Array.prototype.some.call(
+    document.querySelectorAll('.vod-host:not(.hidden) .vod-category'),
+    function (item) { return item.textContent === ${JSON.stringify(rememberedCategory)}; })`;
+  for (let step = 0; step < 6 && !(await ev(rememberedCategoryVisible)); step += 1) {
+    await press("up");
+  }
+  await requireScreen(
+    `(() => {
+      var rows = Array.prototype.slice.call(document.querySelectorAll('.vod-host:not(.hidden) .vod-category'));
+      var row = rows.filter(function (item) { return item.textContent === ${JSON.stringify(rememberedCategory)}; })[0];
+      if (!row) return false;
+      row.click();
+      return true;
+    })()`,
+    "Restore the category after regional retry",
+  );
+  await requireScreen(
+    vodCategoryReady("movie", "grid"),
+    "Restored category after regional retry",
+  );
+  await requireScreen(
+    `(() => {
+      var cursor = document.querySelector('.vod-host:not(.hidden) .poster-card.cursor');
+      return window.__bench.posterPosition(cursor) === 1;
+    })()`,
+    "First poster after regional retry",
+  );
   await journey(
     XTREAM_JOURNEYS.scopedSearchReturn,
     async () => {
-      await clickNamed("Search");
+      await openSearch();
       for (const ch of "Movie 010")
         await cdp.send("Input.dispatchKeyEvent", { type: "char", text: ch });
     },
@@ -1900,14 +2331,21 @@ if (has("bench") || has("profile")) {
   await clickVodStart();
   await waitUntil("window.__openiptvTvFaults.snapshot().connections >= 1");
   await ev("window.__openiptvTvFaults.completePrepare(); true");
-  await waitUntil(
-    "window.webapis.avplay.getState() === 'PLAYING' && !!document.querySelector('.vod-host.hidden')",
+  await requireScreen(
+    "window.webapis.avplay.getState() === 'PLAYING' && !!document.querySelector('.vod-host.hidden') && !!document.querySelector('.playback-info[data-seekable=\"true\"]')",
+    "Interactive finite playback before the first quick seek",
   );
   const quickSeekConnectionsBefore = await ev(
     "window.__openiptvTvFaults.snapshot().connections",
   );
   await press("right");
-  await waitUntil("window.__openiptvTvFaults.snapshot().seeks.length === 1");
+  await waitUntil(
+    "window.__openiptvTvFaults.snapshot().seeks.length === 1 && window.webapis.avplay.getState() === 'PLAYING'",
+  );
+  await requireScreen(
+    "!!document.querySelector('.playback-deck [data-control=\"play-pause\"]:not(:disabled) .icon-pause')",
+    "Published playable model after the first seek",
+  );
   await press("playPause");
   await waitUntil("window.webapis.avplay.getState() === 'PAUSED'");
   await press("back");
@@ -1918,21 +2356,21 @@ if (has("bench") || has("profile")) {
   );
   await press("enter");
   await waitUntil("!!document.querySelector('.playback-deck')");
-  await clickNamed("More");
-  await waitUntil("!!document.querySelector('[data-recovery-cause]')");
+  await press("back");
+  await waitUntil("!document.querySelector('.playback-deck')");
+  await hold("enter");
+  await waitUntil("!!document.querySelector('.playback-info.visible[data-recovery-cause]')");
   const quickSeekConnections = await ev("window.__openiptvTvFaults.snapshot().connections");
   const quickSeekCause = await ev(
-    "document.querySelector('[data-recovery-cause]').getAttribute('data-recovery-cause')",
+    "document.querySelector('.playback-info.visible').getAttribute('data-recovery-cause')",
   );
   if (quickSeekConnections !== quickSeekConnectionsBefore || quickSeekCause !== "") {
     throw new Error(
       `The quick seek journey changed connections from ${quickSeekConnectionsBefore} to ${quickSeekConnections} with recovery cause ${quickSeekCause}.`,
     );
   }
-  await press("back");
-  await waitUntil(
-    "!!document.querySelector('.playback-deck') && !document.querySelector('.playback-drawer')",
-  );
+  await hold("enter");
+  await waitUntil("!document.querySelector('.playback-info.visible')");
   await press("stop");
   await waitUntil("!!document.querySelector('.vod-details')");
   redesignJourneys.complete(REDESIGN_JOURNEYS.quickSeekPlayingAndPaused);
@@ -1959,21 +2397,23 @@ if (has("bench") || has("profile")) {
   await waitUntil(
     "!!document.querySelector('.playback-deck') && !document.querySelector('.playback-drawer')",
   );
-  await clickNamed("More");
-  await waitUntil("!!document.querySelector('[data-recovery-cause]')");
-  const cleanMoreConnections = await ev("window.__openiptvTvFaults.snapshot().connections");
-  const cleanMoreCause = await ev(
-    "document.querySelector('[data-recovery-cause]').getAttribute('data-recovery-cause')",
+  await press("back");
+  await waitUntil("!document.querySelector('.playback-deck')");
+  await hold("enter");
+  await waitUntil("!!document.querySelector('.playback-info.visible[data-recovery-cause]')");
+  const cleanDiagnosticsConnections = await ev(
+    "window.__openiptvTvFaults.snapshot().connections",
   );
-  if (cleanMoreConnections !== cleanStartConnections || cleanMoreCause !== "") {
+  const cleanDiagnosticsCause = await ev(
+    "document.querySelector('.playback-info.visible').getAttribute('data-recovery-cause')",
+  );
+  if (cleanDiagnosticsConnections !== cleanStartConnections || cleanDiagnosticsCause !== "") {
     throw new Error(
       "The playback drawer journey did not preserve its clean controlled origin.",
     );
   }
-  await press("back");
-  await waitUntil(
-    "!!document.querySelector('.playback-deck') && !document.querySelector('.playback-drawer')",
-  );
+  await hold("enter");
+  await waitUntil("!document.querySelector('.playback-info.visible')");
   redesignJourneys.complete(REDESIGN_JOURNEYS.playbackDeckAndDrawers);
   await press("stop");
   await waitUntil("!!document.querySelector('.vod-details')");
@@ -1985,25 +2425,26 @@ if (has("bench") || has("profile")) {
   await ev("window.__openiptvTvFaults.completePrepare(); true");
   await waitUntil("window.webapis.avplay.getState() === 'PLAYING'");
   const recoveryStartConnections = await ev("window.__openiptvTvFaults.snapshot().connections");
+  await hold("enter");
+  await waitUntil("!!document.querySelector('.playback-info.visible')");
   await ev("window.__openiptvTvFaults.emitNetworkFault(); true");
   await waitUntil(
     `window.__openiptvTvFaults.snapshot().connections === ${Number(recoveryStartConnections) + 1}`,
   );
+  await waitUntil(
+    "(() => { var node = document.querySelector('.playback-info.visible[data-recovery-cause]'); return node && node.getAttribute('data-recovery-cause') === 'engine-network'; })()",
+  );
   await ev("window.__openiptvTvFaults.completePrepare(); true");
   await waitUntil("window.webapis.avplay.getState() === 'PLAYING'");
-  await press("enter");
-  await waitUntil("!!document.querySelector('.playback-deck')");
-  await clickNamed("More");
-  await waitUntil(
-    "(() => { var node = document.querySelector('[data-recovery-cause]'); return node && node.getAttribute('data-recovery-cause') === 'engine-network'; })()",
+  await requireScreen(
+    "(() => { var node = document.querySelector('.playback-info.visible[data-recovery-cause]'); return node && node.getAttribute('data-recovery-cause') === ''; })()",
+    "Cleared network recovery cause after playback resumes",
   );
   const recoveryConnections = await ev("window.__openiptvTvFaults.snapshot().connections");
   if (recoveryConnections !== recoveryStartConnections + 1)
     throw new Error("Sequential recovery opened an unexpected number of provider connections.");
-  await press("back");
-  await waitUntil(
-    "!!document.querySelector('.playback-deck') && !document.querySelector('.playback-drawer')",
-  );
+  await hold("enter");
+  await waitUntil("!document.querySelector('.playback-info.visible')");
   await press("stop");
   await waitUntil("!!document.querySelector('.vod-details')");
   redesignJourneys.complete(REDESIGN_JOURNEYS.recoverySequence);
@@ -2017,48 +2458,74 @@ if (has("bench") || has("profile")) {
   const cancellationStartConnections = await ev(
     "window.__openiptvTvFaults.snapshot().connections",
   );
-  await ev(
-    "window.__openiptvTvFaults.emitNetworkFault(); window.__openiptvTvFaults.setHidden(true); true",
+  await hold("enter");
+  await waitUntil("!!document.querySelector('.playback-info.visible')");
+  const connectionsAtHide = await ev(
+    "window.__openiptvTvFaults.emitNetworkFault(); window.__openiptvTvFaults.setHidden(true); window.__openiptvTvFaults.snapshot().connections",
   );
+  if (
+    connectionsAtHide < cancellationStartConnections ||
+    connectionsAtHide > cancellationStartConnections + 1
+  ) {
+    throw new Error("The fault opened an unexpected provider connection before hiding.");
+  }
   await new Promise((resolve) => setTimeout(resolve, 100));
   const hiddenConnections = await ev("window.__openiptvTvFaults.snapshot().connections");
-  if (hiddenConnections !== cancellationStartConnections)
+  if (hiddenConnections !== connectionsAtHide)
     throw new Error("Recovery connected while the application was hidden.");
   await ev("window.__openiptvTvFaults.setHidden(false); true");
-  await new Promise((resolve) => setTimeout(resolve, 100));
-  const restoreNeedsPrepare = await ev(
-    "window.__openiptvTvFaults.snapshot().connections > 1 && window.webapis.avplay.getState() === 'IDLE'",
+  await requireScreen(
+    `window.__openiptvTvFaults.snapshot().connections === ${Number(hiddenConnections) + 1}
+      && window.webapis.avplay.getState() === 'IDLE'`,
+    "Coordinated visible recovery prepare",
   );
-  if (restoreNeedsPrepare) await ev("window.__openiptvTvFaults.completePrepare(); true");
-  await waitUntil("window.webapis.avplay.getState() === 'PLAYING'");
-  await press("enter");
-  await waitUntil("!!document.querySelector('.playback-deck')");
-  await clickNamed("More");
   await waitUntil(
-    "(() => { var node = document.querySelector('[data-recovery-cause]'); return node && node.getAttribute('data-recovery-cause') === 'visibility-restore'; })()",
+    "(() => { var node = document.querySelector('.playback-info.visible[data-recovery-cause]'); return node && node.getAttribute('data-recovery-cause') === 'visibility-restore'; })()",
+  );
+  await ev("window.__openiptvTvFaults.completePrepare(); true");
+  await waitUntil("window.webapis.avplay.getState() === 'PLAYING'");
+  await requireScreen(
+    "(() => { var node = document.querySelector('.playback-info.visible[data-recovery-cause]'); return node && node.getAttribute('data-recovery-cause') === ''; })()",
+    "Cleared visibility recovery cause after playback resumes",
   );
   const restoredConnections = await ev("window.__openiptvTvFaults.snapshot().connections");
-  if (restoredConnections < hiddenConnections || restoredConnections > hiddenConnections + 1) {
+  if (restoredConnections !== hiddenConnections + 1) {
     throw new Error("Visibility restore opened an unexpected provider connection.");
   }
-  await press("back");
-  await waitUntil(
-    "!!document.querySelector('.playback-deck') && !document.querySelector('.playback-drawer')",
-  );
+  await hold("enter");
+  await waitUntil("!document.querySelector('.playback-info.visible')");
   await press("stop");
   await waitUntil("!!document.querySelector('.vod-details')");
   redesignJourneys.complete(REDESIGN_JOURNEYS.recoveryCancellation);
   await ev("window.__openiptvTvFaults.reset(); true");
 
   await press("back");
-  await clickNamed("Search");
+  await openSearch();
   for (const ch of "Movie 0008")
     await cdp.send("Input.dispatchKeyEvent", { type: "char", text: ch });
   await waitUntil("!!document.querySelector('.vod-search .poster-card')");
-  await clickNamed("Movie 0008");
-  await waitUntil("!!document.querySelector('.vod-details')");
+  await requireScreen(
+    `(() => {
+    var cards = Array.prototype.slice.call(document.querySelectorAll('.vod-search .poster-card'));
+    var card = cards.filter(function (item) {
+      return item.querySelector('.poster-title').textContent.trim() === 'Movie 0008';
+    })[0];
+    if (!card) return false;
+    card.click();
+    return true;
+  })()`,
+    "Missing metadata search result",
+  );
+  await requireScreen(
+    `(() => {
+    var title = document.querySelector('.vod-host:not(.hidden) .vod-details.loaded .vod-detail-title');
+    return title && title.textContent.trim() === 'Movie 0008';
+  })()`,
+    "Loaded missing metadata detail",
+  );
   const missingMetadataClean = await ev(`(() => {
-    return !document.querySelector('.vod-detail-rating, .vod-detail-meta, .vod-synopsis, .vod-credit');
+    var detail = document.querySelector('.vod-host:not(.hidden) .vod-details.loaded');
+    return !!detail && !detail.querySelector('.vod-detail-tags > span, .vod-synopsis, .vod-credit');
   })()`);
   if (!missingMetadataClean)
     throw new Error("Missing metadata journey rendered an invented row.");
@@ -2066,9 +2533,9 @@ if (has("bench") || has("profile")) {
   await press("back");
   await press("back");
   await clickNamed("Series");
-  await waitUntil("!!document.querySelector('.vod-screen .poster-card')");
+  await requireScreen(vodCategoryReady("series"), "Series first category");
   await press("right");
-  if (!(await waitUntil("!!document.querySelector('.poster-card.cursor')"))) {
+  if (!(await tryUntil("!!document.querySelector('.poster-card.cursor')"))) {
     throw new Error("The first Series poster did not take focus before details opened.");
   }
   await ev("document.querySelector('.poster-card.cursor').click(); true");
@@ -2083,43 +2550,58 @@ if (has("bench") || has("profile")) {
     throw new Error(`Series journey has no playable action. ${seriesDiagnosis}`);
   }
   xtreamJourneys.complete(XTREAM_JOURNEYS.seriesContinue);
-  await ev("document.querySelector('.series-actions button').click(); true");
-  await waitUntil("!!document.querySelector('.episode-panel')");
+  await clickNamed("Episodes");
+  await requireScreen("!!document.querySelector('.episode-panel')", "Series episode list");
   xtreamJourneys.complete(XTREAM_JOURNEYS.episodeNavigation);
   await clickNamed("Season 2");
-  await waitUntil(`(() => {
+  await requireScreen(
+    `(() => {
     var selected = document.querySelector('.season-pill[aria-selected="true"]');
-    return selected && selected.textContent.indexOf('2') >= 0;
-  })()`);
+    return selected && selected.textContent.trim() === 'Season 2';
+  })()`,
+    "Second season selection",
+  );
   xtreamJourneys.complete(XTREAM_JOURNEYS.seasonCommit);
-  await ev("window.__openiptvTvFaults.reset(); true");
-  await ev(`(() => {
-    var rows = Array.prototype.slice.call(document.querySelectorAll('.episode-row'));
-    var row = rows.filter(function (item) { return item.textContent.indexOf('Episode 2.1') >= 0; })[0];
-    if (!row) return false;
+  await ev(
+    "window.__openiptvTvFaults.reset(); window.__openiptvTvFaults.useControlledPlayback(); true",
+  );
+  const episodeActivated = await ev(`(() => {
+    var season = document.querySelector('.season-pill[aria-selected="true"]');
+    var row = document.querySelector('.episode-list .episode-row');
+    var reference = row && row.querySelector('.episode-reference');
+    if (!season || season.textContent.trim() !== 'Season 2'
+      || !reference || reference.textContent.trim() !== '1') return false;
     row.click();
     return true;
   })()`);
-  await waitUntil("window.__openiptvTvFaults.snapshot().connections >= 1");
+  if (!episodeActivated) throw new Error("Season 2 has no first episode to activate.");
+  await requireScreen(
+    "window.__openiptvTvFaults.snapshot().connections >= 1",
+    "Manual episode connection",
+  );
   await ev("window.__openiptvTvFaults.completePrepare(); true");
-  await waitUntil(`(() => {
+  await requireScreen(
+    `(() => {
     var faults = window.__openiptvTvFaults.snapshot();
     return document.querySelector('.vod-host.hidden') &&
       window.webapis.avplay.getState() === 'PLAYING' && faults.seeks.length === 0;
-  })()`);
+  })()`,
+    "Manual episode playback from the beginning",
+  );
   xtreamJourneys.complete(XTREAM_JOURNEYS.manualEpisodeStart);
-  await press("back");
-  await waitUntil("!!document.querySelector('.episode-panel')");
+  await press("stop");
+  await requireScreen(
+    "window.webapis.avplay.getState() === 'NONE' && !!document.querySelector('.vod-host:not(.hidden) .episode-panel .episode-row.cursor')",
+    "Stopped episode and restored episode focus",
+  );
   const wheelBefore = await ev(`(() => {
     var rows = Array.prototype.slice.call(document.querySelectorAll('.episode-row'));
     return rows.indexOf(document.querySelector('.episode-row.cursor'));
   })()`);
   await ev(`(() => {
-    var list = document.querySelector('.episode-list');
-    if (list) {
-      list.dispatchEvent(new WheelEvent('wheel', { deltaY: 1, bubbles: true }));
-      list.dispatchEvent(new WheelEvent('wheel', { deltaY: 1, bubbles: true }));
-    }
+    var list = document.querySelector('.vod-host:not(.hidden) .episode-list');
+    list.dispatchEvent(new WheelEvent('wheel', { deltaY: 1, bubbles: true }));
+    list.dispatchEvent(new WheelEvent('wheel', { deltaY: 1, bubbles: true }));
     return true;
   })()`);
   await waitUntil(`(() => {
@@ -2127,147 +2609,143 @@ if (has("bench") || has("profile")) {
     return rows.indexOf(document.querySelector('.episode-row.cursor')) === ${Number(wheelBefore) + 1};
   })()`);
   xtreamJourneys.complete(XTREAM_JOURNEYS.wheelGuard);
-  await ev("document.documentElement.dir = 'rtl'; true");
-  await press("right");
-  await waitUntil("!!document.querySelector('.series-actions .vod-action.cursor')");
-  await press("left");
-  await waitUntil("!!document.querySelector('.episode-row.cursor')");
-  xtreamJourneys.complete(XTREAM_JOURNEYS.rtlMovement);
-  await ev("document.documentElement.dir = 'ltr'; true");
-  await press("back");
-  await clickNamed("Movies");
-  await waitUntil("!!document.querySelector('.vod-rail')");
-  await ev(`(() => {
-    var labels = Array.prototype.slice.call(document.querySelectorAll('.vod-category-name'));
-    var label = labels.filter(function (item) { return item.textContent.trim() === 'Failed'; })[0];
-    var button = label && label.closest('button');
-    if (!button) return false;
-    button.click();
-    return true;
-  })()`);
-  await waitUntil("!!document.querySelector('.vod-retry')");
-  const retryMessage = await ev("document.querySelector('.poster-grid-region').textContent");
-  await clickNamed("Retry");
-  await waitUntil(
-    "!document.querySelector('.vod-retry') && !!document.querySelector('.poster-grid-region.loading')",
-  );
-  await waitUntil("!!document.querySelector('.vod-retry')");
-  const retriedRegion = await ev(`(() => {
-    var retry = document.querySelector('.vod-retry');
+  const rtlOrigin = await ev(`(() => {
+    var tabs = document.querySelectorAll('.season-pill');
+    var rows = document.querySelectorAll('.episode-row');
     return {
-      message: document.querySelector('.poster-grid-region').textContent,
-      labelled: retry && retry.textContent.trim() === 'Retry'
+      preference: JSON.parse(localStorage.getItem('openiptv.settings')).locale || 'system',
+      direction: document.documentElement.dir,
+      season: Array.prototype.indexOf.call(tabs, document.querySelector('.season-pill[aria-selected="true"]')),
+      episode: Array.prototype.indexOf.call(rows, document.querySelector('.episode-row.cursor'))
     };
   })()`);
-  if (!retriedRegion.labelled || retriedRegion.message !== retryMessage) {
-    throw new Error("The regional retry did not complete a second failed request in place.");
+  if (rtlOrigin.season <= 0 || rtlOrigin.episode < 0) {
+    throw new Error("The RTL journey needs an active episode and a previous season.");
   }
-  xtreamJourneys.complete(XTREAM_JOURNEYS.regionalRetry);
+  await setBenchmarkLocale("ar", "rtl");
+  await press("right");
+  await requireScreen(
+    `Array.prototype.indexOf.call(document.querySelectorAll('.season-pill'),
+      document.querySelector('.season-pill[aria-selected="true"]')) === ${rtlOrigin.season - 1}
+      && !!document.querySelector('.episode-row.cursor')`,
+    "RTL previous season",
+  );
+  await press("left");
+  await requireScreen(
+    `Array.prototype.indexOf.call(document.querySelectorAll('.season-pill'),
+      document.querySelector('.season-pill[aria-selected="true"]')) === ${rtlOrigin.season}
+      && Array.prototype.indexOf.call(document.querySelectorAll('.episode-row'),
+        document.querySelector('.episode-row.cursor')) === 0`,
+    "RTL season return to the first episode",
+  );
+  await setBenchmarkLocale(rtlOrigin.preference, rtlOrigin.direction);
+  xtreamJourneys.complete(XTREAM_JOURNEYS.rtlMovement);
+  await press("back");
+  await clickNamed("Movies");
+  await requireScreen(
+    "!!document.querySelector('.vod-host:not(.hidden) .vod-screen[data-mode=\"movie\"] .vod-rail')",
+    "Movies catalogue return",
+  );
   await journey(
     XTREAM_JOURNEYS.lineupManagement,
     async () => {
       await clickNamed("Settings");
-      await waitUntil("!!document.querySelector('.sheet')");
-      await clickNamed("Playlists");
-      await waitUntil("!!document.querySelector('.settings-list-body')");
-      await ev(`(() => {
-        var button = document.querySelector('[data-settings-focus="playlist-lineup-sim-xtream"]');
-        if (!button) return false;
-        button.click();
-        return true;
-      })()`);
+      await requireScreen(settingsReady, "Settings");
+      await clickNamed("Content & playlists");
+      await requireScreen(
+        "!!document.querySelector('[data-settings-focus=\"manage-playlists\"]')",
+        "Manage playlists entry",
+      );
+      await clickControl('[data-settings-focus="manage-playlists"]');
+      await requireScreen(
+        "!!document.querySelector('.settings-list-body')",
+        "Playlist settings",
+      );
+      await clickControl('[data-settings-focus="playlist-open-sim-xtream"]');
     },
-    "!!document.querySelector('.lineup-scope-controls')",
+    "!!document.querySelector('.lineup-list-header')",
   );
-  await ev(`(() => {
-    var row = document.querySelector('.lineup-manager-row');
-    if (!row) return false;
-    row.click();
-    return true;
+  if (
+    await ev("!!document.querySelector('[data-lineup-action=\"create\"], .lineup-create-dock')")
+  ) {
+    throw new Error("The lineup journey expects personal category creation to be unavailable.");
+  }
+  await clickControl('[data-settings-focus="lineup-open-live:live-large"]');
+  await requireScreen(
+    "!!document.querySelector('.lineup-manager[data-lineup-scope=\"channels\"]')",
+    "Live category channels",
+  );
+  const measuredChannelId = await ev(`(() => {
+    var row = document.querySelector('.lineup-manager-list [data-lineup-provider-id]');
+    return row && row.getAttribute('data-lineup-provider-id');
   })()`);
+  if (typeof measuredChannelId !== "string" || !measuredChannelId) {
+    throw new Error("The live category has no identifiable channel to edit.");
+  }
+  const measuredChannelSelector = `[data-lineup-provider-id=${JSON.stringify(measuredChannelId)}]`;
+  const channelContextReady =
+    "!document.querySelector('#lineup-name') && !!document.querySelector('.lineup-manager[data-lineup-scope=\"channels\"][data-lineup-mode=\"browse\"]')";
+  await openLineupEditor(measuredChannelId);
+  await requireScreen("!!document.querySelector('#lineup-number')", "Channel editor");
   await setInputValue("#lineup-name", "Measured Live Channel");
-  await setInputValue("#lineup-number", "801");
-  await waitUntil(`(() => {
-    var button = document.querySelector('.lineup-edit-form > .btn.tonal');
-    if (!button) return false;
-    button.click();
-    return true;
-  })()`);
-  await clickNamed("Save");
-  await waitUntil("!!document.querySelector('.lineup-scope-controls')");
-  await clickNamed("Reveal hidden");
-  await ev(`(() => {
-    var row = Array.prototype.slice.call(document.querySelectorAll('.lineup-manager-row')).filter(function (item) {
-      return item.textContent.indexOf('Measured Live Channel') >= 0;
-    })[0];
-    if (!row) return false;
-    row.click();
-    return true;
-  })()`);
-  await waitUntil("!!document.querySelector('#lineup-number')");
-  await ev("document.querySelector('.lineup-edit-form > .btn.tonal').click(); true");
-  await clickNamed("Save");
-  await waitUntil("!!document.querySelector('.lineup-scope-controls')");
-  await clickNamed("Sort");
-  await waitUntil(`(() => {
-    var row = document.querySelector('.lineup-sort-mode .lineup-manager-row');
-    if (!row) return false;
-    row.click();
-    return true;
-  })()`);
-  await press("down");
-  await press("enter");
-  await waitUntil("!document.querySelector('.lineup-sort-mode .lineup-manager-row.grabbed')");
-  await press("back");
-  await waitUntil("!!document.querySelector('.lineup-scope-controls')");
-  await clickNamed("Categories");
-  await setInputValue(".lineup-personal-create input", "Measured channels");
-  await clickNamed("Create category");
-  await waitUntil(
-    "!![...document.querySelectorAll('.lineup-manager-row')].find(function (row) { return row.textContent.indexOf('Measured channels') >= 0; })",
+  await setInputValue("#lineup-number", "5001");
+  await clickNamed("Save", "[data-settings-dialog]");
+  await requireLineupBrowse("channels");
+  await requireScreen(channelContextReady, "Saved channel fields");
+  await setChannelVisibility(measuredChannelId, false);
+  await requireScreen(
+    `(() => {
+      var action = document.querySelector(${JSON.stringify(measuredChannelSelector)});
+      return !!action && !!action.closest('.lineup-row.hidden');
+    })()`,
+    "Hidden channel row",
   );
-  await ev(`(() => {
-    var row = Array.prototype.slice.call(document.querySelectorAll('.lineup-manager-row')).filter(function (item) {
-      return item.textContent.indexOf('Measured channels') < 0;
-    })[0];
-    if (!row) return false;
-    row.click();
-    return true;
-  })()`);
-  await setInputValue("#lineup-name", "Measured Live Category");
-  await clickNamed("Save");
-  await waitUntil("!!document.querySelector('.lineup-scope-controls')");
-  await clickNamed("Sort");
-  await waitUntil(`(() => {
-    var row = document.querySelector('.lineup-sort-mode .lineup-manager-row');
-    if (!row) return false;
-    row.click();
-    return true;
-  })()`);
-  await press("down");
-  await press("enter");
-  await waitUntil("!document.querySelector('.lineup-sort-mode .lineup-manager-row.grabbed')");
+  await openLineupEditor(measuredChannelId);
+  await requireScreen("!!document.querySelector('#lineup-number')", "Hidden channel editor");
+  await clickNamed("Save", "[data-settings-dialog]");
+  await requireLineupBrowse("channels");
+  await requireScreen(channelContextReady, "Saved hidden channel fields");
+  await setChannelVisibility(measuredChannelId, true);
+  await requireScreen(
+    `(() => {
+      var action = document.querySelector(${JSON.stringify(measuredChannelSelector)});
+      return !!action && !action.closest('.lineup-row.hidden');
+    })()`,
+    "Visible channel row",
+  );
+  const measuredChannelOrder = await moveFirstLineupRow();
   await press("back");
-  await clickNamed("Channels");
-  await ev(`(() => {
-    var row = Array.prototype.slice.call(document.querySelectorAll('.lineup-manager-row')).filter(function (item) {
-      return item.textContent.indexOf('Measured Live Channel') >= 0;
-    })[0];
-    if (!row) return false;
-    row.click();
-    return true;
-  })()`);
-  await waitUntil("!!document.querySelector('.lineup-memberships')");
-  await ev(`(() => {
-    var label = Array.prototype.slice.call(document.querySelectorAll('.lineup-memberships label')).filter(function (item) {
-      return item.textContent.indexOf('Measured channels') >= 0;
-    })[0];
-    if (!label) return false;
-    label.querySelector('input').click();
-    return true;
-  })()`);
-  await clickNamed("Save");
-  await waitUntil("!!document.querySelector('.lineup-scope-controls')");
+  await requireScreen(
+    '!!document.querySelector(\'.lineup-manager[data-lineup-scope="categories"][data-lineup-mode="browse"] .category-kind-selector\')',
+    "Category list before editing",
+  );
+  await openLineupEditor("live:live-large");
+  await requireScreen(
+    "!!document.querySelector('#lineup-name') && !document.querySelector('#lineup-number')",
+    "Category name editor",
+  );
+  await setInputValue("#lineup-name", "Measured Live Category");
+  await clickNamed("Save", "[data-settings-dialog]");
+  await requireScreen(
+    `(() => {
+      var action = document.querySelector('[data-lineup-edit="live:live-large"]');
+      var row = action && action.closest('.lineup-row');
+      return !document.querySelector('#lineup-name') && !!row
+        && row.textContent.indexOf('Measured Live Category') >= 0;
+    })()`,
+    "Saved category name",
+  );
+  await requireLineupBrowse("categories");
+  const measuredCategoryOrder = await moveFirstLineupRow();
+  await clickControl('[data-settings-focus="lineup-open-live:live-large"]');
+  await requireScreen(channelContextReady, "Renamed live category context");
+  await openLineupEditor(measuredChannelId);
+  if (await ev("!!document.querySelector('.lineup-memberships')")) {
+    throw new Error("Channel membership editing must remain hidden.");
+  }
+  await clickNamed("Save", "[data-settings-dialog]");
+  await requireLineupBrowse("channels");
+  await requireScreen(channelContextReady, "Saved channel without changing memberships");
   const personalPersisted = await ev(`(async function () {
     try {
       var db = await new Promise(function (resolve, reject) {
@@ -2278,38 +2756,100 @@ if (has("bench") || has("profile")) {
       if (!db.objectStoreNames.contains('lineups')) return false;
       return await new Promise(function (resolve) {
         var request = db.transaction(['lineups'], 'readonly').objectStore('lineups').get('sim-xtream');
-        request.onsuccess = function () { resolve(!!request.result && request.result.revision > 0); };
-        request.onerror = function () { resolve(false); };
+        request.onsuccess = function () {
+          db.close();
+          var record = request.result;
+          if (!record || record.version !== 1 || record.revision <= 0) return resolve(false);
+          var personal = record.personalisation;
+          var channel = personal.channels[${JSON.stringify(measuredChannelId)}];
+          var category = personal.categories['live:live-large'];
+          var existing = personal.personalCategories.filter(function (item) {
+            return item.id === 'benchmark-existing';
+          })[0];
+          resolve(!!channel && channel.name === 'Measured Live Channel'
+            && channel.number === 5001 && channel.hidden !== true
+            && !!category && category.name === 'Measured Live Category'
+            && category.itemOrderMode === 'custom'
+            && category.itemOrder.some(function (item) {
+              return item.itemId === ${JSON.stringify(measuredChannelOrder[0])};
+            })
+            && personal.categoryOrderModes.live === 'custom'
+            && personal.categoryOrders.live.some(function (item) {
+              return item.itemId === ${JSON.stringify(measuredCategoryOrder[0])};
+            })
+            && !!existing && existing.name === 'Measured channels'
+            && existing.channels.length === 0);
+        };
+        request.onerror = function () { db.close(); resolve(false); };
       });
     } catch (error) { return false; }
   })()`);
-  if (!personalPersisted) throw new Error("The lineup journey did not persist personal state.");
+  if (!personalPersisted)
+    throw new Error("The lineup journey did not persist its measured edits.");
   await press("back");
-  await waitUntil("!document.querySelector('.lineup-scope-controls')");
+  await requireScreen(
+    "!!document.querySelector('.category-kind-selector') && !document.querySelector('.lineup-category-context')",
+    "Category list return",
+  );
   await press("back");
-  await waitUntil("!document.querySelector('.sheet')");
-  await press("8");
+  await requireScreen(
+    "!document.querySelector('.lineup-list-header') && !!document.querySelector('.settings-list-body')",
+    "Playlist settings return",
+  );
+  await press("back");
+  await requireScreen(
+    "!!document.querySelector('[data-settings-focus=\"manage-playlists\"]')",
+    "Content and playlist settings return",
+  );
+  await press("back");
+  await requireScreen(settingsClosed, "Closed settings");
+  await clickControl('[data-navigation-action="live"]');
+  await requireScreen("!!document.querySelector('.panel:not(.away)')", "Live channel list");
+  await press("5");
+  await press("0");
   await press("0");
   await press("1");
   await press("enter");
-  await waitUntil("(document.body.textContent || '').indexOf('Measured Live Channel') >= 0");
+  await requireScreen(
+    `(() => {
+    var marker = document.querySelector('.list .row .playing-dot');
+    var row = marker && marker.closest('.row');
+    var label = row && row.querySelector('.row-label');
+    var number = row && row.querySelector('.ch-number');
+    return label && label.textContent === 'Measured Live Channel'
+      && number && number.textContent === '5001';
+  })()`,
+    "Renumbered live channel",
+  );
   await clickNamed("Settings");
-  await waitUntil("!!document.querySelector('.sheet')");
-  await clickNamed("Playlists");
+  await requireScreen(settingsReady, "Reopened settings");
+  await clickNamed("Content & playlists");
+  await requireScreen(
+    "!!document.querySelector('[data-settings-focus=\"manage-playlists\"]')",
+    "Manage playlists entry",
+  );
+  await clickControl('[data-settings-focus="manage-playlists"]');
   await waitUntil("!!document.querySelector('.settings-list-body')");
-  await ev(`(() => {
-    var button = document.querySelector('[data-settings-focus="playlist-lineup-sim-xtream"]');
-    if (!button) return false;
-    button.click();
-    return true;
-  })()`);
-  await waitUntil(`(() => {
+  await clickControl('[data-settings-focus="playlist-open-sim-xtream"]');
+  await requireScreen(
+    `(() => {
     var text = document.querySelector('.sheet-body').textContent || '';
-    return text.indexOf('Measured Live Channel') >= 0 &&
-      text.indexOf('Measured Live Category') >= 0 &&
-      text.indexOf('Measured channels') >= 0 &&
+    var personalAction = document.querySelector('[data-settings-focus="lineup-open-personal:benchmark-existing"]');
+    return text.indexOf('Measured Live Category') >= 0 &&
+      !personalAction && text.indexOf('Measured channels') < 0 &&
       text.indexOf('Unavailable personalisation') < 0;
-  })()`);
+  })()`,
+    "Reopened persisted categories",
+  );
+  await clickControl('[data-settings-focus="lineup-open-live:live-large"]');
+  await requireScreen(
+    `(() => {
+      var action = document.querySelector(${JSON.stringify(measuredChannelSelector)});
+      var row = action && action.closest('.lineup-row');
+      return !!row && row.textContent.indexOf('Measured Live Channel') >= 0;
+    })()`,
+    "Reopened persisted channel",
+  );
   xtreamJourneys.complete(XTREAM_JOURNEYS.lineupManagement);
   redesignJourneys.complete(REDESIGN_JOURNEYS.managementBudget);
 
@@ -2321,288 +2861,296 @@ if (has("bench") || has("profile")) {
    * press by design, and this line is read at once. The highlight is what the presses drove and
    * it is never behind, which is the same reason the assertions above use it.
    */
-  console.log(`\n  walked to: ${landed.cursor ?? "nowhere the rail can name"}`);
-  const state = await heapState();
-  // Against the set's ceiling rather than V8's, which reports the old space cap plus the
-  // other spaces and so says 216MB when it has been given 120.
-  console.log(
-    `\n  ${XTREAM_JOURNEYS.heapGrowth}: ${state.nodes} nodes, ${state.rows} rows, ` +
-      `${state.heapMB}MB heap of the set's ${heapMB}MB` +
-      `, ${state.heapMB - settled.heapMB >= 0 ? "+" : ""}${state.heapMB - settled.heapMB}MB ` +
-      "over the run",
-  );
-  xtreamJourneys.complete(XTREAM_JOURNEYS.heapGrowth);
-  xtreamJourneys.complete(XTREAM_JOURNEYS.vodHeapGrowth);
-  xtreamJourneys.assertComplete();
-  redesignJourneys.assertComplete();
-  console.log("  stalls counts frames past 100ms, the point the guidance says a viewer");
-  console.log("  must be told something is happening.");
+  async function finishBenchmark(partial = false) {
+    console.log(`\n  walked to: ${landed.cursor ?? "nowhere the rail can name"}`);
+    const state = await heapState();
+    // Total V8 heap and the configured old space cap describe different allocations.
+    console.log(
+      `\n  ${XTREAM_JOURNEYS.heapGrowth}: ${state.nodes} nodes, ${state.rows} rows, ` +
+        `${state.heapMB}MB heap, project old space cap ${heapMB}MB` +
+        `, ${state.heapMB - settled.heapMB >= 0 ? "+" : ""}${state.heapMB - settled.heapMB}MB ` +
+        "over the run",
+    );
+    xtreamJourneys.complete(XTREAM_JOURNEYS.heapGrowth);
+    xtreamJourneys.complete(XTREAM_JOURNEYS.vodHeapGrowth);
+    if (!partial) {
+      xtreamJourneys.assertComplete();
+      redesignJourneys.assertComplete();
+    } else {
+      console.log("  Quick sample covers Live navigation, VOD grid and cached startup.");
+      console.log("  Playback fault, detail and management journeys require tv:budget.");
+    }
+    console.log("  mainFPS estimates main thread cadence, capped at 60, not GPU or video FPS.");
+    console.log(
+      "  stall% is time in frame gaps over 100ms, not a count dependent on run length.",
+    );
 
-  const marks = await launch();
-  console.log(`\n  ${"launch".padEnd(22)}${"ms".padStart(8)}`);
-  for (const label of Object.keys(LAUNCH_MARKS)) {
-    console.log(`  ${label.padEnd(22)}${String(marks[label] ?? "never").padStart(8)}`);
-  }
-  console.log("  a relaunch, with the last channel known, which is what a launch is");
-  console.log("  every time after the first.");
-
-  /*
-   * Did the playlist survive to the next launch at all?
-   *
-   * Asked because it is the assumption every number above rests on. A cached playlist means a
-   * launch reads 2.7MB off flash; an uncached one means it downloads 2.7MB over the air first,
-   * every single time the television is switched on, and no frame time anywhere in this file
-   * would say so. It is also silent in the interface by design: the app treats a cache that
-   * would not take as nothing worth interrupting a viewer over, which is the right instinct and
-   * the reason this needs asking from outside.
-   */
-  const cached = await ev(`(async function () {
+    /*
+     * Did the playlist survive to the next launch at all?
+     *
+     * Asked because it is the assumption every number above rests on. A cached playlist means a
+     * launch reads 2.7MB off flash; an uncached one means it downloads 2.7MB over the air first,
+     * every single time the television is switched on, and no frame time anywhere in this file
+     * would say so. It is also silent in the interface by design: the app treats a cache that
+     * would not take as nothing worth interrupting a viewer over, which is the right instinct and
+     * the reason this needs asking from outside.
+     */
+    const cached = await ev(`(async function () {
     try {
       var db = await new Promise(function (ok, no) {
         var q = indexedDB.open("openiptv", 1);
         q.onsuccess = function () { ok(q.result); };
         q.onerror = function () { no(new Error("no database")); };
       });
-      var keys = await new Promise(function (ok) {
-        var q = db.transaction(["values"], "readonly").objectStore("values").getAllKeys();
-        q.onsuccess = function () { ok(q.result); };
-        q.onerror = function () { ok([]); };
-      });
-      return keys.filter(function (k) {
-        var key = String(k);
-        return key.indexOf("playlist:") === 0 ||
-          (key.indexOf("xtream:") === 0 && key.slice(-5) === ":live");
-      }).length > 0;
+      var settings = JSON.parse(localStorage.getItem("openiptv.settings") || "{}");
+      var active = settings.playlists.filter(function (p) {
+        return p.id === settings.activePlaylistId;
+      })[0];
+      if (!active || active.id !== "sim-xtream" || active.sourceVersion !== 2 ||
+          active.source.server !== ${JSON.stringify(fixtureOrigin)}) {
+        db.close();
+        return false;
+      }
+      var records = await Promise.all(["account", "categories", "live"].map(function (scope) {
+        return new Promise(function (ok, no) {
+          var q = db.transaction(["values"], "readonly").objectStore("values")
+            .get("xtream:sim-xtream:v2:" + scope);
+          q.onsuccess = function () { ok(q.result); };
+          q.onerror = no;
+        });
+      }));
+      db.close();
+      // The fixture deliberately repeats one stream identifier, which normalization removes.
+      return records.every(function (record) { return typeof record === "string"; })
+        && JSON.parse(records[2]).length === ${XTREAM_FIXTURE.liveCount - 1};
     } catch (e) { return false; }
   })()`);
-  console.log(`\n  active catalogue cached for the next launch: ${cached ? "yes" : "no"}`);
+    console.log(`\n  requested catalogue cached before launch: ${cached ? "yes" : "no"}`);
+    const marks = await launch();
+    const expectedLaunch = await ev(`(() => {
+      const settings = JSON.parse(localStorage.getItem("openiptv.settings"));
+      const active = settings.playlists.find(p => p.id === settings.activePlaylistId);
+      return active?.id === "sim-xtream" && active.sourceVersion === 2
+        && active.source?.server === ${JSON.stringify(fixtureOrigin)}
+        && !!document.querySelector(".list .window .row");
+    })()`);
+    if (!expectedLaunch)
+      throw new Error("Cached launch did not restore the requested fixture.");
+    console.log(`\n  ${"launch".padEnd(22)}${"ms".padStart(8)}`);
+    for (const label of Object.keys(LAUNCH_MARKS)) {
+      console.log(
+        `  ${label.padEnd(22)}${String(marks[label]?.toFixed(1) ?? "never").padStart(8)}`,
+      );
+    }
+    console.log("  Cached relaunch from navigation, with the last channel known.");
+    let control = null;
+    if (cpuCalibration) {
+      await cdp.send("Page.navigate", { url: "about:blank" });
+      let ready = false;
+      for (let attempt = 0; attempt < 120; attempt++) {
+        if (
+          await ev(
+            "location.href === 'about:blank' && document.readyState === 'complete'",
+            true,
+          )
+        ) {
+          ready = true;
+          break;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+      if (!ready) throw new Error("The final CPU control page did not become ready.");
+      await cdp.send("Runtime.evaluate", {
+        expression: `window.__tvCpuIndex = ${computeBenchmarkIndex.toString()}`,
+      });
+      const sample = async () =>
+        evaluationValue(
+          await cdp.send("Runtime.evaluate", {
+            expression: "window.__tvCpuIndex(250)",
+            returnByValue: true,
+          }),
+          "Final CPU control",
+        );
+      // Match the initial warmup so a fresh V8 context does not skew the final control.
+      await cdp.send("Emulation.setCPUThrottlingRate", { rate: 1 });
+      for (let warmup = 0; warmup < 4; warmup++) await sample();
+      await cdp.send("Emulation.setCPUThrottlingRate", { rate: cpu });
+      await sample();
+      const scores = [];
+      for (let index = 0; index < 5; index++) scores.push(await sample());
+      control = cpuControl(scores, cpuCalibration.targetScore);
+      console.log(
+        `  CPU control: ${control.achievedScore} against ${cpuCalibration.targetScore}, ` +
+          `within ${CPU_TOLERANCE * 100}%: ${control.matches ? "yes" : "no"}`,
+      );
+    }
 
-  if (!has("budget")) {
+    const network = reportNetworkAudit();
+    if (!has("budget") && !partial) {
+      if (network && (!network.active || network.violations.length)) {
+        throw new Error("Network isolation failed. The diagnostic measurements are invalid.");
+      }
+      child.kill();
+      process.exit(0);
+    }
+
+    // Only cold category loading substitutes a readiness deadline for the stall share goal.
+    // Focus requirements apply where direction keys move it.
+    const ALLOWED = {
+      resting: {},
+      "racing the categories": { focus: true },
+      "and back up again": { focus: true },
+      "holding down a category": { focus: true },
+      "the same rows again": { focus: true },
+      "surfing channels": {},
+      "open, browse, choose": { focus: true },
+      [XTREAM_JOURNEYS.heldRailWalk]: { focus: true },
+      [XTREAM_JOURNEYS.firstCategoryLoad]: { kind: "cold-category" },
+      [XTREAM_JOURNEYS.heldGridDirection]: { focus: true, presses: 12, distance: 72 },
+      [XTREAM_JOURNEYS.categoryFocusSettle]: { focus: true },
+      [XTREAM_JOURNEYS.cachedCategoryRevisit]: { focus: true },
+      [XTREAM_JOURNEYS.scopedSearchReturn]: {},
+      [XTREAM_JOURNEYS.movieDetail]: {},
+      [XTREAM_JOURNEYS.lineupManagement]: {},
+    };
+    const fullOnly = new Set([
+      XTREAM_JOURNEYS.categoryFocusSettle,
+      XTREAM_JOURNEYS.cachedCategoryRevisit,
+      XTREAM_JOURNEYS.scopedSearchReturn,
+      XTREAM_JOURNEYS.movieDetail,
+      XTREAM_JOURNEYS.lineupManagement,
+    ]);
+    /** Leave headroom within the project memory stress target. */
+    const HEAP_SHARE = 0.5;
+    /**
+     * How much the heap may grow across one walk of the interface.
+     *
+     * A peak says nothing about a leak, and a television is left on the same application for
+     * hours. Two minutes of walking measures +2MB on this playlist, three rounds running, which is
+     * the logo cache filling to its limit and then holding. Eight is loose enough not to argue
+     * with a different cache order and tight enough that something genuinely accumulating, a row
+     * of listeners or a bitmap per press, would trip it.
+     */
+    const HEAP_GROWTH_MB = 8;
+
+    if (!calibratedProfile) {
+      console.error(
+        "\nThe UX gate requires automatic calibration. Add --floor or --reference.",
+      );
+      child.kill();
+      process.exit(2);
+    }
+
+    const failures = [];
+    if (!network?.isolated || !network.active || network.violations.length) {
+      failures.push("network isolation failed or an uncontrolled endpoint was requested");
+    }
+    if (control && !control.matches) {
+      failures.push(
+        `the final CPU workload score did not match the estimated TV target within ${CPU_TOLERANCE * 100}%`,
+      );
+    }
+    for (const phase of unmeasured) {
+      failures.push(`${phase}: nothing was measured, so nothing was proved`);
+    }
+    /*
+     * Every budget has to have been spent against something.
+     *
+     * `if (allowed === undefined) continue` quietly exempted any phase whose label had drifted
+     * out of this table, and a budget that stops applying when somebody renames a journey is a
+     * budget that stops applying. Checked both ways: a phase with no allowance, and an allowance
+     * with no phase.
+     */
+    const measured = new Set([...results.map((r) => r.label), ...unmeasured]);
+    for (const label of measured) {
+      if (!(label in ALLOWED)) failures.push(`${label}: no allowance for this phase`);
+    }
+    for (const label of Object.keys(ALLOWED)) {
+      if (partial && fullOnly.has(label)) continue;
+      if (!measured.has(label))
+        failures.push(`${label}: an allowance for a phase that never ran`);
+    }
+    for (const result of results) {
+      const allowed = ALLOWED[result.label];
+      if (allowed) failures.push(...assessPhase(result, allowed));
+    }
+    /*
+     * A playlist that cannot be cached is a launch that never gets better.
+     *
+     * Not a frame time and it belongs here anyway, because it is the difference between a
+     * television that comes on in two seconds and one that downloads a few megabytes first, every
+     * time, forever. The app is right not to shout about it, so this is where it gets said.
+     */
+    if (!cached) {
+      failures.push(
+        "the active catalogue was not cached, so every launch fetches it over the network again",
+      );
+    }
+    /*
+     * The launch, mark by mark.
+     *
+     * A mark that never arrived is the failure worth being loudest about, because it is what a
+     * renamed selector looks like and it is indistinguishable from an application that never
+     * finished starting. Both mean the launch was not measured, and the whole reason this
+     * section exists is that an unmeasured launch has been free to get a second slower.
+     */
+    for (const [label, allowed] of Object.entries(LAUNCH_ALLOWED)) {
+      const at = marks[label];
+      if (!Number.isFinite(at) || at <= 0) {
+        failures.push(
+          `${label}: never happened within ${LAUNCH_DEADLINE_MS / 1000}s, ` +
+            "so the launch was not measured",
+        );
+      } else if (allowed !== null && at > allowed) {
+        failures.push(`${label}: ${at}ms into the launch, ${allowed}ms allowed`);
+      }
+    }
+    /*
+     * This checks conservative project heap headroom. It cannot account for native browser
+     * memory or GPU allocations, and is not a measurement of the TV's total app footprint.
+     */
+    if (Number.isFinite(state.heapMB) && Number.isFinite(settled.heapMB)) {
+      const allowed = Math.round(heapMB * HEAP_SHARE);
+      if (state.heapMB > allowed) {
+        failures.push(
+          `heap: ${state.heapMB}MB against project old space cap ${heapMB}MB, ` +
+            `${allowed}MB allowed`,
+        );
+      }
+    } else {
+      failures.push("heap: the required memory sample is missing");
+      const grew = state.heapMB - settled.heapMB;
+      if (grew > HEAP_GROWTH_MB) {
+        failures.push(
+          `heap: grew ${grew}MB over one walk of the interface, ` +
+            `${HEAP_GROWTH_MB}MB allowed`,
+        );
+      }
+    }
+
+    console.log();
+    if (failures.length) {
+      console.error(
+        partial
+          ? `${profileLabel} quick sample misses the UX goals:\n`
+          : `${profileLabel} UX goals failed:\n`,
+      );
+      for (const line of failures) console.error(`  ${line}`);
+      console.error(
+        `\nThese are UX targets under the estimated ${profileLabel.toLowerCase()} profile.`,
+      );
+      console.error("They are not certification of real TV GPU or decoder performance.");
+    } else {
+      console.log(
+        partial
+          ? "Quick sample meets the UX goals. This is not the complete release gate."
+          : `${profileLabel} UX goals passed under the estimated TV profile.`,
+      );
+    }
     child.kill();
-    process.exit(0);
+    process.exit(failures.length ? 1 : 0);
   }
-
-  /*
-   * The budget, which applies to the floor only, and now spends on two things per phase.
-   *
-   * One profile, because the floor is the weakest set in the supported range and every newer
-   * one is faster, so a budget met there is met everywhere and seven budgets would be six ways
-   * to argue about the wrong thing.
-   *
-   * `stalls` counts frames past 100ms, because the median was always fine: the interface was
-   * never uniformly slow, it froze for a third of a second at a time, and 100ms is the point
-   * Samsung's own guidance says the viewer has to be told something is happening.
-   *
-   * `lag` and `slow` are the new half and the half that is actually about the viewer. The first
-   * is the median milliseconds from a press to the frame the highlight moved in, the second
-   * counts the presses that took longer than 100ms, and between them they answer the only
-   * question somebody holding a remote is asking. A phase can hold a tidy frame time while
-   * running four presses behind the finger, and frame times alone call that a pass.
-   *
-   * Every number below is measured rather than chosen: three rounds on this laptop, then about a
-   * third above the worst of them. The three rounds agreed closely once the starting state was
-   * pinned, which is why these are tighter than the ones they replace.
-   */
-  const ALLOWED = {
-    resting: { stalls: 1 },
-    /*
-     * Higher than they were, and the numbers went up because the benchmark stopped being wrong.
-     *
-     * Two things moved them. Pinning the starting state took a stream off the main thread during
-     * these phases, which made them repeatable, and serving the artwork locally made every logo
-     * actually arrive. Under the old arrangement most of the playlist's logos were dead links
-     * that failed in milliseconds, so the phases were measuring an interface with almost no
-     * artwork in it and reporting 0 or 1 stalls. With every row's logo resolving, a 1200px PNG
-     * is decoded, resampled into a 76x48 box, drawn to a canvas and written to flash for every
-     * row the highlight crosses, and that is the real cost of scrolling this list.
-     *
-     * So these are honest and they are not good: twelve to twenty four stalls in a scroll, and a
-     * press occasionally waiting over 100ms. That is the next thing to fix rather than the next
-     * thing to allow for, and the allowances are set where they are so the fix can be measured
-     * rather than argued about.
-     */
-    "racing the categories": { stalls: 4, lag: 60, slow: 2 },
-    "and back up again": { stalls: 4, lag: 60, slow: 2 },
-    "holding down a category": { stalls: 16, lag: 75, slow: 3 },
-    "the same rows again": { stalls: 30, lag: 85, slow: 5 },
-    /*
-     * These two start streams, and in this simulator that is hls.js doing on the main thread
-     * what AVPlay does natively on the set. The picture is a simulator artefact rather than the
-     * app, and much the noisiest thing here, so they stay the loosest numbers and the least
-     * meaningful. Everything above them is the app.
-     */
-    "surfing channels": { stalls: 24 },
-    "open, browse, choose": { stalls: 34, lag: 90, slow: 5 },
-    [XTREAM_JOURNEYS.heldRailWalk]: { stalls: 4, lag: 60, slow: 2 },
-    [XTREAM_JOURNEYS.firstCategoryLoad]: { stalls: 34 },
-    [XTREAM_JOURNEYS.heldGridDirection]: { stalls: 15 },
-    [XTREAM_JOURNEYS.categoryFocusSettle]: { stalls: 3 },
-    [XTREAM_JOURNEYS.cachedCategoryRevisit]: { stalls: 30 },
-    [XTREAM_JOURNEYS.scopedSearchReturn]: { stalls: 10 },
-    [XTREAM_JOURNEYS.movieDetail]: { stalls: 34 },
-    [XTREAM_JOURNEYS.lineupManagement]: { stalls: 10 },
-  };
-  /** Of the set's own ceiling. Well clear, because a playlist can be far larger than this one. */
-  const HEAP_SHARE = 0.5;
-  /**
-   * How much the heap may grow across one walk of the interface.
-   *
-   * A peak says nothing about a leak, and a television is left on the same application for
-   * hours. Two minutes of walking measures +2MB on this playlist, three rounds running, which is
-   * the logo cache filling to its limit and then holding. Eight is loose enough not to argue
-   * with a different cache order and tight enough that something genuinely accumulating, a row
-   * of listeners or a bitmap per press, would trip it.
-   */
-  const HEAP_GROWTH_MB = 8;
-
-  /*
-   * The budget belongs to the floor, and now says so rather than assuming it.
-   *
-   * These allowances were measured on the weakest set Samsung has sold since 2020. Applied to
-   * the reference profile, which is six times faster and has three times the heap, they are so
-   * loose that the gate essentially cannot fail. `npm run tv:budget` passes --floor, so this
-   * only ever catches somebody running it by hand, which is exactly who would not notice.
-   */
-  if (!floor) {
-    console.error("\n--budget is the floor profile's budget. Add --floor, or the allowances");
-    console.error("below are being applied to a set six times faster than they were set for.");
-    child.kill();
-    process.exit(2);
-  }
-
-  const failures = [];
-  for (const phase of unmeasured) {
-    failures.push(`${phase}: nothing was measured, so nothing was proved`);
-  }
-  /*
-   * Every budget has to have been spent against something.
-   *
-   * `if (allowed === undefined) continue` quietly exempted any phase whose label had drifted
-   * out of this table, and a budget that stops applying when somebody renames a journey is a
-   * budget that stops applying. Checked both ways: a phase with no allowance, and an allowance
-   * with no phase.
-   */
-  const measured = new Set([...results.map((r) => r.label), ...unmeasured]);
-  for (const label of measured) {
-    if (!(label in ALLOWED)) failures.push(`${label}: no allowance for this phase`);
-  }
-  for (const label of Object.keys(ALLOWED)) {
-    if (!measured.has(label))
-      failures.push(`${label}: an allowance for a phase that never ran`);
-  }
-  for (const result of results) {
-    const allowed = ALLOWED[result.label];
-    if (!allowed) continue;
-    if (result.stalls > allowed.stalls) {
-      failures.push(`${result.label}: ${result.stalls} stalls, ${allowed.stalls} allowed`);
-    }
-    /*
-     * A latency allowance with no latency to check is a failure, not a pass.
-     *
-     * The only phases with nothing to report are the ones with no highlight on screen, and they
-     * have no allowance either. So an allowance that finds nothing means the highlight stopped
-     * being findable, which is how this whole column would quietly stop measuring anything.
-     */
-    if (allowed.lag !== undefined && result.lag === null) {
-      failures.push(`${result.label}: nothing answered a press, so no latency was measured`);
-    } else if (allowed.lag !== undefined && result.lag > allowed.lag) {
-      failures.push(
-        `${result.label}: ${result.lag}ms from press to highlight, ` +
-          `${allowed.lag}ms allowed`,
-      );
-    }
-    /*
-     * Slow presses counted, not the slowest one measured.
-     *
-     * The worst single press was the first version of this and it failed a quiet run at 178ms
-     * having passed six earlier runs between 57 and 116. The maximum of eighteen samples is the
-     * least stable statistic in the file and one scheduling accident owns it, which is the same
-     * reason the frames are gated on a count past 100ms rather than on their worst. The worst is
-     * still printed, because it is the number a person wants to see.
-     */
-    if (allowed.slow !== undefined && result.slow > allowed.slow) {
-      failures.push(
-        `${result.label}: ${result.slow} of ${result.presses} presses waited longer ` +
-          `than 100ms, ${allowed.slow} allowed`,
-      );
-    }
-  }
-  /*
-   * A playlist that cannot be cached is a launch that never gets better.
-   *
-   * Not a frame time and it belongs here anyway, because it is the difference between a
-   * television that comes on in two seconds and one that downloads a few megabytes first, every
-   * time, forever. The app is right not to shout about it, so this is where it gets said.
-   */
-  if (!cached) {
-    failures.push(
-      "the active catalogue was not cached, so every launch fetches it over the network again",
-    );
-  }
-  if (xtreamLaunchMs > LAUNCH_ALLOWED["the channel rows"]) {
-    failures.push(
-      `${XTREAM_JOURNEYS.liveLaunch}: ${xtreamLaunchMs}ms into launch, ` +
-        `${LAUNCH_ALLOWED["the channel rows"]}ms allowed`,
-    );
-  }
-  /*
-   * The launch, mark by mark.
-   *
-   * A mark that never arrived is the failure worth being loudest about, because it is what a
-   * renamed selector looks like and it is indistinguishable from an application that never
-   * finished starting. Both mean the launch was not measured, and the whole reason this
-   * section exists is that an unmeasured launch has been free to get a second slower.
-   */
-  for (const [label, allowed] of Object.entries(LAUNCH_ALLOWED)) {
-    const at = marks[label];
-    if (at === undefined) {
-      failures.push(
-        `${label}: never happened within ${LAUNCH_DEADLINE_MS / 1000}s, ` +
-          "so the launch was not measured",
-      );
-    } else if (at > allowed) {
-      failures.push(`${label}: ${at}ms into the launch, ${allowed}ms allowed`);
-    }
-  }
-  /*
-   * Against the set's documented ceiling, not against what V8 reports here.
-   *
-   * They are not the same number and the difference matters. --max-old-space-size caps one
-   * space, so V8 answers 216MB when it has been given 120, and budgeting against its answer
-   * would quietly allow nearly twice what Samsung permits. 120MB is the only hard figure
-   * they publish, it covers the whole application rather than the script heap alone, and it
-   * is already in the profile.
-   */
-  if (state.heapMB) {
-    const allowed = Math.round(heapMB * HEAP_SHARE);
-    if (state.heapMB > allowed) {
-      failures.push(
-        `heap: ${state.heapMB}MB against the set's ${heapMB}MB ceiling, ` +
-          `${allowed}MB allowed`,
-      );
-    }
-    const grew = state.heapMB - settled.heapMB;
-    if (grew > HEAP_GROWTH_MB) {
-      failures.push(
-        `heap: grew ${grew}MB over one walk of the interface, ` + `${HEAP_GROWTH_MB}MB allowed`,
-      );
-    }
-  }
-
-  console.log();
-  if (failures.length) {
-    console.error("Over budget on the floor profile:\n");
-    for (const line of failures) console.error(`  ${line}`);
-    console.error("\nThe floor is the weakest set Samsung has sold since 2020. Everything");
-    console.error("newer is faster, so this is the only budget there needs to be.");
-    // Said here rather than only in the header, where it would have scrolled past by now.
-    if (busyWarning) console.error(`\nBut ${busyWarning}. Run it again on a quiet machine.`);
-  } else {
-    console.log("Within budget on the floor profile.");
-    if (busyWarning) console.log(`Although ${busyWarning}.`);
-  }
-  child.kill();
-  process.exit(failures.length ? 1 : 0);
+  await finishBenchmark();
 }
 
 /**
@@ -2653,7 +3201,32 @@ if (!measuring) {
       if (!bundle || bundle === last) return; // half written, or nothing actually changed
       last = bundle;
       try {
+        const fullscreenBeforeReload = await cdp
+          .send("Runtime.evaluate", {
+            expression: "document.fullscreenElement === document.documentElement",
+            returnByValue: true,
+          })
+          .then((response) => response.result?.value === true)
+          .catch(() => false);
         await cdp.send("Page.reload", { ignoreCache: true });
+        if (fullscreenBeforeReload) {
+          for (let attempt = 0; attempt < 40; attempt += 1) {
+            try {
+              const restored = await cdp.send("Runtime.evaluate", {
+                expression: `document.readyState === "complete" && document.documentElement.requestFullscreen
+                  ? document.documentElement.requestFullscreen().then(() => true, () => false)
+                  : false`,
+                awaitPromise: true,
+                returnByValue: true,
+                userGesture: true,
+              });
+              if (restored.result?.value === true) break;
+            } catch {
+              /* the new document has not replaced the old execution context yet */
+            }
+            await new Promise((resolve) => setTimeout(resolve, 250));
+          }
+        }
         console.log(
           `  reloaded  ${new Date().toLocaleTimeString()}  ${bundle.split("/").pop()}`,
         );
@@ -2668,7 +3241,11 @@ console.log(`
 Leave this running and work in the window. Saving a file rebuilds and reloads it.
 
   --video       take the app's browser path instead of the Tizen one
-  --floor       the weakest Samsung since 2020, rather than the set in your room
+  --floor       a host calibrated approximation of a base Samsung TV
+  --reference   the estimated Everyday TV performance target, independent of compatibility
+  --quick       sample Live, VOD grid and cached startup, then exit
+  --profile     keep an isolated measurement environment open for an external profiler
+  --cpu-score=N override the estimated workload target for diagnostics
   --harsh=N     divide the processor, heap, cores and memory by N
   --net=3g      throttle the connection, which is otherwise left alone
   --cors        restore the same origin policy the TV does not have

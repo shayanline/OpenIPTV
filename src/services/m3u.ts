@@ -7,7 +7,7 @@ import type { Channel } from "../types";
  * tolerant of the ways real playlists bend it:
  *
  *  - the title runs to end of line and may itself contain commas, so only the first comma
- *    after #EXTINF separates attributes from the title
+ *    outside quoted attribute values separates attributes from the title
  *  - attribute values may be single or double quoted
  *  - #EXTGRP and player directives such as #EXTVLCOPT sit between the #EXTINF and the url
  *  - a tag written without its leading '#' should be ignored rather than read as a url
@@ -61,14 +61,16 @@ export function parseM3U(text: string): Channel[] {
    * it meant before this was fixed.
    */
   const taken = new Set<string>();
+  const nextSuffix = new Map<string, number>();
   const fingerprints = new Map<string, number>();
   const unique = (id: string) => {
     if (!taken.has(id)) {
       taken.add(id);
       return id;
     }
-    let n = 2;
+    let n = nextSuffix.get(id) ?? 2;
     while (taken.has(`${id}#${n}`)) n += 1;
+    nextSuffix.set(id, n + 1);
     const fresh = `${id}#${n}`;
     taken.add(fresh);
     return fresh;
@@ -79,7 +81,19 @@ export function parseM3U(text: string): Channel[] {
     if (!line) continue;
 
     if (line.startsWith("#EXTINF:")) {
-      const comma = line.indexOf(",");
+      let comma = -1;
+      let quote = "";
+      for (let i = 8; i < line.length; i += 1) {
+        const ch = line[i];
+        if (quote) {
+          if (ch === quote) quote = "";
+        } else if ((ch === '"' || ch === "'") && line[i - 1] === "=") {
+          quote = ch;
+        } else if (ch === ",") {
+          comma = i;
+          break;
+        }
+      }
       const attrText = comma === -1 ? line : line.slice(0, comma);
       const title = comma === -1 ? "" : line.slice(comma + 1).trim();
 

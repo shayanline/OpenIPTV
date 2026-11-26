@@ -574,22 +574,46 @@ test("rejects non JSON and unknown envelope fields", async () => {
   expect(unknown.status).toBe(400);
 });
 
-test("maps conflict to HTTP 409", async () => {
+test("maps conflict to HTTP 409", async ({ onTestFinished }) => {
   const server = await load();
   const authorization = await authorisation(server);
-  const { useLineup } = await import("../src/stores/lineup");
-  useLineup.setState({ playlistId: "one", revision: 4 });
+  const personalDisk = await import("../src/services/personalDisk");
+  const read = vi.spyOn(personalDisk, "readLineup").mockResolvedValue({
+    version: 1,
+    revision: 4,
+    personalisation: {},
+  });
+  onTestFinished(() => read.mockRestore());
+  const { useSettings } = await import("../src/stores/settings");
+  const lineup = await import("../src/stores/lineup");
+  const playlist = {
+    id: "one",
+    name: "One",
+    source: { kind: "m3u" as const, url: "http://example.invalid/one.m3u" },
+    sourceVersion: 1,
+  };
+  useSettings.setState({ playlists: [playlist], activePlaylistId: playlist.id });
+  await lineup.adoptCatalogue(
+    playlist,
+    { channels: [], categories: [] },
+    lineup.prepareLineup(playlist),
+  );
   const response = await server.routeRemoteRequest({
     method: "POST",
     path: "/api/v1/lineup/query",
     headers: { authorization, "content-type": "application/json" },
-    body: JSON.stringify({ playlistId: "one", revision: 3, scope: "channels" }),
+    body: JSON.stringify({
+      playlistId: playlist.id,
+      sourceVersion: playlist.sourceVersion,
+      revision: 3,
+      scope: "categories",
+    }),
   });
   expect(response.status).toBe(409);
   expect(JSON.parse(response.body)).toMatchObject({ reason: "conflict", revision: 4 });
   expect(JSON.parse(response.body).items).toBeUndefined();
   expect(JSON.parse(response.body).snapshot.lineup).toEqual({
-    playlistId: "one",
+    playlistId: playlist.id,
     revision: 4,
     ready: true,
   });
@@ -610,6 +634,24 @@ test("maps unavailable to HTTP 404", async () => {
     }),
   });
   expect(response.status).toBe(404);
+});
+
+test("maps an unavailable lineup query to HTTP 503", async () => {
+  vi.doMock("../src/services/lineupProtocol", () => ({
+    queryRemoteLineup: () => ({ ok: false, reason: "unavailable", revision: 0 }),
+    mutateRemoteLineup: vi.fn(),
+  }));
+  const server = await load();
+  const authorization = await authorisation(server);
+  const response = await server.routeRemoteRequest({
+    method: "POST",
+    path: "/api/v1/lineup/query",
+    headers: { authorization, "content-type": "application/json" },
+    body: JSON.stringify({ playlistId: "one", revision: 0, scope: "items" }),
+  });
+  expect(response.status).toBe(503);
+  expect(JSON.parse(response.body).reason).toBe("unavailable");
+  vi.doUnmock("../src/services/lineupProtocol");
 });
 
 test("maps invalid duplicate number and limit to HTTP 400", async () => {

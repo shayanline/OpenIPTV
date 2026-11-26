@@ -109,6 +109,112 @@ test("movie and series categories authenticate lazily and preserve provider name
   ).toHaveLength(1);
 });
 
+test("cached category metadata hydrates Movie and Series together", async () => {
+  const key = "xtream:pl-1:v1:categories";
+  disk.set(
+    key,
+    JSON.stringify([
+      { key: "movie:10", id: "10", kind: "movie", name: "Movies" },
+      { key: "series:20", id: "20", kind: "series", name: "Series" },
+    ]),
+  );
+  localStorage.setItem(`openiptv.at.${key}`, String(Date.now()));
+  const fetch = provider();
+  vi.stubGlobal("fetch", fetch);
+  const { useLibrary } = await loadStore();
+  useLibrary.getState().selectPlaylist(playlist());
+
+  await useLibrary.getState().loadCategories("movie");
+
+  expect(useLibrary.getState().categories.movie.state).toBe("loaded");
+  expect(useLibrary.getState().categories.series.state).toBe("loaded");
+  expect(fetch).not.toHaveBeenCalled();
+});
+
+test("a complete index supplies missing provider category counts without category requests", async () => {
+  const fetch = provider({
+    get_vod_categories: [
+      { category_id: "10", category_name: "Provider Movies" },
+      { category_id: "11", category_name: "Empty Movies" },
+    ],
+  });
+  vi.stubGlobal("fetch", fetch);
+  const { useLibrary } = await loadStore();
+  useLibrary.getState().selectPlaylist(playlist());
+
+  await useLibrary.getState().loadCategories("movie");
+  expect(
+    useLibrary
+      .getState()
+      .categoriesFor("movie")
+      .find((row) => row.key === "movie:10")?.count,
+  ).toBeUndefined();
+
+  await useLibrary.getState().loadIndex("movie", "all");
+
+  const rows = useLibrary.getState().categoriesFor("movie");
+  expect(rows.find((row) => row.key === "movie:10")?.count).toBe(1);
+  expect(rows.find((row) => row.key === "movie:11")?.count).toBe(0);
+  expect(useLibrary.getState().itemsFor("movie", "movie:10").value).toMatchObject([
+    { name: "Provider Movie Name" },
+  ]);
+  await useLibrary.getState().loadCategory("movie:10");
+  const categoryRequests = fetch.mock.calls.filter(([input]) =>
+    new URL(String(input)).searchParams.has("category_id"),
+  );
+  expect(categoryRequests).toHaveLength(0);
+});
+
+test("a loaded category frame supplies its own badge count without requests", async () => {
+  const fetch = provider();
+  vi.stubGlobal("fetch", fetch);
+  const { useLibrary } = await loadStore();
+  useLibrary.getState().selectPlaylist(playlist());
+
+  await useLibrary.getState().loadCategories("movie");
+  const badge = () =>
+    useLibrary
+      .getState()
+      .categoriesFor("movie")
+      .find((row) => row.key === "movie:10")?.count;
+  expect(badge()).toBeUndefined();
+
+  await useLibrary.getState().loadCategory("movie:10");
+
+  expect(badge()).toBe(1);
+  const calls = fetch.mock.calls.length;
+  expect(badge()).toBe(1);
+  expect(fetch.mock.calls.length).toBe(calls);
+});
+
+test("a failed complete index falls back to category loading", async () => {
+  const fallback = provider();
+  const fetch = vi.fn(async (input: string | URL) => {
+    const url = new URL(String(input));
+    if (
+      url.searchParams.get("action") === "get_vod_streams" &&
+      !url.searchParams.has("category_id")
+    ) {
+      return new Response("unavailable", { status: 503 });
+    }
+    return fallback(input);
+  });
+  vi.stubGlobal("fetch", fetch);
+  const { useLibrary } = await loadStore();
+  useLibrary.getState().selectPlaylist(playlist());
+
+  await useLibrary.getState().loadIndex("movie", "all");
+  await useLibrary.getState().loadCategory("movie:10");
+
+  expect(useLibrary.getState().itemsFor("movie", "movie:10")).toMatchObject({
+    state: "loaded",
+    value: [{ name: "Provider Movie Name" }],
+  });
+  expect(
+    fetch.mock.calls.some(([input]) => new URL(String(input)).searchParams.has("category_id")),
+  ).toBe(true);
+});
+
 test("duplicate requests share one category load and remember an empty category", async () => {
   const fetch = provider({ get_vod_streams: [] });
   vi.stubGlobal("fetch", fetch);
@@ -421,6 +527,34 @@ test("stale category and detail cache entries render first and refresh once whil
   expect(actions.filter((action) => action === "get_vod_info")).toHaveLength(1);
 });
 
+test("cached series details normalise legacy season order before publishing", async () => {
+  const key = "xtream:pl-1:v1:series:200";
+  disk.set(
+    key,
+    JSON.stringify({
+      key: "xtream:pl-1:series:200",
+      seriesId: "200",
+      episodes: [],
+      seasons: [0, 1, 2, "unassigned"],
+    }),
+  );
+  localStorage.setItem(`openiptv.at.${key}`, String(Date.now()));
+  const fetch = provider();
+  vi.stubGlobal("fetch", fetch);
+  const { useLibrary } = await loadStore();
+  useLibrary.getState().selectPlaylist(playlist());
+
+  await useLibrary.getState().loadSeries("xtream:pl-1:series:200");
+
+  expect(useLibrary.getState().seriesDetails["xtream:pl-1:series:200"].value?.seasons).toEqual([
+    1,
+    2,
+    0,
+    "unassigned",
+  ]);
+  expect(fetch).not.toHaveBeenCalled();
+});
+
 test("movie details and series seasons and episodes are cached independently", async () => {
   vi.stubGlobal("fetch", provider());
   const { useLibrary } = await loadStore();
@@ -618,7 +752,7 @@ test("a series detail resolves the legacy episode records it contains", async ()
   });
 });
 
-test("synthetic categories follow Continue, Favourites, All, and provider order", async () => {
+test("synthetic categories follow Continue and Favourites before provider order without All", async () => {
   vi.stubGlobal("fetch", provider());
   const { useLibrary } = await loadStore();
   const { usePersonal } = await import("../src/stores/personal");
@@ -654,7 +788,7 @@ test("synthetic categories follow Continue, Favourites, All, and provider order"
       .getState()
       .categoriesFor("movie")
       .map((row) => row.source),
-  ).toEqual(["continue", "favourites", "all", "provider"]);
+  ).toEqual(["continue", "favourites", "provider"]);
   expect(useLibrary.getState().itemsFor("movie", "movie:continue").value[0]).toMatchObject({
     name: "Continued movie",
   });
@@ -869,4 +1003,51 @@ test("an oversized complete index lands in the terminal too large state", async 
   await useLibrary.getState().loadSearch("movie");
 
   expect(useLibrary.getState().searchItems.movie.state).toBe("too-large");
+});
+
+test("a second category load joins the in-flight frame instead of settling early", async () => {
+  let settleMovies: ((value: Response) => void) | undefined;
+  const fetch = provider();
+  fetch.mockImplementation(async (input: string | URL) => {
+    const url = new URL(String(input));
+    const action = url.searchParams.get("action") ?? "authenticate";
+    if (action === "get_vod_streams" && url.searchParams.has("category_id")) {
+      return new Promise<Response>((resolve) => {
+        settleMovies = resolve;
+      });
+    }
+    return provider()(input);
+  });
+  vi.stubGlobal("fetch", fetch);
+  const { useLibrary } = await loadStore();
+  useLibrary.getState().selectPlaylist(playlist());
+
+  const first = useLibrary.getState().loadCategory("movie:10");
+  expect(useLibrary.getState().categoryItems["movie:10"]?.state).toBe("loading");
+  const second = useLibrary.getState().loadCategory("movie:10");
+
+  let secondSettled = false;
+  void second.then(() => {
+    secondSettled = true;
+  });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  expect(secondSettled).toBe(false);
+
+  await vi.waitFor(() => expect(typeof settleMovies).toBe("function"));
+  settleMovies?.(
+    response([
+      {
+        stream_id: "100",
+        category_id: "10",
+        name: "Joined Movie",
+        container_extension: "mp4",
+      },
+    ]),
+  );
+  await Promise.all([first, second]);
+  expect(secondSettled).toBe(true);
+  expect(useLibrary.getState().categoryItems["movie:10"]).toMatchObject({
+    state: "loaded",
+    items: [{ name: "Joined Movie" }],
+  });
 });

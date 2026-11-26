@@ -21,10 +21,23 @@ vi.mock("../src/services/personalDisk", () => ({
   writeLineup: vi.fn().mockResolvedValue(undefined),
   removeLineup: personalDisk.remove,
   clearLineups: personalDisk.clear,
+  writeLineupIfAbsent: vi.fn().mockResolvedValue(true),
 }));
 
 const KEY = "openiptv.settings";
 const m3u = (url: string) => ({ kind: "m3u" as const, url });
+const xtreamPlaylist = {
+  id: "pl-x",
+  name: "Provider",
+  source: {
+    kind: "xtream" as const,
+    server: "https://provider.example",
+    username: "viewer",
+    password: "secret",
+    output: "m3u8" as const,
+  },
+  sourceVersion: 1,
+};
 
 const load = () => {
   vi.resetModules();
@@ -50,8 +63,122 @@ test("a file written by an older version keeps working, and gains the new defaul
   assert.equal(s.resumeLast, false);
   assert.equal(s.aspectId, "fill", "what is new arrives at its default");
   assert.equal(s.continuousReconnect, false, "continuous reconnect stays opt in");
-  assert.equal("showPlaybackStats" in s, false, "the removed setting does not return");
+  assert.equal(s.showPlaybackStats, false, "the restored setting arrives at its default");
+  assert.equal(s.hideEmptyCategories, true, "empty categories stay hidden by default");
+  assert.equal(s.playlistShortcut, true, "playlist switching is available by default");
+  assert.equal(s.showLive, true, "every section starts on");
+  assert.equal(s.showMovies, true);
+  assert.equal(s.showSeries, true);
   assert.equal("panelTimeout" in s, false, "the removed setting does not return");
+});
+
+test("appearance preferences hydrate booleans and keep saved values", async () => {
+  localStorage.setItem(
+    KEY,
+    JSON.stringify({
+      playlists: [xtreamPlaylist],
+      activePlaylistId: "pl-x",
+      hideEmptyCategories: "yes",
+      playlistShortcut: "yes",
+      showLive: "no",
+      showMovies: false,
+      showSeries: 0,
+    }),
+  );
+  const { useSettings } = await load();
+  const s = useSettings.getState();
+
+  assert.equal(s.hideEmptyCategories, true, "malformed falls back to the default");
+  assert.equal(s.playlistShortcut, true, "malformed falls back to the default");
+  assert.equal(s.showLive, true, "malformed falls back to the default");
+  assert.equal(s.showMovies, false, "a saved false survives");
+  assert.equal(s.showSeries, true, "malformed falls back to the default");
+  const written = JSON.parse(localStorage.getItem(KEY) as string);
+  assert.equal(written.hideEmptyCategories, true);
+  assert.equal(written.playlistShortcut, true);
+  assert.equal(written.showLive, true);
+  assert.equal(written.showMovies, false);
+  assert.equal(written.showSeries, true);
+});
+
+test("the playlist shortcut remains disabled after settings are reloaded", async () => {
+  const first = await load();
+  first.useSettings.getState().set("playlistShortcut", false);
+  const second = await load();
+  assert.equal(second.useSettings.getState().playlistShortcut, false);
+});
+
+test("a saved state with every section disabled normalizes to one supported section before persisting", async () => {
+  localStorage.setItem(
+    KEY,
+    JSON.stringify({
+      playlists: [xtreamPlaylist],
+      activePlaylistId: "pl-x",
+      showLive: false,
+      showMovies: false,
+      showSeries: false,
+    }),
+  );
+  const { useSettings } = await load();
+  const s = useSettings.getState();
+
+  assert.equal(s.showLive, true, "at least one supported section must stay on");
+  assert.equal(s.showMovies, false);
+  assert.equal(s.showSeries, false);
+  const written = JSON.parse(localStorage.getItem(KEY) as string);
+  assert.equal(written.showLive, true);
+  assert.equal(written.showMovies, false);
+  assert.equal(written.showSeries, false);
+});
+
+test("an M3U state with Live disabled normalizes Live back on", async () => {
+  localStorage.setItem(
+    KEY,
+    JSON.stringify({
+      playlists: [{ id: "pl-m", name: "M3U", url: "http://a.invalid/x.m3u" }],
+      activePlaylistId: "pl-m",
+      showLive: false,
+      showMovies: true,
+      showSeries: true,
+    }),
+  );
+  const { useSettings } = await load();
+  const s = useSettings.getState();
+
+  assert.equal(s.showLive, true, "M3U only supports Live, so it cannot stay off");
+  assert.equal(s.showMovies, true, "the stored movie preference is preserved");
+  assert.equal(s.showSeries, true);
+  const written = JSON.parse(localStorage.getItem(KEY) as string);
+  assert.equal(written.showLive, true);
+  assert.equal(written.showMovies, true);
+});
+
+test("the last supported section cannot be switched off, and Live returns with an M3U source", async () => {
+  localStorage.setItem(
+    KEY,
+    JSON.stringify({ playlists: [xtreamPlaylist], activePlaylistId: "pl-x" }),
+  );
+  const { useSettings } = await load();
+  const s = () => useSettings.getState();
+
+  s().set("showLive", false);
+  s().set("showSeries", false);
+  assert.deepEqual([s().showLive, s().showMovies, s().showSeries], [false, true, false]);
+
+  s().set("showMovies", false);
+  assert.equal(s().showMovies, true, "the final supported section stays on");
+  assert.equal(JSON.parse(localStorage.getItem(KEY) as string).showMovies, true);
+
+  s().replacePlaylists(
+    [{ id: "pl-m", name: "M3U", source: m3u("http://a.invalid/x.m3u"), sourceVersion: 1 }],
+    "pl-m",
+  );
+  assert.equal(s().showLive, true, "Live returns when the source can no longer hide it");
+  assert.equal(s().showMovies, true, "the movie preference itself is preserved");
+  const written = JSON.parse(localStorage.getItem(KEY) as string);
+  assert.equal(written.showLive, true);
+  assert.equal(written.showMovies, true);
+  assert.equal(written.playlists[0].source.kind, "m3u");
 });
 
 test("keeps legacy order until every playlist record commits in settings", async () => {
@@ -98,13 +225,13 @@ test("continuous reconnect is false for new, old, malformed, and partial setting
   assert.equal(useSettings.getState().continuousReconnect, true);
 });
 
-test("the old playback information setting is removed on the canonical write", async () => {
+test("the restored playback information setting survives the canonical write", async () => {
   localStorage.setItem(KEY, JSON.stringify({ showPlaybackStats: true, showClock: false }));
   const { useSettings } = await load();
 
-  assert.equal("showPlaybackStats" in useSettings.getState(), false);
+  assert.equal(useSettings.getState().showPlaybackStats, true);
   const written = JSON.parse(localStorage.getItem(KEY) ?? "{}");
-  assert.equal("showPlaybackStats" in written, false);
+  assert.equal(written.showPlaybackStats, true);
 });
 
 test("a setting that no longer exists is dropped rather than carried for ever", async () => {
