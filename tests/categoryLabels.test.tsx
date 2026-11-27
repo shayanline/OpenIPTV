@@ -191,7 +191,7 @@ test.each([
     expect(labelStyle.textOverflow).toBe("ellipsis");
     expect(labelStyle.whiteSpace).toBe("nowrap");
     expect(label.textContent).toBe(names[1]);
-    expect(label.getAttribute("dir")).toBe("auto");
+    expect(label.getAttribute("dir")).toBeNull();
   },
 );
 
@@ -281,7 +281,7 @@ test.each(renderers)(
     for (const [index, row] of rows.entries()) {
       const label = labelOf(row);
       expect(label.textContent).toBe(names[index]);
-      expect(label.getAttribute("dir")).toBe("auto");
+      expect(label.getAttribute("dir")).toBeNull();
       expect(label.classList.contains("two-line")).toBe(false);
       expect(label.classList.contains("vertical")).toBe(false);
       expect(label.classList.contains("active")).toBe(false);

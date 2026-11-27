@@ -98,7 +98,6 @@ export function SearchField({
         }}
         placeholder={placeholder ?? t("search.channelName")}
         aria-label={ariaLabel ?? t("search.ariaLabel")}
-        dir="auto"
         spellCheck={false}
         autoComplete="off"
         /* An unrestricted keyboard rather than a search one. `enterkeyhint` would relabel the

@@ -560,7 +560,7 @@ const ENGLISH = {
   "error.checkNetwork": "It may be off the air. Check the network if other channels fail too.",
   "error.unsupportedFormat": "This channel sends a format the TV cannot decode.",
   "error.tryAnother": "Nothing here will fix it. Try another channel.",
-  "error.seekUnavailable": "This video cannot seek on this device.",
+  "error.seekUnavailable": "Could not seek to this position. Please try again.",
   "error.continueOrTryFormat": "Continue from the current position or try another format.",
   "error.finiteFormatUnsupported": "This video uses a format the player cannot decode.",
   "error.tryTelevisionOrVideo": "Try it on the television or choose another video.",
@@ -736,7 +736,9 @@ const ENGLISH = {
     "OpenIPTV is not affiliated with broadcasters or streaming services. Watch only content you are authorised to access.",
   "about.qr": "Scan the QR code to view the source code or report a problem.",
   "about.qrAlt": ({ url }) => `QR code linking to ${url}`,
-  "exit.question": "Close OpenIPTV?",
+  "exit.question": "Exit OpenIPTV?",
+  "exit.confirm": "Exit app",
+  "exit.stay": "Keep app open",
   "exit.body": "You can open it again from the Apps row.",
 } satisfies Record<string, Message>;
 
@@ -1358,11 +1360,13 @@ const PERSIAN: Partial<Record<MessageKey, Message>> = {
   "guide.seek": "ده ثانیه جلو یا عقب بروید",
   "search.mediaName": "نام فیلم یا سریال",
   "search.mediaAria": "جستجوی فیلم‌ها یا سریال‌ها بر اساس نام",
-  "error.seekUnavailable": "در این دستگاه نمی‌توان در این ویدیو جلو یا عقب رفت.",
+  "error.seekUnavailable": "رفتن به این بخش از ویدیو ممکن نشد. دوباره تلاش کنید.",
   "error.continueOrTryFormat": "از موقعیت فعلی ادامه دهید یا قالب دیگری را امتحان کنید.",
   "error.finiteFormatUnsupported": "این ویدیو قالبی دارد که پخش‌کننده نمی‌تواند رمزگشایی کند.",
   "error.tryTelevisionOrVideo": "آن را روی تلویزیون امتحان کنید یا ویدیوی دیگری انتخاب کنید.",
   "exit.question": "OpenIPTV بسته شود؟",
+  "exit.confirm": "خروج از برنامه",
+  "exit.stay": "باز نگه داشتن برنامه",
   "exit.body": "می‌توانید آن را دوباره از ردیف برنامه‌ها باز کنید.",
 };
 

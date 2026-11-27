@@ -1004,7 +1004,6 @@ export function Playlists({
         <TextInput
           id="pl-name"
           value={name}
-          dir="auto"
           disabled={operationBusy}
           onChange={(event) => {
             setName(event.target.value);
@@ -1064,7 +1063,6 @@ export function Playlists({
             variant="compact"
             autoFocus
             value={query}
-            dir="auto"
             spellCheck={false}
             autoComplete="off"
             placeholder={t("playlist.searchPlaylists")}
@@ -1108,7 +1106,7 @@ export function Playlists({
                       >
                         {number(s.playlists.findIndex((playlist) => playlist.id === p.id) + 1)}
                       </span>
-                      <span className="pl-name" dir="auto">
+                      <span className="pl-name">
                         {p.name}
                       </span>
                       <span className="pl-tags">

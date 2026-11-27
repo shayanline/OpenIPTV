@@ -425,15 +425,15 @@ function PlaybackDetailsContent({
                   <div ref={contentRef} className="playback-details-copy">
                     {episodePlayback ? (
                       <p className="playback-details-context">
-                        {parentName && <span dir="auto">{parentName}</span>}
+                        {parentName && <span>{parentName}</span>}
                         <span>{reference}</span>
                       </p>
                     ) : target.group ? (
-                      <p className="playback-details-context" dir="auto">
+                      <p className="playback-details-context">
                         {target.group}
                       </p>
                     ) : null}
-                    <h1 id="playback-details-title" dir="auto">
+                    <h1 id="playback-details-title">
                       {title}
                     </h1>
                     <VodDetailTags
@@ -445,11 +445,11 @@ function PlaybackDetailsContent({
                     />
                     {movieAgeRating && (
                       <div className="deck-tags vod-detail-tags playback-details-extra">
-                        <span dir="auto">{movieAgeRating}</span>
+                        <span>{movieAgeRating}</span>
                       </div>
                     )}
                     {synopsis && (
-                      <p className="playback-details-synopsis" dir="auto">
+                      <p className="playback-details-synopsis">
                         {synopsis}
                       </p>
                     )}
@@ -471,7 +471,7 @@ function PlaybackDetailsContent({
                         aria-label={t("content.series")}
                       >
                         <p className="playback-details-label">{t("content.series")}</p>
-                        <h2 dir="auto">{series.name}</h2>
+                        <h2>{series.name}</h2>
                         <VodDetailTags
                           year={seriesDate}
                           rating={seriesRating}
@@ -480,11 +480,11 @@ function PlaybackDetailsContent({
                         />
                         {series.metadata.ageRating && (
                           <div className="deck-tags vod-detail-tags playback-details-extra">
-                            <span dir="auto">{series.metadata.ageRating}</span>
+                            <span>{series.metadata.ageRating}</span>
                           </div>
                         )}
                         {series.plot && (
-                          <p className="playback-details-synopsis" dir="auto">
+                          <p className="playback-details-synopsis">
                             {series.plot}
                           </p>
                         )}

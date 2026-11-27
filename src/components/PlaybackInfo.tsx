@@ -1,5 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useLocale } from "../hooks/useLocale";
+import { usePlaybackPresence } from "../hooks/usePlaybackPresence";
+import { cssMs } from "../services/metrics";
 import { RETRY_DELAYS_MS, type RecoveryCause } from "../services/playbackRecovery";
 import type { PlaybackStats } from "../services/player";
 import { KeyGuide } from "./KeyGuide";
@@ -24,65 +26,93 @@ export function PlaybackInfo({
   seekable?: boolean;
 }) {
   const { t } = useLocale();
-  const [stats, setStats] = useState(() => (visible ? read() : null));
+  const [sample, setStats] = useState<PlaybackStats | null>(null);
+  const stats: Partial<PlaybackStats> = sample ?? {};
+  const { present, closing, onAnimationEnd } = usePlaybackPresence(visible);
+  const box = useRef<HTMLElement>(null);
 
   useEffect(() => {
     if (!visible) return;
-    setStats(read());
-    const timer = window.setInterval(() => setStats(read()), 1000);
-    return () => window.clearInterval(timer);
+    const element = box.current;
+    let interval: number | undefined;
+    let firstFrame = 0;
+    let secondFrame = 0;
+    let started = false;
+    // Native diagnostics can block Samsung's main thread, so let the entrance finish first.
+    const start = () => {
+      if (started) return;
+      started = true;
+      window.clearTimeout(timer);
+      firstFrame = requestAnimationFrame(() => {
+        secondFrame = requestAnimationFrame(() => {
+          setStats(read());
+          interval = window.setInterval(() => setStats(read()), 1000);
+        });
+      });
+    };
+    const entered = (event: AnimationEvent) => {
+      if (event.target === element && event.animationName === "pb-in") start();
+    };
+    const duration = cssMs("--t-med");
+    const timer = window.setTimeout(start, duration + 100);
+    element?.addEventListener("animationend", entered);
+    if (!duration) start();
+    return () => {
+      element?.removeEventListener("animationend", entered);
+      window.clearTimeout(timer);
+      window.clearInterval(interval);
+      cancelAnimationFrame(firstFrame);
+      cancelAnimationFrame(secondFrame);
+    };
   }, [read, visible]);
 
   const missing = t("diagnostics.notReported");
   const rows = [
-    ...(stats
-      ? [
-          [t("playbackInfo.engine"), stats.engine],
-          [
-            t("playbackInfo.resolution"),
-            stats.width && stats.height ? `${stats.width} × ${stats.height}` : missing,
-          ],
-          [
-            t("playbackInfo.dynamicRange"),
-            stats.dynamicRange === "PQ" ? "PQ (HDR)" : (stats.dynamicRange ?? missing),
-          ],
-          [t("playbackInfo.scan"), stats.scan ? t(`playbackInfo.${stats.scan}`) : missing],
-          [t("playbackInfo.videoCodec"), stats.videoCodec ?? missing],
-          [t("playbackInfo.audioCodec"), stats.audioCodec ?? missing],
-          [t("playbackInfo.bitrate"), rate(stats.bitrate) || missing],
-          [t("playbackInfo.bandwidth"), rate(stats.bandwidth) || missing],
-          [
-            t("playbackInfo.buffer"),
-            stats.bufferSeconds === undefined
-              ? missing
-              : `${Number(stats.bufferSeconds.toFixed(1))} s`,
-          ],
-          [
-            t("playbackInfo.frameRate"),
-            stats.frameRate === undefined
-              ? missing
-              : `${Number(stats.frameRate.toFixed(1))} fps`,
-          ],
-          [
-            t("playbackInfo.droppedFrames"),
-            stats.droppedFrames === undefined || stats.totalFrames === undefined
-              ? missing
-              : t("playbackInfo.frameCounts", {
-                  dropped: stats.droppedFrames,
-                  total: stats.totalFrames,
-                }),
-          ],
-          [
-            t("playbackInfo.level"),
-            stats.level === undefined || stats.levels === undefined
-              ? stats.levels === undefined
-                ? missing
-                : t("playbackInfo.autoLevels", { count: stats.levels })
-              : `${stats.level} / ${stats.levels}`,
-          ],
-          [t("playbackInfo.switches"), String(stats.switches)],
-        ]
-      : []),
+    [t("playbackInfo.engine"), stats.engine ?? missing],
+    [
+      t("playbackInfo.resolution"),
+      stats.width && stats.height ? `${stats.width} × ${stats.height}` : missing,
+    ],
+    [
+      t("playbackInfo.dynamicRange"),
+      stats.dynamicRange === "PQ" ? "PQ (HDR)" : (stats.dynamicRange ?? missing),
+    ],
+    [t("playbackInfo.scan"), stats.scan ? t(`playbackInfo.${stats.scan}`) : missing],
+    [t("playbackInfo.videoCodec"), stats.videoCodec ?? missing],
+    [t("playbackInfo.audioCodec"), stats.audioCodec ?? missing],
+    [t("playbackInfo.bitrate"), rate(stats.bitrate) || missing],
+    [t("playbackInfo.bandwidth"), rate(stats.bandwidth) || missing],
+    [
+      t("playbackInfo.buffer"),
+      stats.bufferSeconds === undefined
+        ? missing
+        : `${Number(stats.bufferSeconds.toFixed(1))} s`,
+    ],
+    [
+      t("playbackInfo.frameRate"),
+      stats.frameRate === undefined ? missing : `${Number(stats.frameRate.toFixed(1))} fps`,
+    ],
+    [
+      t("playbackInfo.droppedFrames"),
+      stats.droppedFrames === undefined || stats.totalFrames === undefined
+        ? missing
+        : t("playbackInfo.frameCounts", {
+            dropped: stats.droppedFrames,
+            total: stats.totalFrames,
+          }),
+    ],
+    [
+      t("playbackInfo.level"),
+      stats.level === undefined || stats.levels === undefined
+        ? stats.levels === undefined
+          ? missing
+          : t("playbackInfo.autoLevels", { count: stats.levels })
+        : `${stats.level} / ${stats.levels}`,
+    ],
+    [
+      t("playbackInfo.switches"),
+      stats.switches === undefined ? missing : String(stats.switches),
+    ],
     ...(recovery?.cause
       ? [[t("playbackInfo.recovery"), t(`recovery.cause.${recovery.cause}`)]]
       : []),
@@ -104,8 +134,11 @@ export function PlaybackInfo({
 
   return (
     <aside
-      className={`playback-info ${visible ? "visible" : ""}`.trim()}
+      ref={box}
+      className={`playback-info ${present ? "visible" : ""}${closing ? " playback-closing" : ""}`.trim()}
       aria-label={t("playbackInfo.title")}
+      aria-hidden={!visible || undefined}
+      onAnimationEnd={onAnimationEnd}
       data-recovery-cause={recovery?.cause ?? ""}
       data-seekable={seekable}
     >

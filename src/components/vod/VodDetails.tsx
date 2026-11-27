@@ -174,7 +174,7 @@ export function VodDetailTags({
           {rating}
         </span>
       )}
-      {genre && <span dir="auto">{genre}</span>}
+      {genre && <span>{genre}</span>}
       {duration && <span>{duration}</span>}
       {seasons !== undefined && seasons > 0 && (
         <span>{t("vod.seasons", { count: seasons })}</span>
@@ -326,13 +326,13 @@ export function VodDetails({
               }
             />
             {!!detail.plot && (
-              <p className="vod-synopsis" dir="auto">
+              <p className="vod-synopsis">
                 {detail.plot}
               </p>
             )}
             <VodCredits cast={detail.metadata.cast} director={detail.metadata.director} />
             {!!detail.metadata.ageRating && (
-              <p className="vod-credit" dir="auto">
+              <p className="vod-credit">
                 {detail.metadata.ageRating}
               </p>
             )}

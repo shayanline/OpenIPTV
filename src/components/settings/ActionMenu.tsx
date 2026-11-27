@@ -118,7 +118,7 @@ export function ActionMenu({
         onKeyDown={trapTab}
       >
         <h2>
-          <span dir="auto">{title}</span>
+          <span>{title}</span>
         </h2>
         <div className="action-menu-list" role="menu" aria-label={title}>
           {actions.map((action) => (

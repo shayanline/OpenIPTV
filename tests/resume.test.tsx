@@ -177,6 +177,34 @@ test("the panel is closed from the very first render, not closed afterwards", as
   assert.ok(!panelOpen(), "and it must still be closed once the channel is playing");
 });
 
+test("resume keeps the rail and panel motion hidden while a playlist is loading", async () => {
+  let finish!: (response: Response) => void;
+  const response = new Promise<Response>((resolve) => {
+    finish = resolve;
+  });
+  await mountApp(PLAYLIST, {
+    resume: "a",
+    awaitPlaylist: false,
+    fetchImplementation: () => response,
+  });
+
+  const assertHidden = () => {
+    assert.equal(
+      document.querySelector(".app-navigation")?.getAttribute("aria-hidden"),
+      "true",
+    );
+    assert.ok(document.querySelector(".app")?.classList.contains("live-panel-motion"));
+    assert.ok(!panelOpen());
+  };
+  assert.ok(document.querySelector(".splash"));
+  assertHidden();
+
+  await act(async () => finish(new Response(PLAYLIST, { status: 200 })));
+  await settle();
+  assertHidden();
+  assert.deepEqual(played, ["http://example.invalid/a.m3u8"]);
+});
+
 test("the cursor is left on the resumed channel, so opening the list lands on it", async () => {
   await mountApp(PLAYLIST, { resume: "c" });
   // Gamma is the only channel in Sport, so the rail has to be on Sport rather than on the

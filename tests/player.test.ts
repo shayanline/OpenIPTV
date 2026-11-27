@@ -756,11 +756,12 @@ test("finite AVPlay reports position and duration in seconds", () => {
   assert.equal(player.getDuration(), 90);
 });
 
-test("AVPlay applies a saved finite position only after READY and before play", () => {
+test("AVPlay applies a saved finite position only after READY and before play", async () => {
   player.play(finiteRequest(undefined, { startSeconds: 35 }));
   expect(av.calls).not.toContain("seekTo:35000");
 
   av.prepared?.ok();
+  await vi.advanceTimersByTimeAsync(0);
   const seek = av.calls.indexOf("seekTo:35000");
   expect(seek).toBeGreaterThan(av.calls.indexOf("prepareAsync"));
   expect(seek).toBeLessThan(av.calls.indexOf("play"));
@@ -777,7 +778,7 @@ test("finite AVPlay continues from zero when initial seek is unavailable", () =>
   assert.ok(av.calls.includes("play"));
 });
 
-test("finite AVPlay continues from zero when initial seek is rejected", () => {
+test("finite AVPlay continues from zero when initial seek is rejected", async () => {
   av.seekTo = (_ms: number, _ok: () => void, fail: (error: unknown) => void) => {
     av.calls.push("seekTo:rejected");
     fail({ name: "InvalidStateError" });
@@ -787,7 +788,8 @@ test("finite AVPlay continues from zero when initial seek is rejected", () => {
   assert.ok(av.calls.includes("prepareAsync"));
   assert.deepEqual(codes(), []);
   av.prepared?.ok();
-  assert.match(player.getResumeLimitation() ?? "", /SEEK_FAILED InvalidStateError/);
+  await vi.advanceTimersByTimeAsync(200);
+  assert.match(player.getResumeLimitation() ?? "", /SEEK_FAILED/);
   assert.ok(av.calls.includes("play"));
 });
 
@@ -797,7 +799,7 @@ test("finite AVPlay seeks forward and backward by ten seconds with clamping", as
   av.setTime(115_000);
 
   assert.equal(await player.seekTo(120), true);
-  assert.equal(player.getPosition(), 120);
+  assert.equal(player.getPosition(), 119.999);
   assert.equal(await player.seekTo(110), true);
   assert.equal(player.getPosition(), 110);
 });
@@ -822,7 +824,9 @@ test("rejected finite AVPlay seeking is nonfatal and playback can continue", asy
   av.prepared?.ok();
   av.setTime(20_000);
 
-  assert.equal(await player.seekTo(30), false);
+  const pending = player.seekTo(30);
+  await vi.advanceTimersByTimeAsync(200);
+  assert.equal(await pending, false);
   assert.equal(player.getPosition(), 20);
   assert.deepEqual(codes(), []);
   assert.equal(av.getState(), "PLAYING");
@@ -1082,6 +1086,64 @@ test("an absolute AVPlay seek resolves false when the engine never calls back", 
   await expect(pending).resolves.toBe(false);
 });
 
+test("AVPlay waits for the resume seek callback before reading tracks or starting play", async () => {
+  let complete = () => {};
+  av.seekTo = (_milliseconds, ok) => {
+    complete = ok;
+  };
+  const tracks = vi.spyOn(av, "getTotalTrackInfo");
+  player.play(finiteRequest(undefined, { startSeconds: 35 }));
+  av.prepared?.ok();
+  expect(av.calls).not.toContain("play");
+  expect(tracks).not.toHaveBeenCalled();
+  complete();
+  await vi.advanceTimersByTimeAsync(0);
+  expect(tracks).toHaveBeenCalled();
+  expect(av.calls).toContain("play");
+});
+
+test("a transient first AVPlay seek rejection retries without another viewer request", async () => {
+  player.play(finiteRequest());
+  av.prepared?.ok();
+  let attempts = 0;
+  av.seekTo = (_milliseconds, ok, fail) => {
+    if (++attempts === 1) fail({ name: "InvalidStateError" });
+    else ok();
+  };
+  const pending = player.seekTo(45);
+  expect(attempts).toBe(1);
+  await vi.advanceTimersByTimeAsync(200);
+  await expect(pending).resolves.toBe(true);
+  expect(attempts).toBe(2);
+});
+
+test("an AVPlay seek retry never runs against a replacement target", async () => {
+  player.play(finiteRequest());
+  av.prepared?.ok();
+  let attempts = 0;
+  av.seekTo = (_milliseconds, _ok, fail) => {
+    attempts += 1;
+    fail({ name: "InvalidStateError" });
+  };
+  const pending = player.seekTo(45);
+  player.play(finiteRequest("http://example.invalid/another.mp4"));
+  await vi.advanceTimersByTimeAsync(200);
+  await expect(pending).resolves.toBe(false);
+  expect(attempts).toBe(1);
+});
+
+test("AVPlay seeking clamps below the finite duration and never retries unsupported content", async () => {
+  player.play(finiteRequest());
+  av.prepared?.ok();
+  await expect(player.seekTo(120)).resolves.toBe(true);
+  expect(av.calls).toContain("seekTo:119999");
+  const seek = vi.fn((_milliseconds, _ok, fail) => fail({ name: "NotSupportedError" }));
+  av.seekTo = seek;
+  await expect(player.seekTo(45)).resolves.toBe(false);
+  await vi.advanceTimersByTimeAsync(200);
+  expect(seek).toHaveBeenCalledOnce();
+});
+
 test.each([
   ["network", "startPositions"],
   ["media", "mediaRecoveries"],
@@ -1139,6 +1201,34 @@ test("AVPlay track selection obeys legal states and subtitle Off clears the cue"
   expect(player.selectTrack("subtitle", null)).toBe(true);
   expect(av.calls).toContain("setSilentSubtitle:true");
   expect(events).toContainEqual({ type: "subtitle", text: "", durationMs: 0 });
+});
+
+test("AVPlay selection updates the cached track flags instead of rereading stale flags", () => {
+  av.getTotalTrackInfo = () => [
+    { index: 1, type: "AUDIO", extra_info: '{"language":"en","selected":true}' },
+    { index: 2, type: "AUDIO", extra_info: '{"language":"fa","selected":false}' },
+  ];
+  player.play(liveRequest());
+  av.prepared?.ok();
+  const reread = vi.spyOn(av, "getTotalTrackInfo");
+  expect(player.selectTrack("audio", 2)).toBe(true);
+  expect(
+    player
+      .getTracks()
+      .filter((track) => track.selected)
+      .map((track) => track.engineIndex),
+  ).toEqual([2]);
+  expect(reread).not.toHaveBeenCalled();
+  expect(av.calls.filter((call) => call === "setSelectTrack:AUDIO:2")).toHaveLength(1);
+});
+
+test("a compatibility handover stops AVPlay without closing its decoder", () => {
+  player.play(liveRequest());
+  av.prepared?.ok();
+  av.calls.length = 0;
+  player.stop(false);
+  expect(av.calls).toContain("stop");
+  expect(av.calls).not.toContain("close");
 });
 
 test("callbacks from a torn down target are ignored", () => {

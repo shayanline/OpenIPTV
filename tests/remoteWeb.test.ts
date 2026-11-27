@@ -761,7 +761,7 @@ test("labels playlist fields and actions with their context", async () => {
   const menuTitle = dialog.querySelector(".item-menu-title");
   expect(menuTitle?.textContent).toBe("One");
   expect(menuTitle?.getAttribute("dir")).toBeNull();
-  expect(menuTitle?.querySelector("span")?.getAttribute("dir")).toBe("auto");
+  expect(menuTitle?.querySelector("span")?.getAttribute("dir")).toBeNull();
   (dialog.querySelector("[data-item-menu-close]") as HTMLButtonElement).click();
   expect(document.querySelector("[data-item-action-dialog]")).toBeNull();
   expect(itemMenuTrigger("playlist", "one").getAttribute("aria-expanded")).toBe("false");
@@ -877,6 +877,44 @@ test("uses remembered authentication and applies the TV language direction", asy
     document.querySelector('.manage-rail .manage-nav-link[aria-current="page"]')?.textContent,
   ).toContain(labels.content);
 });
+
+test.each(["ltr", "rtl"] as const)(
+  "the physical remote stays fixed and centres its rocker buttons under %s",
+  async (direction) => {
+    localStorage.setItem("openiptv.remote", JSON.stringify({ deviceId: "p", credential: "c" }));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() =>
+        reply(200, snapshot({ direction, locale: direction === "rtl" ? "fa" : "en" })),
+      ),
+    );
+    const style = document.createElement("style");
+    style.textContent = readFileSync("public/remote/remote.css", "utf8");
+    document.head.append(style);
+    try {
+      await loadApp().start();
+      expect(document.documentElement.dir).toBe(direction);
+      const remote = document.querySelector<HTMLElement>(".remote-sheet")!;
+      expect(remote.dir).toBe("ltr");
+      for (const page of remote.querySelectorAll<HTMLElement>(".remote-page")) {
+        expect(getComputedStyle(page).direction).toBe("ltr");
+      }
+      expect(
+        [...remote.querySelectorAll(".touch-rocker button")].map((button) =>
+          button.getAttribute("data-remote-key"),
+        ),
+      ).toEqual(["448", "449", "427", "428"]);
+      for (const button of remote.querySelectorAll<HTMLElement>(".touch-rocker button")) {
+        const computed = getComputedStyle(button);
+        expect(computed.display).toBe("grid");
+        expect(computed.placeItems).toBe("center");
+        expect(computed.textAlign).toBe("center");
+      }
+    } finally {
+      style.remove();
+    }
+  },
+);
 
 test("matches the player welcome field order", async () => {
   localStorage.setItem("openiptv.remote", JSON.stringify({ deviceId: "p", credential: "c" }));
@@ -2185,62 +2223,66 @@ test("sends every lineup operation with the current revision and a fresh request
   ).toBe(true);
 });
 
-test("preserves exact bidirectional text and accessible lineup actions", async () => {
-  localStorage.setItem("openiptv.remote", JSON.stringify({ deviceId: "p", credential: "c" }));
-  const exact = "العربية فارسی 👩‍👩‍👧‍👦 é English";
-  vi.stubGlobal(
-    "fetch",
-    vi
-      .fn()
-      .mockImplementationOnce(() => reply(200, lineupSnapshot({ direction: "rtl" })))
-      .mockImplementationOnce(() =>
-        reply(
-          200,
-          lineupPage(
-            [
-              {
-                kind: "category",
-                id: "News",
-                contentKind: "live",
-                name: exact,
-                providerName: exact,
-                hidden: true,
-                count: 1,
-                unavailableCount: 0,
-              },
-            ],
-            null,
-            1,
-            3,
-            undefined,
-            "custom",
+test.each(["ltr", "rtl"])(
+  "preserves provider text under the %s app direction",
+  async (direction) => {
+    localStorage.setItem("openiptv.remote", JSON.stringify({ deviceId: "p", credential: "c" }));
+    const exact = "العربية فارسی 👩‍👩‍👧‍👦 é English";
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockImplementationOnce(() => reply(200, lineupSnapshot({ direction })))
+        .mockImplementationOnce(() =>
+          reply(
+            200,
+            lineupPage(
+              [
+                {
+                  kind: "category",
+                  id: "News",
+                  contentKind: "live",
+                  name: exact,
+                  providerName: exact,
+                  hidden: true,
+                  count: 1,
+                  unavailableCount: 0,
+                },
+              ],
+              null,
+              1,
+              3,
+              undefined,
+              "custom",
+            ),
           ),
         ),
-      ),
-  );
-  window.history.replaceState({}, "", "/#playlists/list");
-  await loadApp().start();
-  openPlaylistContent();
-  await vi.waitFor(() =>
-    expect(document.querySelector(".lineup-row-category strong")?.textContent).toBe(exact),
-  );
-  expect(document.querySelector(".lineup-row-category strong")?.getAttribute("dir")).toBe(
-    "auto",
-  );
-  const hiddenCategoryRow = document.querySelector(".lineup-row-category") as HTMLElement;
-  expect(hiddenCategoryRow.textContent).toContain("Hidden");
-  const categoryMain = hiddenCategoryRow.querySelector(".lineup-row-main") as HTMLElement;
-  const categoryTag = hiddenCategoryRow.querySelector(".lineup-hidden-tag") as HTMLElement;
-  expect(categoryTag).toBeTruthy();
-  expect(categoryTag.textContent).toBe("Hidden");
-  expect(categoryMain.contains(categoryTag)).toBe(false);
-  expect(categoryMain.nextElementSibling).toBe(categoryTag);
-  expect(document.querySelector('[data-lineup-action="move"]')).toBeNull();
-  await enterRemoteReorder();
-  const sortRow = document.querySelector("[data-lineup-sort]") as HTMLElement;
-  expect(sortRow?.getAttribute("aria-label")).toContain(exact);
-  expect(document.documentElement.dir).toBe("rtl");
-});
+    );
+    window.history.replaceState({}, "", "/#playlists/list");
+    await loadApp().start();
+    openPlaylistContent();
+    await vi.waitFor(() =>
+      expect(document.querySelector(".lineup-row-category strong")?.textContent).toBe(exact),
+    );
+    const categoryName = document.querySelector(".lineup-row-category strong");
+    expect(categoryName?.getAttribute("dir")).toBeNull();
+    expect(categoryName?.closest("[dir]")?.getAttribute("dir")).toBe(direction);
+    expect(document.querySelector('[dir="auto"]')).toBeNull();
+    const hiddenCategoryRow = document.querySelector(".lineup-row-category") as HTMLElement;
+    expect(hiddenCategoryRow.textContent).toContain("Hidden");
+    const categoryMain = hiddenCategoryRow.querySelector(".lineup-row-main") as HTMLElement;
+    const categoryTag = hiddenCategoryRow.querySelector(".lineup-hidden-tag") as HTMLElement;
+    expect(categoryTag).toBeTruthy();
+    expect(categoryTag.textContent).toBe("Hidden");
+    expect(categoryMain.contains(categoryTag)).toBe(false);
+    expect(categoryMain.nextElementSibling).toBe(categoryTag);
+    expect(document.querySelector('[data-lineup-action="move"]')).toBeNull();
+    await enterRemoteReorder();
+    const sortRow = document.querySelector("[data-lineup-sort]") as HTMLElement;
+    expect(sortRow?.getAttribute("aria-label")).toContain(exact);
+    expect(document.documentElement.dir).toBe(direction);
+  },
+);
 
 test("a field conflict keeps its draft visible without replay", async () => {
   localStorage.setItem("openiptv.remote", JSON.stringify({ deviceId: "p", credential: "c" }));
@@ -3746,6 +3788,45 @@ test("a failed playlist edit keeps the typed draft", async () => {
   ).toBe(false);
 });
 
+test("playlist activation keeps refresh progress on its row after the phone menu closes", async () => {
+  const command = deferredReply();
+  const playlists = [
+    ...snapshot().playlists,
+    {
+      id: "pl-2",
+      name: "Sport",
+      source: { kind: "m3u", url: "http://example.com/sport.m3u" },
+      sourceVersion: 1,
+    },
+  ];
+  const before = snapshot({ playlists });
+  const after = snapshot({ playlists, activePlaylistId: "pl-2", revision: 1 });
+  await startSavedRemote(
+    vi.fn((path: string) => {
+      if (path === "/api/v1/state") return reply(200, before);
+      if (path === "/api/v1/command") return command.promise;
+      return reply(404, {});
+    }),
+  );
+  playlistMenuAction("pl-2", "activate");
+  const card = () =>
+    document
+      .querySelector('[data-item-open="playlist"][data-id="pl-2"]')!
+      .closest(".playlist-card")!;
+  expect(document.querySelector("[data-item-action-dialog]")).toBeNull();
+  expect(card().getAttribute("aria-busy")).toBe("true");
+  const progress = card().querySelector(".playlist-card-progress");
+  expect(progress?.textContent).toBe(labels.refreshing);
+  expect(progress?.getAttribute("role")).toBe("progressbar");
+  expect(progress?.getAttribute("aria-label")).toContain("Sport");
+  expect(progress?.querySelector(".form-spinner")).toBeTruthy();
+  expect(card().querySelector(".playlist-card-menu")?.contains(progress)).toBe(false);
+  command.complete(200, { ok: true, snapshot: after });
+  await vi.waitFor(() => expect(card().getAttribute("aria-busy")).toBeNull());
+  expect(card().querySelector(".playlist-card-progress")).toBeNull();
+  expect(card().querySelector(".active-badge")).toBeTruthy();
+});
+
 test.each(["success", "failure", "cancel", "route"])(
   "refresh loading resolves safely on %s",
   async (ending) => {
@@ -4217,7 +4298,7 @@ test("the channel editor restores provider values through explicit draft intent"
   const channelRow = document.querySelector(".lineup-row-channel") as HTMLElement;
   expect(channelRow.querySelector(".lineup-channel-number")?.textContent).toBe("42");
   expect(channelRow.querySelector(".lineup-channel-name")?.textContent).toBe("قناة مخصصة");
-  expect(channelRow.querySelector(".lineup-channel-name")?.getAttribute("dir")).toBe("auto");
+  expect(channelRow.querySelector(".lineup-channel-name")?.getAttribute("dir")).toBeNull();
   await vi.waitFor(() =>
     expect(document.querySelector('[data-lineup-edit][data-id="channel-1"]')).toBeTruthy(),
   );
@@ -10567,8 +10648,9 @@ test("a deferred menu refresh preserves page focus and shows persistent feedback
   });
   expect(document.querySelectorAll('[data-action="playlist-refresh"]')).toHaveLength(0);
   expect(document.querySelectorAll("[data-operation-status]")).toHaveLength(1);
-  expect(document.querySelector(".playlist-state-progress")).toBeNull();
-  expect(card().textContent ?? "").not.toContain("Refreshing");
+  expect(card().querySelector(".playlist-card-progress")).toBeTruthy();
+  expect(card().textContent ?? "").toContain("Refreshing");
+  expect(card().getAttribute("aria-busy")).toBe("true");
   await vi.waitFor(() => {
     expect(document.activeElement).toBe(menuTrigger());
   });
@@ -10591,6 +10673,8 @@ test("a deferred menu refresh preserves page focus and shows persistent feedback
   });
   expect(document.querySelectorAll('[data-action="playlist-refresh"]')).toHaveLength(0);
   expect(document.querySelectorAll("[data-operation-status]")).toHaveLength(1);
+  expect(card().querySelector(".playlist-card-progress")).toBeNull();
+  expect(card().getAttribute("aria-busy")).toBeNull();
 });
 
 test("the add overlay dismisses on its backdrop and keeps the list mounted", async () => {

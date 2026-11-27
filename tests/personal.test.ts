@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { beforeEach, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { Playlist } from "../src/stores/settings";
 import type { Channel } from "../src/types";
 
@@ -61,6 +61,80 @@ async function personal() {
 beforeEach(() => {
   localStorage.clear();
   vi.resetModules();
+});
+
+afterEach(async () => {
+  const { usePersonal } = await personal();
+  usePersonal.getState().clearPersonal();
+  vi.useRealTimers();
+});
+
+test("Live memory updates immediately while personal serialization waits for idle", async () => {
+  vi.useFakeTimers();
+  const { usePersonal } = await personal();
+  const writes = vi.spyOn(Storage.prototype, "setItem");
+  writes.mockClear();
+  const first = {
+    playlistId: "first",
+    kind: "live" as const,
+    itemKey: "alpha",
+    categoryKey: "News",
+  };
+  const second = { ...first, itemKey: "beta" };
+
+  usePersonal.getState().rememberLast(first);
+  usePersonal.getState().rememberLast(second);
+  expect(usePersonal.getState().lastPlayed).toEqual(second);
+  expect(writes).not.toHaveBeenCalled();
+
+  await vi.advanceTimersByTimeAsync(1000);
+  expect(writes).toHaveBeenCalledTimes(1);
+  expect(JSON.parse(localStorage.getItem("openiptv.personal") ?? "{}").lastPlayed).toEqual(
+    second,
+  );
+});
+
+test("a queued Live save cannot recreate cleared personal state", async () => {
+  vi.useFakeTimers();
+  const { usePersonal } = await personal();
+  usePersonal.getState().rememberLast({
+    playlistId: "first",
+    kind: "live",
+    itemKey: "alpha",
+    categoryKey: "News",
+  });
+
+  usePersonal.getState().clearPersonal();
+  await vi.advanceTimersByTimeAsync(1000);
+
+  expect(localStorage.getItem("openiptv.personal")).toBeNull();
+  expect(usePersonal.getState().lastPlayed).toBeNull();
+});
+
+test("a later finite selection persists once and supersedes a queued Live save", async () => {
+  vi.useFakeTimers();
+  const { usePersonal } = await personal();
+  const writes = vi.spyOn(Storage.prototype, "setItem");
+  writes.mockClear();
+  usePersonal.getState().rememberLast({
+    playlistId: "first",
+    kind: "live",
+    itemKey: "alpha",
+    categoryKey: "News",
+  });
+  const movie = {
+    playlistId: "first",
+    kind: "movie" as const,
+    itemKey: "movie",
+    categoryKey: "Cinema",
+  };
+
+  usePersonal.getState().rememberLast(movie);
+  expect(JSON.parse(localStorage.getItem("openiptv.personal") ?? "{}").lastPlayed).toEqual(
+    movie,
+  );
+  await vi.advanceTimersByTimeAsync(1000);
+  expect(writes).toHaveBeenCalledTimes(1);
 });
 
 test("ordinary legacy favourites and last channel adopt against the loaded playlist", async () => {

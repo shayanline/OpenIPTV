@@ -603,13 +603,15 @@ export default {
   "guide.seek": "Avancer ou reculer de dix secondes",
   "search.mediaName": "Nom du film ou de la série",
   "search.mediaAria": "Rechercher les films ou séries par nom",
-  "error.seekUnavailable": "Ce contenu ne peut pas être parcouru sur cet appareil.",
+  "error.seekUnavailable": "Impossible d'atteindre cette position. Réessayez.",
   "error.continueOrTryFormat":
     "Continuez depuis la position actuelle ou essayez un autre format.",
   "error.finiteFormatUnsupported":
     "Cette vidéo utilise un format que le lecteur ne peut pas décoder.",
   "error.tryTelevisionOrVideo": "Essayez sur le téléviseur ou choisissez une autre vidéo.",
   "exit.question": "Fermer OpenIPTV ?",
+  "exit.confirm": "Quitter l’application",
+  "exit.stay": "Garder l’application ouverte",
   "exit.body": "Vous pourrez le rouvrir depuis la rangée des applications.",
   "lineup.playlistSettings": "Réglages de la playlist",
   "lineup.categoryVisibility": "Visibilité des catégories",

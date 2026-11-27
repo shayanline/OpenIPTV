@@ -6,7 +6,12 @@ import {
   safeLiveTarget,
 } from "../src/services/playbackRange";
 import type { PlaybackClock, PlayerEvent } from "../src/services/player";
-import type { PlaybackTarget } from "../src/types";
+import {
+  clearPlaybackTrackChoices,
+  playbackTrackChoices,
+  rememberPlaybackTrackChoice,
+} from "../src/services/playbackTrackChoices";
+import type { MediaTrack, PlaybackTarget } from "../src/types";
 
 const playerMock = vi.hoisted(() => ({
   instances: [] as Array<{
@@ -21,6 +26,8 @@ const playerMock = vi.hoisted(() => ({
     warmRecover: ReturnType<typeof vi.fn>;
     hide: ReturnType<typeof vi.fn>;
     show: ReturnType<typeof vi.fn>;
+    getTracks: ReturnType<typeof vi.fn>;
+    selectTrack: ReturnType<typeof vi.fn>;
     clock: PlaybackClock;
   }>,
 }));
@@ -61,12 +68,8 @@ vi.mock("../src/services/player", () => ({
     canPause() {
       return true;
     }
-    getTracks() {
-      return [];
-    }
-    selectTrack() {
-      return false;
-    }
+    getTracks = vi.fn(() => [] as MediaTrack[]);
+    selectTrack = vi.fn(() => false);
     getStats() {
       return { engine: "AVPlay", switches: 0 };
     }
@@ -150,6 +153,7 @@ function mount(compatibility = false, continuousReconnect = false) {
 
 beforeEach(() => {
   vi.useFakeTimers();
+  clearPlaybackTrackChoices();
   playerMock.instances.length = 0;
   repairMock.idleRepair.mockReset();
   repairMock.prepare.mockReset().mockResolvedValue(null);
@@ -181,6 +185,230 @@ test("channel stepping names the landing channel now and tunes once the pressing
   expect(playerMock.instances[0].play).toHaveBeenCalledTimes(2);
 });
 
+test("a normal channel press tunes after feedback paints without waiting for release", async () => {
+  const { result } = mount();
+  const next = { ...live, id: "live-2", url: "http://example.invalid/2.m3u8" };
+  act(() => result.current.start(live));
+  act(() => result.current.step(1, [live, next]));
+  expect(result.current.preview?.id).toBe(next.id);
+  expect(playerMock.instances[0].play).toHaveBeenCalledTimes(1);
+  await act(async () => vi.advanceTimersByTimeAsync(48));
+  expect(playerMock.instances[0].play).toHaveBeenLastCalledWith(
+    expect.objectContaining({ url: next.url }),
+  );
+  expect(result.current.snapshot.target?.id).toBe(next.id);
+});
+
+test("held channel repeats coalesce until release instead of opening every preview", async () => {
+  const { result } = mount();
+  const next = { ...live, id: "live-2", url: "http://example.invalid/2.m3u8" };
+  act(() => {
+    result.current.start(live);
+    result.current.step(1, [live, next], true);
+  });
+  await act(async () => vi.advanceTimersByTimeAsync(100));
+  expect(playerMock.instances[0].play).toHaveBeenCalledTimes(1);
+  act(() => result.current.commitStep());
+  await act(async () => vi.advanceTimersByTimeAsync(48));
+  expect(playerMock.instances[0].play).toHaveBeenCalledTimes(2);
+});
+
+test("compatibility checks stop the old stream immediately without releasing its decoder", async () => {
+  const { result } = mount(true);
+  await act(async () => result.current.start(live));
+  const next = { ...live, id: "live-2", url: "http://example.invalid/2.m3u8" };
+  let finish!: (value: null) => void;
+  repairMock.prepare.mockReturnValueOnce(
+    new Promise<null>((resolve) => {
+      finish = resolve;
+    }),
+  );
+  act(() => result.current.step(1, [live, next]));
+  await act(async () => vi.advanceTimersByTimeAsync(48));
+  expect(repairMock.prepare).toHaveBeenLastCalledWith(next.url, next.playlistId);
+  expect(playerMock.instances[0].stop).toHaveBeenLastCalledWith(false);
+  expect(playerMock.instances[0].play).toHaveBeenCalledTimes(1);
+  expect(result.current.snapshot.target?.id).toBe(next.id);
+  expect(result.current.snapshot.phase).toBe("connecting");
+  await act(async () => finish(null));
+  expect(playerMock.instances[0].play).toHaveBeenLastCalledWith(
+    expect.objectContaining({ url: next.url }),
+  );
+});
+
+test("stale synchronous track events cannot recursively reapply an audio choice", () => {
+  const { result } = mount();
+  act(() => result.current.start(live));
+  const instance = playerMock.instances[0];
+  const tracks: MediaTrack[] = [
+    {
+      id: "a",
+      identity: "a",
+      engineIndex: 1,
+      kind: "audio",
+      label: "A",
+      language: "en",
+      selected: true,
+    },
+    {
+      id: "b",
+      identity: "b",
+      engineIndex: 2,
+      kind: "audio",
+      label: "B",
+      language: "fa",
+      selected: false,
+    },
+  ];
+  instance.getTracks.mockReturnValue(tracks);
+  act(() => instance.emit({ type: "playing" }));
+  let calls = 0;
+  instance.selectTrack.mockImplementation(() => {
+    if (++calls < 4) instance.emit({ type: "tracks", tracks });
+    return true;
+  });
+  act(() => result.current.selectTrack("audio", 2, { identity: "b" }));
+  expect(calls).toBe(1);
+  act(() => instance.emit({ type: "tracks", tracks }));
+  expect(calls).toBe(2);
+});
+
+test("track choices return with their item after stop without changing a different item", () => {
+  const { result } = mount();
+  const first = { ...live, id: "first" };
+  const other = { ...live, id: "other", url: "http://example.invalid/other.m3u8" };
+  act(() => result.current.start(first));
+  const instance = playerMock.instances[0];
+  instance.selectTrack.mockReturnValue(true);
+  const tracks: MediaTrack[] = [
+    { id: "en", identity: "en", engineIndex: 1, kind: "audio", language: "en", label: "English", selected: true },
+    { id: "fa", identity: "fa", engineIndex: 2, kind: "audio", language: "fa", label: "Farsi", selected: false },
+    { id: "de", identity: "de", engineIndex: 3, kind: "subtitle", language: "de", label: "German", selected: true },
+  ];
+  instance.getTracks.mockReturnValue(tracks);
+  act(() => {
+    instance.emit({ type: "playing" });
+    result.current.selectTrack("audio", 2, { identity: "fa" });
+    result.current.selectTrack("subtitle", null, { identity: null });
+    result.current.stop();
+    result.current.start(other);
+  });
+  instance.selectTrack.mockClear();
+  act(() => {
+    instance.emit({ type: "tracks", tracks });
+    instance.emit({ type: "playing" });
+  });
+  expect(instance.selectTrack).not.toHaveBeenCalled();
+
+  act(() => {
+    result.current.stop();
+    result.current.start(first);
+  });
+  instance.selectTrack.mockClear();
+  act(() => instance.emit({ type: "tracks", tracks }));
+  expect(instance.selectTrack).not.toHaveBeenCalled();
+  act(() => instance.emit({ type: "playing" }));
+  expect(instance.selectTrack).toHaveBeenCalledWith("audio", 2);
+  expect(instance.selectTrack).toHaveBeenCalledWith("subtitle", null);
+});
+
+test.each([live, movie, episode])(
+  "$kind restores saved tracks after reopening in a new controller, after Play resets defaults",
+  (target) => {
+    const tracks: MediaTrack[] = (["audio", "subtitle"] as const).flatMap((kind, group) =>
+      ["en", "fa"].map((language, index) => ({
+        id: `${kind}-${language}`,
+        identity: `${kind}-${language}`,
+        engineIndex: group * 2 + index,
+        kind,
+        language,
+        label: language,
+        selected: index === 0,
+      })),
+    );
+    const first = mount();
+    act(() => first.result.current.start(target));
+    const original = playerMock.instances[0];
+    original.getTracks.mockReturnValue(tracks);
+    original.selectTrack.mockReturnValue(true);
+    act(() => {
+      original.emit({ type: "playing" });
+      first.result.current.selectTrack("audio", 1, { identity: "audio-fa" });
+      first.result.current.selectTrack("subtitle", 3, { identity: "subtitle-fa" });
+      first.result.current.stop();
+    });
+    first.unmount();
+
+    const reopened = mount();
+    act(() =>
+      reopened.result.current.start({
+        ...target,
+        resumeAt: target.mode === "finite" ? 64 : undefined,
+      }),
+    );
+    const engine = playerMock.instances[1];
+    // Metadata can still claim the desired tracks are selected while Play resets output.
+    engine.getTracks.mockReturnValue(
+      tracks.map((track) => ({ ...track, selected: track.language === "fa" })),
+    );
+    let playing = false;
+    const output: { audio: number | null; subtitle: number | null } = {
+      audio: 0,
+      subtitle: 2,
+    };
+    engine.selectTrack.mockImplementation(
+      (kind: "audio" | "subtitle", index: number | null) => {
+        if (!playing) return false;
+        output[kind] = index;
+        return true;
+      },
+    );
+    act(() => engine.emit({ type: "tracks", tracks: engine.getTracks() }));
+    expect(engine.selectTrack).not.toHaveBeenCalled();
+
+    playing = true;
+    act(() => engine.emit({ type: "playing" }));
+    expect(output).toEqual({ audio: 1, subtitle: 3 });
+    engine.selectTrack.mockClear();
+    act(() => engine.emit({ type: "playing" }));
+    expect(engine.selectTrack).not.toHaveBeenCalled();
+  },
+);
+
+test("saved subtitle Off silences output even when AVPlay reports no selection flags", () => {
+  rememberPlaybackTrackChoice(movie, "subtitle", { identity: null });
+  const { result } = mount();
+  act(() => result.current.start(movie));
+  const engine = playerMock.instances[0];
+  const tracks: MediaTrack[] = [
+    {
+      id: "subtitle-en",
+      identity: "subtitle-en",
+      engineIndex: 2,
+      kind: "subtitle",
+      language: "en",
+      label: "English",
+      selected: false,
+    },
+  ];
+  engine.getTracks.mockReturnValue(tracks);
+  engine.selectTrack.mockReturnValue(true);
+  act(() => engine.emit({ type: "tracks", tracks }));
+  expect(engine.selectTrack).not.toHaveBeenCalled();
+  act(() => engine.emit({ type: "playing" }));
+  expect(engine.selectTrack).toHaveBeenCalledWith("subtitle", null);
+});
+
+test("a rejected track selection cannot replace the saved choice", () => {
+  const { result } = mount();
+  act(() => result.current.start(live));
+  playerMock.instances[0].selectTrack.mockReturnValue(true);
+  act(() => result.current.selectTrack("audio", 1, { identity: "accepted" }));
+  playerMock.instances[0].selectTrack.mockReturnValue(false);
+  act(() => result.current.selectTrack("audio", 2, { identity: "rejected" }));
+  expect(playbackTrackChoices(live).audio).toEqual({ identity: "accepted" });
+});
+
 test("a direct start cancels a pending channel preview", async () => {
   const { result } = mount();
   const second = { ...live, id: "live-2", url: "http://example.invalid/2.m3u8" };
@@ -195,6 +423,83 @@ test("a direct start cancels a pending channel preview", async () => {
   expect(playerMock.instances[0].play).toHaveBeenLastCalledWith(
     expect.objectContaining({ url: direct.url }),
   );
+});
+
+test("releasing a channel step paints a preview then tunes without the fallback delay", async () => {
+  const { result } = mount();
+  const second = { ...live, id: "live-2", url: "http://example.invalid/2.m3u8" };
+  act(() => {
+    result.current.start(live);
+    result.current.step(1, [live, second]);
+    result.current.commitStep();
+  });
+  expect(result.current.preview?.id).toBe(second.id);
+  await act(async () => vi.advanceTimersByTimeAsync(16));
+  expect(playerMock.instances[0].play).toHaveBeenCalledTimes(1);
+
+  await act(async () => vi.advanceTimersByTimeAsync(32));
+  expect(playerMock.instances[0].play).toHaveBeenCalledTimes(2);
+  expect(result.current.snapshot.target?.id).toBe(second.id);
+  await act(async () => vi.advanceTimersByTimeAsync(450));
+  expect(playerMock.instances[0].play).toHaveBeenCalledTimes(2);
+});
+
+test("a direct selection cancels a channel release waiting to paint", async () => {
+  const { result } = mount();
+  const second = { ...live, id: "live-2", url: "http://example.invalid/2.m3u8" };
+  const direct = { ...live, id: "live-3", url: "http://example.invalid/3.m3u8" };
+  act(() => {
+    result.current.start(live);
+    result.current.step(1, [live, second, direct]);
+    result.current.commitStep();
+    result.current.start(direct);
+  });
+  await act(async () => vi.advanceTimersByTimeAsync(500));
+
+  expect(result.current.snapshot.target?.id).toBe(direct.id);
+  expect(playerMock.instances[0].play).toHaveBeenCalledTimes(2);
+});
+
+test("channel presses arriving before a render advance every preview without retuning", async () => {
+  const { result, options } = mount();
+  const second = { ...live, id: "live-2", url: "http://example.invalid/2.m3u8" };
+  const third = { ...live, id: "live-3", url: "http://example.invalid/3.m3u8" };
+  const list = [live, second, third];
+  act(() => result.current.start(live));
+  options.onNamed.mockClear();
+
+  act(() => {
+    const step = result.current.step;
+    step(1, list);
+    step(1, list);
+  });
+
+  expect(result.current.preview?.id).toBe(third.id);
+  expect(options.onNamed.mock.calls.map(([target]) => target.id)).toEqual([
+    second.id,
+    third.id,
+  ]);
+  expect(playerMock.instances[0].play).toHaveBeenCalledTimes(1);
+  await act(async () => vi.advanceTimersByTimeAsync(450));
+  expect(playerMock.instances[0].play).toHaveBeenLastCalledWith(
+    expect.objectContaining({ url: third.url }),
+  );
+});
+
+test("stopping clears the preview anchor before the next channel step", async () => {
+  const { result } = mount();
+  const second = { ...live, id: "live-2", url: "http://example.invalid/2.m3u8" };
+  const list = [live, second];
+  act(() => {
+    result.current.start(live);
+    result.current.step(1, list);
+    result.current.stop();
+    result.current.step(1, list);
+  });
+
+  expect(result.current.preview?.id).toBe(live.id);
+  await act(async () => vi.advanceTimersByTimeAsync(450));
+  expect(result.current.snapshot.target?.id).toBe(live.id);
 });
 
 test.each([

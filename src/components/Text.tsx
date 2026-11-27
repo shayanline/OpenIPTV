@@ -1,13 +1,8 @@
 import { type CSSProperties, memo, useLayoutEffect, useRef, useState } from "react";
 
 /**
- * A run of text from the playlist, laid out in whichever direction it is written in.
- *
- * Playlists come from everywhere, so a channel name may be Latin, Arabic, Hebrew, Thai,
- * Cyrillic or a mix. `dir="auto"` hands the decision to the browser, which picks the base
- * direction from the first strong character, so a right to left name is not left aligned
- * with its punctuation flung to the wrong end. The app makes no assumption about which
- * language a playlist is in and never tries to split a name into parts.
+ * Playlist text inherits the app language's direction, including its marquee.
+ * Provider spelling stays unchanged and cannot change alignment or layout direction.
  */
 export const DEFAULT_MARQUEE_SPEED = 36;
 export const DEFAULT_MARQUEE_DWELL_MS = 1200;
@@ -15,6 +10,29 @@ export const DEFAULT_MARQUEE_DWELL_MS = 1200;
 type TextMeasurement = () => () => void;
 const measurements = new Set<TextMeasurement>();
 let measurementFrame: number | null = null;
+// A language change can reverse a marquee without changing its measured width.
+const directionSchedules = new Set<() => void>();
+let directionObserver: MutationObserver | undefined;
+
+const observeDirection = (schedule: () => void) => {
+  directionSchedules.add(schedule);
+  if (!directionObserver) {
+    directionObserver = new MutationObserver(() => {
+      for (const update of directionSchedules) update();
+    });
+    directionObserver.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["dir"],
+    });
+  }
+  return () => {
+    directionSchedules.delete(schedule);
+    if (!directionSchedules.size) {
+      directionObserver?.disconnect();
+      directionObserver = undefined;
+    }
+  };
+};
 
 const scheduleMeasurement = (measure: TextMeasurement) => {
   measurements.add(measure);
@@ -93,12 +111,14 @@ export const Text = memo(function Text({
       if (live && ready) scheduleMeasurement(measure);
     };
     let observer: ResizeObserver | undefined;
+    let stopObservingDirection: (() => void) | undefined;
     const start = () => {
       if (!live) return;
       ready = true;
       observer = new ResizeObserver(schedule);
       observer.observe(outer);
       observer.observe(inner);
+      stopObservingDirection = observeDirection(schedule);
       schedule();
     };
     const timer =
@@ -108,6 +128,7 @@ export const Text = memo(function Text({
       live = false;
       window.clearTimeout(timer);
       observer?.disconnect();
+      stopObservingDirection?.();
       measurements.delete(measure);
       if (!measurements.size && measurementFrame !== null) {
         cancelAnimationFrame(measurementFrame);
@@ -209,7 +230,7 @@ export const Text = memo(function Text({
 
   if (!marquee) {
     return (
-      <span className={className} dir="auto" {...data}>
+      <span className={className} {...data}>
         {value}
       </span>
     );
@@ -219,7 +240,6 @@ export const Text = memo(function Text({
     <span
       ref={frame}
       className={`${className} teleprompter ${vertical ? "vertical" : ""} ${measureMarquee && shift ? "overflowing" : ""} ${active === false ? "inactive" : active ? "active" : ""}`}
-      dir="auto"
       {...data}
       style={
         measureMarquee

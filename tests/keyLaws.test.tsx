@@ -144,11 +144,23 @@ test("law 1: up and down change channel at the Live picture", async () => {
   const started = played.length;
 
   press(KEY.UP);
-  // Naming is immediate and tuning waits for the pressing to stop, so the channel has been
-  // named but not yet tuned.
+  // Release commits the selection, but feedback paints before native tuning starts.
+  expect(document.querySelector(".pb-title")?.textContent).toBe("Beta");
   assert.equal(played.length, started, "tuned before the viewer had finished pressing");
-  await settle(600);
+  await settle(120);
   assert.equal(played.length, started + 1, "channel up did not tune anything");
+});
+
+test("Live channel feedback does not reread the launch preferences", async () => {
+  await mount();
+  press(KEY.ENTER);
+  const reads = vi.spyOn(Storage.prototype, "getItem");
+  reads.mockClear();
+
+  press(KEY.UP);
+
+  expect(document.querySelector(".pb-title")?.textContent).toBe("Beta");
+  expect(reads.mock.calls.filter(([key]) => key.startsWith("app:last-"))).toEqual([]);
 });
 
 test("Live picture law 1 holds when the channel on screen has failed", async () => {
@@ -581,7 +593,7 @@ test.each(["Movies", "Series"] as const)(
     expect(document.querySelector(".dialog")).toBeTruthy();
     expect(selectedMode.getAttribute("aria-current")).toBe("page");
     expect(panelOpen()).toBe(false);
-    fireEvent.click(screen.getByRole("button", { name: "Stay here" }));
+    fireEvent.click(screen.getByRole("button", { name: "Keep app open" }));
     expect(document.querySelector(".dialog")).toBeNull();
     expect(screen.getByRole("button", { name: mode }).getAttribute("aria-current")).toBe(
       "page",
@@ -648,7 +660,7 @@ test.each(["Enter", "Return", "pointer"] as const)(
     expect(document.querySelector(".dialog")).toBeTruthy();
     expect(document.querySelector(".app.live-panel-motion")).toBeTruthy();
     if (input === "pointer") {
-      const cancel = screen.getByRole("button", { name: "Keep watching" });
+      const cancel = screen.getByRole("button", { name: "Keep app open" });
       fireEvent.pointerDown(cancel);
       fireEvent.click(cancel);
     } else {

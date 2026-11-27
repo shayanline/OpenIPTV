@@ -200,7 +200,7 @@ export function SettingsDialog({
         onKeyDown={trapTab}
       >
         <h2>
-          <span dir="auto">{title}</span>
+          <span>{title}</span>
         </h2>
         <div className="settings-dialog-body">{children}</div>
         {feedback && <div className="settings-dialog-feedback">{feedback}</div>}

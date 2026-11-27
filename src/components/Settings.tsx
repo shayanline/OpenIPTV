@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { useContentTransition } from "../hooks/useContentTransition";
 import { useLocale } from "../hooks/useLocale";
 import { pointerInputActive, pointerOnly } from "../hooks/usePointerAwake";
 import { KEY, useRemote } from "../hooks/useRemote";
@@ -7,7 +6,6 @@ import type { RemoteAccessControl } from "../hooks/useRemoteAccess";
 import { useSpatialNav } from "../hooks/useSpatialNav";
 import { useToast } from "../hooks/useToast";
 import type { MessageKey } from "../services/locale";
-import { ContentTransitionShade } from "./ContentTransitionShade";
 import { Icon, type IconName } from "./Icon";
 import { KeyGuide } from "./KeyGuide";
 import { About } from "./settings/About";
@@ -169,7 +167,6 @@ export function Settings({
   const inlineEnd = direction === "rtl" ? KEY.LEFT : KEY.RIGHT;
   const inlineEndArrow = direction === "rtl" ? "←" : "→";
   const [section, setSection] = useState<SettingsSection>(entry.section);
-  const [sectionIntent, setSectionIntent] = useState<SettingsSection>(entry.section);
   const [sectionFocus, setSectionFocus] = useState<SettingsSection>(entry.section);
   const sectionFocusRef = useRef(sectionFocus);
   sectionFocusRef.current = sectionFocus;
@@ -253,13 +250,6 @@ export function Settings({
   tRef.current = t;
   const askingRef = useRef(asking);
   askingRef.current = asking;
-  // One transition for the whole sheet, owned by this mount so a commit never
-  // looks like a different owner.
-  const contentTransition = useContentTransition(`settings-${entry.session}`);
-  const transitionPhase = contentTransition.phase;
-  const transitioning = transitionPhase !== "idle";
-  const transitioningRef = useRef(transitioning);
-  transitioningRef.current = transitioning;
   const preparingFocusRef = useRef(false);
   const okGuideObserver = useRef<MutationObserver | null>(null);
   const okGuideTarget = useRef<HTMLElement | null>(null);
@@ -279,7 +269,7 @@ export function Settings({
   useLayoutEffect(() => {
     const returning = inputEnabled && !previousInputEnabled.current;
     previousInputEnabled.current = inputEnabled;
-    if (!returning || asking || inSections || inEdgeBack || transitioning) return;
+    if (!returning || asking || inSections || inEdgeBack) return;
     const target = lastBodyFocus.current;
     if (
       target?.isConnected &&
@@ -288,22 +278,17 @@ export function Settings({
     ) {
       target.focus({ preventScroll: true });
     }
-  }, [inputEnabled, asking, inSections, inEdgeBack, transitioning]);
+  }, [inputEnabled, asking, inSections, inEdgeBack]);
 
   // Every control in the body has to be reachable with the four directional buttons,
   // which the browser will not do on its own. Checklist items 2.2 and 3.2.
   const { move, focusFirst, hasTargets } = useSpatialNav(
     bodyRef,
-    inputEnabled && !inSections && !inEdgeBack && !asking && !transitioning,
+    inputEnabled && !inSections && !inEdgeBack && !asking,
   );
   const focusStart = useCallback(
     (preparing = false) => {
-      if (
-        !inputEnabledRef.current ||
-        askingRef.current ||
-        (transitioningRef.current && !preparing)
-      )
-        return;
+      if (!inputEnabledRef.current || askingRef.current) return;
       const body = bodyRef.current;
       if (!body) return;
       preparingFocusRef.current = preparing;
@@ -368,29 +353,25 @@ export function Settings({
     return null;
   }, []);
 
-  const dismissDetail = useCallback(
-    (id: string) => {
-      const current = detailsRef.current;
-      const at = current.findIndex((entry) => entry.id === id);
-      if (at < 0) return;
-      contentTransition.cancel();
-      const removed = current.slice(at);
-      const returning = current[at];
-      const remaining = current.slice(0, at);
-      pendingDetailFocus.current = null;
-      pendingDetailReturn.current = {
-        detailId: remaining[remaining.length - 1]?.id,
-        token: returning.returnFocus,
-        scrollTop: returning.scrollTop,
-      };
-      for (const entry of [...removed].reverse()) entry.close();
-      detailsRef.current = remaining;
-      setDetails(remaining);
-      setInSections(false);
-      setInEdgeBack(false);
-    },
-    [contentTransition.cancel],
-  );
+  const dismissDetail = useCallback((id: string) => {
+    const current = detailsRef.current;
+    const at = current.findIndex((entry) => entry.id === id);
+    if (at < 0) return;
+    const removed = current.slice(at);
+    const returning = current[at];
+    const remaining = current.slice(0, at);
+    pendingDetailFocus.current = null;
+    pendingDetailReturn.current = {
+      detailId: remaining[remaining.length - 1]?.id,
+      token: returning.returnFocus,
+      scrollTop: returning.scrollTop,
+    };
+    for (const entry of [...removed].reverse()) entry.close();
+    detailsRef.current = remaining;
+    setDetails(remaining);
+    setInSections(false);
+    setInEdgeBack(false);
+  }, []);
 
   const backDetailNow = useCallback(() => {
     const current = detailsRef.current;
@@ -398,13 +379,10 @@ export function Settings({
     if (detail) dismissDetail(detail.id);
   }, [dismissDetail]);
 
-  const transitionDetail = useCallback(
-    (commit: () => void) => {
-      if (!inputEnabledRef.current || askingRef.current) return;
-      contentTransition.navigate(commit);
-    },
-    [contentTransition.navigate],
-  );
+  const transitionDetail = useCallback((commit: () => void) => {
+    if (!inputEnabledRef.current || askingRef.current) return;
+    commit();
+  }, []);
   const backDetail = useCallback(() => {
     if (!inputEnabledRef.current || askingRef.current) return;
     backDetailNow();
@@ -481,7 +459,6 @@ export function Settings({
     if (
       (!registration && !detailsRef.current.length) ||
       registration?.disabled ||
-      transitioningRef.current ||
       !button ||
       button.disabled ||
       !inputEnabledRef.current ||
@@ -512,18 +489,10 @@ export function Settings({
     const pending = pendingDetailFocus.current;
     // A child layout effect can register a detail before this render includes it.
     if (!pending || pending !== deepestDetailId) return;
-    if (!inputEnabled || transitionPhase === "leaving" || asking) return;
+    if (!inputEnabled || asking) return;
     pendingDetailFocus.current = null;
     if (!inSections && !inEdgeBack) focusStart(true);
-  }, [
-    deepestDetailId,
-    inputEnabled,
-    transitionPhase,
-    asking,
-    inSections,
-    inEdgeBack,
-    focusStart,
-  ]);
+  }, [deepestDetailId, inputEnabled, asking, inSections, inEdgeBack, focusStart]);
   useLayoutEffect(() => {
     const pending = pendingDetailReturn.current;
     if (!pending) return;
@@ -531,7 +500,7 @@ export function Settings({
       pendingDetailReturn.current = null;
       return;
     }
-    if (!inputEnabled || asking || transitioning) return;
+    if (!inputEnabled || asking) return;
     pendingDetailReturn.current = null;
     if (inSections || inEdgeBack) return;
     const target = findFocusTarget(pending.token);
@@ -545,7 +514,6 @@ export function Settings({
     deepestDetailId,
     inputEnabled,
     asking,
-    transitioning,
     inSections,
     inEdgeBack,
     findFocusTarget,
@@ -571,9 +539,9 @@ export function Settings({
     focusEdgeBack,
     transition: transitionDetail,
     active: details.length > 0,
-    inputEnabled: inputEnabled && !inSections && !asking && !transitioning,
-    focusReady: inputEnabled && !inSections && !asking && transitionPhase !== "leaving",
-    surfaceInputEnabled: inputEnabled && !transitioning,
+    inputEnabled: inputEnabled && !inSections && !asking,
+    focusReady: inputEnabled && !inSections && !asking,
+    surfaceInputEnabled: inputEnabled,
   };
 
   /**
@@ -602,49 +570,33 @@ export function Settings({
       setPendingBodyFocus(false);
       return;
     }
-    if (transitionPhase === "leaving") return;
     setPendingBodyFocus(false);
     setInSections(false);
     setInEdgeBack(false);
     focusStart(true);
-  }, [pendingBodyFocus, inputEnabled, asking, transitionPhase, focusStart]);
+  }, [pendingBodyFocus, inputEnabled, asking, focusStart]);
 
   const activateSection = useCallback(
     (nextSection: SettingsSection, enterWhenCommitted = false) => {
       if (!inputEnabledRef.current || askingRef.current) return;
-      setSectionIntent(nextSection);
       leaveBody();
       sectionFocusRef.current = nextSection;
       setSectionFocus(nextSection);
-      const commit = () => {
-        if (detailsRef.current.length) clearDetails();
-        setSection(nextSection);
-        if (
-          enterWhenCommitted &&
-          pointerInputActive() &&
-          sectionFocusRef.current === nextSection
-        )
-          enterBody();
-      };
-      if (nextSection === section && !detailsRef.current.length && !transitioningRef.current)
-        commit();
-      else contentTransition.navigate(commit);
+      if (detailsRef.current.length) clearDetails();
+      setSection(nextSection);
+      if (enterWhenCommitted && pointerInputActive()) enterBody();
     },
-    [leaveBody, clearDetails, enterBody, section, contentTransition.navigate],
+    [leaveBody, clearDetails, enterBody],
   );
 
   const updateOkGuide = useCallback(
     (event: React.FocusEvent<HTMLDivElement>) => {
       const target = event.target;
       if (!(target instanceof HTMLElement)) return;
-      if (
-        inputEnabledRef.current &&
-        (!transitioningRef.current || preparingFocusRef.current) &&
-        bodyRef.current?.contains(target)
-      ) {
+      if (inputEnabledRef.current && bodyRef.current?.contains(target)) {
         revealSettingsControl(target, bodyRef.current);
       }
-      if (askingRef.current || (transitioningRef.current && !preparingFocusRef.current)) return;
+      if (askingRef.current) return;
       if (target instanceof HTMLButtonElement && target.closest(".pl")) {
         playlistFocusRef.current = target;
       }
@@ -688,25 +640,9 @@ export function Settings({
    * Before paint, so the rail's highlight never visibly flickers off and back.
    */
   useLayoutEffect(() => {
-    if (
-      !inSections &&
-      !asking &&
-      !transitioning &&
-      !details.length &&
-      section === sectionFocus &&
-      !hasTargets()
-    )
+    if (!inSections && !asking && !details.length && section === sectionFocus && !hasTargets())
       leaveBody();
-  }, [
-    inSections,
-    asking,
-    transitioning,
-    section,
-    sectionFocus,
-    details.length,
-    hasTargets,
-    leaveBody,
-  ]);
+  }, [inSections, asking, section, sectionFocus, details.length, hasTargets, leaveBody]);
 
   // Settings takes the whole remote while it is open, so App stops handling keys and
   // this owns navigation. Left and right move between the rail and the body, which is
@@ -729,20 +665,6 @@ export function Settings({
       if (editing && !textInputExit(document.activeElement as HTMLInputElement, code)) return;
       const active = document.activeElement;
       const inBody = active instanceof HTMLElement && bodyRef.current?.contains(active);
-      if (
-        transitioningRef.current &&
-        (inBody || !inSections) &&
-        !(code === KEY.ENTER && active === edgeBackButton.current)
-      ) {
-        if (code === inlineStart) {
-          event.preventDefault();
-          if (active === edgeBackButton.current) onAppNavigationFocus?.();
-          else if (!detailsRef.current.length) leaveBody();
-        } else if ([KEY.UP, KEY.DOWN, KEY.LEFT, KEY.RIGHT, KEY.ENTER].includes(code as never)) {
-          event.preventDefault();
-        }
-        return;
-      }
       if (active === edgeBackButton.current) {
         if (code === KEY.ENTER) {
           event.preventDefault();
@@ -933,8 +855,8 @@ export function Settings({
                   else delete sectionRefs.current[s.id];
                 }}
                 type="button"
-                className={`row ${s.id === sectionIntent ? "showing" : ""} ${inputEnabled && inSections && s.id === sectionFocus ? "cursor" : ""}`}
-                aria-current={s.id === sectionIntent ? "page" : undefined}
+                className={`row ${s.id === section ? "showing" : ""} ${inputEnabled && inSections && s.id === sectionFocus ? "cursor" : ""}`}
+                aria-current={s.id === section ? "page" : undefined}
                 onPointerEnter={() =>
                   pointerOnly(() => {
                     if (!inputEnabledRef.current || askingRef.current) return;
@@ -996,12 +918,7 @@ export function Settings({
             const target = event.target;
             if (!(target instanceof Node) || !bodyRef.current?.contains(target)) return;
             const inlinePopup = target instanceof Element && target.closest(".dialog-scrim");
-            if (
-              inputEnabledRef.current &&
-              !transitioningRef.current &&
-              (!askingRef.current || inlinePopup)
-            )
-              return;
+            if (inputEnabledRef.current && (!askingRef.current || inlinePopup)) return;
             event.preventDefault();
             event.stopPropagation();
           }}
@@ -1039,10 +956,6 @@ export function Settings({
           )}
           {section === "about" && <About onAsking={ask} navigation={detailNavigation} />}
         </div>
-        <ContentTransitionShade
-          phase={contentTransition.phase}
-          onTransitionEnd={contentTransition.onTransitionEnd}
-        />
       </div>
     </div>
   );

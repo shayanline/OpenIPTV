@@ -480,7 +480,6 @@ export function Onboarding({
                 <TextInput
                   id="ob-name"
                   value={name}
-                  dir="auto"
                   disabled={submitting}
                   placeholder={t("onboarding.takenFromAddress")}
                   onChange={(e) => {

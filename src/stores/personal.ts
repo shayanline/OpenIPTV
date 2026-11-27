@@ -1,4 +1,6 @@
 import { create } from "zustand";
+import { whenIdle } from "../services/idle";
+import { clearPlaybackTrackChoices } from "../services/playbackTrackChoices";
 import { read, readJSON, remove, write } from "../services/store";
 import type { Channel, PlaybackProgressSeed } from "../types";
 import type { Playlist } from "./settings";
@@ -111,6 +113,7 @@ const contentKinds = new Set(["live", "movie", "series", "episode", "catchup"]);
 const loadedPlaylists = new Set<string>();
 /** Where each viewing session started, so a restart keeps prior progress until it earns it. */
 const sessionStarts = new Map<string, number>();
+let cancelLastPersist: (() => void) | undefined;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === "object" && !Array.isArray(value);
@@ -346,6 +349,8 @@ function persist(
     "favourites" | "lastPlayed" | "progress" | "progressMigrationBaseTime"
   >,
 ) {
+  cancelLastPersist?.();
+  cancelLastPersist = undefined;
   write(
     KEY,
     JSON.stringify({
@@ -408,7 +413,16 @@ export const usePersonal = create<PersonalState>((set, get) => ({
 
   rememberLast(last) {
     set({ lastPlayed: last });
-    persist(get());
+    if (last.kind !== "live") {
+      persist(get());
+      return;
+    }
+    // App keeps the small Live launch key synchronous. Save the full personal record at idle.
+    cancelLastPersist?.();
+    cancelLastPersist = whenIdle(() => {
+      cancelLastPersist = undefined;
+      persist(get());
+    }, 1000);
   },
 
   progressFor(itemKey) {
@@ -532,6 +546,7 @@ export const usePersonal = create<PersonalState>((set, get) => ({
   },
 
   clearPlaylistPersonal(playlistId) {
+    clearPlaybackTrackChoices(playlistId);
     const prefix = `xtream:${playlistId}:`;
     for (const key of [...sessionStarts.keys()]) {
       if (key.startsWith(prefix)) sessionStarts.delete(key);
@@ -610,6 +625,9 @@ export const usePersonal = create<PersonalState>((set, get) => ({
   },
 
   clearPersonal() {
+    clearPlaybackTrackChoices();
+    cancelLastPersist?.();
+    cancelLastPersist = undefined;
     loadedPlaylists.clear();
     sessionStarts.clear();
     remove(KEY);

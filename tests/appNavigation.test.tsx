@@ -12,6 +12,7 @@ import { translate } from "../src/services/locale";
 import {
   mountApp,
   panelOpen,
+  pauseCalls,
   played,
   press,
   settle,
@@ -591,13 +592,13 @@ test("native browser scrollbars and their reserved gutters stay hidden", () => {
 test("the navigation rail and page content share a shifting sibling shell", () => {
   const styles = readFileSync("src/styles/app.css", "utf8");
   expect(styles).toMatch(
-    /\.app-content \{[^}]*position:\s*absolute;[^}]*transition:\s*left var\(--t-navigation\) var\(--ease-enter\);/,
+    /\.app-content \{[^}]*position:\s*absolute;[^}]*transition:\s*transform var\(--t-navigation\) var\(--ease-enter\);/,
   );
   expect(styles).toMatch(
-    /\.app-navigation-visible \.app-content \{[^}]*left:\s*var\(--app-nav-collapsed-w\);/,
+    /\.app-navigation-visible \.app-content \{[^}]*transform:\s*translateX\(var\(--app-nav-collapsed-w\)\);/,
   );
   expect(styles).toMatch(
-    /\.app-navigation-expanded \.app-content \{[^}]*left:\s*var\(--app-nav-expanded-w\);/,
+    /\.app-navigation-expanded \.app-content \{[^}]*transform:\s*translateX\(var\(--app-nav-expanded-w\)\);/,
   );
   expect(styles).toMatch(
     /\.sheet \{[^}]*transition:\s*transform var\(--t-navigation\) var\(--ease-enter\);/,
@@ -1112,7 +1113,7 @@ test("remote navigation changes the focus surface without animating the old acti
     styles.indexOf(".app-navigation.expanded .app-navigation-search-content"),
   );
 
-  expect(action).toContain("transition: width var(--t-navigation) var(--ease-enter);");
+  expect(action).not.toContain("transition: width");
   expect(action).not.toContain("background var(--t-fast)");
   expect(action).not.toContain("color var(--t-fast)");
   expect(badge).not.toContain("background var(--t-fast)");
@@ -1314,15 +1315,16 @@ test("the side menu shares the Live panel navigation duration", () => {
   expect(tokens).toMatch(/--t-panel:\s*180ms;/);
   expect(tokens).toMatch(/--t-navigation:\s*180ms;/);
   expect(styles).toMatch(
-    /\.app-navigation \{[^}]*transition: width var\(--t-navigation\) var\(--ease-enter\);/,
+    /\.app-navigation::before \{[^}]*transition: transform var\(--t-navigation\) var\(--ease-enter\);/,
   );
   expect(styles).toMatch(
     /\.app-navigation-motion \{[^}]*transition: transform var\(--t-navigation\) var\(--ease-enter\);/,
   );
   expect(styles).toMatch(
-    /\.live-panel-host \{[^}]*transition:[^}]*left var\(--t-navigation\) var\(--ease-enter\),[^}]*transform var\(--t-navigation\) var\(--ease-enter\);/,
+    /\.live-panel-host \{[^}]*transition:\s*transform var\(--t-navigation\) var\(--ease-enter\);/,
   );
-  expect(styles).toMatch(/\.app-content \{[\s\S]*transition: left var\(--t-navigation\)/);
+  expect(styles).toMatch(/\.app-content \{[^}]*transition: transform var\(--t-navigation\)/);
+  expect(styles).not.toMatch(/transition:\s*(?:left|right|width) var\(--t-navigation\)/);
   expect(styles).toMatch(
     /\.app:not\(\.app-navigation-visible\) \.app-content \{[^}]*transition-timing-function:\s*var\(--ease-exit\);/,
   );
@@ -1969,7 +1971,7 @@ test("the Live panel motion scope is styled only for ordinary Live surfaces", ()
   };
 
   const navBase = body(".app-navigation");
-  expect(navBase).toMatch(/transition:\s*width var\(--t-navigation\) var\(--ease-enter\);/);
+  expect(navBase).toMatch(/transition:\s*none;/);
   expect(navBase).not.toMatch(/^\s*transform:/m);
   expect(body(".app-navigation.visible")).not.toMatch(/transform|transition/);
   expect(body(".app-navigation.expanded")).toMatch(/width:\s*var\(--app-nav-expanded-w\);/);
@@ -2010,11 +2012,18 @@ test("the Live panel motion scope is styled only for ordinary Live surfaces", ()
   expect(host).toMatch(/visibility:\s*hidden;/);
   expect(host).toMatch(/pointer-events:\s*none;/);
   expect(host).toMatch(/will-change:\s*transform;/);
-  expect(host).toMatch(
-    /transition:[^}]*left var\(--t-navigation\) var\(--ease-enter\),[^}]*transform var\(--t-navigation\) var\(--ease-enter\);/,
-  );
+  expect(host).toMatch(/transition:\s*transform var\(--t-navigation\) var\(--ease-enter\);/);
   expect(body(".app-navigation-expanded .live-panel-host")).toMatch(
-    /left:\s*var\(--app-nav-expanded-w\);/,
+    /transform:\s*translateX\(calc\(var\(--app-nav-expanded-w\) - var\(--app-nav-collapsed-w\)\)\);/,
+  );
+  expect(body(".app-navigation::before")).toMatch(
+    /transition:\s*transform var\(--t-navigation\) var\(--ease-enter\);/,
+  );
+  expect(body(".app-navigation.expanded::before")).toMatch(
+    /transform:\s*translateX\(calc\(var\(--app-nav-expanded-w\) - var\(--app-nav-collapsed-w\)\)\);/,
+  );
+  expect(body('html[dir="rtl"] .app-navigation.expanded::before')).toMatch(
+    /transform:\s*translateX\(calc\(var\(--app-nav-collapsed-w\) - var\(--app-nav-expanded-w\)\)\);/,
   );
   expect(body(".live-panel-motion .live-panel-host")).toMatch(/visibility:\s*visible;/);
   expect(body(".live-panel-motion.app-navigation-visible .panel.away")).toMatch(
@@ -2058,11 +2067,9 @@ test("the Live panel motion scope is styled only for ordinary Live surfaces", ()
   const rtlHost = body('html[dir="rtl"] .live-panel-host');
   expect(rtlHost).toMatch(/right:\s*var\(--app-nav-collapsed-w\);/);
   expect(rtlHost).toMatch(/left:\s*auto;/);
-  expect(rtlHost).toMatch(
-    /transition:[^}]*right var\(--t-navigation\) var\(--ease-enter\),[^}]*transform var\(--t-navigation\) var\(--ease-enter\);/,
-  );
+  expect(rtlHost).not.toContain("transition:");
   expect(body('html[dir="rtl"] .app-navigation-expanded .live-panel-host')).toMatch(
-    /right:\s*var\(--app-nav-expanded-w\);/,
+    /transform:\s*translateX\(calc\(var\(--app-nav-collapsed-w\) - var\(--app-nav-expanded-w\)\)\);/,
   );
 
   expect(body('html[dir="rtl"] .app-navigation.visible')).toBe("");
@@ -2510,15 +2517,18 @@ test("Live rail legs carry rail motion and swap content only after the exit", as
   await settle(300);
   expect(app.getAttribute("data-page-transition")).toBe("settling");
   expect(document.querySelector(".search-field")).toBeTruthy();
+  expect(document.activeElement).not.toBe(document.querySelector(".search-field"));
   const host = document.querySelector(".live-panel-host");
 
   await settle(60);
   expect(app.getAttribute("data-page-transition")).toBe("entering");
   expect(document.querySelector(".live-panel-host")).toBe(host);
   expect(app.getAttribute("data-page-enter-motion")).toBe("rail");
+  expect(document.activeElement).not.toBe(document.querySelector(".search-field"));
   await settle(300);
   expect(app.classList.contains("page-transition-active")).toBe(false);
   expect(document.querySelector(".search-field")).toBeTruthy();
+  expect(document.activeElement).toBe(document.querySelector(".search-field"));
 
   fireEvent.click(screen.getByRole("button", { name: "Live" }));
   expect(app.getAttribute("data-page-leave-motion")).toBe("rail");
@@ -2577,10 +2587,10 @@ test.each(["ltr", "rtl"])(
       direction === "rtl" ? 'html[dir="rtl"] .live-panel-host' : ".live-panel-host";
     const settlingSelector = '.app[data-page-transition="settling"] .live-panel-host';
     const enteringSelector = '.app[data-page-transition="entering"] .live-panel-host';
-    expect(body(baseSelector)).toContain("transform var(--t-navigation) var(--ease-enter)");
-    expect(body(baseSelector)).toContain(
-      `${direction === "rtl" ? "right" : "left"} var(--t-navigation) var(--ease-enter)`,
+    expect(body(".live-panel-host")).toContain(
+      "transition: transform var(--t-navigation) var(--ease-enter);",
     );
+    expect(body(baseSelector)).not.toMatch(/transition:[^;]*(?:left|right) /);
     expect(body(settlingSelector).trim()).toBe("transition: none;");
     expect(styles.indexOf(settlingSelector)).toBeGreaterThan(styles.indexOf(baseSelector));
     expect(styles).not.toContain(`${enteringSelector} {`);
@@ -2772,6 +2782,82 @@ test("the playlist shortcut restores menu focus and switches only on a different
   act(() => useSettings.getState().set("playlistShortcut", false));
   expect(screen.queryByRole("button", { name: /^Playlists,/ })).toBeNull();
   expect(screen.getByRole("button", { name: "Search Live" })).toBeTruthy();
+});
+
+test.each([false, true])(
+  "the playlist switcher preserves prior Live pause intent (%s)",
+  async (alreadyPaused) => {
+    await mountApp(PLAYLIST);
+    press(KEY.ENTER);
+    await settle(0);
+    if (alreadyPaused) press(KEY.PAUSE);
+    const initialPauses = pauseCalls;
+    const initialPlays = played.length;
+    const { useSettings } = await import("../src/stores/settings");
+    act(() =>
+      useSettings.getState().addPlaylist("Second", {
+        kind: "m3u",
+        url: "http://second.invalid/list.m3u",
+      }),
+    );
+    press(KEY.YELLOW);
+    await settle(0);
+    fireEvent.click(screen.getByRole("button", { name: /^Playlists,/ }));
+    await finishPageTransition();
+    expect(pauseCalls).toBe(initialPauses + (alreadyPaused ? 0 : 1));
+    expect(played).toHaveLength(initialPlays);
+    fireEvent.click(screen.getByRole("button", { name: "Live" }));
+    await finishPageTransition();
+    expect(played).toHaveLength(initialPlays + (alreadyPaused ? 0 : 1));
+  },
+);
+
+test("switching playlists restores each last Live channel and starts a new playlist at its first channel", async () => {
+  const first = `#EXTM3U
+#EXTINF:-1 tvg-id="a" group-title="News",First A
+http://example.invalid/a.m3u8
+#EXTINF:-1 tvg-id="shared-last" group-title="News",Last A
+http://example.invalid/last-a.m3u8`;
+  const second = `#EXTM3U
+#EXTINF:-1 tvg-id="b" group-title="News",First B
+http://second.invalid/b.m3u8
+#EXTINF:-1 tvg-id="shared-last" group-title="News",Last B
+http://second.invalid/last-b.m3u8`;
+  await mountApp(first, {
+    fetchImplementation: async (input) =>
+      new Response(String(input).includes("second.invalid") ? second : first, { status: 200 }),
+  });
+  fireEvent.click(screen.getByText("Last A"));
+  await settle(0);
+  expect(played.at(-1)).toBe("http://example.invalid/last-a.m3u8");
+  const { useSettings } = await import("../src/stores/settings");
+  act(() =>
+    useSettings.getState().addPlaylist("Second", {
+      kind: "m3u",
+      url: "http://second.invalid/list.m3u",
+    }),
+  );
+  const switchTo = async (name: string) => {
+    press(KEY.YELLOW);
+    await settle(0);
+    fireEvent.click(screen.getByRole("button", { name: /^Playlists,/ }));
+    await finishPageTransition();
+    const before = played.length;
+    fireEvent.click(screen.getByRole("menuitemradio", { name }));
+    await settle(700);
+    expect(played).toHaveLength(before);
+    fireEvent.click(screen.getByRole("button", { name: "Live" }));
+    await finishPageTransition();
+  };
+  await switchTo("Second");
+  expect(played.at(-1)).toBe("http://second.invalid/b.m3u8");
+  fireEvent.click(screen.getByText("Last B"));
+  await settle(0);
+  expect(played.at(-1)).toBe("http://second.invalid/last-b.m3u8");
+  await switchTo("Test");
+  expect(played.at(-1)).toBe("http://example.invalid/last-a.m3u8");
+  await switchTo("Second");
+  expect(played.at(-1)).toBe("http://second.invalid/last-b.m3u8");
 });
 
 test("saved playlist numbers retain their full order when the management list is filtered", async () => {

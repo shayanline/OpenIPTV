@@ -141,15 +141,16 @@ html:fullscreen .app {
   bottom: 0;
   left: 0;
   overflow: hidden;
-  transition: left var(--t-navigation) var(--ease-enter);
+  transform: translateX(0);
+  transition: transform var(--t-navigation) var(--ease-enter);
 }
 .app-navigation-visible .app-content {
-  left: var(--app-nav-collapsed-w);
   right: auto;
   width: calc(100% - var(--app-nav-collapsed-w));
+  transform: translateX(var(--app-nav-collapsed-w));
 }
 .app-navigation-expanded .app-content {
-  left: var(--app-nav-expanded-w);
+  transform: translateX(var(--app-nav-expanded-w));
 }
 .app:not(.app-navigation-visible) .app-content {
   transition-timing-function: var(--ease-exit);
@@ -157,15 +158,14 @@ html:fullscreen .app {
 html[dir="rtl"] .app-content {
   right: 0;
   left: 0;
-  transition: right var(--t-navigation) var(--ease-enter);
 }
 html[dir="rtl"] .app-navigation-visible .app-content {
-  right: var(--app-nav-collapsed-w);
   left: auto;
   width: calc(100% - var(--app-nav-collapsed-w));
+  transform: translateX(calc(0px - var(--app-nav-collapsed-w)));
 }
 html[dir="rtl"] .app-navigation-expanded .app-content {
-  right: var(--app-nav-expanded-w);
+  transform: translateX(calc(0px - var(--app-nav-expanded-w)));
 }
 html[dir="rtl"] .app:not(.app-navigation-visible) .app-content {
   transition-timing-function: var(--ease-exit);
@@ -232,12 +232,30 @@ html[dir="rtl"] .app:not(.app-navigation-visible) .app-content {
   flex-direction: column;
   align-items: flex-start;
   padding: var(--safe-y) var(--app-nav-gutter);
-  overflow: hidden;
-  border-inline-end: 1px solid var(--line);
-  background: var(--app-navigation-surface);
+  overflow: visible;
+  border-inline-end: 1px solid transparent;
+  background: transparent;
   box-shadow: none;
   pointer-events: none;
-  transition: width var(--t-navigation) var(--ease-enter);
+  transition: none;
+}
+/* The painted edge shares the panel's compositor motion while content width lays out. */
+.app-navigation::before {
+  position: absolute;
+  z-index: -1;
+  top: 0;
+  bottom: 0;
+  left: calc(var(--app-nav-collapsed-w) - var(--app-nav-expanded-w));
+  width: var(--app-nav-expanded-w);
+  border-inline-end: 1px solid var(--line);
+  background: var(--app-navigation-surface);
+  content: "";
+  transform: translateX(0);
+  transition: transform var(--t-navigation) var(--ease-enter);
+  will-change: transform;
+}
+.app-navigation.expanded::before {
+  transform: translateX(calc(var(--app-nav-expanded-w) - var(--app-nav-collapsed-w)));
 }
 .app-navigation.visible {
   pointer-events: auto;
@@ -256,6 +274,7 @@ html[dir="rtl"] .app:not(.app-navigation-visible) .app-content {
   pointer-events: none;
   transform: translateX(calc(0px - var(--app-nav-collapsed-w)));
   transition: transform var(--t-navigation) var(--ease-enter);
+  will-change: transform;
 }
 .app-navigation-visible .app-navigation-motion {
   transform: translateX(0);
@@ -280,7 +299,6 @@ html[dir="rtl"] .app:not(.app-navigation-visible) .app-content {
   flex: 0 0 var(--s6);
   overflow: hidden;
   white-space: nowrap;
-  transition: width var(--t-navigation) var(--ease-enter);
 }
 .app-navigation-brand img {
   width: 36px;
@@ -314,7 +332,6 @@ html[dir="rtl"] .app:not(.app-navigation-visible) .app-content {
   margin: var(--s1) 0;
   flex: 0 0 1px;
   background: var(--line);
-  transition: width var(--t-navigation) var(--ease-enter);
 }
 .app-navigation-action {
   position: relative;
@@ -334,7 +351,6 @@ html[dir="rtl"] .app:not(.app-navigation-visible) .app-content {
   font-size: var(--t-caption);
   text-align: start;
   white-space: nowrap;
-  transition: width var(--t-navigation) var(--ease-enter);
 }
 .app-navigation-action[data-navigation-presence] {
   min-height: 0;
@@ -459,14 +475,13 @@ html[data-input-mode="pointer"] .app-navigation-action:hover .app-navigation-sco
 }
 .app-navigation-label,
 .app-navigation-brand-label {
-  max-width: 0;
+  max-width: 160px;
   flex: 0 0 auto;
   margin-inline-start: var(--s2);
   overflow: hidden;
   opacity: 0;
   transform: translateX(-8px);
   transition:
-    max-width var(--t-navigation) var(--ease-enter),
     opacity var(--t-fast) linear,
     transform var(--t-navigation) var(--ease-enter);
 }
@@ -868,6 +883,7 @@ html[data-input-mode="remote"] .content-option.cursor {
   width: auto;
   overflow: visible;
   transition: none;
+  transform: none;
 }
 .live-panel-motion .app-navigation-motion {
   transform: translateX(
@@ -888,12 +904,10 @@ html[data-input-mode="remote"] .content-option.cursor {
   opacity: 1;
   transform: translateX(0);
   will-change: transform;
-  transition:
-    left var(--t-navigation) var(--ease-enter),
-    transform var(--t-navigation) var(--ease-enter);
+  transition: transform var(--t-navigation) var(--ease-enter);
 }
 .app-navigation-expanded .live-panel-host {
-  left: var(--app-nav-expanded-w);
+  transform: translateX(calc(var(--app-nav-expanded-w) - var(--app-nav-collapsed-w)));
 }
 .live-panel-motion .live-panel-host {
   visibility: visible;
@@ -909,11 +923,19 @@ html[dir="rtl"] .live-panel-motion .app-content {
   right: 0;
   width: auto;
   transition: none;
+  transform: none;
 }
 html[dir="rtl"] .app-navigation-motion {
   right: 0;
   left: auto;
   transform: translateX(var(--app-nav-collapsed-w));
+}
+html[dir="rtl"] .app-navigation::before {
+  right: calc(var(--app-nav-collapsed-w) - var(--app-nav-expanded-w));
+  left: auto;
+}
+html[dir="rtl"] .app-navigation.expanded::before {
+  transform: translateX(calc(var(--app-nav-collapsed-w) - var(--app-nav-expanded-w)));
 }
 html[dir="rtl"] .app-navigation-visible .app-navigation-motion {
   transform: translateX(0);
@@ -929,12 +951,9 @@ html[dir="rtl"] .live-panel-motion.app-navigation-visible .app-navigation-motion
 html[dir="rtl"] .live-panel-host {
   right: var(--app-nav-collapsed-w);
   left: auto;
-  transition:
-    right var(--t-navigation) var(--ease-enter),
-    transform var(--t-navigation) var(--ease-enter);
 }
 html[dir="rtl"] .app-navigation-expanded .live-panel-host {
-  right: var(--app-nav-expanded-w);
+  transform: translateX(calc(var(--app-nav-collapsed-w) - var(--app-nav-expanded-w)));
 }
 /*
  * A rail leg slides the opaque panel itself, so it must clear the viewport edge: leaving
@@ -1896,6 +1915,7 @@ html[dir="rtl"] .top-strip {
   border-width: 2px;
 }
 .playback-info {
+  --playback-offset: -50%;
   position: absolute;
   z-index: var(--z-above);
   top: 50%;
@@ -1912,19 +1932,12 @@ html[dir="rtl"] .top-strip {
   visibility: hidden;
   opacity: 0;
   pointer-events: none;
-  transform: translateY(calc(-50% + 16px));
-  transition:
-    visibility 0s linear var(--t-panel),
-    opacity var(--t-panel) linear,
-    transform var(--t-panel) var(--ease-exit);
+  transform: translateY(-50%);
 }
 .playback-info.visible {
   visibility: visible;
   opacity: 1;
   transform: translateY(-50%);
-  transition:
-    opacity var(--t-panel) linear,
-    transform var(--t-panel) var(--ease-enter);
 }
 html[dir="rtl"] .playback-info {
   right: auto;
@@ -2849,10 +2862,6 @@ html[dir="rtl"] .app-navigation-expanded .sheet {
 }
 .vod-screen > .content-transition-shade {
   z-index: 4;
-}
-.playback-content-transition {
-  position: fixed;
-  z-index: var(--z-playback);
 }
 .settings-page-header {
   margin-bottom: var(--s3);
@@ -4375,7 +4384,6 @@ html[data-input-mode="remote"] .pad-round:focus {
   box-shadow: var(--lift);
   overflow: hidden;
   z-index: var(--z-notice);
-  animation: pb-in var(--t-med) var(--ease-enter);
 }
 .pb {
   display: flex;
@@ -4383,9 +4391,26 @@ html[data-input-mode="remote"] .pad-round:focus {
   gap: var(--s3);
   padding: var(--s3) var(--s4);
 }
+.playback-info.visible,
+.playback-details,
+.pb-stack,
+.playback-deck {
+  animation: pb-in var(--t-med) var(--ease-enter);
+}
 @keyframes pb-in {
   from {
-    transform: translateY(16px);
+    transform: translateY(calc(var(--playback-offset, 0px) + 16px));
+    opacity: 0;
+  }
+}
+.pb-stack.playback-closing,
+.playback-info.playback-closing {
+  animation: pb-out var(--t-med) var(--ease-enter) forwards;
+  pointer-events: none;
+}
+@keyframes pb-out {
+  to {
+    transform: translateY(calc(var(--playback-offset, 0px) + 16px));
     opacity: 0;
   }
 }
@@ -5870,9 +5895,7 @@ html[dir="rtl"] .option-picker-chevron {
   border-radius: 2px;
   background: var(--accent);
   pointer-events: none;
-  transition:
-    transform calc(var(--t-navigation) * 2) var(--ease-enter),
-    height calc(var(--t-navigation) * 2) var(--ease-enter);
+  transition: none;
 }
 @media (prefers-reduced-motion: reduce) {
   .lineup-sort-row,
@@ -6642,7 +6665,6 @@ html[dir="rtl"].no-flex-gap .option-picker-text > * + * {
   flex-direction: column;
   gap: var(--s2);
   padding: var(--s3) var(--s4);
-  animation: deck-in var(--t-med) var(--ease-enter);
 }
 .deck-surface {
   position: absolute;
@@ -6655,14 +6677,8 @@ html[dir="rtl"].no-flex-gap .option-picker-text > * + * {
   background: var(--over-video);
   box-shadow: var(--lift);
 }
-.playback-deck > :not(.deck-surface) {
+.playback-deck > :not(.deck-surface):not(.subtitle-layer) {
   position: relative;
-}
-@keyframes deck-in {
-  from {
-    transform: translateY(16px);
-    opacity: 0;
-  }
 }
 /*
  * A banner entrance has already read its geometry before paint, so the root does not get
@@ -7623,8 +7639,7 @@ html[dir="rtl"].no-flex-gap .playback-details-artworks + .playback-details-readi
   }
 }
 /*
- * The application's own subtitle text, inside the safe area. The sibling selector lifts the
- * cue above the deck whenever the deck is showing so captions never share its strip.
+ * Open controls own the cue, so its bottom follows their full height, including hints.
  */
 .subtitle-layer {
   position: absolute;
@@ -7636,11 +7651,10 @@ html[dir="rtl"].no-flex-gap .playback-details-artworks + .playback-details-readi
   justify-content: center;
   pointer-events: none;
 }
-.playback-deck ~ .subtitle-layer {
-  bottom: calc(var(--safe-y) + 340px);
-}
-.playback-drawer ~ .subtitle-layer {
-  bottom: calc(var(--safe-y) + var(--s3));
+.playback-deck > .subtitle-layer {
+  right: 0;
+  bottom: calc(100% + var(--s2));
+  left: 0;
 }
 .subtitle-cue {
   margin: 0;
@@ -7654,9 +7668,8 @@ html[dir="rtl"].no-flex-gap .playback-details-artworks + .playback-details-readi
   text-align: center;
 }
 
-/* Gap fallbacks: the deck, its transport groups, the seek bar and the quick seek readout.
-   The absolute surface is not a content sibling, so it is excluded on both sides. */
-.no-flex-gap .playback-deck > :not(.deck-surface) + :not(.deck-surface) {
+/* The painted surface and captions sit outside the deck's content flow. */
+.no-flex-gap .playback-deck > :not(.deck-surface):not(.subtitle-layer) + :not(.deck-surface):not(.subtitle-layer) {
   margin-top: var(--s2);
 }
 .no-flex-gap .pb-id > * + * {

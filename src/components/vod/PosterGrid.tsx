@@ -124,7 +124,7 @@ const PosterCell = memo(function PosterCell({
           marquee
           active={selected}
         />
-        <span className="poster-meta" dir="auto">
+        <span className="poster-meta">
           {item.metadata}
         </span>
         {item.rating && (

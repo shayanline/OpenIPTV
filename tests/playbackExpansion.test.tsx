@@ -21,8 +21,14 @@ const rect = (top: number, left: number, width: number, height: number): DOMRect
     toJSON: () => ({}),
   }) as DOMRect;
 
+const expansionOrder: string[] = [];
 const setRect = (el: Element, value: DOMRect) => {
-  Object.defineProperty(el, "getBoundingClientRect", { value: () => value });
+  Object.defineProperty(el, "getBoundingClientRect", {
+    value: () => {
+      expansionOrder.push("measure");
+      return value;
+    },
+  });
 };
 
 interface RecordedAnimation {
@@ -42,6 +48,7 @@ const createdRoots: HTMLElement[] = [];
 
 beforeEach(() => {
   animateCalls.length = 0;
+  expansionOrder.length = 0;
   /*
    * Element.animate may not exist at all in the test engine, so the stub is installed
    * and removed through its property descriptor rather than restored to a method that
@@ -53,6 +60,7 @@ beforeEach(() => {
     frames: Keyframe[] | PropertyIndexedKeyframes | null,
     options?: number | KeyframeAnimationOptions,
   ) {
+    expansionOrder.push("animate");
     const opts = typeof options === "number" ? { duration: options } : options;
     const animation: RecordedAnimation["animation"] = {
       cancel: vi.fn(),
@@ -188,7 +196,6 @@ describe("usePlaybackExpansion", () => {
   const originFor = (): PlaybackExpansionOrigin => ({
     targetKey: "ch-1",
     bounds: rect(600, 48, 400, 120),
-    radius: 12,
     parts: {
       number: { rect: rect(620, 64, 108, 60), fontSize: 34, value: "12" },
       logo: { rect: rect(620, 190, 132, 68), fontSize: 99, value: "logo.png" },
@@ -277,9 +284,24 @@ describe("usePlaybackExpansion", () => {
     /* 400/1600 by 120/240, translated so the surface sits at the banner's bottom left. */
     expect(from.transform).toBe("translate(0px, -80px) scale(0.25, 0.5)");
     expect(surface.options?.duration).toBe(420);
-    /* The corners are compensated by the inverse scale so they do not stretch. */
-    expect(from.borderRadius).toBe("48px / 24px");
-    expect((surface.frames[1] as Keyframe).borderRadius).toBe("24px");
+    expect(from.borderRadius).toBeUndefined();
+    expect((surface.frames[1] as Keyframe).borderRadius).toBeUndefined();
+  });
+
+  test("measures every part before starting any animation and only animates transforms", () => {
+    const { root, ref } = deck();
+    mount(root, ref, originFor());
+
+    expect(expansionOrder.lastIndexOf("measure")).toBeLessThan(
+      expansionOrder.indexOf("animate"),
+    );
+    for (const { frames } of animateCalls) {
+      for (const frame of frames) {
+        expect(
+          Object.keys(frame).every((key) => key === "transform" || key === "transformOrigin"),
+        ).toBe(true);
+      }
+    }
   });
 
   test("moves each matching part with one uniform font scale and no anisotropic text scale", () => {

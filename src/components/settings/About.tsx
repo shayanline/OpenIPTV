@@ -27,7 +27,7 @@ export function About({
             <img className="about-app-icon" src="./icon.svg" alt="" />
             <div>
               <strong>OpenIPTV</strong>
-              <p dir="ltr">{t("about.version", { version: APP_VERSION })}</p>
+              <p>{t("about.version", { version: APP_VERSION })}</p>
             </div>
           </div>
           <a

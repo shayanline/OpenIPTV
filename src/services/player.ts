@@ -821,27 +821,30 @@ export class Player {
         // IDLE -> READY
         () => {
           if (!current()) return;
+          const startPlayback = () => {
+            if (!current()) return;
+            try {
+              this.readAvPlayTracks(av);
+              this.applySubtitleSilence(av);
+              av.play(); // READY -> PLAYING
+              this.emit({ type: "playing" });
+            } catch (error) {
+              this.fail(codeOf(error));
+            }
+          };
           if (this.mode === "finite" && startSeconds > 0) {
             if (av.seekTo) {
-              try {
-                av.seekTo(
-                  startSeconds * 1000,
-                  () => {},
-                  (error) => {
-                    if (current()) this.resumeLimitation = `SEEK_FAILED ${codeOf(error)}`;
-                  },
-                );
-              } catch (error) {
-                this.resumeLimitation = `SEEK_FAILED ${codeOf(error)}`;
-              }
+              void this.seekTo(startSeconds).then((moved) => {
+                if (!current()) return;
+                if (!moved) this.resumeLimitation = "SEEK_FAILED";
+                startPlayback();
+              });
+              return;
             } else {
               this.resumeLimitation = "SEEK_UNSUPPORTED";
             }
           }
-          this.readAvPlayTracks(av);
-          this.applySubtitleSilence(av);
-          av.play(); // READY -> PLAYING
-          this.emit({ type: "playing" });
+          startPlayback();
         },
         (e) => current() && this.fail(codeOf(e)),
       );
@@ -1254,7 +1257,14 @@ export class Player {
          * audio track can never unsilence what the viewer turned off.
          */
         this.applySubtitleSilence(av);
-        this.readAvPlayTracks(av);
+        // The total track list can retain stale selection flags after setSelectTrack.
+        this.setTracks(
+          this.tracks.map((track) =>
+            track.kind === kind
+              ? { ...track, selected: track.engineIndex === engineIndex }
+              : track,
+          ),
+        );
         return true;
       } catch {
         return false;
@@ -1513,7 +1523,8 @@ export class Player {
   async seekTo(seconds: number): Promise<boolean> {
     if (!Number.isFinite(seconds) || seconds < 0) return false;
     const target = seconds;
-    const finish = (success: boolean) => success;
+    const generation = this.generation;
+    const finish = (success: boolean) => success && generation === this.generation;
 
     if (!onTizen()) {
       if (!this.video) return finish(false);
@@ -1526,32 +1537,66 @@ export class Player {
     }
 
     const av = window.webapis!.avplay!;
-    try {
-      const state = av.getState();
-      if (state !== "READY" && state !== "PLAYING" && state !== "PAUSED") return finish(false);
-      if (!av.seekTo) return finish(false);
-    } catch {
-      return finish(false);
-    }
+    if (!av.seekTo) return finish(false);
 
     return new Promise<boolean>((resolve) => {
       let settled = false;
+      let retried = false;
+      let retryTimer = 0;
+      let attemptId = 0;
       const done = (success: boolean) => {
         if (settled) return;
         settled = true;
         window.clearTimeout(timeout);
+        window.clearTimeout(retryTimer);
         resolve(finish(success));
       };
+      const retry = (error: unknown) => {
+        if (settled) return;
+        if (
+          retried ||
+          generation !== this.generation ||
+          /not.?supported|unsupported/i.test(
+            `${codeOf(error)} ${error instanceof Error ? error.message : ""}`,
+          )
+        ) {
+          done(false);
+          return;
+        }
+        // AVPlay can reject the first seek while its pause or prepare state settles.
+        retried = true;
+        retryTimer = window.setTimeout(attempt, 200);
+      };
+      const attempt = () => {
+        if (settled) return;
+        if (generation !== this.generation) {
+          done(false);
+          return;
+        }
+        const id = ++attemptId;
+        try {
+          const state = av.getState();
+          if (state !== "READY" && state !== "PLAYING" && state !== "PAUSED") {
+            retry("InvalidStateError");
+            return;
+          }
+          const duration = this.mode === "finite" ? (av.getDuration?.() ?? 0) : 0;
+          const milliseconds = Math.round(target * 1000);
+          av.seekTo?.(
+            duration > 0 ? Math.min(milliseconds, Math.max(0, duration - 1)) : milliseconds,
+            () => {
+              if (id === attemptId) done(true);
+            },
+            (error) => {
+              if (id === attemptId) retry(error);
+            },
+          );
+        } catch (error) {
+          retry(error);
+        }
+      };
       const timeout = window.setTimeout(() => done(false), SEEK_TIMEOUT_MS);
-      try {
-        av.seekTo?.(
-          target * 1000,
-          () => done(true),
-          () => done(false),
-        );
-      } catch {
-        done(false);
-      }
+      attempt();
     });
   }
 
@@ -1611,10 +1656,10 @@ export class Player {
     return true;
   }
 
-  /** Give the decoder back and let go of the television's video plane entirely. */
-  stop() {
+  /** Stop playback, retaining the decoder only while another target is being prepared. */
+  stop(release = true) {
     this.setMuted(false);
-    this.teardown(true);
+    this.teardown(release);
   }
 
   /**

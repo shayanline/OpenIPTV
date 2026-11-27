@@ -7,19 +7,19 @@ export function VodCredits({ cast, director }: { cast: readonly string[]; direct
   return (
     <>
       {!!director && (
-        <p className="vod-credit-row" dir="auto">
+        <p className="vod-credit-row">
           <Icon name="movie" />
           <span className="vod-credit-label">{t("vod.directedBy")}</span>
-          <span className="vod-credit-names" dir="auto">
+          <span className="vod-credit-names">
             {director}
           </span>
         </p>
       )}
       {!!cast.length && (
-        <p className="vod-credit-row" dir="auto">
+        <p className="vod-credit-row">
           <Icon name="cast" />
           <span className="vod-credit-label">{t("vod.starring")}</span>
-          <span className="vod-credit-names" dir="auto">
+          <span className="vod-credit-names">
             {cast.join(", ")}
           </span>
         </p>

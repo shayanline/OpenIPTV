@@ -306,9 +306,9 @@ export function OptionPicker<T extends string>({
                 onClick={() => choose(option.value)}
               >
                 <span className="option-picker-text">
-                  <span dir="auto">{option.label}</span>
+                  <span>{option.label}</span>
                   {option.secondary && (
-                    <span className="option-picker-secondary" dir="auto">
+                    <span className="option-picker-secondary">
                       {option.secondary}
                     </span>
                   )}

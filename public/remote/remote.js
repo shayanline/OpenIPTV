@@ -441,7 +441,7 @@
     }
     digits += '<span></span><button type="button" data-remote-key="48">0</button><span></span>';
     return (
-      '<div class="remote-overlay" data-remote-overlay hidden><button type="button" class="remote-backdrop" data-action="close-remote" aria-label="' + escape(l.remoteClose) + '"></button><section class="remote-sheet" role="dialog" aria-modal="true" aria-labelledby="remote-title"><header><h2 id="remote-title">Smart Remote</h2><button type="button" class="remote-close" data-action="close-remote" aria-label="' + escape(l.remoteClose) + '">' + icon("close") + '</button></header><div class="remote-carousel" data-remote-carousel><div class="remote-track" data-remote-track>' +
+      '<div class="remote-overlay" data-remote-overlay hidden><button type="button" class="remote-backdrop" data-action="close-remote" aria-label="' + escape(l.remoteClose) + '"></button><section class="remote-sheet" dir="ltr" role="dialog" aria-modal="true" aria-labelledby="remote-title"><header><h2 id="remote-title">Smart Remote</h2><button type="button" class="remote-close" data-action="close-remote" aria-label="' + escape(l.remoteClose) + '">' + icon("close") + '</button></header><div class="remote-carousel" data-remote-carousel><div class="remote-track" data-remote-track>' +
       '<div class="remote-page"><div class="mobile-remote"><div class="touch-dpad"><button type="button" class="touch-key up" data-remote-key="38" aria-label="' + escape(l.remoteUp) + '">' + icon("up") + '</button><button type="button" class="touch-key right" data-remote-key="39" aria-label="' + escape(l.remoteRight) + '">' + icon("right") + '</button><button type="button" class="touch-key down" data-remote-key="40" aria-label="' + escape(l.remoteDown) + '">' + icon("down") + '</button><button type="button" class="touch-key left" data-remote-key="37" aria-label="' + escape(l.remoteLeft) + '">' + icon("left") + '</button><button type="button" class="touch-key ok" data-remote-key="13" aria-label="' + escape(l.remoteSelect) + '">OK</button></div><div class="touch-primary"><button type="button" data-remote-key="10009" aria-label="' + escape(l.remoteReturn) + '">' + icon("return") + '<span>' + escape(l.remoteReturn) + '</span></button><button type="button" data-remote-key="10252" aria-label="' + escape(l.remotePlayPause) + '">' + icon("play") + '<span>Play/Pause</span></button></div><div class="touch-rockers"><div class="touch-rocker"><span>VOL</span><div><button type="button" data-remote-key="448" aria-label="' + escape(l.remoteVolumeUp) + '">' + icon("plus") + '</button><button type="button" data-remote-key="449" aria-label="' + escape(l.remoteVolumeDown) + '">' + icon("minus") + '</button></div></div><div class="touch-rocker"><span>CH</span><div><button type="button" data-remote-key="427" aria-label="' + escape(l.remoteChannelUp) + '">' + icon("plus") + '</button><button type="button" data-remote-key="428" aria-label="' + escape(l.remoteChannelDown) + '">' + icon("minus") + '</button></div></div></div></div></div>' +
       '<div class="remote-page"><div class="remote-keypad"><div class="keypad-digits">' + digits + '</div><div class="keypad-transport"><button type="button" data-remote-key="10232" aria-label="' + escape(l.remotePrevious) + '">' + icon("previous", "transport-icon") + '</button><button type="button" data-remote-key="412" aria-label="' + escape(l.remoteRewind) + '">' + icon("rewind", "transport-icon") + '</button><button type="button" data-remote-key="413" aria-label="' + escape(l.remoteStop) + '">' + icon("stop", "transport-icon") + '</button><button type="button" data-remote-key="417" aria-label="' + escape(l.remoteFastForward) + '">' + icon("forward", "transport-icon") + '</button><button type="button" data-remote-key="10233" aria-label="' + escape(l.remoteNext) + '">' + icon("next", "transport-icon") + '</button></div><div class="keypad-colours"><button type="button" class="red" data-remote-key="403" aria-label="' + escape(l.remoteRed) + '"></button><button type="button" class="green" data-remote-key="404" aria-label="' + escape(l.remoteGreen) + '"></button><button type="button" class="yellow" data-remote-key="405" aria-label="' + escape(l.remoteYellow) + '"></button><button type="button" class="blue" data-remote-key="406" aria-label="' + escape(l.remoteBlue) + '"></button></div></div></div></div></div><div class="remote-pages" role="tablist" aria-label="Remote pages"><button type="button" data-remote-page="0" aria-label="Main controls" aria-selected="true"></button><button type="button" data-remote-page="1" aria-label="Keypad controls" aria-selected="false"></button></div></section></div>'
     );
@@ -1299,13 +1299,11 @@
       var text = document.createElement("span");
       text.className = "option-picker-text";
       var primary = document.createElement("span");
-      primary.dir = "auto";
       primary.textContent = nativeOption.textContent || "";
       text.appendChild(primary);
       if (nativeOption.dataset.secondary) {
         var secondary = document.createElement("span");
         secondary.className = "option-picker-secondary";
-        secondary.dir = "auto";
         secondary.textContent = nativeOption.dataset.secondary;
         text.appendChild(secondary);
       }
@@ -4973,7 +4971,7 @@
           '" aria-label="' +
           escape(name + ", " + (held ? l.lineupRelease : l.lineupGrab)) +
           '"><span class="lineup-sort-label">' +
-          (item ? lineupNameMarkup(item, l) : '<span dir="auto">' + escape(id) + "</span>") +
+          (item ? lineupNameMarkup(item, l) : "<span>" + escape(id) + "</span>") +
           '</span><span class="lineup-sort-handle" data-lineup-sort-handle aria-hidden="true">' +
           icon("sort", "lineup-sort-handle-icon") +
           "</span></button></li>"
@@ -4991,12 +4989,12 @@
         escape((l ? l.lineupFieldNumber : "Channel number") + ", " + String(item.number)) +
         '">' +
         escape(String(item.number)) +
-        '</span><strong class="lineup-channel-name" dir="auto">' +
+        '</span><strong class="lineup-channel-name">' +
         escape(name) +
         "</strong></span>"
       );
     }
-    return '<span dir="auto">' + escape(name) + "</span>";
+    return "<span>" + escape(name) + "</span>";
   }
 
   function lineupAriaName(item) {
@@ -5087,7 +5085,7 @@
         '<li class="lineup-row unavailable" data-lineup-id="' +
         escape(item.key) +
         '"><div class="lineup-row-open-info management-row-single" tabindex="0" data-settings-informational>' +
-        '<span class="lineup-row-main"><strong dir="auto">' +
+        '<span class="lineup-row-main"><strong>' +
         escape(item.label) +
         '</strong><span class="management-row-meta">' +
         escape(l.lineupUnavailableItem) +
@@ -5114,10 +5112,10 @@
         : "";
       var provider =
         item.providerName && item.providerName !== item.name
-          ? '<span class="management-row-meta" dir="auto">' + escape(item.providerName) + "</span>"
+          ? '<span class="management-row-meta">' + escape(item.providerName) + "</span>"
           : "";
       var inner =
-        '<span class="lineup-row-main"><span class="lineup-category-label"><strong dir="auto">' +
+        '<span class="lineup-row-main"><span class="lineup-category-label"><strong>' +
         escape(item.name) + "</strong>" + count + "</span>" +
         provider + "</span>" + hiddenTag;
       var categoryOps =
@@ -5140,7 +5138,7 @@
         '<span class="lineup-row-main">' +
         lineupNameMarkup(item, l) +
         (channelProvider
-          ? '<span class="management-row-meta" dir="auto">' + escape(channelProvider) + "</span>"
+          ? '<span class="management-row-meta">' + escape(channelProvider) + "</span>"
           : "") +
         "</span>" +
         hiddenTag;
@@ -5172,7 +5170,7 @@
       );
     }
     var itemInner =
-      '<span class="lineup-row-main"><strong dir="auto">' +
+      '<span class="lineup-row-main"><strong>' +
       escape(item.name) +
       "</strong></span>";
     return (
@@ -5200,7 +5198,7 @@
           : "") +
         "></label>" +
         '<label class="lineup-editor-name">' + escape(l.lineupFieldName) +
-        '<input name="editorName" dir="auto" value="' + escape(editor.name) + '"' +
+        '<input name="editorName" value="' + escape(editor.name) + '"' +
         (editor.providerName ? ' placeholder="' + escape(editor.providerName) + '"' : "") +
         disabled + "></label>" +
         "</div>";
@@ -5208,7 +5206,7 @@
       fields =
         '<div class="lineup-editor-fields">' +
         '<label class="lineup-editor-wide">' + escape(l.lineupRename) +
-        '<input name="editorValue" dir="auto" value="' + escape(editor.value) + '"' +
+        '<input name="editorValue" value="' + escape(editor.value) + '"' +
         (editor.providerName ? ' placeholder="' + escape(editor.providerName) + '"' : "") +
         disabled + "></label>" +
         "</div>";
@@ -5229,7 +5227,7 @@
               "</em>"
             : "") +
           (hasProviderName
-            ? '<strong dir="auto">' + escape(editor.providerName) + "</strong>"
+            ? "<strong>" + escape(editor.providerName) + "</strong>"
             : "") +
           "</span></div>";
         restoreButton =
@@ -5266,7 +5264,7 @@
       '"' +
       (saving ? " disabled" : "") +
       "></button><section class=\"lineup-editor-dialog\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"lineup-editor-title\" tabindex=\"-1\">" +
-      '<div class="modal-head"><h3 id="lineup-editor-title" dir="auto">' + escape(title) + "</h3></div>" +
+      '<div class="modal-head"><h3 id="lineup-editor-title">' + escape(title) + "</h3></div>" +
       '<form class="lineup-editor lineup-editor-' +
       (editor.kind === "channel" ? "channel" : "text") +
       '" data-lineup-editor data-editor="' +
@@ -5476,10 +5474,10 @@
       '"' +
       (orderBusy ? " disabled" : "") +
       '></button><section class="lineup-editor-dialog lineup-order-dialog" role="dialog" aria-modal="true" aria-labelledby="lineup-order-title" tabindex="-1" data-lineup-order-dialog>' +
-      '<div class="modal-head"><h3 id="lineup-order-title" dir="auto">' +
+      '<div class="modal-head"><h3 id="lineup-order-title">' +
       escape(l[scope.orderTitle]) +
       "</h3></div>" +
-      '<p class="muted lineup-order-context" dir="auto">' +
+      '<p class="muted lineup-order-context">' +
       escape((playlist ? playlist.name + " · " : "") + context) +
       "</p>" +
       '<div class="lineup-order-options" role="listbox" aria-label="' +
@@ -5656,7 +5654,7 @@
       '<div class="item-menu-dialog" data-item-action-dialog role="dialog" aria-modal="true" aria-label="' +
       escape(itemMenu.title) +
       '"><div class="modal-head item-menu-head"><h2 class="item-menu-title">' +
-      '<span dir="auto">' +
+      "<span>" +
       escape(itemMenu.title) +
       "</span></h2></div>" +
       '<div class="item-menu-list" role="menu">' +
@@ -6008,7 +6006,7 @@
         escape(searchLabel) +
         "</span>" +
         icon("search", "lineup-search-icon") +
-        '<input data-lineup-search type="search" dir="auto" placeholder="' +
+        '<input data-lineup-search type="search" placeholder="' +
         escape(searchLabel) +
         '" aria-label="' +
         escape(searchLabel) +
@@ -6069,7 +6067,7 @@
         lineup.loaded && personalScope && customCategoriesEnabled()
           ? '<form class="lineup-editor lineup-create" data-create-category><label>' +
             escape(l.lineupCreateCategory) +
-            '<input name="personalCategoryName" dir="auto" required value="' +
+            '<input name="personalCategoryName" required value="' +
             escape(lineup.createDraft || "") +
             '"></label><button type="submit">' +
             escape(l.lineupCreateCategory) +
@@ -6992,10 +6990,10 @@
       '"' +
       (busy ? " disabled" : "") +
       '></button><section class="confirm-dialog lineup-editor-dialog" role="alertdialog" aria-modal="true" aria-labelledby="confirm-title" tabindex="-1" data-management-confirmation>' +
-      '<div class="modal-head"><h3 id="confirm-title" dir="auto">' +
+      '<div class="modal-head"><h3 id="confirm-title">' +
       escape(prompt.title) +
       "</h3></div>" +
-      '<div class="lineup-editor-body confirm-body"><p class="confirm-text" dir="auto">' +
+      '<div class="lineup-editor-body confirm-body"><p class="confirm-text">' +
       escape(prompt.body) +
       "</p>" +
       (prompt.error
@@ -7571,10 +7569,17 @@
       escape(playlist.id) +
       '" aria-hidden="true">' +
       escape(String(position)) +
-      '</span><strong dir="auto">' +
+      "</span><strong>" +
       escape(playlist.name) +
       "</strong>" +
       (active ? '<em class="active-badge">' + escape(l.active) + "</em>" : "") +
+      (cardState.progress
+        ? '<span class="playlist-card-progress" role="progressbar" aria-label="' +
+          escape(l.refreshing + " " + playlist.name) +
+          '"><span class="form-spinner" aria-hidden="true"></span>' +
+          escape(l.refreshing) +
+          "</span>"
+        : "") +
       (cardState.unavailable
         ? '<em class="playlist-state-tag playlist-state-unavailable">' +
           escape(l.playlistUnavailable) +
@@ -7591,7 +7596,9 @@
       "</span></span>";
     var rowBusy = cardState.progress;
     return (
-      '<article class="playlist-card"><div class="playlist-card-line management-row">' +
+      '<article class="playlist-card"' +
+      (rowBusy ? ' aria-busy="true"' : "") +
+      '><div class="playlist-card-line management-row">' +
       '<button type="button" class="playlist-card-open management-row-primary" data-item-open="playlist" data-id="' +
       escape(playlist.id) +
       '" aria-label="' +
@@ -7636,7 +7643,7 @@
 
   function managementPageHead(title, context, headClass, count, backMarkup, actionsMarkup) {
     var heading =
-      '<h1 dir="auto" data-lineup-heading tabindex="-1" title="' +
+      '<h1 data-lineup-heading tabindex="-1" title="' +
       escape(title) +
       '">' +
       escape(title) +
@@ -7709,7 +7716,7 @@
         escape(l.searchPlaylists) +
         "</span>" +
         icon("search", "lineup-search-icon") +
-        '<input data-playlist-search type="search" name="playlistSearch" autocomplete="off" dir="auto" placeholder="' +
+        '<input data-playlist-search type="search" name="playlistSearch" autocomplete="off" placeholder="' +
         escape(l.searchPlaylists) +
         '" aria-label="' +
         escape(l.searchPlaylists) +
@@ -7866,7 +7873,7 @@
       escape(l.close) +
       '"' +
       '></button><section class="lineup-editor-dialog playlist-add-dialog" role="dialog" aria-modal="true" aria-labelledby="playlist-add-title" tabindex="-1" data-form-overlay="playlist-add">' +
-      '<div class="modal-head"><h3 id="playlist-add-title" dir="auto">' +
+      '<div class="modal-head"><h3 id="playlist-add-title">' +
       escape(l.addPlaylist) +
       "</h3></div>" +
       '<form class="playlist-form credential-card lineup-editor" data-add-playlist-form data-return-action="add-playlist"><div class="lineup-editor-body">' +
@@ -7919,10 +7926,10 @@
       '<div class="lineup-editor-overlay"><button type="button" class="lineup-editor-backdrop" data-playlist-edit-dismiss tabindex="-1" aria-label="' +
       escape(l.close) +
       '"></button><section class="lineup-editor-dialog playlist-edit-dialog" role="dialog" aria-modal="true" aria-labelledby="playlist-edit-title" tabindex="-1" data-form-overlay="playlist-edit">' +
-      '<div class="modal-head"><h3 id="playlist-edit-title" dir="auto">' +
+      '<div class="modal-head"><h3 id="playlist-edit-title">' +
       escape(editingPlaylistSource === "m3u" ? l.editAddress : l.editCredentials) +
       "</h3></div>" +
-      '<p class="muted playlist-edit-name" dir="auto">' +
+      '<p class="muted playlist-edit-name">' +
       escape(playlist.name) +
       "</p>" +
       '<form class="playlist-form credential-card lineup-editor" data-edit-playlist data-id="' +
@@ -8009,7 +8016,7 @@
     var crumbs = ['<a class="crumb" href="#playlists/list">' + escape(l.playlists) + "</a>"];
     if (atRoot) {
       crumbs.push(
-        '<span class="crumb-scope" dir="auto">' + escape(playlist.name) + "</span>",
+        '<span class="crumb-scope">' + escape(playlist.name) + "</span>",
       );
     } else {
       var rootKind =
@@ -8026,7 +8033,7 @@
     }
     if (sectionLabel) {
       crumbs.push(
-        '<span class="crumb-scope" dir="auto">' + escape(sectionLabel) + "</span>",
+        '<span class="crumb-scope">' + escape(sectionLabel) + "</span>",
       );
     }
     if (!atRoot && customChild) {
@@ -8045,7 +8052,7 @@
       var categoryLabel = lineup.categoryName || contentScopeLabel(l);
       if (categoryLabel) {
         crumbs.push(
-          '<span class="crumb-scope" dir="auto">' + escape(categoryLabel) + "</span>",
+          '<span class="crumb-scope">' + escape(categoryLabel) + "</span>",
         );
       }
     }
@@ -8122,7 +8129,7 @@
       '<div class="lineup-editor-overlay"><button type="button" class="lineup-editor-backdrop" data-device-edit-dismiss tabindex="-1" aria-label="' +
       escape(l.close) +
       '"></button><section class="lineup-editor-dialog device-edit-dialog" role="dialog" aria-modal="true" aria-labelledby="device-edit-title" tabindex="-1" data-form-overlay="device-edit">' +
-      '<div class="modal-head"><h3 id="device-edit-title" dir="auto">' +
+      '<div class="modal-head"><h3 id="device-edit-title">' +
       escape(l.rename) +
       "</h3></div>" +
       '<form class="lineup-editor" data-edit-device data-id="' +
@@ -8163,7 +8170,7 @@
               escape(device.id) +
               '" aria-label="' +
               escape(l.rename + ", " + device.name) +
-              '"><span class="device-card-info"><span class="device-card-heading"><strong dir="auto">' +
+              '"><span class="device-card-info"><span class="device-card-heading"><strong>' +
               escape(device.name) +
               "</strong>" +
               (auth && device.id === auth.deviceId

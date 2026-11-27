@@ -321,6 +321,23 @@ test("choosing a result takes the rail to that channel's category", async () => 
   assert.equal(document.querySelector(".rail .row.showing .row-label")?.textContent, "Sport");
 });
 
+test("channel arrows continue from the channel selected in Search", async () => {
+  await mountApp(PLAYLIST, { resume: "a" });
+  await openSearch();
+  await type("Alpha Sport");
+  fieldKey(KEY.DOWN);
+  press(KEY.ENTER);
+  await settle(0);
+  assert.equal(played[played.length - 1], "http://example.invalid/d.m3u8");
+
+  press(KEY.UP);
+  await settle(48);
+  assert.equal(played[played.length - 1], "http://example.invalid/c.m3u8");
+  press(KEY.DOWN);
+  await settle(48);
+  assert.equal(played[played.length - 1], "http://example.invalid/d.m3u8");
+});
+
 test("left and right belong to the caret while the keyboard has the field", async () => {
   /*
    * The one that would be most annoying to get wrong. A viewer correcting the third letter of a

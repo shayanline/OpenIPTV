@@ -294,7 +294,7 @@ export function EpisodeList({
               />
             </div>
             <div className="episode-preview-heading">
-              <h3 className="episode-preview-title" dir="auto">
+              <h3 className="episode-preview-title">
                 {selected.name || t("vod.untitled")}
               </h3>
               {(selected.durationSeconds !== undefined ||
@@ -316,7 +316,7 @@ export function EpisodeList({
                     </span>
                   )}
                   {selected.metadata.releaseDate && (
-                    <span className="episode-meta-badge" dir="auto">
+                    <span className="episode-meta-badge">
                       <Icon name="guide" />
                       {selected.metadata.releaseDate}
                     </span>
@@ -325,7 +325,7 @@ export function EpisodeList({
               )}
             </div>
             <div ref={previewCopy} className="episode-preview-copy">
-              {selected.metadata.plot && <p dir="auto">{selected.metadata.plot}</p>}
+              {selected.metadata.plot && <p>{selected.metadata.plot}</p>}
             </div>
           </button>
         )}

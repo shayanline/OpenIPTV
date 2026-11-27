@@ -13,7 +13,8 @@
 extern int host_socket(int, int, int) IMPORT("__wasm_socket");
 extern int host_bind(int, const struct sockaddr *, socklen_t) IMPORT("__wasm_bind");
 extern int host_listen(int, int) IMPORT("__wasm_listen");
-extern int host_accept(int, struct sockaddr *, socklen_t *) IMPORT("__wasm_accept");
+/* Samsung passes the address capacity and output length separately, followed by flags. */
+extern int host_accept(int, void *, socklen_t, socklen_t *, int) IMPORT("__wasm_accept");
 extern int host_close(int) IMPORT("__wasm_close");
 extern ssize_t host_recv(int, void *, size_t, int) IMPORT("__wasm_recv");
 extern ssize_t host_send(int, const void *, size_t, int) IMPORT("__wasm_send");
@@ -38,7 +39,7 @@ static int send_all(int socket, const char *buffer, size_t length) {
       sent += (size_t)written;
       continue;
     }
-    if (written < 0 && errno == EINTR) continue;
+    if (written == -EINTR) continue;
     return -1;
   }
   return 0;
@@ -144,7 +145,7 @@ int receive_request(void) {
   if (client < 0) {
     struct pollfd waiting = { listening, POLLIN, 0 };
     if (host_poll(&waiting, 1, 0) <= 0) return 0;
-    client = host_accept(listening, NULL, NULL);
+    client = host_accept(listening, NULL, 0, NULL, 0);
     if (client < 0) return 0;
   }
 

@@ -2,19 +2,13 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { createPortal } from "react-dom";
 import type { Chrome } from "../hooks/useChrome";
 import type { PlaybackController } from "../hooks/usePlaybackController";
-import {
-  capturePlaybackExpansion,
-  type PlaybackExpansionOrigin,
-} from "../hooks/usePlaybackExpansion";
 import { useChannels } from "../stores/channels";
-import { ContentTransitionShade } from "../components/ContentTransitionShade";
-import { useContentTransition } from "../hooks/useContentTransition";
 import { applyLineupMutation, useLineup } from "../stores/lineup";
 import { usePersonal } from "../stores/personal";
 import { useLibrary, type ChannelGuide, type GuideProgramme } from "../stores/library";
 import { useSettings } from "../stores/settings";
 import { onTizen } from "../services/player";
-import { seekStepForRepeat } from "../services/playbackRange";
+import { type SeekHold, seekStepFromKey } from "../services/playbackRange";
 import { warmChain } from "../services/logos";
 import { cssMs } from "../services/metrics";
 import {
@@ -307,9 +301,6 @@ export function LiveScreen({
   surfaceRef.current = surface;
   const faultRef = useRef(playback.snapshot.fault);
   faultRef.current = playback.snapshot.fault;
-  const [deckEntrance, setDeckEntrance] = useState<"banner" | "ordinary">("ordinary");
-  /* Geometry captured from the banner the deck is replacing, released when it closes. */
-  const [deckOrigin, setDeckOrigin] = useState<PlaybackExpansionOrigin | null>(null);
   const drawerOrigin = useRef<PlaybackDeckFocus>("audio");
   const finishRailClose = useCallback(() => {
     const commit = railCloseCommit.current;
@@ -347,9 +338,10 @@ export function LiveScreen({
   const returnRoute = useRef<PlaybackReturnRoute | null>(null);
   const guideTimer = useRef<number | undefined>(undefined);
   const wheelAt = useRef({ rail: 0, list: 0, guide: 0 });
-  const seekRepeat = useRef<{ direction: -1 | 0 | 1; count: number }>({
+  const seekRepeat = useRef<SeekHold>({
     direction: 0,
-    count: 0,
+    startedAt: 0,
+    steppedAt: 0,
   });
   const allowWheel = useCallback((region: keyof typeof wheelAt.current) => {
     const now = Date.now();
@@ -641,13 +633,12 @@ export function LiveScreen({
   const currentRef = useRef<PlaybackTarget | null>(null);
   currentRef.current = current;
 
-  /*
-   * Details entry and exit share one mask, owned by the playing target and its playlist
-   * source so a pending commit can never reopen information for a target that is gone.
-   */
-  const detailsTransition = useContentTransition(`${activeSourceKey}:${current?.id ?? ""}`);
-  const detailsTransitioning =
-    detailsTransition.phase === "leaving" || detailsTransition.phase === "settling";
+  const detailsSource = useRef(activeSourceKey);
+  useLayoutEffect(() => {
+    if (detailsSource.current === activeSourceKey) return;
+    detailsSource.current = activeSourceKey;
+    if (playbackDrawer === "details") onPlaybackDrawerChange(null);
+  }, [activeSourceKey, onPlaybackDrawerChange, playbackDrawer]);
 
   /**
    * Seconds the channel now tuning has been tuning, so a slow one can say so.
@@ -667,12 +658,6 @@ export function LiveScreen({
    * used to arrive as a callback from the tuner; now it is derived from the same snapshot
    * every other surface reads.
    */
-  // A newly arriving fault retires any details commit still in flight. An information
-  // surface already open keeps the accepted fault behavior below.
-  useLayoutEffect(() => {
-    if (fault) detailsTransition.cancel();
-  }, [fault, detailsTransition.cancel]);
-
   useLayoutEffect(() => {
     if (!fault) return;
     onDeckOpenChange(false);
@@ -1321,10 +1306,9 @@ export function LiveScreen({
       setPane("list");
       if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
       chrome.clear();
-      watch();
       void useLibrary.getState().loadGuide(channel);
     },
-    [cancelRailClose, chrome.clear, endSearch, index, setGuideChannelId, watch],
+    [cancelRailClose, chrome.clear, endSearch, index, setGuideChannelId],
   );
 
   const closeGuide = useCallback(() => {
@@ -1405,17 +1389,19 @@ export function LiveScreen({
    */
   const pickResult = useCallback(
     (channel: Channel) => {
+      endSearch();
+      setQuery("");
+      setApplied("");
       const cat = locate(channel);
       if (cat >= 0) {
         setCursor(cat + 1);
         cursorRef.current = cat + 1;
         showCategory(cat, lists[cat].channels.indexOf(channel), true);
       }
-      closeSearch();
       if (channel.id !== currentRef.current?.id) playback.start(channel);
       watch();
     },
-    [locate, lists, showCategory, closeSearch, playback.start, watch],
+    [endSearch, locate, lists, showCategory, playback.start, watch],
   );
 
   /**
@@ -1429,38 +1415,16 @@ export function LiveScreen({
   const openDeck = useCallback(
     (focus?: PlaybackDeckFocus) => {
       if (!currentRef.current || faultRef.current) return;
-      /*
-       * A live banner that is still up is the expansion's source, captured before
-       * chrome.clear unmounts it. The displayed target identity gates the capture, so a
-       * channel preview mid zap cannot morph a title that is not the one playing. No
-       * matching geometry means the ordinary entrance rather than a morph from nothing.
-       */
-      const targetKey = playback.shown?.id ?? currentRef.current.id;
-      const origin =
-        chrome.banner && currentRef.current.mode === "live"
-          ? capturePlaybackExpansion(document.body, targetKey)
-          : null;
-      setDeckOrigin(origin);
-      setDeckEntrance(
-        chrome.banner && currentRef.current.mode === "live" && origin ? "banner" : "ordinary",
-      );
+      // The whole deck uses the banner's light entrance, without geometry reads on input.
       chrome.clear();
       setDeckFocus(focus ?? (playback.quickSeek ? "seek" : "play-pause"));
       setView("watch");
       onDeckOpenChange(true);
     },
-    [
-      chrome.banner,
-      chrome.clear,
-      onDeckOpenChange,
-      setView,
-      playback.shown,
-      playback.quickSeek,
-    ],
+    [chrome.clear, onDeckOpenChange, setView, playback.quickSeek],
   );
 
   const closeDeck = useCallback(() => {
-    setDeckOrigin(null);
     onDeckOpenChange(false);
   }, [onDeckOpenChange]);
 
@@ -1470,27 +1434,35 @@ export function LiveScreen({
   );
   const seekFiniteFromKey = useCallback(
     (direction: -1 | 1, repeated: boolean) => {
-      const held = seekRepeat.current;
-      held.count = repeated && held.direction === direction ? held.count + 1 : 0;
-      held.direction = direction;
-      seekFinite(direction * seekStepForRepeat(held.count));
+      const amount = seekStepFromKey(seekRepeat.current, direction, repeated);
+      if (amount) seekFinite(direction * amount);
     },
     [seekFinite],
   );
   useEffect(() => {
     const resetSeekRepeat = (event: KeyboardEvent) => {
       if (
+        event.keyCode === KEY.UP ||
+        event.keyCode === KEY.DOWN ||
+        event.keyCode === KEY.CH_UP ||
+        event.keyCode === KEY.CH_DOWN ||
+        event.keyCode === KEY.PREV ||
+        event.keyCode === KEY.NEXT
+      ) {
+        playback.commitStep();
+      }
+      if (
         event.keyCode === KEY.LEFT ||
         event.keyCode === KEY.RIGHT ||
         event.keyCode === KEY.REWIND ||
         event.keyCode === KEY.FORWARD
       ) {
-        seekRepeat.current = { direction: 0, count: 0 };
+        seekRepeat.current = { direction: 0, startedAt: 0, steppedAt: 0 };
       }
     };
     window.addEventListener("keyup", resetSeekRepeat, true);
     return () => window.removeEventListener("keyup", resetSeekRepeat, true);
-  }, []);
+  }, [playback.commitStep]);
 
   const seekDeck = useCallback(
     (seconds: number) => playback.seekTo(seconds),
@@ -1505,28 +1477,11 @@ export function LiveScreen({
   /** Open a playback drawer over the deck, remembering which action asked for it. */
   const openPlaybackDrawer = useCallback(
     (drawer: PlaybackDrawerSurface, origin: PlaybackDeckFocus) => {
-      if (drawer !== "details") {
-        cancelRailClose();
-        drawerOrigin.current = origin;
-        onPlaybackDrawerChange(drawer);
-        return;
-      }
-      const targetId = currentRef.current?.id ?? "";
-      const playlistId = activePlaylistRef.current?.id ?? "";
-      const sourceVersion = activePlaylistRef.current?.sourceVersion ?? 0;
-      detailsTransition.navigate(() => {
-        const source = activePlaylistRef.current;
-        if (
-          currentRef.current?.id !== targetId ||
-          source?.id !== playlistId ||
-          source?.sourceVersion !== sourceVersion
-        )
-          return;
-        drawerOrigin.current = origin;
-        onPlaybackDrawerChange(drawer);
-      });
+      cancelRailClose();
+      drawerOrigin.current = origin;
+      onPlaybackDrawerChange(drawer);
     },
-    [cancelRailClose, detailsTransition.navigate, onPlaybackDrawerChange],
+    [cancelRailClose, onPlaybackDrawerChange],
   );
 
   /**
@@ -1539,10 +1494,10 @@ export function LiveScreen({
         onPlaybackDrawerChange(null);
         if (origin !== "live-browser") setDeckFocus(origin);
       };
-      if (playbackDrawer === "details") detailsTransition.navigateNow(commit);
+      if (playbackDrawer === "details") commit();
       else if (playbackDrawer) closeRailDrawer(playbackDrawer, commit);
     },
-    [closeRailDrawer, detailsTransition.navigateNow, onPlaybackDrawerChange, playbackDrawer],
+    [closeRailDrawer, onPlaybackDrawerChange, playbackDrawer],
   );
 
   const closePlaybackDetails = useCallback(
@@ -1558,7 +1513,6 @@ export function LiveScreen({
    * so the exact details, season, episode and catalogue position remain unchanged.
    */
   const leaveFinite = useCallback(() => {
-    detailsTransition.cancel();
     const held = progressRef.current;
     if (held) {
       rememberProgress(held.seed, held.seconds, held.duration, "stop");
@@ -1586,7 +1540,6 @@ export function LiveScreen({
     channels,
     chrome.lowerBanner,
     closeDeck,
-    detailsTransition.cancel,
     onFiniteReturn,
     onPlaybackDrawerChange,
     openGuideChannel,
@@ -1632,12 +1585,16 @@ export function LiveScreen({
           }
           break;
         case "previous":
-          if (current?.mode === "live") playback.step(-1, visible);
-          else onFiniteStep?.(-1);
+          if (current?.mode === "live") {
+            playback.step(-1, visible);
+            playback.commitStep();
+          } else onFiniteStep?.(-1);
           break;
         case "next":
-          if (current?.mode === "live") playback.step(1, visible);
-          else onFiniteStep?.(1);
+          if (current?.mode === "live") {
+            playback.step(1, visible);
+            playback.commitStep();
+          } else onFiniteStep?.(1);
           break;
         case "play-pause":
           playback.togglePlaying();
@@ -1660,6 +1617,7 @@ export function LiveScreen({
       playback.flushSeek,
       playback.goLive,
       playback.step,
+      playback.commitStep,
       playback.togglePlaying,
       visible,
     ],
@@ -1776,11 +1734,11 @@ export function LiveScreen({
         // television. They announce rather than take focus, because they change the channel.
         case KEY.PREV:
           if (current.mode === "finite") onFiniteStep?.(-1);
-          else playback.step(-1, visible);
+          else playback.step(-1, visible, repeated);
           break;
         case KEY.NEXT:
           if (current.mode === "finite") onFiniteStep?.(1);
-          else playback.step(1, visible);
+          else playback.step(1, visible, repeated);
           break;
       }
       return true;
@@ -1846,7 +1804,7 @@ export function LiveScreen({
           current?.mode !== "finite" &&
           (surface === "picture" || surface === "panel" || surface === "playback-deck")
         )
-          playback.step(code === KEY.CH_UP ? 1 : -1, visible);
+          playback.step(code === KEY.CH_UP ? 1 : -1, visible, event.repeat);
         return true;
       }
 
@@ -2015,11 +1973,11 @@ export function LiveScreen({
        * they were, which is what makes it impossible to be stuck.
        */
       if (code === KEY.UP) {
-        playback.step(1, visible);
+        playback.step(1, visible, event.repeat);
         return;
       }
       if (code === KEY.DOWN) {
-        playback.step(-1, visible);
+        playback.step(-1, visible, event.repeat);
         return;
       }
 
@@ -2294,24 +2252,6 @@ export function LiveScreen({
         event.preventDefault();
         return;
       }
-      if (detailsTransitioning) {
-        if (code === KEY.BACK || code === KEY.ESC) {
-          event.preventDefault();
-          detailsTransition.cancel();
-          if (playbackDrawer === "details") closePlaybackDetails();
-          return;
-        }
-        if (
-          code === KEY.UP ||
-          code === KEY.DOWN ||
-          code === KEY.LEFT ||
-          code === KEY.RIGHT ||
-          code === KEY.ENTER
-        ) {
-          event.preventDefault();
-          return;
-        }
-      }
       if (surface === "details") {
         if (onTransport(code, event.repeat)) event.preventDefault();
         return;
@@ -2329,8 +2269,6 @@ export function LiveScreen({
     [
       closingRail,
       closePlaybackDetails,
-      detailsTransition.cancel,
-      detailsTransitioning,
       inputEnabled,
       navigationTransitionActive,
       onGuideKey,
@@ -2345,7 +2283,7 @@ export function LiveScreen({
 
   useLongPress({
     code: KEY.ENTER,
-    enabled: inputEnabled && !detailsTransitioning && surface === "picture" && !!current,
+    enabled: inputEnabled && surface === "picture" && !!current,
     onShortPress: () => {
       if (chrome.digits) jump(Number(chrome.commitDigits()));
       else onPictureKey(KEY.ENTER, { preventDefault() {} } as KeyboardEvent);
@@ -2481,7 +2419,8 @@ export function LiveScreen({
   const leaveSearchDown = useCallback(() => {
     if (column.length) setIndex(0);
   }, [column.length]);
-  const searchOnField = inputEnabled && pane === "list" && index === FIELD;
+  const searchOnField =
+    inputEnabled && !navigationTransitionActive && pane === "list" && index === FIELD;
   const panelSearch = useMemo(
     () =>
       panelSearching
@@ -2608,6 +2547,12 @@ export function LiveScreen({
       playback.shown?.year,
     ],
   );
+
+  const deckVisible = !!current && deckOpen && !fault && surface === "playback-deck";
+  const subtitlesVisible =
+    !modal &&
+    playbackDrawer !== "details" &&
+    playback.capabilities.subtitleTracks.some((track) => track.selected);
 
   return (
     <>
@@ -2758,9 +2703,9 @@ export function LiveScreen({
       {playback.shown?.mode === "live" &&
         bannerChannel &&
         atPlayer &&
-        chrome.banner &&
         !fault && (
           <PlaybackBanner
+            visible={chrome.banner}
             channel={bannerChannel}
             programme={{
               current: bannerGuide?.current?.title,
@@ -2770,7 +2715,7 @@ export function LiveScreen({
         )}
 
       {/* ---- layer 3, the playback deck and its drawers ------------------------------ */}
-      {current && deckOpen && !fault && surface === "playback-deck" && (
+      {current && deckVisible && (
         <PlaybackDeck
           snapshot={snapshot}
           metadata={deckMetadata}
@@ -2785,6 +2730,7 @@ export function LiveScreen({
           }
           hasAudio={playback.capabilities.audioTracks.length > 0}
           hasSubtitles={playback.capabilities.subtitleTracks.length > 0}
+          subtitleCue={subtitlesVisible ? playback.subtitleCue : ""}
           previousEnabled={
             current.mode === "live" ? visible.length > 1 : finiteStepAvailable(-1)
           }
@@ -2794,9 +2740,7 @@ export function LiveScreen({
           onAction={onDeckAction}
           onClose={handleDeckBack}
           onInteraction={chrome.clear}
-          inputEnabled={inputEnabled && !detailsTransitioning}
-          entrance={deckEntrance}
-          expansionOrigin={deckOrigin}
+          inputEnabled={inputEnabled}
           targetKey={playback.shown?.id ?? current.id}
         />
       )}
@@ -2866,28 +2810,17 @@ export function LiveScreen({
           series={seriesDetails}
           durationSeconds={snapshot.duration ?? undefined}
           onClose={closePlaybackDetails}
-          inputEnabled={inputEnabled && !detailsTransitioning}
+          inputEnabled={inputEnabled}
         />
       )}
-      <ContentTransitionShade
-        className="playback-content-transition"
-        phase={detailsTransition.phase}
-        onTransitionEnd={detailsTransition.onTransitionEnd}
-      />
 
       {/*
-       * Application subtitles sit inside the safe area and render after the deck in the
-       * document, so the `.playback-deck ~ .subtitle-layer` rule lifts the cue above the
-       * controls whenever the deck is showing. The details surface is a reading surface,
-       * so picture subtitles stay hidden while it is open.
+       * Open controls own the cue so CSS can anchor it above their complete height.
+       * Other picture surfaces use the normal safe area position.
        */}
       <SubtitleLayer
         cue={playback.subtitleCue}
-        hidden={
-          modal ||
-          playbackDrawer === "details" ||
-          !playback.capabilities.subtitleTracks.some((track) => track.selected)
-        }
+        hidden={!subtitlesVisible || deckVisible}
       />
 
       {guideChannel && !modal && (

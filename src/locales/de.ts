@@ -612,7 +612,7 @@ export default {
   "guide.seek": "Zehn Sekunden springen",
   "search.mediaName": "Film- oder Serienname",
   "search.mediaAria": "Filme oder Serien nach Namen durchsuchen",
-  "error.seekUnavailable": "Dieses Video kann auf diesem Gerät nicht gespult werden.",
+  "error.seekUnavailable": "Zu dieser Position konnte nicht gesprungen werden. Bitte erneut versuchen.",
   "error.continueOrTryFormat":
     "Setzen Sie an der aktuellen Position fort oder versuchen Sie ein anderes Format.",
   "error.finiteFormatUnsupported":
@@ -620,6 +620,8 @@ export default {
   "error.tryTelevisionOrVideo":
     "Versuchen Sie es auf dem Fernseher oder wählen Sie ein anderes Video.",
   "exit.question": "OpenIPTV schließen?",
+  "exit.confirm": "App beenden",
+  "exit.stay": "App geöffnet lassen",
   "exit.body": "Sie können die App erneut aus der App-Leiste öffnen.",
   "lineup.playlistSettings": "Playlist-Einstellungen",
   "lineup.categoryVisibility": "Kategorie-Sichtbarkeit",

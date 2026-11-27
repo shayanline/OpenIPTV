@@ -140,7 +140,7 @@ function pressSequence(codes: number[]) {
   });
 }
 
-// Replay retry states that unmount the focused button.
+// Exercise recovery from an external focus loss after the retry preserves its button.
 async function orphanedRetry(statuses: RemoteAccessState["status"][], enterKey = KEY.RIGHT) {
   const { actions, remote } = remoteHarness();
   const onAppNavigationFocus = vi.fn();
@@ -156,7 +156,10 @@ async function orphanedRetry(statuses: RemoteAccessState["status"][], enterKey =
 
   for (const status of statuses) {
     view.rerender(sheet(remote({ status }), { onAppNavigationFocus }));
+    expect(deviceAction()).toBe(retry);
+    expect(document.activeElement).toBe(retry);
   }
+  act(() => retry!.blur());
   expect(document.activeElement).toBe(document.body);
   return { view, actions, remote, onAppNavigationFocus };
 }
@@ -212,12 +215,44 @@ test("settings reveals focused controls in its own viewport without scrolling th
   expect(outer.scrollTop).toBe(70);
 });
 
-test("a stranded focus after retry recovers to the rail and keeps settings reachable", async () => {
+test("retry retains its control while starting and never takes focus back from the rail", async () => {
+  const { actions, remote } = remoteHarness();
+  const view = render(sheet(remote()));
+  press(KEY.RIGHT);
+  await flush();
+  const retry = deviceAction()!;
+  fireEvent.click(retry);
+  expect(actions.retry).toHaveBeenCalledTimes(1);
+
+  view.rerender(sheet(remote({ status: "idle" })));
+  expect(deviceAction()).toBe(retry);
+  expect(document.activeElement).toBe(retry);
+  view.rerender(sheet(remote({ status: "starting" })));
+  expect(deviceAction()).toBe(retry);
+  expect(document.activeElement).toBe(retry);
+  expect(retry.getAttribute("aria-busy")).toBe("true");
+  fireEvent.click(retry);
+  expect(actions.retry).toHaveBeenCalledTimes(1);
+
+  press(KEY.LEFT);
+  const rail = railRow("Remote access");
+  expect(document.activeElement).toBe(rail);
+  view.rerender(sheet(remote({ status: "listening" })));
+  expect(deviceAction()).toBe(retry);
+  expect(retry.textContent).toContain("Add a device");
+  expect(document.activeElement).toBe(rail);
+  expect(actions.openPairing).not.toHaveBeenCalled();
+});
+
+test("a stranded focus after retry recovers to the retained control and keeps settings reachable", async () => {
   const { onAppNavigationFocus } = await orphanedRetry(["idle", "starting"]);
 
   const down = press(KEY.DOWN);
   expect(down.defaultPrevented).toBe(true);
   expect(onAppNavigationFocus).not.toHaveBeenCalled();
+  expect(document.activeElement).toBe(deviceAction());
+
+  press(KEY.LEFT);
   expect(document.activeElement).toBe(railRow("Remote access"));
 
   press(KEY.UP);
@@ -400,7 +435,7 @@ test("a pairing modal blocks section switching until Cancel", async () => {
     expect(pairingDialog()).toBeTruthy();
     expect(document.querySelector(".device-access")).toBeTruthy();
     expect(document.querySelector(".content-manage")).toBeNull();
-    expect(phase()).toBe("idle");
+    expect(phase()).toBeUndefined();
   } finally {
     document.documentElement.style.removeProperty("--t-navigation");
     delete document.documentElement.dataset.inputMode;
@@ -902,7 +937,7 @@ test("inline device revoke confirmation allows safe actions and blocks the backg
   expect(document.activeElement).toBe(revoke);
 });
 
-test("rail keys retarget a pending switch and keep the cursor ahead of the commit", async () => {
+test("rail keys switch sections immediately and keep focus on the selected row", async () => {
   const { remote } = remoteHarness();
   render(sheet(remote()));
   document.documentElement.style.setProperty("--t-navigation", "180ms");
@@ -910,7 +945,7 @@ test("rail keys retarget a pending switch and keep the cursor ahead of the commi
     expect(document.activeElement).toBe(railRows()[3]);
 
     press(KEY.UP);
-    expect(phase()).toBe("leaving");
+    expect(phase()).toBeUndefined();
     expect(railCursor()?.textContent).toContain("Content & playlists");
     expect(document.activeElement).toBe(railRow("Content & playlists"));
     expect(document.querySelector(".sheet-rail .row.showing")).toBe(
@@ -918,26 +953,20 @@ test("rail keys retarget a pending switch and keep the cursor ahead of the commi
     );
     expect(railRow("Content & playlists")?.getAttribute("aria-current")).toBe("page");
     expect(railRow("Remote access")?.hasAttribute("aria-current")).toBe(false);
-    expect(bodyHeader()).toBe("Remote access");
-    expect(document.querySelector(".device-access")).toBeTruthy();
+    expect(bodyHeader()).toBe("Content & playlists");
+    expect(document.querySelector(".device-access")).toBeNull();
 
     pressSequence([KEY.UP, KEY.UP]);
-    expect(phase()).toBe("leaving");
+    expect(phase()).toBeUndefined();
     expect(railCursor()?.textContent).toContain("Appearance");
     expect(document.activeElement).toBe(railRow("Appearance"));
     expect(document.querySelector(".sheet-rail .row.showing")).toBe(railRow("Appearance"));
     expect(railRow("Appearance")?.getAttribute("aria-current")).toBe("page");
-    expect(bodyHeader()).toBe("Remote access");
-
-    await advance(280);
-    expect(phase()).toBe("settling");
     expect(bodyHeader()).toBe("Appearance");
     expect(document.querySelector(".device-access")).toBeNull();
     expect(document.querySelector(".content-manage")).toBeNull();
-    await advance(64);
-    expect(phase()).toBe("entering");
-    await advance(280);
-    expect(phase()).toBe("idle");
+    await advance(700);
+    expect(phase()).toBeUndefined();
 
     expect(bodyHeader()).toBe("Appearance");
     expect(railCursor()?.textContent).toContain("Appearance");
@@ -948,60 +977,47 @@ test("rail keys retarget a pending switch and keep the cursor ahead of the commi
   }
 });
 
-test("pointer rail input retargets the pending switch without committing early", async () => {
+test("pointer section changes commit immediately while hover only moves the cursor", async () => {
   document.documentElement.dataset.inputMode = "pointer";
   const { remote } = remoteHarness();
   render(sheet(remote()));
   document.documentElement.style.setProperty("--t-navigation", "180ms");
   try {
     fireEvent.click(railRow("Playback")!);
-    expect(phase()).toBe("leaving");
-    expect(railCursor()?.textContent).toContain("Playback");
+    expect(phase()).toBeUndefined();
     expect(document.querySelector(".sheet-rail .row.showing")).toBe(railRow("Playback"));
     expect(railRow("Playback")?.getAttribute("aria-current")).toBe("page");
-    expect(bodyHeader()).toBe("Remote access");
+    expect(bodyHeader()).toBe("Playback");
+    expect(bodyHasFocus()).toBe(true);
 
     fireEvent.pointerEnter(railRow("Content & playlists")!);
-    expect(phase()).toBe("leaving");
+    expect(phase()).toBeUndefined();
     expect(railCursor()?.textContent).toContain("Content & playlists");
     expect(document.querySelector(".sheet-rail .row.showing")).toBe(railRow("Playback"));
     expect(railRow("Content & playlists")?.hasAttribute("aria-current")).toBe(false);
-    expect(bodyHeader()).toBe("Remote access");
+    expect(bodyHeader()).toBe("Playback");
+    expect(bodyHasFocus()).toBe(false);
 
     fireEvent.click(railRow("Content & playlists")!);
-    expect(phase()).toBe("leaving");
-    expect(railCursor()?.textContent).toContain("Content & playlists");
+    expect(phase()).toBeUndefined();
     expect(document.querySelector(".sheet-rail .row.showing")).toBe(
       railRow("Content & playlists"),
     );
 
-    await advance(280);
-    expect(phase()).toBe("settling");
     expect(bodyHeader()).toBe("Content & playlists");
 
     fireEvent.pointerEnter(railRow("Appearance")!);
     expect(railCursor()?.textContent).toContain("Appearance");
     fireEvent.click(railRow("Appearance")!);
-    expect(phase()).toBe("settling");
+    expect(phase()).toBeUndefined();
     expect(bodyHeader()).toBe("Appearance");
     expect(railCursor()).toBeNull();
     expect(bodyHasFocus()).toBe(true);
     expect(document.querySelector(".sheet-rail .row.showing")).toBe(railRow("Appearance"));
 
-    await advance(64);
-    expect(phase()).toBe("entering");
-
     fireEvent.click(railRow("About")!);
-    expect(phase()).toBe("leaving");
-    expect(railCursor()?.textContent).toContain("About");
+    expect(phase()).toBeUndefined();
     expect(document.querySelector(".sheet-rail .row.showing")).toBe(railRow("About"));
-
-    await advance(280);
-    expect(phase()).toBe("settling");
-    await advance(64);
-    expect(phase()).toBe("entering");
-    await advance(280);
-    expect(phase()).toBe("idle");
 
     expect(bodyHeader()).toBe("About");
     expect(document.querySelector(".about")).toBeTruthy();
@@ -1011,26 +1027,21 @@ test("pointer rail input retargets the pending switch without committing early",
   }
 });
 
-test("clicking the displayed section during a pending switch replaces it", async () => {
+test("reselecting a section cannot leave an older deferred section switch", async () => {
   document.documentElement.dataset.inputMode = "pointer";
   const { remote } = remoteHarness();
   render(sheet(remote()));
   document.documentElement.style.setProperty("--t-navigation", "180ms");
   try {
     fireEvent.click(railRow("Playback")!);
-    expect(phase()).toBe("leaving");
-    expect(railCursor()?.textContent).toContain("Playback");
+    expect(phase()).toBeUndefined();
+    expect(bodyHeader()).toBe("Playback");
 
     fireEvent.click(railRow("Remote access")!);
-    expect(phase()).toBe("leaving");
-    expect(railCursor()?.textContent).toContain("Remote access");
-
-    await advance(280);
-    expect(phase()).toBe("settling");
+    expect(phase()).toBeUndefined();
     expect(bodyHeader()).toBe("Remote access");
-    await advance(64);
-    await advance(280);
-    expect(phase()).toBe("idle");
+    await advance(700);
+    expect(phase()).toBeUndefined();
     expect(bodyHeader()).toBe("Remote access");
     expect(document.querySelector(".device-access")).toBeTruthy();
   } finally {
@@ -1038,36 +1049,31 @@ test("clicking the displayed section during a pending switch replaces it", async
   }
 });
 
-test("a queued body entry is cancelled when the rail moves before idle", async () => {
+test("returning from a section body lets the rail change sections immediately", async () => {
   const { remote } = remoteHarness();
   render(sheet(remote()));
   document.documentElement.style.setProperty("--t-navigation", "180ms");
   try {
     press(KEY.UP);
-    expect(phase()).toBe("leaving");
+    expect(phase()).toBeUndefined();
 
     press(KEY.RIGHT);
-    press(KEY.DOWN);
+    await flush();
+    expect(bodyHasFocus()).toBe(true);
+    press(KEY.LEFT);
     press(KEY.UP);
-    expect(phase()).toBe("leaving");
-    expect(railCursor()?.textContent).toContain("Content & playlists");
+    expect(phase()).toBeUndefined();
+    expect(railCursor()?.textContent).toContain("Playback");
 
-    await advance(280);
-    expect(phase()).toBe("settling");
-    await advance(64);
-    expect(phase()).toBe("entering");
-    await advance(280);
-    expect(phase()).toBe("idle");
-
-    expect(bodyHeader()).toBe("Content & playlists");
-    expect(document.activeElement).toBe(railRow("Content & playlists"));
+    expect(bodyHeader()).toBe("Playback");
+    expect(document.activeElement).toBe(railRow("Playback"));
     expect(bodyHasFocus()).toBe(false);
   } finally {
     document.documentElement.style.removeProperty("--t-navigation");
   }
 });
 
-test("an inner settings page receives focus before the entering animation starts", async () => {
+test("an inner settings page receives usable focus without an entering animation", async () => {
   const { remote } = remoteHarness();
   render(
     <Settings
@@ -1081,23 +1087,21 @@ test("an inner settings page receives focus before the entering animation starts
   await flush();
   document.documentElement.style.setProperty("--t-navigation", "180ms");
   fireEvent.click(document.querySelector('[data-settings-focus="about-diagnostics"]')!);
-  expect(phase()).toBe("leaving");
-  await advance(280);
-  expect(phase()).toBe("settling");
+  expect(phase()).toBeUndefined();
   const first = document.querySelector<HTMLButtonElement>(
     ".sheet-body [data-settings-detail-first]",
   )!;
   expect(first).toBeTruthy();
   expect(document.activeElement).toBe(first);
   const activated = vi.fn();
-  first.addEventListener("click", activated);
-  await advance(64);
-  expect(phase()).toBe("entering");
+  first.addEventListener("click", (event) => {
+    event.stopPropagation();
+    activated();
+  });
   expect(document.activeElement).toBe(first);
   expect(press(KEY.ENTER).defaultPrevented).toBe(true);
-  expect(activated).not.toHaveBeenCalled();
-  await advance(280);
-  expect(phase()).toBe("idle");
+  expect(activated).toHaveBeenCalledTimes(1);
+  expect(phase()).toBeUndefined();
   expect(document.activeElement).toBe(first);
 });
 
@@ -1108,19 +1112,17 @@ test("a pointer commit followed by hover does not steal body focus", async () =>
   document.documentElement.style.setProperty("--t-navigation", "180ms");
   try {
     fireEvent.click(railRow("Playback")!);
-    expect(phase()).toBe("leaving");
+    expect(phase()).toBeUndefined();
+    expect(bodyHasFocus()).toBe(true);
 
     fireEvent.pointerEnter(railRow("Appearance")!);
     expect(railCursor()?.textContent).toContain("Appearance");
 
-    await advance(280);
-    expect(phase()).toBe("settling");
+    expect(phase()).toBeUndefined();
     expect(bodyHeader()).toBe("Playback");
 
-    await advance(64);
-    expect(phase()).toBe("entering");
-    await advance(280);
-    expect(phase()).toBe("idle");
+    await advance(700);
+    expect(phase()).toBeUndefined();
 
     expect(bodyHeader()).toBe("Playback");
     expect(railCursor()?.textContent).toContain("Appearance");
@@ -1130,51 +1132,14 @@ test("a pointer commit followed by hover does not steal body focus", async () =>
   }
 });
 
-test("the incoming body stays inert through entering until idle", async () => {
+test("section controls accept input immediately after switching", async () => {
   const { actions, remote } = remoteHarness();
   render(sheet(remote()));
   document.documentElement.style.setProperty("--t-navigation", "180ms");
   try {
     press(KEY.UP);
     press(KEY.DOWN);
-    await advance(280);
-    expect(phase()).toBe("settling");
-    expect(bodyHeader()).toBe("Remote access");
-    await advance(64);
-    expect(phase()).toBe("entering");
-
-    const retry = deviceAction()!;
-    fireEvent.click(retry);
-    expect(actions.retry).not.toHaveBeenCalled();
-
-    act(() => retry.focus());
-    expect(document.activeElement).toBe(retry);
-    expect(document.querySelector(".sheet-rail.focused")).toBeTruthy();
-
-    const enter = press(KEY.ENTER);
-    expect(enter.defaultPrevented).toBe(true);
-    expect(actions.retry).not.toHaveBeenCalled();
-
-    const left = press(KEY.LEFT);
-    expect(left.defaultPrevented).toBe(true);
-    expect(document.activeElement).toBe(document.body);
-    expect(document.querySelector(".sheet-rail.focused")).toBeTruthy();
-
-    press(KEY.UP);
-    expect(railCursor()?.textContent).toContain("Content & playlists");
-    expect(phase()).toBe("leaving");
-
-    await advance(280);
-    await advance(64);
-    await advance(280);
-    expect(phase()).toBe("idle");
-    expect(bodyHeader()).toBe("Content & playlists");
-
-    press(KEY.DOWN);
-    await advance(280);
-    await advance(64);
-    await advance(280);
-    expect(phase()).toBe("idle");
+    expect(phase()).toBeUndefined();
     expect(bodyHeader()).toBe("Remote access");
 
     press(KEY.RIGHT);
@@ -1183,6 +1148,8 @@ test("the incoming body stays inert through entering until idle", async () => {
     expect(document.activeElement).toBe(deviceAction());
     fireEvent.click(deviceAction()!);
     expect(actions.retry).toHaveBeenCalledTimes(1);
+    press(KEY.ENTER);
+    expect(actions.retry).toHaveBeenCalledTimes(2);
   } finally {
     document.documentElement.style.removeProperty("--t-navigation");
   }
@@ -1201,7 +1168,7 @@ test("suspended input ignores rail keys and pointer without consuming them", asy
     fireEvent.click(railRow("Playback")!);
     await flush();
 
-    expect(phase()).toBe("idle");
+    expect(phase()).toBeUndefined();
     expect(bodyHeader()).toBe("Remote access");
     expect(document.querySelector(".sheet-rail .row.showing")?.textContent).toContain(
       "Remote access",

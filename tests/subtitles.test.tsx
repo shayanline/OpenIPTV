@@ -68,10 +68,27 @@ test("an empty or hidden cue renders nothing", () => {
 
 test("a cue carries its own direction", () => {
   render(<SubtitleLayer cue="مرحبا" hidden={false} />);
-  assert.equal(document.querySelector(".subtitle-cue")?.getAttribute("dir"), "auto");
+  assert.equal(document.querySelector(".subtitle-cue")?.getAttribute("dir"), null);
 });
 
 const subtitleOn = [track("subtitle", 3, "en", "English", true)];
+
+test("the complete controls own the cue while open and return it to the picture when closed", async () => {
+  await mountApp(PLAYLIST, { playerTracks: subtitleOn });
+  press(KEY.ENTER);
+  emitSubtitle("A caption that stays above the entire panel", 0);
+  expect(document.querySelector(".subtitle-layer")?.closest(".playback-deck")).toBeNull();
+
+  press(KEY.RIGHT);
+  expect(document.querySelector(".playback-deck > .subtitle-layer")).toBeTruthy();
+  expect(document.querySelectorAll(".subtitle-layer")).toHaveLength(1);
+  expect(subtitleText()).toBe("A caption that stays above the entire panel");
+
+  press(KEY.BACK);
+  expect(document.querySelector(".playback-deck")).toBeNull();
+  expect(document.querySelector(".subtitle-layer")).toBeTruthy();
+  expect(subtitleText()).toBe("A caption that stays above the entire panel");
+});
 
 test("AVPlay subtitle markup is rendered as text and clears at its duration", async () => {
   await mountApp(PLAYLIST, { playerTracks: subtitleOn });
@@ -238,18 +255,18 @@ test("track buttons follow tracks that become available during playback", async 
   await mountApp(PLAYLIST, { playerTracks: tracks });
   press(KEY.ENTER);
   press(KEY.RIGHT);
-  expect(document.querySelector('[data-control="audio"]')).toBeNull();
-  expect(document.querySelector('[data-control="subtitles"]')).toBeNull();
+  expect(document.querySelector<HTMLButtonElement>('[data-control="audio"]')?.disabled).toBe(true);
+  expect(document.querySelector<HTMLButtonElement>('[data-control="subtitles"]')?.disabled).toBe(true);
 
   tracks.push(track("audio", 0, "en", "English", true), track("subtitle", 1, "de", "Deutsch"));
   emitPlayback({ type: "tracks" });
-  expect(document.querySelector('[data-control="audio"]')).toBeTruthy();
-  expect(document.querySelector('[data-control="subtitles"]')).toBeTruthy();
+  expect(document.querySelector<HTMLButtonElement>('[data-control="audio"]')?.disabled).toBe(false);
+  expect(document.querySelector<HTMLButtonElement>('[data-control="subtitles"]')?.disabled).toBe(false);
 
   tracks.length = 0;
   emitPlayback({ type: "tracks" });
-  expect(document.querySelector('[data-control="audio"]')).toBeNull();
-  expect(document.querySelector('[data-control="subtitles"]')).toBeNull();
+  expect(document.querySelector<HTMLButtonElement>('[data-control="audio"]')?.disabled).toBe(true);
+  expect(document.querySelector<HTMLButtonElement>('[data-control="subtitles"]')?.disabled).toBe(true);
 });
 
 test.each([

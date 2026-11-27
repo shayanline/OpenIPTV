@@ -89,6 +89,40 @@ test("simulated TV onboarding requires its explicit development query", async ()
 });
 
 describe("management lifecycle", () => {
+  test("reports a missing Samsung Network API without attempting a socket", async () => {
+    vi.stubGlobal("Worker", FakeWorker);
+    const server = await load();
+
+    expect(() => server.startRemoteAccess()).not.toThrow();
+    expect(FakeWorker.instances).toHaveLength(0);
+    expect(server.remoteAccessState()).toMatchObject({
+      status: "unavailable",
+      error: "Samsung Network API is unavailable",
+    });
+  });
+
+  test("reports a network API exception and can retry after it recovers", async () => {
+    vi.stubGlobal("Worker", FakeWorker);
+    const getIp = vi.fn((): string => {
+      throw new Error("Network access denied");
+    });
+    (window as unknown as { webapis: unknown }).webapis = { network: { getIp } };
+    const server = await load();
+
+    expect(() => server.startRemoteAccess()).not.toThrow();
+    expect(server.remoteAccessState()).toMatchObject({
+      status: "unavailable",
+      address: "",
+      port: 0,
+      error: "Network access denied",
+    });
+    expect(FakeWorker.instances).toHaveLength(0);
+
+    getIp.mockImplementation(() => "192.168.1.8");
+    server.startRemoteAccess();
+    expect(FakeWorker.instances).toHaveLength(1);
+  });
+
   test("starts with Samsung's private address and reports listening", async () => {
     vi.stubGlobal("Worker", FakeWorker);
     (window as unknown as { webapis: unknown }).webapis = {

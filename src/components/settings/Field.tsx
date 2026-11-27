@@ -11,15 +11,13 @@ import { useLocale } from "../../hooks/useLocale";
 export function PageHeader({
   title,
   description,
-  auto = false,
 }: {
   title: string;
   description?: string;
-  auto?: boolean;
 }) {
   return (
     <header className="settings-page-header">
-      <h3 dir={auto ? "auto" : undefined}>{title}</h3>
+      <h3>{title}</h3>
       {description && <p>{description}</p>}
     </header>
   );
@@ -32,7 +30,7 @@ export function PageHeader({
 export function SettingsBreadcrumbs({
   items,
 }: {
-  items: readonly { label: string; auto?: boolean }[];
+  items: readonly { label: string }[];
 }) {
   const { t } = useLocale();
   return (
@@ -48,7 +46,7 @@ export function SettingsBreadcrumbs({
                 /
               </span>
             )}
-            <span dir={item.auto ? "auto" : undefined}>{item.label}</span>
+            <span>{item.label}</span>
           </li>
         ))}
       </ol>

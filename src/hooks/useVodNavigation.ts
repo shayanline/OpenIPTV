@@ -1376,11 +1376,6 @@ export function useVodNavigation(options: VodNavigationOptions): VodNavigation {
         event.preventDefault();
         return;
       }
-      if (before.zone === "detail-actions" && code === inlineEnd) {
-        optionsRef.current.onActivate(before);
-        event.preventDefault();
-        return;
-      }
       if (code === KEY.BACK || code === KEY.ESC) {
         if (!before.details && !before.search) {
           optionsRef.current.onRequestExit();

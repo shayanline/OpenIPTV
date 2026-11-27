@@ -2820,7 +2820,7 @@ test("playlist cards open their content directly while actions stay explicit", a
   const menu = openActionMenu()!;
   const menuHeading = menu.querySelector("h2")!;
   expect(menuHeading.getAttribute("dir")).toBeNull();
-  expect(menuHeading.querySelector("span")?.getAttribute("dir")).toBe("auto");
+  expect(menuHeading.querySelector("span")?.getAttribute("dir")).toBeNull();
   expect(menuHeading.textContent).toBe("Test");
   const menuButtons = [...menu.querySelectorAll<HTMLButtonElement>("[data-settings-action]")];
   expect(menuButtons.map((button) => button.dataset.settingsAction)).toEqual([
@@ -8157,7 +8157,7 @@ test.each([0, 180])(
   },
 );
 
-test("playlist content tabs take focus before transition input is unblocked", async () => {
+test("playlist content tabs are usable as soon as their Settings page opens", async () => {
   await mountXtream();
   press(KEY.YELLOW);
   fireEvent.click(screen.getByRole("button", { name: "Content & playlists" }));
@@ -8167,21 +8167,17 @@ test("playlist content tabs take focus before transition input is unblocked", as
   document.documentElement.style.setProperty("--t-navigation", "180ms");
   try {
     fireEvent.click(document.querySelector<HTMLButtonElement>(".pl .pl-open")!);
-    await settle(280);
     await settle(0);
-    const shade = document.querySelector<HTMLElement>(
-      ".sheet-page > .content-transition-shade",
-    )!;
-    expect(shade.dataset.phase).toBe("settling");
+    expect(document.querySelector(".sheet .content-transition-shade")).toBeNull();
     const live = screen.getByRole("tab", { name: "Live" });
     expect(document.activeElement).toBe(live);
     const movies = screen.getByRole("tab", { name: "Movies" });
-    await settle(64);
-    expect(shade.dataset.phase).toBe("entering");
     expect(document.activeElement).toBe(live);
     fireEvent.click(movies);
-    expect(live.getAttribute("aria-selected")).toBe("true");
-    expect(movies.getAttribute("aria-selected")).toBe("false");
+    expect(live.getAttribute("aria-selected")).toBe("false");
+    expect(movies.getAttribute("aria-selected")).toBe("true");
+    await settle(0);
+    expect(document.querySelector(".lineup-manager-list")?.textContent).toContain("Cinema");
   } finally {
     document.documentElement.style.removeProperty("--t-navigation");
   }
@@ -8540,7 +8536,7 @@ test.each([
 );
 
 test.each([0, 180])(
-  "content tabs animate only their pane with %ims of motion",
+  "content tabs switch immediately without a shade with a %ims motion token",
   async (motion) => {
     await mountXtream();
     await openContent();
@@ -8548,10 +8544,8 @@ test.each([0, 180])(
     const movies = screen.getByRole("tab", { name: "Movies" });
     const tabs = document.querySelector<HTMLElement>(".category-kind-selector")!;
     const pane = document.querySelector<HTMLElement>(".lineup-tab-pane[role='tabpanel']")!;
-    const shade = pane.querySelector<HTMLElement>(".content-transition-shade")!;
-    const pageShade = document.querySelector<HTMLElement>(
-      ".sheet-page > .content-transition-shade",
-    )!;
+    expect(pane.querySelector(".content-transition-shade")).toBeNull();
+    expect(document.querySelector(".sheet-page > .content-transition-shade")).toBeNull();
     const heading = document.querySelector<HTMLElement>(
       ".lineup-manager > .settings-page-header",
     )!;
@@ -8569,31 +8563,13 @@ test.each([0, 180])(
     document.documentElement.style.setProperty("--t-navigation", `${motion}ms`);
     try {
       fireEvent.click(movies);
-      await settle(0);
-      expect(pageShade.dataset.phase).toBe("idle");
-      if (motion) {
-        expect(shade.dataset.phase).toBe("leaving");
-        expect(movies.getAttribute("aria-selected")).toBe("true");
-        expect(live.getAttribute("aria-selected")).toBe("false");
-        expect(document.querySelector(".lineup-manager-list")?.textContent).toContain("News");
-        fireEvent.click(bulkButton("hide"));
-        act(() => orderPreferenceButton().focus());
-        press(KEY.ENTER);
-        await settle(0);
-        expect(useLineup.getState().revision).toBe(revision);
-        expect(orderDialog()).toBeNull();
-        expect(pageShade.dataset.phase).toBe("idle");
-        await settle(300);
-        await settle(64);
-        expect(shade.dataset.phase).toBe("entering");
-      } else {
-        expect(shade.dataset.phase).toBe("idle");
-      }
       expect(movies.getAttribute("aria-selected")).toBe("true");
-      await settle(300);
+      expect(live.getAttribute("aria-selected")).toBe("false");
+      await settle(0);
+      expect(movies.getAttribute("aria-selected")).toBe("true");
       expect(document.querySelector(".lineup-manager-list")?.textContent).toContain("Cinema");
-      expect(shade.dataset.phase).toBe("idle");
-      expect(pageShade.dataset.phase).toBe("idle");
+      expect(useLineup.getState().revision).toBe(revision);
+      expect(document.querySelector(".sheet .content-transition-shade")).toBeNull();
       expect(document.querySelector(".category-kind-selector")).toBe(tabs);
       expect(document.querySelector(".lineup-manager > .settings-page-header")).toBe(heading);
       expect(document.querySelector(".lineup-manager > .settings-breadcrumbs")).toBe(
@@ -8613,52 +8589,48 @@ test("rapid content tab activations keep only the last intent selected", async (
   const movies = screen.getByRole("tab", { name: "Movies" });
   const series = screen.getByRole("tab", { name: "Series" });
   const pane = document.querySelector<HTMLElement>(".lineup-tab-pane[role='tabpanel']")!;
-  const shade = pane.querySelector<HTMLElement>(".content-transition-shade")!;
+  expect(pane.querySelector(".content-transition-shade")).toBeNull();
   document.documentElement.style.setProperty("--t-navigation", "180ms");
   try {
     fireEvent.click(movies);
     await settle(0);
-    expect(shade.dataset.phase).toBe("leaving");
+    expect(document.querySelector(".lineup-manager-list")?.textContent).toContain("Cinema");
     fireEvent.click(series);
     await settle(0);
     expect(series.getAttribute("aria-selected")).toBe("true");
     expect(movies.getAttribute("aria-selected")).toBe("false");
     expect(live.getAttribute("aria-selected")).toBe("false");
-    await settle(300);
-    await settle(64);
-    await settle(300);
     const list = document.querySelector(".lineup-manager-list")?.textContent ?? "";
     expect(list).toContain("Shows");
     expect(list).not.toContain("Cinema");
     expect(series.getAttribute("aria-selected")).toBe("true");
     expect(movies.getAttribute("aria-selected")).toBe("false");
     expect(live.getAttribute("aria-selected")).toBe("false");
-    expect(shade.dataset.phase).toBe("idle");
+    expect(pane.querySelector(".content-transition-shade")).toBeNull();
   } finally {
     document.documentElement.style.removeProperty("--t-navigation");
   }
 });
 
-test("reselecting the displayed kind during leaving cancels the pending switch", async () => {
+test("reselecting Live after Movies restores its content immediately", async () => {
   await mountXtream();
   await openContent();
   await settle(0);
   const live = screen.getByRole("tab", { name: "Live" });
   const movies = screen.getByRole("tab", { name: "Movies" });
   const pane = document.querySelector<HTMLElement>(".lineup-tab-pane[role='tabpanel']")!;
-  const shade = pane.querySelector<HTMLElement>(".content-transition-shade")!;
+  expect(pane.querySelector(".content-transition-shade")).toBeNull();
   document.documentElement.style.setProperty("--t-navigation", "180ms");
   try {
     fireEvent.click(movies);
     await settle(0);
-    expect(shade.dataset.phase).toBe("leaving");
+    expect(document.querySelector(".lineup-manager-list")?.textContent).toContain("Cinema");
     expect(movies.getAttribute("aria-selected")).toBe("true");
     fireEvent.click(live);
     await settle(0);
     expect(live.getAttribute("aria-selected")).toBe("true");
     expect(movies.getAttribute("aria-selected")).toBe("false");
-    expect(shade.dataset.phase).toBe("idle");
-    await settle(300);
+    expect(pane.querySelector(".content-transition-shade")).toBeNull();
     const list = document.querySelector(".lineup-manager-list")?.textContent ?? "";
     expect(list).toContain("News");
     expect(list).not.toContain("Cinema");
@@ -8668,7 +8640,7 @@ test("reselecting the displayed kind during leaving cancels the pending switch",
   }
 });
 
-test("suspending settings input during a tab transition restores the displayed kind", async () => {
+test("suspending settings preserves the kind that was switched immediately", async () => {
   await mountXtream();
   await openContent();
   await settle(0);
@@ -8693,15 +8665,15 @@ test("suspending settings input during a tab transition restores the displayed k
     expect(back.disabled).toBe(true);
     fireEvent.click(back);
     expect(document.querySelector(".lineup-manager")).toBeTruthy();
-    expect(live.getAttribute("aria-selected")).toBe("true");
-    expect(movies.getAttribute("aria-selected")).toBe("false");
-    expect(document.querySelector(".lineup-manager-list")?.textContent).toContain("News");
+    expect(live.getAttribute("aria-selected")).toBe("false");
+    expect(movies.getAttribute("aria-selected")).toBe("true");
+    expect(document.querySelector(".lineup-manager-list")?.textContent).toContain("Cinema");
 
     press(KEY.RIGHT);
     await settle(0);
     expect(document.querySelector(".sheet")?.classList.contains("input-suspended")).toBe(false);
-    expect(live.getAttribute("aria-selected")).toBe("true");
-    expect(movies.getAttribute("aria-selected")).toBe("false");
+    expect(live.getAttribute("aria-selected")).toBe("false");
+    expect(movies.getAttribute("aria-selected")).toBe("true");
   } finally {
     document.documentElement.style.removeProperty("--t-navigation");
   }
@@ -8727,20 +8699,20 @@ test("supported section descriptions name their content and menu scope", async (
 });
 
 test.each(["physical", "edge OK", "edge click"])(
-  "Back during a nested detail transition still returns toward the list via %s",
+  "Back after an immediate nested detail returns one level via %s",
   async (method) => {
     await mountApp(REORDER_PLAYLIST);
     await openContent();
     await settle(0);
-    const shade = document.querySelector<HTMLElement>(
-      ".sheet-page > .content-transition-shade",
-    )!;
     document.documentElement.style.setProperty("--t-navigation", "180ms");
     try {
       const back = document.querySelector<HTMLButtonElement>("[data-settings-edge-back]")!;
-      if (method !== "physical") act(() => back.focus());
       await openFirstCategory();
-      expect(shade.dataset.phase).toBe("leaving");
+      expect(document.querySelector(".sheet .content-transition-shade")).toBeNull();
+      expect(document.querySelector(".lineup-manager")?.getAttribute("data-lineup-scope")).toBe(
+        "channels",
+      );
+      if (method !== "physical") act(() => back.focus());
 
       if (method === "physical") press(KEY.BACK);
       else {
@@ -8749,14 +8721,14 @@ test.each(["physical", "edge OK", "edge click"])(
         if (method === "edge OK") press(KEY.ENTER);
         else fireEvent.click(back);
       }
-      expect(shade.dataset.phase).toBe("idle");
-      expect(document.querySelector(".playlist-list-header")).toBeTruthy();
-      expect(document.querySelector(".lineup-manager")).toBeNull();
+      expect(document.querySelector(".lineup-manager")?.getAttribute("data-lineup-scope")).toBe(
+        "categories",
+      );
 
       await settle(700);
-      expect(shade.dataset.phase).toBe("idle");
-      expect(document.querySelector(".playlist-list-header")).toBeTruthy();
-      expect(document.querySelector(".lineup-manager")).toBeNull();
+      expect(document.querySelector(".lineup-manager")?.getAttribute("data-lineup-scope")).toBe(
+        "categories",
+      );
     } finally {
       document.documentElement.style.removeProperty("--t-navigation");
     }

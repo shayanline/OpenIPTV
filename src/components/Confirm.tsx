@@ -2,7 +2,7 @@ import { useEffect, useRef } from "react";
 import { pointerOnly } from "../hooks/usePointerAwake";
 import { KEY, useRemote } from "../hooks/useRemote";
 import { useSpatialNav } from "../hooks/useSpatialNav";
-import { Icon } from "./Icon";
+import { Icon, type IconName } from "./Icon";
 
 /**
  * Asking before doing something that cannot be undone.
@@ -22,6 +22,7 @@ export function Confirm({
   confirmLabel,
   cancelLabel,
   destructive,
+  confirmIcon = "remove",
   busy = false,
   onConfirm,
   onCancel,
@@ -32,6 +33,7 @@ export function Confirm({
   cancelLabel: string;
   /** Colours the confirming button as a warning rather than as the ordinary next step. */
   destructive?: boolean;
+  confirmIcon?: IconName;
   /** The answer is already on its way: the question cannot be dismissed or re-answered. */
   busy?: boolean;
   onConfirm: () => void;
@@ -182,7 +184,7 @@ export function Confirm({
           >
             {(destructive || busy) && (
               <span className="confirm-action-icon" aria-hidden="true">
-                {busy ? <span className="spinner small" /> : <Icon name="remove" />}
+                {busy ? <span className="spinner small" /> : <Icon name={confirmIcon} />}
               </span>
             )}
             <span>{confirmLabel}</span>

@@ -151,6 +151,20 @@ test("finite deck opens on Play or Pause and opens on seek after quick seeking",
   expect(selectedControl()).toBe("seek");
 });
 
+test.each(["live", "movie", "episode"] as const)(
+  "%s playback controls use the banner's shared entrance",
+  (kind) => {
+    renderDeck({ metadata: { kind, title: "Playing" } });
+    const root = document.querySelector(".playback-deck");
+    expect(root?.getAttribute("data-kind")).toBe(kind);
+    expect(root?.getAttribute("data-entrance")).toBe("ordinary");
+    const styles = readFileSync("src/styles/app.css", "utf8");
+    expect(styles).toMatch(
+      /\.pb-stack,\s*\.playback-deck \{[^}]*animation:\s*pb-in var\(--t-med\) var\(--ease-enter\);/,
+    );
+  },
+);
+
 test.each([
   {
     kind: "movie",
@@ -872,8 +886,12 @@ test.each(["movie", "episode"] as const)(
       canPause: false,
     });
     const control = document.querySelector('[data-control="play-pause"]');
-    expect(document.querySelector('[data-control="audio"]')).toBeNull();
-    expect(document.querySelector('[data-control="subtitles"]')).toBeNull();
+    expect(document.querySelector<HTMLButtonElement>('[data-control="audio"]')?.disabled).toBe(
+      true,
+    );
+    expect(
+      document.querySelector<HTMLButtonElement>('[data-control="subtitles"]')?.disabled,
+    ).toBe(true);
     expect(control?.getAttribute("aria-label")).toBe("Play or pause");
     expect((control as HTMLButtonElement | null)?.disabled).toBe(true);
     expect(control?.getAttribute("data-selected")).toBeNull();
@@ -1141,11 +1159,12 @@ test("Left and Right adjust the target and commit once input settles", () => {
   expect(props.onSeek).toHaveBeenLastCalledWith(300);
 });
 
-test("held seek accelerates after four accepted repeat events", () => {
+test("held seek accelerates with elapsed time rather than a burst of repeat events", () => {
   const props = renderDeckProps();
   render(<Harness {...props} initialFocus="seek" />);
   act(() => {
-    for (let repeat = 0; repeat < 5; repeat += 1) {
+    for (let repeat = 0; repeat < 9; repeat += 1) {
+      if (repeat) vi.advanceTimersByTime(200);
       const event = new KeyboardEvent("keydown", {
         bubbles: true,
         cancelable: true,
@@ -1159,8 +1178,8 @@ test("held seek accelerates after four accepted repeat events", () => {
     window.dispatchEvent(release);
   });
 
-  expect(document.querySelector(".seekbar-target")?.textContent).toBe("2:00");
-  expect(props.onSeek).toHaveBeenLastCalledWith(120);
+  expect(document.querySelector(".seekbar-target")?.textContent).toBe("3:10");
+  expect(props.onSeek).toHaveBeenLastCalledWith(190);
 });
 
 test("pointer seeking clamps through the range and commits like the remote", () => {
@@ -1235,7 +1254,7 @@ test("quick seek shows the accumulated direction and the target clock", () => {
 test("new deck styles keep the caption floor and share the motion tokens", () => {
   const styles = readFileSync("src/styles/app.css", "utf8");
   const section = styles.slice(
-    styles.indexOf(".playback-deck {"),
+    styles.lastIndexOf(".playback-deck {"),
     styles.indexOf(".vod-screen {"),
   );
   const sizes = [...section.matchAll(/font-size:\s*(\d+)px/g)].map((m) => Number(m[1]));
@@ -1272,7 +1291,6 @@ test("banner expansion fades only genuinely new content and settles under reduce
 const expansionOriginFor = (title: string): PlaybackExpansionOrigin => ({
   targetKey: "ch-1",
   bounds: { top: 600, right: 448, bottom: 720, left: 48, width: 400, height: 120 },
-  radius: 12,
   parts: {
     title: {
       rect: { top: 610, right: 580, bottom: 650, left: 330, width: 250, height: 40 },
@@ -1396,7 +1414,12 @@ test("does not read playback diagnostics while the overlay is hidden", () => {
 
   expect(read).not.toHaveBeenCalled();
   view.rerender(<PlaybackInfo read={read} visible />);
-  expect(read).toHaveBeenCalled();
+  expect(read).not.toHaveBeenCalled();
+  advance(400);
+  expect(read).toHaveBeenCalledTimes(1);
+  view.rerender(<PlaybackInfo read={read} visible={false} />);
+  advance(2000);
+  expect(read).toHaveBeenCalledTimes(1);
 });
 
 test("shows the reported dynamic range without guessing a PQ format", () => {
@@ -1406,6 +1429,7 @@ test("shows the reported dynamic range without guessing a PQ format", () => {
       visible
     />,
   );
+  advance(400);
   const label = Array.from(document.querySelectorAll("dt")).find(
     (item) => item.textContent === "Dynamic range",
   );

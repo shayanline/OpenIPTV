@@ -1,9 +1,10 @@
 import { useLocale } from "../hooks/useLocale";
+import { usePlaybackPresence } from "../hooks/usePlaybackPresence";
 import type { Channel } from "../types";
-import { Text } from "./Text";
-import { Logo } from "./Logo";
-import { KeyGuide } from "./KeyGuide";
 import { Icon } from "./Icon";
+import { KeyGuide } from "./KeyGuide";
+import { Logo } from "./Logo";
+import { Text } from "./Text";
 
 /**
  * Which channel this is, and underneath it, what the keys do.
@@ -32,6 +33,7 @@ export const clock = (seconds: number): string => {
 
 interface PlaybackBannerProps {
   channel: Channel;
+  visible?: boolean;
   programme?: { current?: string };
   /** Identity of the target this banner names, matched against the deck it expands into. */
   targetKey?: string;
@@ -171,12 +173,24 @@ export function PlaybackIdentity({
   );
 }
 
-export function PlaybackBanner({ channel, programme, targetKey }: PlaybackBannerProps) {
+export function PlaybackBanner({
+  channel,
+  programme,
+  targetKey,
+  visible = true,
+}: PlaybackBannerProps) {
   const { t, direction } = useLocale();
+  const { present, closing, onAnimationEnd } = usePlaybackPresence(visible);
+  if (!present) return null;
   const inlineEndArrow = direction === "rtl" ? "←" : "→";
   const displayName = channel.name || t("channel.unnamed");
   return (
-    <div className="pb-stack" data-playback-target={targetKey}>
+    <div
+      className={`pb-stack${closing ? " playback-closing" : ""}`}
+      data-playback-target={targetKey}
+      aria-hidden={closing || undefined}
+      onAnimationEnd={onAnimationEnd}
+    >
       {/* The number first and largest, because it is the one piece of a channel's identity a
           viewer can type, and on a row with no artwork it is all there is. */}
       <PlaybackIdentity

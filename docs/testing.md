@@ -477,6 +477,8 @@ emcc wasm/management-socket.c -o public/wasm/management-socket.wasm -Os --no-ent
 
 Its hand written `management-socket.js` loader passes the platform functions directly as WebAssembly imports. It must not wrap or call them in JavaScript because the television refuses host binding calls made outside WebAssembly.
 
+The imported signatures come from Samsung's `system/include/libc/socket_host.h`, rather than the POSIX declarations. In particular, `__wasm_accept` takes five arguments: descriptor, address, address capacity, output length pointer and flags. Passing a three argument POSIX import prevents the module from instantiating on the television. `wasm:check` links the management module against typed WebAssembly exports with Samsung's signatures, so a JavaScript mock cannot conceal that mismatch.
+
 `.emscripten` points `LLVM_ROOT` at `fastcomp/bin` (clang 10, the upstream backend). The bundle's
 nested `fastcomp/fastcomp/bin` is clang 6 with no `llc`, so fastcomp cannot be used on macOS at all.
 

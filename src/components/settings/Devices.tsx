@@ -137,30 +137,35 @@ export function Devices({
         title={t("remote.pairedDevices")}
         count={number(devices.length)}
       >
-        {(remoteAccess.status === "unavailable" ||
-          (remoteAccess.status === "listening" && (!remoteAccess.pairing || pairingOpen))) && (
+        {(remoteAccess.status !== "listening" || !remoteAccess.pairing || pairingOpen) && (
           <div className="actions device-access-actions">
-            {remoteAccess.status === "unavailable" ? (
-              <button
-                type="button"
-                className="btn tonal"
-                data-settings-focus="device-pair"
-                onClick={remoteAccess.retry}
-              >
-                <Icon name="refresh" />
-                <span>{t("remote.retry")}</span>
-              </button>
-            ) : (
-              <button
-                type="button"
-                className="btn tonal"
-                data-settings-focus="device-pair"
-                onClick={startPairing}
-              >
-                <Icon name="plus" />
-                <span>{t("remote.add")}</span>
-              </button>
-            )}
+            <button
+              type="button"
+              className="btn tonal"
+              data-settings-focus="device-pair"
+              aria-disabled={
+                !navigation.inputEnabled ||
+                remoteAccess.status === "idle" ||
+                remoteAccess.status === "starting"
+              }
+              aria-busy={remoteAccess.status === "starting" || undefined}
+              onClick={() => {
+                if (!navigation.inputEnabled) return;
+                if (remoteAccess.status === "unavailable") remoteAccess.retry();
+                else if (remoteAccess.status === "listening") startPairing();
+              }}
+            >
+              <Icon name={remoteAccess.status === "listening" ? "plus" : "refresh"} />
+              <span>
+                {t(
+                  remoteAccess.status === "listening"
+                    ? "remote.add"
+                    : remoteAccess.status === "unavailable"
+                      ? "remote.retry"
+                      : "remote.starting",
+                )}
+              </span>
+            </button>
           </div>
         )}
       </SettingsListHeader>
@@ -185,7 +190,7 @@ export function Devices({
               }}
             >
               <span className="device-row-main">
-                <strong dir="auto">{device.name}</strong>
+                <strong>{device.name}</strong>
                 <span className="management-row-meta">
                   {t("remote.lastUsed", {
                     when: new Date(device.lastUsedAt).toLocaleDateString(locale),
@@ -251,7 +256,6 @@ export function Devices({
               id="device-edit-name"
               data-settings-detail-first
               value={name}
-              dir="auto"
               onChange={(event) => setName(event.target.value)}
             />
           </div>

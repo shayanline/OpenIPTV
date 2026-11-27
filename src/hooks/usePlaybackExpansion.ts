@@ -46,7 +46,6 @@ export interface PlaybackExpansionPart {
 export interface PlaybackExpansionOrigin {
   targetKey: string;
   bounds: PlaybackExpansionRect;
-  radius: number;
   parts: Partial<Record<PlaybackExpansionPartName, PlaybackExpansionPart>>;
 }
 
@@ -115,8 +114,7 @@ export function capturePlaybackExpansion(
     }
     parts[name] = part;
   });
-  const radius = Number.parseFloat(getComputedStyle(banner).borderRadius) || 0;
-  return { targetKey: expectedTargetKey, bounds: rectOf(bounds), radius, parts };
+  return { targetKey: expectedTargetKey, bounds: rectOf(bounds), parts };
 }
 
 /**
@@ -214,27 +212,23 @@ export function usePlaybackExpansion(
       animation.oncancel = interrupt;
       animations.current.push(animation);
     };
+    const moves: { node: HTMLElement; frames: Keyframe[]; duration: number }[] = [];
     const surface = root.querySelector<HTMLElement>(".deck-surface");
     if (surface) {
-      const targetRadius = Number.parseFloat(getComputedStyle(surface).borderRadius) || 0;
-      const r = origin.radius;
-      add(
-        surface.animate(
-          [
-            {
-              transformOrigin: "0 100%",
-              transform: `translate(${translateX}px, ${translateY}px) scale(${scaleX}, ${scaleY})`,
-              borderRadius: `${r / scaleX}px / ${r / scaleY}px`,
-            },
-            {
-              transformOrigin: "0 100%",
-              transform: "translate(0px, 0px) scale(1, 1)",
-              borderRadius: `${targetRadius}px`,
-            },
-          ],
-          { duration: surfaceMs, easing: EXPAND_EASING, fill: "backwards" },
-        ),
-      );
+      moves.push({
+        node: surface,
+        frames: [
+          {
+            transformOrigin: "0 100%",
+            transform: `translate(${translateX}px, ${translateY}px) scale(${scaleX}, ${scaleY})`,
+          },
+          {
+            transformOrigin: "0 100%",
+            transform: "translate(0px, 0px) scale(1, 1)",
+          },
+        ],
+        duration: surfaceMs,
+      });
     }
 
     for (const name of Object.keys(origin.parts) as PlaybackExpansionPartName[]) {
@@ -264,35 +258,39 @@ export function usePlaybackExpansion(
       }
       const dx = part.rect.left - to.left;
       const dy = part.rect.top - to.top;
-      add(
-        node.animate(
-          [
-            {
-              transformOrigin: "0 0",
-              transform: `translate(${dx}px, ${dy}px) scale(${scale})`,
-            },
-            { transformOrigin: "0 0", transform: "translate(0px, 0px) scale(1)" },
-          ],
-          { duration: partMs, easing: EXPAND_EASING, fill: "backwards" },
-        ),
-      );
+      moves.push({
+        node,
+        frames: [
+          {
+            transformOrigin: "0 0",
+            transform: `translate(${dx}px, ${dy}px) scale(${scale})`,
+          },
+          { transformOrigin: "0 0", transform: "translate(0px, 0px) scale(1)" },
+        ],
+        duration: partMs,
+      });
       /* A marquee that was already travelling keeps its offset rather than visibly
          restarting: the run begins at the captured translation divided by the outer
          scale and lands at zero with its part. */
       if (part.offset) {
         const run = node.querySelector<HTMLElement>(".teleprompter-run");
         if (run) {
-          add(
-            run.animate(
-              [
-                { transform: `translateX(${part.offset / scale}px)` },
-                { transform: "translateX(0px)" },
-              ],
-              { duration: partMs, easing: EXPAND_EASING, fill: "backwards" },
-            ),
-          );
+          moves.push({
+            node: run,
+            frames: [
+              { transform: `translateX(${part.offset / scale}px)` },
+              { transform: "translateX(0px)" },
+            ],
+            duration: partMs,
+          });
         }
       }
+    }
+
+    // Finish every geometry read before animation writes can invalidate layout.
+    // Keep the rounded surface static so each frame only composites transforms.
+    for (const { node, frames, duration } of moves) {
+      add(node.animate(frames, { duration, easing: EXPAND_EASING, fill: "backwards" }));
     }
 
     window.addEventListener("resize", interrupt);

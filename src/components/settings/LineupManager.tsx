@@ -7,7 +7,6 @@ import {
   useRef,
   useState,
 } from "react";
-import { useContentTransition } from "../../hooks/useContentTransition";
 import { useLayoutTask } from "../../hooks/useLayoutTask";
 import { useLocale } from "../../hooks/useLocale";
 import { KEY, useRemote } from "../../hooks/useRemote";
@@ -29,7 +28,6 @@ import {
 } from "../../stores/lineup";
 import type { Playlist } from "../../stores/settings";
 import { Confirm } from "../Confirm";
-import { ContentTransitionShade } from "../ContentTransitionShade";
 import { Icon } from "../Icon";
 import type { SettingsDetailNavigation } from "../Settings";
 import { Text } from "../Text";
@@ -171,7 +169,7 @@ export function LineupManager({
     return (
       <div className="lineup-manager-gate">
         <SettingsBreadcrumbs
-          items={[{ label: t("settings.playlists") }, { label: playlist.name, auto: true }]}
+          items={[{ label: t("settings.playlists") }, { label: playlist.name }]}
         />
         <PageHeader title={playlist.name} description={t("lineup.manageContentHint")} />
         {acquireError || error ? (
@@ -290,7 +288,6 @@ function OwnedLineupManager({
   );
   const [scope, setScope] = useState<Scope>("categories");
   const [kind, setKind] = useState<"live" | "movie" | "series">("live");
-  const [selectedKind, setSelectedKind] = useState<typeof kind>("live");
   const [categoryKey, setCategoryKey] = useState("");
   const [query, setQuery] = useState("");
   const [appliedQuery, setAppliedQuery] = useState("");
@@ -311,11 +308,6 @@ function OwnedLineupManager({
   const revealPageTop = useRef(false);
   const [sortIds, setSortIds] = useState<string[]>([]);
   const [orderDialog, setOrderDialog] = useState<string | null>(null);
-  const kindTransition = useContentTransition(
-    `lineup-kind:${playlist.id}:v${context.sourceVersion}:${scope}:${sorting ? "sort" : "browse"}`,
-  );
-  const kindChanging =
-    kindTransition.phase === "leaving" || kindTransition.phase === "settling";
   const createInput = useRef<HTMLInputElement>(null);
   const createCancelButton = useRef<HTMLButtonElement>(null);
   const searchButton = useRef<HTMLButtonElement>(null);
@@ -348,7 +340,7 @@ function OwnedLineupManager({
   const suppressDragClick = useRef<{ id: string; timer: number } | null>(null);
   const mountedRef = useRef(true);
   const inputEnabledRef = useRef(navigation.inputEnabled);
-  inputEnabledRef.current = navigation.inputEnabled && !kindChanging;
+  inputEnabledRef.current = navigation.inputEnabled;
   const surfaceInputEnabledRef = useRef(navigation.surfaceInputEnabled);
   surfaceInputEnabledRef.current = navigation.surfaceInputEnabled;
   sortIdsRef.current = sortIds;
@@ -648,7 +640,7 @@ function OwnedLineupManager({
   const currentPage = Math.min(page, pages - 1);
   const notifications = useToast(
     `lineup:${playlist.id}:v${context.sourceVersion}:${scope}:${kind}:${categoryKey}:${appliedQuery}:${currentPage}`,
-    navigation.surfaceInputEnabled && !kindChanging,
+    navigation.surfaceInputEnabled,
   );
   useEffect(() => {
     setPage((value) => Math.min(value, pages - 1));
@@ -697,14 +689,7 @@ function OwnedLineupManager({
 
   useLayoutEffect(() => {
     if (!pendingPageFocus.current) return;
-    if (
-      !navigation.focusReady ||
-      kindTransition.phase === "leaving" ||
-      editing ||
-      creatingCategory ||
-      !context.isCurrent()
-    )
-      return;
+    if (!navigation.focusReady || editing || creatingCategory || !context.isCurrent()) return;
     pendingPageFocus.current = false;
     let target: HTMLElement | null = null;
     if (sorting && grabbed) {
@@ -734,7 +719,6 @@ function OwnedLineupManager({
     editing,
     creatingCategory,
     navigation.focusReady,
-    kindTransition.phase,
     context,
   ]);
 
@@ -1508,59 +1492,32 @@ function OwnedLineupManager({
     orderButton.current?.focus({ preventScroll: true });
   }, []);
   const selectContentKind = (next: "live" | "movie" | "series", enterContent = false) => {
-    if (!navigation.inputEnabled) return;
-    if (next === selectedKind) {
+    if (!navigation.inputEnabled || !context.isCurrent()) return;
+    setKind(next);
+    if (next === kind) {
       if (enterContent) {
-        if (kindChanging) pendingKindFocus.current = true;
-        else focusTabContent();
+        pendingKindFocus.current = false;
+        focusTabContent();
       }
       return;
     }
-    setSelectedKind(next);
     pendingKindFocus.current = enterContent;
-    if (next === kind) {
-      kindTransition.cancel();
-      if (enterContent) focusTabContent();
-      return;
-    }
-    kindTransition.navigate(() => {
-      if (!context.isCurrent()) return;
-      setKind(next);
-      setPage(0);
-    });
+    setPage(0);
   };
   useLayoutEffect(() => {
-    if (kindTransition.phase === "idle") setSelectedKind(kind);
-  }, [kindTransition.phase, kind]);
-  useLayoutEffect(() => {
-    if (
-      !pendingKindFocus.current ||
-      !navigation.focusReady ||
-      kindTransition.phase === "leaving"
-    )
-      return;
+    if (!pendingKindFocus.current || !navigation.focusReady) return;
     pendingKindFocus.current = false;
     if (context.isCurrent()) focusTabContent();
-  }, [context, kind, navigation.focusReady, kindTransition.phase, focusTabContent]);
+  }, [context, kind, navigation.focusReady, focusTabContent]);
   useLayoutEffect(() => {
     if (navigation.surfaceInputEnabled) return;
     pendingKindFocus.current = false;
-    kindTransition.cancel();
-  }, [navigation.surfaceInputEnabled, kindTransition.cancel]);
+  }, [navigation.surfaceInputEnabled]);
 
   const inlineStart = direction === "rtl" ? KEY.RIGHT : KEY.LEFT;
   const inlineEnd = direction === "rtl" ? KEY.LEFT : KEY.RIGHT;
   useRemote((code, event) => {
     if (!navigation.inputEnabled) return;
-    if (
-      kindChanging &&
-      tabContentRef.current?.contains(document.activeElement) &&
-      [KEY.UP, KEY.DOWN, KEY.LEFT, KEY.RIGHT, KEY.ENTER].includes(code as never)
-    ) {
-      event.preventDefault();
-      event.stopImmediatePropagation();
-      return;
-    }
     if (creatingCategory) {
       const active = document.activeElement;
       if (code === inlineEnd && active === createInput.current && !personalName.trim()) {
@@ -1778,7 +1735,7 @@ function OwnedLineupManager({
               <span dir="ltr" className="lineup-channel-number">
                 {number(editing.value.providerNumber)}
               </span>
-              <span dir="auto">
+              <span>
                 <Text value={editing.value.providerName} />
               </span>
             </p>
@@ -1808,7 +1765,6 @@ function OwnedLineupManager({
                 id="lineup-name"
                 variant="compact"
                 data-settings-detail-first
-                dir="auto"
                 disabled={editBusy}
                 value={nameDraft}
                 onChange={(event) => setNameDraft(event.target.value)}
@@ -1822,7 +1778,6 @@ function OwnedLineupManager({
               id="lineup-name"
               variant="compact"
               data-settings-detail-first
-              dir="auto"
               disabled={editBusy}
               value={nameDraft}
               onChange={(event) => setNameDraft(event.target.value)}
@@ -1960,11 +1915,9 @@ function OwnedLineupManager({
   const showContentTabs = scope === "categories" && availableKinds.length > 1 && !dedicatedMode;
   const crumbItems = [
     { label: t("settings.playlists") },
-    { label: playlist.name, auto: true },
+    { label: playlist.name },
     { label: t("lineup.contentManagement", { kind: sectionLabel }) },
-    ...(scope === "channels" && activeCategory
-      ? [{ label: activeCategory.name, auto: true }]
-      : []),
+    ...(scope === "channels" && activeCategory ? [{ label: activeCategory.name }] : []),
   ];
   const pageHeading =
     scope === "channels" ? (activeCategory?.name ?? sectionLabel) : playlist.name;
@@ -2004,7 +1957,7 @@ function OwnedLineupManager({
     const label = selected?.querySelector<HTMLElement>(".category-kind-label");
     if (label) observer.observe(label);
     return () => observer.disconnect();
-  }, [selectedKind, showContentTabs, t, availableKinds]);
+  }, [kind, showContentTabs, t, availableKinds]);
 
   const openCategory = (category: ManagedCategory, returnFocus?: string) => {
     navigation.transition(() => {
@@ -2085,7 +2038,7 @@ function OwnedLineupManager({
       data-lineup-scope={scope}
     >
       <SettingsBreadcrumbs items={crumbItems} />
-      {!dedicatedMode && <PageHeader title={pageHeading} description={pageDescription} auto />}
+      {!dedicatedMode && <PageHeader title={pageHeading} description={pageDescription} />}
       <div className={showContentTabs ? "lineup-layout lineup-layout-tabbed" : "lineup-layout"}>
         {showContentTabs && (
           <section className="lineup-context-group" aria-label={t("lineup.contentContext")}>
@@ -2105,8 +2058,8 @@ function OwnedLineupManager({
                     id={`${tabPanelId}-${section}`}
                     aria-controls={tabPanelId}
                     className="category-kind-option"
-                    aria-selected={selectedKind === section}
-                    data-settings-detail-first={selectedKind === section ? true : undefined}
+                    aria-selected={kind === section}
+                    data-settings-detail-first={kind === section ? true : undefined}
                     data-ok-guide={t("lineup.selectContentType")}
                     onClick={() => selectContentKind(section)}
                   >
@@ -2148,13 +2101,7 @@ function OwnedLineupManager({
           className={showContentTabs ? "lineup-tab-pane lineup-tab-content" : "lineup-tab-pane"}
           id={showContentTabs ? tabPanelId : undefined}
           role={showContentTabs ? "tabpanel" : undefined}
-          aria-labelledby={showContentTabs ? `${tabPanelId}-${selectedKind}` : undefined}
-          aria-busy={kindTransition.phase !== "idle" || undefined}
-          onClickCapture={(event) => {
-            if (!kindChanging) return;
-            event.preventDefault();
-            event.stopPropagation();
-          }}
+          aria-labelledby={showContentTabs ? `${tabPanelId}-${kind}` : undefined}
         >
           <div className="lineup-content">
             {retryMutation.current && (
@@ -2322,7 +2269,6 @@ function OwnedLineupManager({
                   placeholder={t(searchLabelKey)}
                   autoFocus
                   value={query}
-                  dir="auto"
                   onChange={(event) => {
                     setQuery(event.target.value);
                     setPage(0);
@@ -2346,7 +2292,6 @@ function OwnedLineupManager({
                       aria-label={t("lineup.personalCategoryName")}
                       placeholder={t("lineup.personalCategoryName")}
                       tabIndex={creatingCategory ? 0 : -1}
-                      dir="auto"
                       value={personalName}
                       onChange={(event) => setPersonalName(event.target.value)}
                     />
@@ -2791,12 +2736,6 @@ function OwnedLineupManager({
             )}
             {pagination}
           </div>
-          {showContentTabs && (
-            <ContentTransitionShade
-              phase={kindTransition.phase}
-              onTransitionEnd={kindTransition.onTransitionEnd}
-            />
-          )}
         </div>
       </div>
       {editorDialog}

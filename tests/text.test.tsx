@@ -34,6 +34,24 @@ test("the marquee speed defaults to 36 pixels a second", () => {
   expect(DEFAULT_MARQUEE_SPEED).toBe(36);
 });
 
+test.each(["ltr", "rtl"])(
+  "%s app direction owns plain and scrolling text regardless of the provider script",
+  (direction) => {
+    const { container } = render(
+      <div dir={direction}>
+        <Text value="English" />
+        <Text value="فارسی" />
+        <Text value="English" marquee />
+        <Text value="فارسی" marquee />
+      </div>,
+    );
+    for (const node of container.querySelectorAll("span")) {
+      expect(node.getAttribute("dir")).toBeNull();
+      expect(node.closest("[dir]")?.getAttribute("dir")).toBe(direction);
+    }
+  },
+);
+
 test.each([false, true])(
   "parent updates skip unchanged label render work when marquee is %s",
   (marquee) => {
@@ -284,6 +302,29 @@ test("right to left overflow travels the positive direction", async () => {
   rerender(<Text value="A very long channel name!" marquee />);
   await flushFrame();
   expect(host.style.getPropertyValue("--teleprompter-shift")).toBe("360px");
+});
+
+test("an app direction change reverses an existing marquee without changing its text", async () => {
+  mockWidths(100, 460);
+  const previousDirection = document.documentElement.dir;
+  vi.spyOn(window, "getComputedStyle").mockImplementation(
+    () => ({ direction: document.documentElement.dir }) as CSSStyleDeclaration,
+  );
+  document.documentElement.dir = "ltr";
+  const view = await renderMeasured(<Text value="A very long channel name" marquee />);
+  try {
+    const host = outer(view.container)!;
+    expect(host.style.getPropertyValue("--teleprompter-shift")).toBe("-360px");
+
+    await act(async () => {
+      document.documentElement.dir = "rtl";
+    });
+    await flushFrame();
+    expect(host.style.getPropertyValue("--teleprompter-shift")).toBe("360px");
+  } finally {
+    view.unmount();
+    document.documentElement.dir = previousDirection;
+  }
 });
 
 test("leaving the owner or losing its animation resets the phase to forward", async () => {

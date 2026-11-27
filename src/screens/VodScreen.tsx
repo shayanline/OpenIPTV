@@ -902,9 +902,7 @@ export const VodScreen = forwardRef<VodScreenHandle, VodScreenProps>(function Vo
         return;
       }
       if (playbackPending && (code === KEY.BACK || code === KEY.ESC)) onCancelPending();
-      const activatesPlayback =
-        code === KEY.ENTER ||
-        (navigation.state.zone === "detail-actions" && code === inlineEnd);
+      const activatesPlayback = code === KEY.ENTER;
       if (
         playbackPending &&
         activatesPlayback &&
@@ -934,7 +932,6 @@ export const VodScreen = forwardRef<VodScreenHandle, VodScreenProps>(function Vo
       detailKey,
       detailResource.state,
       effectiveSort,
-      inlineEnd,
       library.retry,
       mode,
       navigation.handleKey,

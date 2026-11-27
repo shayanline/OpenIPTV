@@ -7,7 +7,11 @@ import {
   type PlaybackExpansionOrigin,
 } from "../../hooks/usePlaybackExpansion";
 import { PLAYBACK_CHROME_TIMEOUT_MS } from "../../services/playbackChrome";
-import { clampSeekTarget, seekStepForRepeat } from "../../services/playbackRange";
+import {
+  clampSeekTarget,
+  type SeekHold,
+  seekStepFromKey,
+} from "../../services/playbackRange";
 import type { MessageKey } from "../../services/locale";
 import type { PlaybackSnapshot, PlaybackTarget } from "../../types";
 import { Artwork } from "../Artwork";
@@ -16,6 +20,7 @@ import { KeyGuide } from "../KeyGuide";
 import { PlaybackIdentity } from "../PlaybackBanner";
 import { Text } from "../Text";
 import { SeekBar } from "./SeekBar";
+import { SubtitleLayer } from "./SubtitleLayer";
 
 export type PlaybackDeckFocus =
   | "seek"
@@ -55,6 +60,8 @@ export interface PlaybackDeckProps {
   hasGuide: boolean;
   hasAudio: boolean;
   hasSubtitles: boolean;
+  /** The active cue follows the panel's real top edge rather than a fixed height offset. */
+  subtitleCue?: string;
   previousEnabled: boolean;
   nextEnabled: boolean;
 
@@ -109,6 +116,7 @@ export function PlaybackDeck({
   hasGuide,
   hasAudio,
   hasSubtitles,
+  subtitleCue = "",
   previousEnabled,
   nextEnabled,
   onFocus,
@@ -145,9 +153,10 @@ export function PlaybackDeck({
   const closeTimer = useRef(0);
   const targetTouched = useRef(false);
   const targetRef = useRef(target);
-  const seekRepeat = useRef<{ direction: -1 | 0 | 1; count: number }>({
+  const seekRepeat = useRef<SeekHold>({
     direction: 0,
-    count: 0,
+    startedAt: 0,
+    steppedAt: 0,
   });
   targetRef.current = target;
   /*
@@ -183,7 +192,7 @@ export function PlaybackDeck({
   useEffect(() => {
     const resetSeekRepeat = (event: KeyboardEvent) => {
       if (event.keyCode === KEY.LEFT || event.keyCode === KEY.RIGHT) {
-        seekRepeat.current = { direction: 0, count: 0 };
+        seekRepeat.current = { direction: 0, startedAt: 0, steppedAt: 0 };
       }
     };
     window.addEventListener("keyup", resetSeekRepeat, true);
@@ -209,20 +218,22 @@ export function PlaybackDeck({
     const head: PlaybackDeckAction[] = live ? (showGoLive ? ["go-live"] : []) : ["details"];
     const centre: PlaybackDeckAction[] = ["previous", "play-pause", "next"];
     const end: PlaybackDeckAction[] = [
-      ...(hasAudio ? (["audio"] as const) : []),
-      ...(hasSubtitles ? (["subtitles"] as const) : []),
+      "audio",
+      "subtitles",
       ...(live ? (["guide"] as const) : []),
     ];
     return [head, centre, end, [...head, ...centre, ...end]];
-  }, [live, showGoLive, hasAudio, hasSubtitles]);
+  }, [live, showGoLive]);
 
   const disabled = useCallback(
     (control: PlaybackDeckAction) =>
       (control === "guide" && !hasGuide) ||
+      (control === "audio" && !hasAudio) ||
+      (control === "subtitles" && !hasSubtitles) ||
       (control === "previous" && !previousEnabled) ||
       (control === "next" && !nextEnabled) ||
       (control === "play-pause" && !canTogglePlayback),
-    [hasGuide, canTogglePlayback, previousEnabled, nextEnabled],
+    [hasGuide, hasAudio, hasSubtitles, canTogglePlayback, previousEnabled, nextEnabled],
   );
 
   const navigableControls = useMemo(
@@ -302,10 +313,8 @@ export function PlaybackDeck({
           else onClose();
         } else if (code === KEY.LEFT || code === KEY.RIGHT) {
           const direction = (step < 0 ? -1 : 1) as -1 | 1;
-          const held = seekRepeat.current;
-          held.count = event.repeat && held.direction === direction ? held.count + 1 : 0;
-          held.direction = direction;
-          moveTarget(direction * seekStepForRepeat(held.count));
+          const amount = seekStepFromKey(seekRepeat.current, direction, event.repeat);
+          if (amount) moveTarget(direction * amount);
         }
         return;
       }
@@ -625,6 +634,7 @@ export function PlaybackDeck({
         </div>
       </div>
       <KeyGuide className="deck-hints ruled" items={hintItems} />
+      <SubtitleLayer cue={subtitleCue} hidden={false} />
     </div>
   );
 

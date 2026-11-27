@@ -150,7 +150,7 @@ export function SeriesDetails({
               country={detail.metadata.country}
             />
             {!!detail.plot && (
-              <p className="vod-synopsis" dir="auto">
+              <p className="vod-synopsis">
                 {detail.plot}
               </p>
             )}

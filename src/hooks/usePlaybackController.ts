@@ -27,6 +27,12 @@ import {
 } from "../services/playbackRecovery";
 import { automaticTrack } from "../services/playbackTracks";
 import {
+  flushPlaybackTrackChoices,
+  playbackTrackChoices,
+  rememberPlaybackTrackChoice,
+  type TrackSelection,
+} from "../services/playbackTrackChoices";
+import {
   idleRepair,
   pauseRepair,
   prepare,
@@ -50,16 +56,7 @@ export interface PlaybackCapabilities {
   readonly subtitleTracks: readonly MediaTrack[];
 }
 
-/**
- * What the viewer last chose for a kind of track: `identity` is the normalized match
- * `trackIdentity` produces, `automatic` asks for the one track in the device language, and a
- * null identity with neither flag means Off. The choice is remembered across targets and
- * reapplied when the same normalized identity exists on the next one.
- */
-export interface TrackSelection {
-  identity: string | null;
-  automatic?: boolean;
-}
+export type { TrackSelection } from "../services/playbackTrackChoices";
 
 export interface PlaybackController {
   readonly snapshot: PlaybackSnapshot;
@@ -72,7 +69,8 @@ export interface PlaybackController {
   start(item: TuneItem, options?: { restart?: boolean }): void;
   stop(): void;
   retune(): void;
-  step(delta: 1 | -1, list: readonly TuneItem[]): void;
+  step(delta: 1 | -1, list: readonly TuneItem[], repeated?: boolean): void;
+  commitStep(): void;
   setPlaying(play: boolean): boolean;
   togglePlaying(): boolean;
   seekBy(deltaSeconds: number): void;
@@ -96,6 +94,7 @@ export interface PlaybackController {
 }
 
 export interface PlaybackControllerOptions {
+  playlistId?: string;
   fit: Fit;
   video: React.RefObject<HTMLVideoElement | null>;
   compatibility: boolean;
@@ -203,12 +202,12 @@ const keyOf = (target: PlaybackTarget): string =>
 const sameTarget = (left: PlaybackTarget | null, right: PlaybackTarget): boolean =>
   left?.id === right.id && left.playlistId === right.playlistId && left.url === right.url;
 
-export const targetOf = (item: TuneItem): PlaybackTarget =>
+export const targetOf = (item: TuneItem, playlistId = ""): PlaybackTarget =>
   "mode" in item
     ? item
     : {
         id: item.id,
-        playlistId: item.xtream?.playlistId ?? "",
+        playlistId: item.xtream?.playlistId ?? playlistId,
         mode: "live",
         kind: "live",
         name: item.name,
@@ -249,8 +248,11 @@ export function usePlaybackController(options: PlaybackControllerOptions): Playb
     null as unknown as PlaybackRecoveryCoordinator,
   );
   const currentRef = useRef<PlaybackTarget | null>(null);
+  const previewRef = useRef<PlaybackTarget | null>(null);
   const playingIntent = useRef(true);
   const zapTimer = useRef(0);
+  const zapFrame = useRef(0);
+  const pendingStep = useRef<TuneItem | null>(null);
   const quickSeekTimer = useRef(0);
   const quickSeekTarget = useRef<number | null>(null);
   const pendingDelta = useRef(0);
@@ -261,7 +263,7 @@ export function usePlaybackController(options: PlaybackControllerOptions): Playb
    */
   const seekSession = useRef<SeekSession | null>(null);
   const seekInFlight = useRef<SeekSession | null>(null);
-  /** Track choices the viewer made, carried across targets by normalized identity. */
+  /** Choices belong to the current item and match tracks by normalized identity. */
   const chosenTracks = useRef<{
     audio: TrackSelection | null;
     subtitle: TrackSelection | null;
@@ -319,26 +321,37 @@ export function usePlaybackController(options: PlaybackControllerOptions): Playb
   }, []);
 
   /*
-   * Reapply the viewer's track choices when a new target reports its tracks. An exact
+   * Restore choices after playback starts, since AVPlay may reset READY selections on Play.
+   * Later track reports also restore choices when stream metadata arrives late. An exact
    * normalized identity match wins, an automatic subtitle choice takes the one track in the
    * device language, and an explicit Off stays off. Anything absent falls back to the
    * provider's default rather than guessing.
    */
-  const reapplyTrackChoices = useCallback(() => {
-    const tracks = player.current?.getTracks() ?? [];
-    const deviceLanguage = typeof navigator !== "undefined" ? navigator.language : "";
-    for (const kind of ["audio", "subtitle"] as const) {
-      const choice = chosenTracks.current[kind];
-      if (!choice) continue;
-      const ofKind = tracks.filter((track) => track.kind === kind);
-      if (choice.identity === null && !choice.automatic) {
-        if (ofKind.some((track) => track.selected)) player.current?.selectTrack(kind, null);
-        continue;
+  const applyingTracks = useRef(false);
+  const trackPlaybackReady = useRef(false);
+  const reapplyTrackChoices = useCallback((force = false) => {
+    if (!trackPlaybackReady.current || applyingTracks.current) return;
+    applyingTracks.current = true;
+    try {
+      const tracks = player.current?.getTracks() ?? [];
+      const deviceLanguage = typeof navigator !== "undefined" ? navigator.language : "";
+      for (const kind of ["audio", "subtitle"] as const) {
+        const choice = chosenTracks.current[kind];
+        if (!choice) continue;
+        const ofKind = tracks.filter((track) => track.kind === kind);
+        if (choice.identity === null && !choice.automatic) {
+          // AVPlay can omit selection flags even while subtitle output is enabled.
+          player.current?.selectTrack(kind, null);
+          continue;
+        }
+        const wanted = choice.automatic
+          ? automaticTrack(ofKind, deviceLanguage)
+          : ofKind.find((track) => track.identity === choice.identity);
+        if (wanted && (force || !wanted.selected))
+          player.current?.selectTrack(kind, wanted.engineIndex);
       }
-      const wanted = choice.automatic
-        ? automaticTrack(ofKind, deviceLanguage)
-        : ofKind.find((track) => track.identity === choice.identity);
-      if (wanted && !wanted.selected) player.current?.selectTrack(kind, wanted.engineIndex);
+    } finally {
+      applyingTracks.current = false;
     }
   }, []);
 
@@ -390,6 +403,7 @@ export function usePlaybackController(options: PlaybackControllerOptions): Playb
   }, [publish]);
 
   const open = useCallback((request: PlayerOpenRequest) => {
+    trackPlaybackReady.current = false;
     player.current?.play(request);
   }, []);
 
@@ -426,7 +440,10 @@ export function usePlaybackController(options: PlaybackControllerOptions): Playb
   if (!coordinator.current) {
     coordinator.current = new PlaybackRecoveryCoordinator({
       clock: () => player.current?.getClock() ?? EMPTY_CLOCK,
-      warmRecover: (kind) => player.current?.warmRecover(kind) ?? false,
+      warmRecover: (kind) => {
+        trackPlaybackReady.current = false;
+        return player.current?.warmRecover(kind) ?? false;
+      },
       diagnose,
       fallback,
       reopen: (request) => {
@@ -500,9 +517,12 @@ export function usePlaybackController(options: PlaybackControllerOptions): Playb
           }
           break;
         case "playing": {
+          const firstTrackRestore = !trackPlaybackReady.current;
+          trackPlaybackReady.current = true;
           seenPicture.current = true;
           coordinator.current.playing();
           applyReadyIntent();
+          reapplyTrackChoices(firstTrackRestore);
           parts.current.fault = null;
           refreshClock();
           const target = currentRef.current;
@@ -516,6 +536,7 @@ export function usePlaybackController(options: PlaybackControllerOptions): Playb
         case "ended": {
           const target = currentRef.current;
           if (!target) break;
+          trackPlaybackReady.current = false;
           window.clearTimeout(cueTimer.current);
           setSubtitleCue("");
           if (target.mode === "live") {
@@ -587,6 +608,8 @@ export function usePlaybackController(options: PlaybackControllerOptions): Playb
 
   const tuneTo = useCallback(
     (target: PlaybackTarget) => {
+      trackPlaybackReady.current = false;
+      chosenTracks.current = playbackTrackChoices(target);
       tuneToken.current += 1;
       const token = tuneToken.current;
       eventToken.current = token;
@@ -639,7 +662,11 @@ export function usePlaybackController(options: PlaybackControllerOptions): Playb
        * so a broken channel is repaired before it can show one frame and stall rather than
        * after. The result is an ordinary open request, so the player itself never knows.
        */
-      void prepare(target.url, target.playlistId).then((prepared) => {
+      const preparing = prepare(target.url, target.playlistId);
+      coordinator.current.stop();
+      // Stop the old picture while checking the new stream, but retain the decoder.
+      player.current?.stop(false);
+      void preparing.then((prepared) => {
         if (tuneToken.current !== token) return;
         if (!compatRef.current || !prepared) {
           idleRepair();
@@ -674,9 +701,13 @@ export function usePlaybackController(options: PlaybackControllerOptions): Playb
 
   const start = useCallback(
     (item: TuneItem, opts?: { restart?: boolean }) => {
-      const target = { ...targetOf(item) };
+      const target = { ...targetOf(item, hooks.current.playlistId) };
       if (opts?.restart) target.resumeAt = 0;
       window.clearTimeout(zapTimer.current);
+      cancelAnimationFrame(zapFrame.current);
+      zapFrame.current = 0;
+      pendingStep.current = null;
+      previewRef.current = null;
       setPreview(null);
       if (sameTarget(currentRef.current, target) && !opts?.restart) return;
       currentRef.current = target;
@@ -700,6 +731,8 @@ export function usePlaybackController(options: PlaybackControllerOptions): Playb
   );
 
   const stop = useCallback(() => {
+    trackPlaybackReady.current = false;
+    flushPlaybackTrackChoices();
     const target = currentRef.current;
     if (target) hooks.current.onStopped(target, player.current.getClock());
     tuneToken.current += 1;
@@ -707,6 +740,7 @@ export function usePlaybackController(options: PlaybackControllerOptions): Playb
     playingIntent.current = true;
     announced.current = "";
     seenPicture.current = false;
+    previewRef.current = null;
     setPreview(null);
     setQuickSeek(null);
     setCapabilities(IDLE_CAPABILITIES);
@@ -716,6 +750,9 @@ export function usePlaybackController(options: PlaybackControllerOptions): Playb
     seekInFlight.current = null;
     setSeeking(false);
     window.clearTimeout(zapTimer.current);
+    cancelAnimationFrame(zapFrame.current);
+    zapFrame.current = 0;
+    pendingStep.current = null;
     window.clearTimeout(quickSeekTimer.current);
     window.clearTimeout(cueTimer.current);
     setSubtitleCue("");
@@ -739,20 +776,39 @@ export function usePlaybackController(options: PlaybackControllerOptions): Playb
     tuneTo(target);
   }, [tuneTo]);
 
+  const commitStep = useCallback(() => {
+    if (!pendingStep.current || zapFrame.current) return;
+    window.clearTimeout(zapTimer.current);
+    cancelAnimationFrame(zapFrame.current);
+    // Paint the latest preview before AVPlay's synchronous stop and open calls.
+    zapFrame.current = requestAnimationFrame(() => {
+      zapFrame.current = requestAnimationFrame(() => {
+        zapFrame.current = 0;
+        const item = pendingStep.current;
+        if (item) start(item);
+      });
+    });
+  }, [start]);
+
   const step = useCallback(
-    (delta: 1 | -1, list: readonly TuneItem[]) => {
+    (delta: 1 | -1, list: readonly TuneItem[], repeated = false) => {
       if (!list.length) return;
-      const anchor = preview ?? currentRef.current;
+      const anchor = previewRef.current ?? currentRef.current;
       const fromIndex = list.findIndex((item) => item.id === anchor?.id);
       const origin = fromIndex === -1 ? (delta > 0 ? -1 : 0) : fromIndex;
       const item = list[(((origin + delta) % list.length) + list.length) % list.length];
-      const target = targetOf(item);
+      const target = targetOf(item, hooks.current.playlistId);
+      previewRef.current = target;
       setPreview(target);
       hooks.current.onNamed(target);
       window.clearTimeout(zapTimer.current);
+      cancelAnimationFrame(zapFrame.current);
+      zapFrame.current = 0;
+      pendingStep.current = item;
       zapTimer.current = window.setTimeout(() => start(item), 450);
+      if (!repeated) commitStep();
     },
-    [preview, start],
+    [start, commitStep],
   );
 
   const setPlaying = useCallback(
@@ -1015,9 +1071,25 @@ export function usePlaybackController(options: PlaybackControllerOptions): Playb
 
   const selectTrack = useCallback(
     (kind: "audio" | "subtitle", engineIndex: number | null, selection?: TrackSelection) => {
-      const moved = player.current?.selectTrack(kind, engineIndex) ?? false;
+      const previous = chosenTracks.current[kind];
+      const choice = selection ?? {
+        identity:
+          player.current?.getTracks().find(
+            (track) => track.kind === kind && track.engineIndex === engineIndex,
+          )?.identity ?? null,
+      };
+      chosenTracks.current[kind] = choice;
+      applyingTracks.current = true;
+      let moved = false;
+      try {
+        moved = player.current?.selectTrack(kind, engineIndex) ?? false;
+      } finally {
+        applyingTracks.current = false;
+        if (!moved) chosenTracks.current[kind] = previous;
+      }
       if (moved) {
-        chosenTracks.current[kind] = selection ?? { identity: null };
+        const target = currentRef.current;
+        if (target) rememberPlaybackTrackChoice(target, kind, choice);
         if (kind === "subtitle") {
           window.clearTimeout(cueTimer.current);
           setSubtitleCue("");
@@ -1081,7 +1153,10 @@ export function usePlaybackController(options: PlaybackControllerOptions): Playb
   /* Hiding the page suspends whatever is playing; returning coordinates one restore. */
   useEffect(() => {
     const onVisibility = () => {
-      if (document.hidden) coordinator.current.hidden();
+      if (document.hidden) {
+        flushPlaybackTrackChoices();
+        coordinator.current.hidden();
+      }
       else coordinator.current.visible();
     };
     document.addEventListener("visibilitychange", onVisibility);
@@ -1090,6 +1165,7 @@ export function usePlaybackController(options: PlaybackControllerOptions): Playb
 
   useEffect(
     () => () => {
+      flushPlaybackTrackChoices();
       const target = currentRef.current;
       if (target) hooks.current.onStopped(target, player.current.getClock());
       /*
@@ -1105,6 +1181,9 @@ export function usePlaybackController(options: PlaybackControllerOptions): Playb
       quickSeekTarget.current = null;
       pendingDelta.current = 0;
       window.clearTimeout(zapTimer.current);
+      cancelAnimationFrame(zapFrame.current);
+      zapFrame.current = 0;
+      pendingStep.current = null;
       window.clearTimeout(quickSeekTimer.current);
       window.clearTimeout(cueTimer.current);
       // Effect replay reuses this coordinator, so release the session without disposing it.
@@ -1129,6 +1208,7 @@ export function usePlaybackController(options: PlaybackControllerOptions): Playb
     stop,
     retune,
     step,
+    commitStep,
     setPlaying,
     togglePlaying,
     seekBy,

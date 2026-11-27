@@ -26,6 +26,7 @@ export let played: string[] = [];
 export let playCalls: unknown[][] = [];
 export let seekChanges: number[] = [];
 export let muted = false;
+export let pauseCalls = 0;
 export let volumeChanges: number[] = [];
 let playbackPosition = 0;
 let playbackDuration = 120;
@@ -232,6 +233,7 @@ export async function mountApp(
   playCalls = [];
   seekChanges = [];
   muted = false;
+  pauseCalls = 0;
   volumeChanges = [];
   playbackPosition = 0;
   playbackDuration = liveDvr ? 3600 : 120;
@@ -266,6 +268,7 @@ export async function mountApp(
       hide() {}
       show() {}
       pause() {
+        pauseCalls += 1;
         return true;
       }
       resumePlayback() {

@@ -9,7 +9,8 @@ import {
   SEEK_STEP_SECONDS,
   SEEK_TIMEOUT_MS,
   safeLiveTarget,
-  seekStepForRepeat,
+  seekStepForHold,
+  seekStepFromKey,
   usefulLiveRange,
 } from "../src/services/playbackRange";
 
@@ -76,10 +77,21 @@ test("Live safety and hysteresis use exact approved thresholds", () => {
   expect(isAtLiveEdge(183.9, 196, 4, true)).toBe(false);
 });
 
-test("held seek accelerates through deterministic accepted repeat tiers", () => {
-  expect([0, 3, 4, 7, 8, 11, 12, 40].map(seekStepForRepeat)).toEqual([
-    10, 10, 20, 20, 40, 40, 60, 60,
+test("held seek allows time at each tier before reaching five and ten minutes", () => {
+  expect([0, 999, 1000, 2499, 2500, 4500, 7000, 10000, 13500].map(seekStepForHold)).toEqual([
+    10, 10, 20, 20, 40, 60, 120, 300, 600,
   ]);
+});
+
+test("repeat bursts cannot accelerate seeking and release or reversal resets the hold", () => {
+  const held = { direction: 0 as -1 | 0 | 1, startedAt: 0, steppedAt: 0 };
+  expect(seekStepFromKey(held, 1, false, 1000)).toBe(10);
+  for (let event = 1; event < 100; event += 1) {
+    expect(seekStepFromKey(held, 1, true, 1000 + event)).toBe(0);
+  }
+  expect(seekStepFromKey(held, 1, true, 2600)).toBe(20);
+  expect(seekStepFromKey(held, -1, true, 2601)).toBe(10);
+  expect(seekStepFromKey(held, -1, false, 5000)).toBe(10);
 });
 
 test("an expired seek target clamps to the new range start", () => {

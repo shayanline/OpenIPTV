@@ -5,12 +5,38 @@ export const SEEK_STEP_SECONDS = 10;
 export const SEEK_SETTLE_MS = 750;
 export const SEEK_TIMEOUT_MS = 5000;
 
-export const seekStepForRepeat = (repeatCount: number): number => {
-  if (repeatCount >= 12) return 60;
-  if (repeatCount >= 8) return 40;
-  if (repeatCount >= 4) return 20;
+export const seekStepForHold = (heldMs: number): number => {
+  if (heldMs >= 13500) return 600;
+  if (heldMs >= 10000) return 300;
+  if (heldMs >= 7000) return 120;
+  if (heldMs >= 4500) return 60;
+  if (heldMs >= 2500) return 40;
+  if (heldMs >= 1000) return 20;
   return SEEK_STEP_SECONDS;
 };
+
+export interface SeekHold {
+  direction: -1 | 0 | 1;
+  startedAt: number;
+  steppedAt: number;
+}
+
+export function seekStepFromKey(
+  hold: SeekHold,
+  direction: -1 | 1,
+  repeated: boolean,
+  now = performance.now(),
+): number {
+  if (!repeated || hold.direction !== direction) {
+    hold.direction = direction;
+    hold.startedAt = hold.steppedAt = now;
+    return SEEK_STEP_SECONDS;
+  }
+  // Time drives acceleration and caps unusually fast remote repeat streams.
+  if (now - hold.steppedAt < 200) return 0;
+  hold.steppedAt = now;
+  return seekStepForHold(now - hold.startedAt);
+}
 
 export const finiteSeekRange = (
   durationSeconds: number | null,

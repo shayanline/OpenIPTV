@@ -599,13 +599,15 @@ export default {
   "guide.seek": "Tien seconden springen",
   "search.mediaName": "Naam van film of serie",
   "search.mediaAria": "Films of series op naam zoeken",
-  "error.seekUnavailable": "Deze video kan op dit apparaat niet worden doorgespoeld.",
+  "error.seekUnavailable": "Deze positie kan niet worden bereikt. Probeer het opnieuw.",
   "error.continueOrTryFormat":
     "Ga verder vanaf de huidige positie of probeer een andere indeling.",
   "error.finiteFormatUnsupported":
     "Deze video gebruikt een indeling die de speler niet kan decoderen.",
   "error.tryTelevisionOrVideo": "Probeer het op de televisie of kies een andere video.",
   "exit.question": "OpenIPTV sluiten?",
+  "exit.confirm": "App afsluiten",
+  "exit.stay": "App openhouden",
   "exit.body": "Je kunt het opnieuw openen vanuit de rij met apps.",
   "lineup.playlistSettings": "Afspeellijstinstellingen",
   "lineup.categoryVisibility": "Zichtbaarheid van categorieën",

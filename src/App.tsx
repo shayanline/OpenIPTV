@@ -84,7 +84,9 @@ const rememberedLiveChannel = () => {
   if (!playlist) return "";
   const saved = read(`app:last-live:${playlist.id}`);
   const last = usePersonal.getState().lastPlayed;
-  return saved || (last?.kind === "live" ? last.itemKey : "");
+  return (
+    saved || (last?.kind === "live" && last.playlistId === playlist.id ? last.itemKey : "")
+  );
 };
 
 export default function App() {
@@ -99,6 +101,7 @@ export default function App() {
   const errorKey = useChannels((state) => state.errorKey);
   const errorDetail = useChannels((state) => state.errorDetail);
   const channels = useLineup((state) => state.channels);
+  const lineupPlaylistId = useLineup((state) => state.playlistId);
   const playlists = useSettings((state) => state.playlists);
   const activePlaylist = useSettings((state) => state.activePlaylist());
   const aspectId = useSettings((state) => state.aspectId);
@@ -139,16 +142,17 @@ export default function App() {
       : "panel",
   );
   const [liveEntryId, setLiveEntryId] = useState(0);
-  const initialMode = rememberedMode();
-  const [appMode, setAppMode] = useState<AppMode>(initialMode);
+  const [appMode, setAppMode] = useState<AppMode>(rememberedMode);
   const [vodMode, setVodMode] = useState<"movie" | "series">(
-    initialMode === "series" ? "series" : "movie",
+    appMode === "series" ? "series" : "movie",
   );
   const [vodPhase, setVodPhase] = useState<"browsing" | "resolving" | "starting" | "playing">(
     "browsing",
   );
   const vodRef = useRef<VodScreenHandle>(null);
-  const rememberedLive = useRef(rememberedLiveChannel());
+  const [initialLiveChannel] = useState(rememberedLiveChannel);
+  const rememberedLive = useRef(initialLiveChannel);
+  const [pendingLivePlaylistId, setPendingLivePlaylistId] = useState<string | null>(null);
   const vodRequest = useRef<VodPlaybackRequest | null>(null);
   const vodToken = useRef(0);
   const [guideChannelId, setGuideChannelId] = useState("");
@@ -304,6 +308,7 @@ export default function App() {
   );
 
   const playback = usePlaybackController({
+    playlistId: activePlaylist?.id,
     fit: aspectId,
     video: videoRef,
     compatibility,
@@ -316,10 +321,53 @@ export default function App() {
   });
   const playbackOwner = useRef(activePlaylist?.id ?? "");
   const resumeInitialLive = useRef(true);
+  const shortcutPause = useRef<{
+    playlistId: string;
+    itemKey: string;
+    resume: boolean;
+  } | null>(null);
 
   useEffect(() => {
-    playback.setMuted(showSettings && !!playback.snapshot.target);
-  }, [showSettings, playback.snapshot.target, playback.setMuted]);
+    playback.setMuted((showSettings || playlistShortcutOpen) && !!playback.snapshot.target);
+  }, [showSettings, playlistShortcutOpen, playback.snapshot.target, playback.setMuted]);
+
+  useEffect(() => {
+    const target = playback.snapshot.target;
+    if (playlistShortcutOpen) {
+      if (!target || target.playlistId !== activePlaylist?.id) return;
+      const held = shortcutPause.current;
+      if (held?.playlistId !== target.playlistId || held.itemKey !== target.id) {
+        shortcutPause.current = {
+          playlistId: target.playlistId,
+          itemKey: target.id,
+          resume: !playback.snapshot.paused,
+        };
+      }
+      if (!playback.snapshot.paused) playback.setPlaying(false);
+      return;
+    }
+    const held = shortcutPause.current;
+    shortcutPause.current = null;
+    if (
+      held?.resume &&
+      target &&
+      target.playlistId === activePlaylist?.id &&
+      held.playlistId === target.playlistId &&
+      held.itemKey === target.id &&
+      appMode ===
+        (target.kind === "movie" ? "movie" : target.kind === "episode" ? "series" : "live") &&
+      playback.snapshot.paused
+    ) {
+      playback.setPlaying(true);
+    }
+  }, [
+    activePlaylist?.id,
+    appMode,
+    playlistShortcutOpen,
+    playback.snapshot.target,
+    playback.snapshot.paused,
+    playback.setPlaying,
+  ]);
 
   const cancelPendingVod = useCallback(() => {
     vodToken.current += 1;
@@ -344,6 +392,14 @@ export default function App() {
         return;
       }
       if (mode === appMode) {
+        const target = playback.snapshot.target;
+        if (
+          mode === "live" &&
+          (target?.mode !== "live" || target.playlistId !== settings.activePlaylist()?.id)
+        ) {
+          resumeInitialLive.current = false;
+          setPendingLivePlaylistId(settings.activePlaylist()?.id ?? null);
+        }
         cancelPendingVod();
         vodRef.current?.closeDetails();
         return;
@@ -361,14 +417,8 @@ export default function App() {
         vodRequest.current = null;
         setLiveSurface("panel");
         setLiveEntryId((value) => value + 1);
-        const channel =
-          channels.find((item) => item.id === rememberedLive.current) ?? channels[0];
-        if (channel) {
-          const token = vodToken.current;
-          window.setTimeout(() => {
-            if (vodToken.current === token) playback.start(channel);
-          }, 0);
-        }
+        resumeInitialLive.current = false;
+        setPendingLivePlaylistId(playlist?.id ?? null);
         return;
       }
       if (appMode === "live") {
@@ -382,15 +432,7 @@ export default function App() {
       }
       setAppMode(mode);
     },
-    [
-      appMode,
-      cancelPendingVod,
-      channels,
-      chrome.cancelDigits,
-      playback.snapshot.target,
-      playback.start,
-      playback.stop,
-    ],
+    [appMode, cancelPendingVod, chrome.cancelDigits, playback.snapshot.target, playback.stop],
   );
 
   const playlistRecovery =
@@ -520,6 +562,7 @@ export default function App() {
     chrome.clear();
     if (playback.snapshot.target) playback.stop();
     rememberedLive.current = rememberedLiveChannel();
+    setPendingLivePlaylistId(switched && next ? next : null);
     vodRequest.current = null;
     setDeckOpen(false);
     setPlaybackDrawer(null);
@@ -544,6 +587,38 @@ export default function App() {
     playback.snapshot.target,
     playback.stop,
     playlistShortcutOpen,
+  ]);
+
+  useEffect(() => {
+    if (
+      !pendingLivePlaylistId ||
+      pendingLivePlaylistId !== activePlaylist?.id ||
+      lineupPlaylistId !== pendingLivePlaylistId ||
+      appMode !== "live" ||
+      playlistShortcutOpen ||
+      showSettings ||
+      loading ||
+      !channels.length
+    )
+      return;
+    const channel = channels.find((item) => item.id === rememberedLive.current) ?? channels[0];
+    const token = vodToken.current;
+    const timer = window.setTimeout(() => {
+      if (vodToken.current !== token) return;
+      setPendingLivePlaylistId(null);
+      playback.start(channel);
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [
+    activePlaylist?.id,
+    appMode,
+    channels,
+    lineupPlaylistId,
+    loading,
+    pendingLivePlaylistId,
+    playback.start,
+    playlistShortcutOpen,
+    showSettings,
   ]);
 
   const activateAppNavigation = useCallback(
@@ -966,17 +1041,13 @@ export default function App() {
   const loadingSplashVisible =
     loading && !channels.length && !showSettings && !playlistShortcutOpen;
   // Exit covers the picture without changing the rail's animation coordinates.
+  // Loading must not reveal navigation hidden for resume or change its motion owner.
   const livePanelMotion =
-    appMode === "live" &&
-    !playlistShortcutOpen &&
-    !showSettings &&
-    !loadingSplashVisible &&
-    !playlistRecovery;
+    appMode === "live" && !playlistShortcutOpen && !showSettings && !playlistRecovery;
   const appNavigationVisible =
     configured &&
     !showExit &&
     (playlistRecovery ||
-      loading ||
       playlistShortcutOpen ||
       showSettings ||
       appNavigationFocused ||
@@ -1056,8 +1127,17 @@ export default function App() {
    */
   useLayoutEffect(() => {
     if (pageTransitionPhase !== "settling" || vodPageVisible) return;
+    // Commit the parked rail before its next frame restores the entering transition.
+    if (pageTransitionMotion.entering === "rail") livePanelHost?.getBoundingClientRect();
     readyPageTransition(settlingRevision);
-  }, [pageTransitionPhase, readyPageTransition, settlingRevision, vodPageVisible]);
+  }, [
+    pageTransitionPhase,
+    pageTransitionMotion.entering,
+    livePanelHost,
+    readyPageTransition,
+    settlingRevision,
+    vodPageVisible,
+  ]);
 
   return (
     <div
@@ -1279,15 +1359,7 @@ export default function App() {
         />
       )}
       {showExit && (
-        <ExitDialog
-          watching={
-            (appMode === "live" || vodPhase === "playing") &&
-            !!playback.snapshot.target &&
-            !playback.snapshot.fault
-          }
-          onConfirm={() => playback.stop()}
-          onCancel={() => setShowExit(false)}
-        />
+        <ExitDialog onConfirm={() => playback.stop()} onCancel={() => setShowExit(false)} />
       )}
       {!configured && (
         <Onboarding

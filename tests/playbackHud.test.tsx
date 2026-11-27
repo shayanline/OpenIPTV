@@ -1,18 +1,19 @@
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { PictureState } from "../src/components/PictureState";
+import { PlaybackInfo } from "../src/components/PlaybackInfo";
 import {
   isRecoveryStatusVisible,
   RecoveryStatus,
 } from "../src/components/playback/RecoveryStatus";
 import { KEY } from "../src/hooks/useRemote";
-import { PictureState } from "../src/components/PictureState";
-import { PlaybackInfo } from "../src/components/PlaybackInfo";
 import type { RecoveryState } from "../src/services/playbackRecovery";
 import type { MediaTrack } from "../src/types";
 import {
   emitPlayback,
   finishPlayback,
   mountApp,
+  pauseCalls,
   playCalls,
   played,
   press,
@@ -130,10 +131,61 @@ test("playback information distinguishes zero dropped frames from a growing tota
       })}
     />,
   );
+  act(() => vi.advanceTimersByTime(34));
   expect(screen.getByText("0 dropped / 759 total")).toBeTruthy();
   totalFrames = 783;
   act(() => vi.advanceTimersByTime(1000));
   expect(screen.getByText("0 dropped / 783 total")).toBeTruthy();
+});
+
+test("information paints stable rows before sampling native diagnostics after its entrance", () => {
+  const root = document.documentElement.style;
+  const previous = root.getPropertyValue("--t-med");
+  root.setProperty("--t-med", "250ms");
+  try {
+    const read = vi.fn(() => ({ engine: "AVPlay" as const, switches: 0 }));
+    const view = render(<PlaybackInfo read={read} />);
+    const box = document.querySelector(".playback-info")!;
+    const rows = box.querySelectorAll("dl > div").length;
+    expect(rows).toBeGreaterThan(1);
+    expect(read).not.toHaveBeenCalled();
+    act(() => vi.advanceTimersByTime(250));
+    expect(read).not.toHaveBeenCalled();
+
+    const entered = new Event("animationend", { bubbles: true });
+    Object.defineProperty(entered, "animationName", { value: "pb-in" });
+    fireEvent(box, entered);
+    act(() => vi.advanceTimersByTime(34));
+    expect(read).toHaveBeenCalledTimes(1);
+    expect(box.querySelectorAll("dl > div")).toHaveLength(rows);
+
+    view.rerender(<PlaybackInfo read={read} visible={false} />);
+    expect(box.classList.contains("playback-closing")).toBe(true);
+    expect(box.getAttribute("aria-hidden")).toBe("true");
+    act(() => vi.advanceTimersByTime(1500));
+    expect(read).toHaveBeenCalledTimes(1);
+    expect(box.classList.contains("visible")).toBe(false);
+  } finally {
+    if (previous) root.setProperty("--t-med", previous);
+    else root.removeProperty("--t-med");
+  }
+});
+
+test("dismissing information during its entrance cancels its pending native sample", () => {
+  const root = document.documentElement.style;
+  const previous = root.getPropertyValue("--t-med");
+  root.setProperty("--t-med", "250ms");
+  try {
+    const read = vi.fn(() => ({ engine: "AVPlay" as const, switches: 0 }));
+    const view = render(<PlaybackInfo read={read} />);
+    act(() => vi.advanceTimersByTime(100));
+    view.rerender(<PlaybackInfo read={read} visible={false} />);
+    act(() => vi.advanceTimersByTime(1500));
+    expect(read).not.toHaveBeenCalled();
+  } finally {
+    if (previous) root.setProperty("--t-med", previous);
+    else root.removeProperty("--t-med");
+  }
 });
 
 test("initial selection shows the banner and full picture spinner before controls open", async () => {
@@ -246,7 +298,7 @@ test.each(visibilityCases)(
   },
 );
 
-test("compact recovery retains its retry countdown message", () => {
+test("compact recovery shows only an accessible spinner while waiting to retry", () => {
   render(
     <RecoveryStatus
       state={{ ...recoveryState, stage: "waiting", attempt: 1, retryIn: 4 }}
@@ -254,7 +306,10 @@ test("compact recovery retains its retry countdown message", () => {
     />,
   );
 
-  expect(document.querySelector(".recovery-status")?.textContent).toBe("Trying again in 4 s");
+  const status = document.querySelector(".recovery-status");
+  expect(status?.textContent).toBe("");
+  expect(status?.getAttribute("aria-label")).toBeTruthy();
+  expect(status?.querySelector(".spinner")).toBeTruthy();
 });
 
 /*
@@ -335,12 +390,43 @@ const playSeries = async () => {
   await chooseMode("Series");
   await chooseButton(/^Show$/);
   await settle(0);
-  /* The first detail action is Continue for a series nobody has watched, and Right
-     activates the focused action the way OK does. */
-  press(KEY.RIGHT);
+  press(KEY.ENTER);
   await settle(0);
   await settle(0);
 };
+
+test.each(["Movies", "Series"] as const)(
+  "Right on %s details cannot activate the focused playback action",
+  async (mode) => {
+    await mountVod();
+    await chooseMode(mode);
+    await chooseButton(mode === "Movies" ? /Film/ : /^Show$/);
+    const before = played.length;
+    press(KEY.RIGHT);
+    await settle(0);
+    expect(document.querySelector(".vod-details.loaded")).toBeTruthy();
+    expect(played).toHaveLength(before);
+    press(KEY.ENTER);
+    await settle(0);
+    await settle(0);
+    expect(played.length).toBeGreaterThan(before);
+  },
+);
+
+test("the playlist switcher pauses a playing movie without starting another title", async () => {
+  await mountVod();
+  await playMovie();
+  const { useSettings } = await import("../src/stores/settings");
+  act(() => useSettings.getState().addPlaylist("Second", XTREAM_SOURCE));
+  const before = played.length;
+  press(KEY.YELLOW);
+  await settle(0);
+  fireEvent.click(screen.getByRole("button", { name: /^Playlists,/ }));
+  await settle(0);
+  expect(screen.getByRole("menu", { name: "Saved playlists" })).toBeTruthy();
+  expect(pauseCalls).toBeGreaterThan(0);
+  expect(played).toHaveLength(before);
+});
 
 const playbackModes = [
   {
@@ -950,25 +1036,7 @@ test.each([
       press(KEY.ENTER);
       await settle(0);
 
-      if (motion) {
-        /* The covered leg: the deck stays mounted under the shade and the
-           dialog has not arrived yet, and covered keys can neither move the
-           route nor reopen controls over it. */
-        expect(document.querySelector(".playback-details")).toBeNull();
-        expect(document.querySelector(".playback-deck")).toBeTruthy();
-        expect(
-          document.querySelector(".playback-content-transition")?.getAttribute("data-phase"),
-        ).toBe("leaving");
-        press(KEY.LEFT);
-        press(KEY.RIGHT);
-        press(KEY.UP);
-        press(KEY.DOWN);
-        press(KEY.ENTER);
-        await settle(0);
-        expect(document.querySelector(".playback-details")).toBeNull();
-        expect(document.querySelector(".playback-deck")).toBeTruthy();
-        await finishContentMotion();
-      }
+      expect(document.querySelector(".playback-content-transition")).toBeNull();
 
       const details = document.querySelector(".playback-details");
       expect(details).toBeTruthy();
@@ -1104,13 +1172,8 @@ test("transport keys under Details drive the engine without opening the deck", a
   expect(document.querySelector(".vod-screen")).toBeTruthy();
 });
 
-/*
- * While the Details entry is still covered the transport keys are the exception
- * that keeps working: Pause and Play reach the engine exactly as they do under
- * the open dialog, but the covered directional keys and Enter can neither move
- * the route nor reopen controls over the dialog that is arriving.
- */
-test("transport keys still reach the engine while a Details entry is covered", async () => {
+/* Transport keys keep working while the information entrance animates. */
+test("transport keys work during the Details entrance and OK dismisses it immediately", async () => {
   await mountVod();
   await playMovie();
   setPlaybackTime(60, 300);
@@ -1128,8 +1191,8 @@ test("transport keys still reach the engine while a Details entry is covered", a
     await settle(0);
     press(KEY.ENTER);
     await settle(0);
-    expect(document.querySelector(".playback-details")).toBeNull();
-    expect(document.querySelector(".playback-deck")).toBeTruthy();
+    expect(document.querySelector(".playback-details")).toBeTruthy();
+    expect(document.querySelector(".playback-deck")).toBeNull();
 
     press(KEY.PAUSE);
     await settle(0);
@@ -1148,15 +1211,14 @@ test("transport keys still reach the engine while a Details entry is covered", a
     expect(document.querySelector(".playback-deck")).toBeTruthy();
 
     await finishContentMotion();
-    expect(document.querySelector(".playback-details")).toBeTruthy();
+    expect(document.querySelector(".playback-details")).toBeNull();
   } finally {
     document.documentElement.style.removeProperty("--t-navigation");
   }
 });
 
-/* Stop during the covered leg cancels the pending entry outright and still
-   lands on the content's own screen through the ordinary finite return. */
-test("Stop cancels a pending Details entry and returns through the finite origin", async () => {
+/* Stop closes information and returns through the content's finite origin. */
+test("Stop closes Details during its entrance and returns through the finite origin", async () => {
   await mountVod();
   await playMovie();
 
@@ -1168,7 +1230,7 @@ test("Stop cancels a pending Details entry and returns through the finite origin
     await settle(0);
     press(KEY.ENTER);
     await settle(0);
-    expect(document.querySelector(".playback-details")).toBeNull();
+    expect(document.querySelector(".playback-details")).toBeTruthy();
 
     press(KEY.STOP);
     await settle(0);
@@ -1181,9 +1243,8 @@ test("Stop cancels a pending Details entry and returns through the finite origin
   }
 });
 
-/* A natural end is target loss through the real controller: it retires the
-   pending entry the same way Stop does, so the obsolete dialog never arrives. */
-test("a natural end cancels a pending Details entry", async () => {
+/* A natural end retires information along with its playback target. */
+test("a natural end closes Details during its entrance", async () => {
   await mountVod();
   await playMovie();
 
@@ -1195,7 +1256,7 @@ test("a natural end cancels a pending Details entry", async () => {
     await settle(0);
     press(KEY.ENTER);
     await settle(0);
-    expect(document.querySelector(".playback-details")).toBeNull();
+    expect(document.querySelector(".playback-details")).toBeTruthy();
 
     finishPlayback();
     await settle(0);
@@ -1207,10 +1268,8 @@ test("a natural end cancels a pending Details entry", async () => {
   }
 });
 
-/* Replacing the playlist source mid-entry changes the transition owner, so the
-   queued commit is dropped rather than retargeted: after every transition
-   timer has elapsed the obsolete title still must not open. */
-test("a source replacement cancels a pending Details entry for good", async () => {
+/* A replaced source cannot leave information for its former playback target. */
+test("a source replacement closes Details without reopening it", async () => {
   await mountVod();
   await playMovie();
 
@@ -1222,7 +1281,7 @@ test("a source replacement cancels a pending Details entry for good", async () =
     await settle(0);
     press(KEY.ENTER);
     await settle(0);
-    expect(document.querySelector(".playback-details")).toBeNull();
+    expect(document.querySelector(".playback-details")).toBeTruthy();
 
     const { useSettings } = await import("../src/stores/settings");
     const playlist = useSettings.getState().activePlaylist()!;
@@ -1244,10 +1303,8 @@ test("a source replacement cancels a pending Details entry for good", async () =
   }
 });
 
-/* A newly emitted terminal fault cancels the pending entry the same way the
-   already accepted open-dialog case keeps its own surface: nothing may arrive
-   late on top of the fault. */
-test("a terminal fault cancels a pending Details entry", async () => {
+/* A fault preserves the information already being read and leaves Return usable. */
+test("a terminal fault keeps open Details readable and dismissible", async () => {
   await mountVod();
   await playMovie();
 
@@ -1259,7 +1316,7 @@ test("a terminal fault cancels a pending Details entry", async () => {
     await settle(0);
     press(KEY.ENTER);
     await settle(0);
-    expect(document.querySelector(".playback-details")).toBeNull();
+    expect(document.querySelector(".playback-details")).toBeTruthy();
 
     emitPlayback({
       type: "error",
@@ -1268,6 +1325,9 @@ test("a terminal fault cancels a pending Details entry", async () => {
     });
     await settle(0);
     await finishContentMotion();
+    expect(document.querySelector(".playback-details")).toBeTruthy();
+    press(KEY.BACK);
+    await settle(0);
     expect(document.querySelector(".playback-details")).toBeNull();
     expect(document.querySelector(".vod-screen")).toBeTruthy();
   } finally {

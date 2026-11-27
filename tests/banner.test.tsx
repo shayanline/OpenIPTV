@@ -46,6 +46,39 @@ document.head.append(style);
  */
 const bannerUp = () => !!document.querySelector(".pb-stack");
 
+test("dismissed banners leave accessibility immediately and retire after their own exit", () => {
+  const root = document.documentElement.style;
+  const previous = root.getPropertyValue("--t-med");
+  root.setProperty("--t-med", "250ms");
+  try {
+    const channel = {
+      id: "one",
+      name: "First Channel",
+      number: 1,
+      group: "News",
+      url: "http://example.invalid/1.m3u8",
+    };
+    const view = render(<PlaybackBanner channel={channel} />);
+    view.rerender(<PlaybackBanner channel={channel} visible={false} />);
+    const banner = document.querySelector(".pb-stack")!;
+    expect(banner.getAttribute("aria-hidden")).toBe("true");
+    expect(banner.classList.contains("playback-closing")).toBe(true);
+
+    const ended = () => {
+      const event = new Event("animationend", { bubbles: true });
+      Object.defineProperty(event, "animationName", { value: "pb-out" });
+      return event;
+    };
+    fireEvent(banner.firstElementChild!, ended());
+    expect(bannerUp()).toBe(true);
+    fireEvent(banner, ended());
+    expect(bannerUp()).toBe(false);
+  } finally {
+    if (previous) root.setProperty("--t-med", previous);
+    else root.removeProperty("--t-med");
+  }
+});
+
 /**
  * Skip past the banner's own eight seconds, which is not the panel's setting: the viewer chooses how long
  * the channel list stays open, and the banner has always had its own eight.
@@ -91,7 +124,7 @@ test("a Farsi category heading stays aligned with the LTR list", async () => {
   const heading = document.querySelector(".list .panel-title");
   assert.ok(heading);
   assert.equal(heading.textContent, "شبکه ها");
-  assert.equal(heading.getAttribute("dir"), "auto");
+  assert.equal(heading.getAttribute("dir"), null);
   assert.equal(getComputedStyle(heading).textAlign, "left");
 });
 
@@ -102,9 +135,30 @@ test("a Farsi only channel title stays aligned with the LTR banner", async () =>
   const title = document.querySelector(".pb-title");
   assert.ok(title);
   assert.equal(title.textContent, "شبکه سه");
-  assert.equal(title.getAttribute("dir"), "auto");
+  assert.equal(title.getAttribute("dir"), null);
   assert.equal(getComputedStyle(title).textAlign, "left");
 });
+
+test.each([
+  ["en", "ltr", FARSI_PLAYLIST, "شبکه ها"],
+  ["fa", "rtl", PLAYLIST, "News"],
+] as const)(
+  "%s keeps banner and control categories in the app direction",
+  async (locale, direction, playlist, categoryName) => {
+    await mountApp(playlist, { locale });
+    press(KEY.ENTER);
+    const bannerCategory = document.querySelector('.pb-stack [data-playback-part="category"]');
+    expect(bannerCategory?.textContent).toBe(categoryName);
+    expect(bannerCategory?.closest("[dir]")?.getAttribute("dir")).toBe(direction);
+
+    press(direction === "ltr" ? KEY.RIGHT : KEY.LEFT);
+    const controlCategory = document.querySelector(
+      '.playback-deck [data-playback-part="category"]',
+    );
+    expect(controlCategory?.textContent).toBe(categoryName);
+    expect(controlCategory?.closest("[dir]")?.getAttribute("dir")).toBe(direction);
+  },
+);
 
 test("the live banner shows only the category name", async () => {
   await mountApp(PLAYLIST);
@@ -320,10 +374,7 @@ test("valid channel logos keep the requested footprint and accessible name", asy
   expect(logo.getAttribute("aria-label")).toBe("Valid channel");
 });
 
-test("the banner opens the deck through one shared identity surface", async () => {
-  vi.spyOn(Element.prototype, "getBoundingClientRect").mockReturnValue(
-    new DOMRect(40, 700, 800, 160),
-  );
+test("the banner opens the deck with a light entrance and one identity surface", async () => {
   await mountApp(PLAYLIST);
   fireEvent.click(screen.getByRole("button", { name: /First Channel/ }));
   await settle(0);
@@ -339,7 +390,10 @@ test("the banner opens the deck through one shared identity surface", async () =
     "First Channel",
   );
   expect(document.querySelector(".playback-deck")?.getAttribute("data-entrance")).toBe(
-    "banner",
+    "ordinary",
+  );
+  expect(appCss).toMatch(
+    /\.pb-stack,\s*\.playback-deck \{[^}]*animation:\s*pb-in var\(--t-med\) var\(--ease-enter\)/,
   );
 });
 

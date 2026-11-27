@@ -294,7 +294,7 @@ export function PlaylistShortcut({
               <PlaylistAvatar name={active.name} number={number(activeIndex + 1)} />
               <div className="playlist-shortcut-current-copy">
                 <span className="playlist-shortcut-current-label">{t("common.active")}</span>
-                <strong dir="auto">{active.name}</strong>
+                <strong>{active.name}</strong>
                 <span>{description(active)}</span>
               </div>
             </div>
@@ -309,7 +309,6 @@ export function PlaylistShortcut({
             ref={search}
             variant="embedded"
             value={query}
-            dir="auto"
             spellCheck={false}
             autoComplete="off"
             aria-label={t("playlist.searchPlaylists")}
@@ -381,7 +380,7 @@ export function PlaylistShortcut({
               >
                 <PlaylistAvatar name={playlist.name} number={number(ordinal)} />
                 <span className="playlist-shortcut-row-copy">
-                  <span className="playlist-shortcut-name" dir="auto">
+                  <span className="playlist-shortcut-name">
                     {playlist.name}
                   </span>
                   <span className="playlist-shortcut-meta">{description(playlist)}</span>

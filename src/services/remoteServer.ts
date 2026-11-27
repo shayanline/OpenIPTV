@@ -416,7 +416,21 @@ export function startRemoteAccess(): void {
     return;
   }
   if (worker) return;
-  const address = window.webapis?.network?.getIp?.() ?? "";
+  let address: string;
+  try {
+    const network = window.webapis?.network;
+    if (!network?.getIp) throw new Error("Samsung Network API is unavailable");
+    address = network.getIp();
+  } catch (error) {
+    publish({
+      status: "unavailable",
+      address: "",
+      port: 0,
+      remotePath: "",
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return;
+  }
   if (!isPrivateIPv4(address)) {
     publish({ status: "unavailable", address: "", port: 0, error: "no private TV address" });
     return;
