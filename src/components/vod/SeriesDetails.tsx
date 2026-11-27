@@ -2,21 +2,26 @@ import { useCallback, useState, type ReactNode } from "react";
 import { pointerOnly } from "../../hooks/usePointerAwake";
 import { useLocale } from "../../hooks/useLocale";
 import type { VodOrigin } from "../../hooks/useVodNavigation";
-import type { ArtworkPalette } from "../../services/artwork";
+import {
+  DETAIL_POSTER_BOX,
+  displayArtworkBox,
+  type ArtworkPalette,
+} from "../../services/artwork";
 import type { XtreamSeriesDetail } from "../../services/xtream";
 import type { LibraryResource, SeriesContinueTarget } from "../../stores/library";
 import { Artwork } from "../Artwork";
 import { Icon } from "../Icon";
+import { clock } from "../PlaybackBanner";
 import { Text } from "../Text";
 import { episodeReference } from "./EpisodeList";
 import { VodBackdrop, VodDetailSkeleton, VodDetailTags } from "./VodDetails";
 import { VodCredits } from "./VodCredits";
 import { VodTitleRow } from "./VodTitleRow";
 
-export type SeriesAction = "continue" | "restart" | "episodes" | "favourite";
+export type SeriesAction = "continue" | "restart" | "episodes" | "info" | "favourite";
 
 export function seriesActions(
-  detail: XtreamSeriesDetail,
+  detail: XtreamSeriesDetail | undefined,
   continueTarget: SeriesContinueTarget | null,
 ): SeriesAction[] {
   const actions: SeriesAction[] = [];
@@ -24,8 +29,8 @@ export function seriesActions(
     actions.push("continue");
     if (continueTarget.reason === "resume") actions.push("restart");
   }
-  if (detail.episodes.length) actions.push("episodes");
-  actions.push("favourite");
+  if (!detail || detail.episodes.length) actions.push("episodes");
+  actions.push("info", "favourite");
   return actions;
 }
 
@@ -41,6 +46,7 @@ export interface SeriesDetailsProps {
   actionFocused?: boolean;
   episodePanelOpen: boolean;
   retryFocused?: boolean;
+  onInfo?: () => void;
   episodePanel?: ReactNode;
   onToggleFavourite: () => void;
   onFocusAction?: (index: number) => void;
@@ -62,6 +68,7 @@ export function SeriesDetails({
   actionFocused = false,
   episodePanelOpen,
   retryFocused = false,
+  onInfo,
   episodePanel,
   onToggleFavourite,
   onFocusAction,
@@ -73,6 +80,7 @@ export function SeriesDetails({
 }: SeriesDetailsProps) {
   const { t } = useLocale();
   const detail = resource.value;
+  const posterBox = displayArtworkBox(DETAIL_POSTER_BOX);
   const [posterPalette, setPosterPalette] = useState<ArtworkPalette | undefined>();
   const [backdropPalette, setBackdropPalette] = useState<ArtworkPalette | undefined>();
   const handlePosterPalette = useCallback((palette: ArtworkPalette) => {
@@ -83,7 +91,14 @@ export function SeriesDetails({
   }, []);
   const titleRow = <VodTitleRow title={detail?.name ?? title ?? ""} />;
   if (resource.state === "loading" || resource.state === "idle") {
-    return <VodDetailSkeleton titleRow={titleRow} poster={poster} palette={posterPalette} />;
+    return (
+      <VodDetailSkeleton
+        titleRow={titleRow}
+        poster={poster}
+        palette={posterPalette}
+        actionCount={seriesActions(detail, continueTarget).length}
+      />
+    );
   }
   if (resource.state === "failed" || !detail) {
     return (
@@ -113,7 +128,7 @@ export function SeriesDetails({
   const reference = continueTarget ? episodeReference(continueTarget.episode, t) : "";
   const continueLabel = continueTarget
     ? continueTarget.reason === "resume"
-      ? `${t("vod.continue", { episode: reference })}${continueTarget.remainingSeconds !== undefined ? `, ${t("vod.minutes", { count: Math.ceil(continueTarget.remainingSeconds / 60) })}` : ""}`
+      ? `${t("vod.continue", { episode: reference })} (${clock(continueTarget.resumeAt)})`
       : `${t("vod.play")} ${reference}`
     : "";
   const actions = seriesActions(detail, continueTarget);
@@ -149,11 +164,7 @@ export function SeriesDetails({
               seasons={seasonCount}
               country={detail.metadata.country}
             />
-            {!!detail.plot && (
-              <p className="vod-synopsis">
-                {detail.plot}
-              </p>
-            )}
+            {!!detail.plot && <p className="vod-synopsis">{detail.plot}</p>}
             <VodCredits cast={detail.metadata.cast} director={detail.metadata.director} />
             {!continueTarget && <p className="episode-state">{t("vod.noEpisodes")}</p>}
           </div>
@@ -164,9 +175,11 @@ export function SeriesDetails({
                   ? continueLabel
                   : action === "restart"
                     ? `${t("vod.restart")} ${reference}`
-                    : action === "favourite"
-                      ? t(favourite ? "vod.removeFavourite" : "vod.addFavourite")
-                      : t("vod.episodes");
+                    : action === "info"
+                      ? t("library.details")
+                      : action === "favourite"
+                        ? t(favourite ? "vod.removeFavourite" : "vod.addFavourite")
+                        : t("vod.episodes");
               return (
                 <button
                   key={action}
@@ -180,6 +193,7 @@ export function SeriesDetails({
                     if (action === "continue" && continueTarget) onContinue(continueTarget);
                     else if (action === "restart" && continueTarget) onRestart(continueTarget);
                     else if (action === "episodes") onToggleEpisodes();
+                    else if (action === "info") onInfo?.();
                     else if (action === "favourite") onToggleFavourite();
                   }}
                 >
@@ -189,9 +203,11 @@ export function SeriesDetails({
                         ? "star"
                         : action === "restart"
                           ? "refresh"
-                          : action === "episodes"
-                            ? "episode"
-                            : "play"
+                          : action === "info"
+                            ? "about"
+                            : action === "episodes"
+                              ? "episode"
+                              : "play"
                     }
                   />
                   <Text value={label} marquee active={actionFocused && actionIndex === index} />
@@ -206,8 +222,8 @@ export function SeriesDetails({
               src={detail.logo}
               alt={t("vod.seriesArtwork")}
               kind="poster"
-              width={192}
-              height={288}
+              width={posterBox.width}
+              height={posterBox.height}
               placeholderIcon="series"
               palette={backdropPalette ?? posterPalette}
               onPalette={handlePosterPalette}

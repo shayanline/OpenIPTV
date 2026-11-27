@@ -281,9 +281,33 @@ test("track choices return with their item after stop without changing a differe
   const instance = playerMock.instances[0];
   instance.selectTrack.mockReturnValue(true);
   const tracks: MediaTrack[] = [
-    { id: "en", identity: "en", engineIndex: 1, kind: "audio", language: "en", label: "English", selected: true },
-    { id: "fa", identity: "fa", engineIndex: 2, kind: "audio", language: "fa", label: "Farsi", selected: false },
-    { id: "de", identity: "de", engineIndex: 3, kind: "subtitle", language: "de", label: "German", selected: true },
+    {
+      id: "en",
+      identity: "en",
+      engineIndex: 1,
+      kind: "audio",
+      language: "en",
+      label: "English",
+      selected: true,
+    },
+    {
+      id: "fa",
+      identity: "fa",
+      engineIndex: 2,
+      kind: "audio",
+      language: "fa",
+      label: "Farsi",
+      selected: false,
+    },
+    {
+      id: "de",
+      identity: "de",
+      engineIndex: 3,
+      kind: "subtitle",
+      language: "de",
+      label: "German",
+      selected: true,
+    },
   ];
   instance.getTracks.mockReturnValue(tracks);
   act(() => {
@@ -765,6 +789,56 @@ test("a diagnosed playlist address reaches the open request when compatibility i
     mode: "live",
     startSeconds: 0,
   });
+
+  const engine = playerMock.instances[0];
+  const tracks: MediaTrack[] = [
+    {
+      id: "audio-en",
+      identity: "audio-en",
+      engineIndex: 1,
+      kind: "audio",
+      language: "en",
+      label: "English",
+      selected: true,
+    },
+    {
+      id: "subtitle-en",
+      identity: "subtitle-en",
+      engineIndex: 2,
+      kind: "subtitle",
+      language: "en",
+      label: "English",
+      selected: true,
+    },
+  ];
+  engine.getTracks.mockReturnValue(tracks);
+  engine.selectTrack.mockReturnValue(true);
+  engine.clock = {
+    ...engine.clock,
+    position: 600,
+    duration: null,
+    seekableStart: 0,
+    seekableEnd: 1200,
+  };
+  act(() => engine.emit({ type: "playing" }));
+  act(() => vi.advanceTimersByTime(1000));
+  expect(result.current.snapshot.seekRange).toEqual({
+    startSeconds: 0,
+    endSeconds: 1200,
+    liveEdge: false,
+  });
+  expect(result.current.capabilities.audioTracks).toEqual([tracks[0]]);
+  expect(result.current.capabilities.subtitleTracks).toEqual([tracks[1]]);
+  act(() => result.current.selectTrack("audio", 1, { identity: "audio-en" }));
+  act(() => result.current.selectTrack("subtitle", 2, { identity: "subtitle-en" }));
+  expect(engine.selectTrack).toHaveBeenCalledWith("audio", 1);
+  expect(engine.selectTrack).toHaveBeenCalledWith("subtitle", 2);
+  act(() => engine.emit({ type: "subtitle", text: "Caption", durationMs: 2000 }));
+  expect(result.current.subtitleCue).toBe("Caption");
+  act(() => result.current.seekTo(300));
+  act(() => result.current.flushSeek());
+  await act(async () => vi.advanceTimersByTimeAsync(0));
+  expect(engine.seekTo).toHaveBeenCalledWith(300);
 });
 
 test("a warm engine fault is fixed in place before anything is torn down", () => {
@@ -882,7 +956,7 @@ test("finite pause resumes in place and seek pauses once before one final commit
     result.current.seekBy(10);
     result.current.seekBy(10);
   });
-  expect(playerMock.instances[0].pause).toHaveBeenCalledTimes(2);
+  expect(playerMock.instances[0].pause).toHaveBeenCalledTimes(1);
   expect(result.current.quickSeek?.deltaSeconds).toBe(20);
   expect(playerMock.instances[0].seekTo).not.toHaveBeenCalled();
 
@@ -890,8 +964,26 @@ test("finite pause resumes in place and seek pauses once before one final commit
   expect(playerMock.instances[0].seekTo).not.toHaveBeenCalled();
   await act(async () => vi.advanceTimersByTimeAsync(1));
   expect(playerMock.instances[0].seekTo).toHaveBeenCalledWith(20);
+  expect(playerMock.instances[0].pause).toHaveBeenCalledTimes(2);
   expect(playerMock.instances[0].resumePlayback).toHaveBeenCalledTimes(2);
   expect(result.current.quickSeek).toBeNull();
+});
+
+test("a held seek stays a preview until release settles the final target", async () => {
+  const { result } = mount();
+  act(() => result.current.start(movie));
+  const engine = playerMock.instances[0];
+  act(() => engine.emit({ type: "playing" }));
+  act(() => result.current.seekTo(10, true));
+  await act(async () => vi.advanceTimersByTimeAsync(800));
+  expect(engine.seekTo).not.toHaveBeenCalled();
+  expect(engine.pause).not.toHaveBeenCalled();
+  act(() => result.current.seekTo(30, true));
+  act(() => result.current.settleSeek());
+  await act(async () => vi.advanceTimersByTimeAsync(SEEK_SETTLE_MS - 1));
+  expect(engine.seekTo).not.toHaveBeenCalled();
+  await act(async () => vi.advanceTimersByTimeAsync(1));
+  expect(engine.seekTo).toHaveBeenCalledExactlyOnceWith(30);
 });
 
 test.each([
@@ -1421,7 +1513,7 @@ test("seeking stays true until the last operation settles", async () => {
     () => new Promise<boolean>((resolve) => (resolveSeek = resolve)),
   );
   act(() => result.current.seekBy(10));
-  expect(result.current.seeking).toBe(true);
+  expect(result.current.seeking).toBe(false);
   act(() => result.current.flushSeek());
   expect(result.current.seeking).toBe(true);
   await act(async () => {
@@ -1431,17 +1523,14 @@ test("seeking stays true until the last operation settles", async () => {
   expect(result.current.seeking).toBe(false);
 });
 
-test("a seek whose range disappears before commit restores the pause instead of sticking", async () => {
+test("a seek whose range disappears before commit leaves playback running", async () => {
   const { result, engine } = mountSeekable();
   /*
-   * The finite clock ticks every 1000ms and mountSeekable just spent one, so this
-   * advance leaves the next tick 500ms away. The seek debounce is 750ms, which puts the
-   * tick 250ms before the commit would have run: the window can be observed gone while
-   * the seek is still only pending.
+   * The next clock tick must observe the missing range before the preview settles.
    */
-  await act(async () => vi.advanceTimersByTimeAsync(500));
+  await act(async () => vi.advanceTimersByTimeAsync(1000 - Math.floor(SEEK_SETTLE_MS / 2)));
   act(() => result.current.seekBy(10));
-  expect(result.current.seeking).toBe(true);
+  expect(result.current.seeking).toBe(false);
 
   engine.clock = {
     ...engine.clock,

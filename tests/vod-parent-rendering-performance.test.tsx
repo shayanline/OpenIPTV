@@ -58,13 +58,17 @@ test("an unrelated app update does not render the VOD screen again", async () =>
   fireEvent.click(screen.getByRole("button", { name: "Movies" }));
   await settle(0);
   expect(document.querySelector(".vod-host:not(.hidden) .vod-screen")).toBeTruthy();
-  expect(document.querySelector(".top-strip .clock")).toBeTruthy();
+  expect(document.querySelector(".top-strip .clock")).toBeNull();
 
   observed.renders = 0;
   const { useSettings } = await import("../src/stores/settings");
   act(() => useSettings.getState().set("showClock", false));
   await settle(0);
 
+  expect(document.querySelector(".top-strip .clock")).toBeNull();
+  expect(observed.renders).toBe(0);
+  act(() => useSettings.getState().set("showClock", true));
+  await settle(0);
   expect(document.querySelector(".top-strip .clock")).toBeNull();
   expect(observed.renders).toBe(0);
 });
@@ -104,6 +108,7 @@ test("VOD readiness releases each destination without rendering again when entry
     observed.renders = 0;
     await settle(300);
     expect(app.getAttribute("data-page-transition")).toBe("idle");
+    expect(document.querySelector(".top-strip .clock")).toBeNull();
     expect(observed.renders).toBe(0);
   }
 });

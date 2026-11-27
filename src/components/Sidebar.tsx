@@ -25,7 +25,13 @@ import { useViewport } from "../hooks/useViewport";
  * by pressing up and nothing sits outside the four directional path.
  */
 interface Props {
-  categories: { key: string; name: string; count: number; hidden: boolean }[];
+  categories: {
+    key: string;
+    name: string;
+    count: number;
+    hidden: boolean;
+    favourite?: boolean;
+  }[];
   /** Which category the channel list is showing. */
   selected: number;
   /** Which row the remote is on. Zero is the title bar, so a category is index + 1. */
@@ -49,6 +55,7 @@ const Row = memo(function Row({
   pointerMode,
   showing,
   hidden,
+  favourite = false,
   top,
   height,
   onFocus,
@@ -61,6 +68,7 @@ const Row = memo(function Row({
   pointerMode: boolean;
   showing: boolean;
   hidden: boolean;
+  favourite?: boolean;
   top: number;
   height: number;
   onFocus: (index: number) => void;
@@ -82,6 +90,7 @@ const Row = memo(function Row({
       onPointerLeave={() => setHovered(false)}
       onClick={() => onPick(index)}
     >
+      {favourite && <Icon name="star" />}
       <Text
         value={name}
         className="row-label"
@@ -143,6 +152,7 @@ export const Sidebar = memo(function Sidebar({
         pointerMode={pointerMode}
         showing={i === selected}
         hidden={categories[i].hidden}
+        favourite={categories[i].favourite}
         top={i * win.row}
         height={win.row}
         onFocus={onFocus}

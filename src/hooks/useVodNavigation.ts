@@ -5,8 +5,6 @@ import { pointerInputActive } from "./usePointerAwake";
 import { KEY } from "./useRemote";
 import { POSTER_COLUMNS, wheelStep, windowOf } from "./useWindowed";
 
-const QUERY_SETTLE_MS = 150;
-
 export type VodHeaderControl = "live" | "movie" | "series" | "search" | "settings";
 
 export type VodZone =
@@ -17,8 +15,8 @@ export type VodZone =
   | "search-field"
   | "search-submit"
   | "search-grid"
-  | "detail-back"
   | "detail-actions"
+  | "detail-copy"
   | "season-row"
   | "episode-list"
   | "episode-summary"
@@ -32,6 +30,7 @@ export type VodOrigin = {
   itemIndex: number;
   firstRow: number;
   query?: string;
+  appliedQuery?: string;
 };
 
 export interface VodModeMemory {
@@ -65,6 +64,7 @@ export interface VodNavigationState {
     query: string;
     applied: string;
     keyboardOpen: boolean;
+    control?: "search-field" | "search-submit";
     itemKey: string;
     itemIndex: number;
     firstRow: number;
@@ -74,7 +74,6 @@ export interface VodNavigationState {
     itemKey: string;
     origin: VodOrigin;
     actionIndex: number;
-    backReturnZone: VodZone;
     drawerOpen: boolean;
   };
   episodes: null | {
@@ -106,9 +105,10 @@ export interface VodNavigationContext {
   initialSeason?: XtreamSeasonKey;
   initialEpisodeKey?: string;
   detailActionCount: number;
+  detailInfoOverflow?: boolean;
   detailRetryAvailable: boolean;
   regionState: "loaded" | "empty" | "failed";
-  searchRegionState?: "loaded" | "empty" | "failed";
+  searchRegionState?: "idle" | "loading" | "loaded" | "empty" | "failed";
 }
 
 export type VodAction =
@@ -127,12 +127,13 @@ export type VodAction =
   | { type: "search-close" }
   | { type: "query"; value: string }
   | { type: "query-apply"; value: string }
+  | { type: "search-control-focus"; control: "search-field" | "search-submit" }
   | { type: "keyboard"; open: boolean }
   | { type: "details-open"; itemKey: string; origin: VodOrigin }
   | { type: "details-close" }
   | { type: "details-ready" }
-  | { type: "detail-back-focus" }
   | { type: "detail-action-focus"; index: number }
+  | { type: "detail-copy-focus" }
   | { type: "retry-focus" }
   | { type: "drawer"; open: boolean }
   | { type: "retry-exit" }
@@ -154,6 +155,7 @@ export interface VodNavigationOptions extends VodNavigationContext {
   onRequestExit: () => void;
   onAppNavigationFocus?: () => void;
   onSummaryScroll?: (delta: -1 | 1) => void;
+  onInfoScroll?: (delta: -1 | 1) => boolean;
   onDetailsTransition?: (commit: () => void, returning: boolean) => void;
 }
 
@@ -177,12 +179,14 @@ export interface VodNavigation {
   rememberWindow: (firstRow: number, search?: boolean, visibleRows?: number) => void;
   setQuery: (value: string) => void;
   submitQuery: () => void;
+  focusSearchControl: (control: "search-field" | "search-submit") => void;
+  retry: () => void;
   openSearch: () => void;
   closeSearch: () => void;
   openDetails: (itemKey: string) => void;
   focusFirstDetailAction: () => void;
-  focusDetailBack: () => void;
   focusDetailAction: (index: number) => void;
+  focusDetailCopy: () => void;
   focusRetry: () => void;
   setDrawerOpen: (open: boolean) => void;
   toggleEpisodes: () => void;
@@ -333,7 +337,7 @@ const originOf = (state: VodNavigationState): VodOrigin => ({
   itemKey: state.search?.itemKey ?? state.selectedItemKey,
   itemIndex: state.search?.itemIndex ?? state.selectedItemIndex,
   firstRow: state.search?.firstRow ?? state.memories[state.mode].firstRow,
-  ...(state.search ? { query: state.search.query } : {}),
+  ...(state.search ? { query: state.search.query, appliedQuery: state.search.applied } : {}),
 });
 
 const rememberCatalogueFocus = (state: VodNavigationState): VodNavigationState => {
@@ -611,7 +615,30 @@ export function reduceVodNavigation(
     return { ...state, search: { ...state.search, query: action.value } };
   }
   if (action.type === "query-apply" && state.search) {
-    return { ...state, search: { ...state.search, applied: action.value } };
+    return {
+      ...state,
+      search: {
+        ...state.search,
+        applied: action.value,
+        itemKey: "",
+        itemIndex: 0,
+        firstRow: 0,
+      },
+    };
+  }
+  if (action.type === "search-control-focus" && state.search) {
+    const keyboardOpen = action.control === "search-field";
+    if (
+      state.zone === action.control &&
+      state.search.control === action.control &&
+      state.search.keyboardOpen === keyboardOpen
+    )
+      return state;
+    return {
+      ...state,
+      zone: action.control,
+      search: { ...state.search, control: action.control, keyboardOpen },
+    };
   }
   if (action.type === "keyboard" && state.search) {
     return { ...state, search: { ...state.search, keyboardOpen: action.open } };
@@ -624,7 +651,6 @@ export function reduceVodNavigation(
         itemKey: action.itemKey,
         origin: action.origin,
         actionIndex: 0,
-        backReturnZone: "detail-actions",
         drawerOpen: false,
       },
       episodes: null,
@@ -633,17 +659,8 @@ export function reduceVodNavigation(
   if (action.type === "details-ready" && state.details && context.detailActionCount) {
     return {
       ...state,
-      zone: state.zone === "detail-back" ? "detail-back" : "detail-actions",
+      zone: "detail-actions",
       details: { ...state.details, actionIndex: 0 },
-    };
-  }
-  if (action.type === "detail-back-focus") {
-    if (!state.details || state.details.drawerOpen || state.zone === "detail-back")
-      return state;
-    return {
-      ...state,
-      zone: "detail-back",
-      details: { ...state.details, backReturnZone: state.zone },
     };
   }
   if (action.type === "detail-action-focus" && state.details && context.detailActionCount) {
@@ -656,6 +673,8 @@ export function reduceVodNavigation(
       },
     };
   }
+  if (action.type === "detail-copy-focus" && state.details && context.detailInfoOverflow)
+    return { ...state, zone: "detail-copy" };
   if (action.type === "retry-focus") return { ...state, zone: "retry" };
   if (action.type === "drawer" && state.details) {
     return {
@@ -674,8 +693,10 @@ export function reduceVodNavigation(
   if (action.type === "retry-exit") {
     return {
       ...state,
-      zone: state.search ? "search-field" : "rail",
-      ...(state.search ? { search: { ...state.search, keyboardOpen: true } } : {}),
+      zone: state.search ? "search-submit" : "rail",
+      ...(state.search
+        ? { search: { ...state.search, control: "search-submit", keyboardOpen: false } }
+        : {}),
     };
   }
   if (action.type === "episodes-toggle" && state.details) {
@@ -833,7 +854,7 @@ export function reduceVodNavigation(
       search: search
         ? {
             query: action.origin.query ?? "",
-            applied: action.origin.query ?? "",
+            applied: action.origin.appliedQuery ?? action.origin.query ?? "",
             keyboardOpen: false,
             itemKey: keys[index] ?? "",
             itemIndex: index,
@@ -910,9 +931,18 @@ export function reduceVodNavigation(
     return state;
   }
   if (state.zone === "retry") {
+    if (state.search) {
+      if (code === KEY.UP) {
+        return reduceVodNavigation(
+          state,
+          { type: "search-control-focus", control: state.search.control ?? "search-field" },
+          context,
+        );
+      }
+      return state;
+    }
     if (code === inlineStart) {
-      if (state.details)
-        return reduceVodNavigation(state, { type: "detail-back-focus" }, context);
+      if (state.details) return state;
       return { ...state, zone: state.search ? "search-field" : "rail" };
     }
     return state;
@@ -1017,8 +1047,16 @@ export function reduceVodNavigation(
         search: { ...state.search, keyboardOpen: true },
       };
     }
-    if (code === KEY.DOWN && context.searchRegionState === "failed") {
-      return { ...state, zone: "retry" };
+    if (
+      code === KEY.DOWN &&
+      context.searchRegionState === "failed" &&
+      state.search?.applied.trim()
+    ) {
+      return {
+        ...state,
+        zone: "retry",
+        search: { ...state.search, control: state.zone, keyboardOpen: false },
+      };
     }
     if (code === KEY.DOWN && context.searchItemKeys.length && state.search) {
       return withSearchItem(
@@ -1034,32 +1072,25 @@ export function reduceVodNavigation(
     }
     return state;
   }
-  if (state.zone === "detail-back" && state.details) {
-    if (code !== inlineEnd) return state;
-    if (context.detailRetryAvailable) return { ...state, zone: "retry" };
-    if (!context.detailActionCount) return state;
-    const returnZone = state.details.backReturnZone;
-    return {
-      ...state,
-      zone:
-        state.episodes?.open &&
-        (returnZone === "season-row" ||
-          returnZone === "episode-list" ||
-          returnZone === "episode-summary")
-          ? returnZone
-          : "detail-actions",
-    };
+  if (state.zone === "detail-copy" && state.details) {
+    if (code === KEY.DOWN || code === KEY.ENTER) {
+      return {
+        ...state,
+        zone: "detail-actions",
+        details: { ...state.details, actionIndex: 0 },
+      };
+    }
+    return state;
   }
   if (state.zone === "detail-actions" && state.details) {
-    if (code === inlineStart)
-      return reduceVodNavigation(state, { type: "detail-back-focus" }, context);
-    if (code === KEY.UP && state.details.actionIndex === 0)
-      return { ...state, zone: "header", headerReturnZone: "detail-actions" };
+    if (code === inlineStart) return state;
     if (!context.detailActionCount) return state;
+    if (code === KEY.UP && state.details.actionIndex === 0 && context.detailInfoOverflow)
+      return { ...state, zone: "detail-copy" };
     if (code === KEY.UP)
       return {
         ...state,
-        details: { ...state.details, actionIndex: state.details.actionIndex - 1 },
+        details: { ...state.details, actionIndex: Math.max(0, state.details.actionIndex - 1) },
       };
     if (code === KEY.DOWN)
       return {
@@ -1153,7 +1184,6 @@ export function useVodNavigation(options: VodNavigationOptions): VodNavigation {
   const optionsRef = useRef(options);
   const categoryTimer = useRef(0);
   const posterTimer = useRef(0);
-  const queryTimer = useRef(0);
   const wheelAt = useRef(Number.NEGATIVE_INFINITY);
   const wheelZone = useRef<VodZone | null>(null);
   const categoryWindow = useRef<
@@ -1283,31 +1313,21 @@ export function useVodNavigation(options: VodNavigationOptions): VodNavigation {
     [dispatch],
   );
 
-  const applyQuery = useCallback(
-    (value: string) => {
-      dispatch({ type: "query-apply", value });
-      if (value.trim()) optionsRef.current.onQuerySettled(value);
-      settlePosters();
-    },
-    [dispatch, settlePosters],
-  );
-
   const submitQuery = useCallback(() => {
-    window.clearTimeout(queryTimer.current);
-    const value = stateRef.current.search?.query ?? "";
-    if (value.trim()) applyQuery(value);
-  }, [applyQuery]);
+    const search = stateRef.current.search;
+    if (!search?.query.trim()) return;
+    if (optionsRef.current.searchRegionState === "loading" && search.applied === search.query)
+      return;
+    dispatch({ type: "query-apply", value: search.query });
+    dispatch({ type: "search-control-focus", control: "search-submit" });
+    optionsRef.current.onQuerySettled(search.query);
+    settlePosters();
+  }, [dispatch, settlePosters]);
 
-  useEffect(() => {
-    const value = state.search?.query;
-    if (value === undefined) return;
-    window.clearTimeout(queryTimer.current);
-    queryTimer.current = window.setTimeout(() => {
-      const next = stateRef.current.search?.query;
-      if (next !== undefined) applyQuery(next);
-    }, QUERY_SETTLE_MS);
-    return () => window.clearTimeout(queryTimer.current);
-  }, [applyQuery, state.search?.query]);
+  const retry = useCallback(() => {
+    optionsRef.current.onRetry(stateRef.current);
+    dispatch({ type: "retry-exit" });
+  }, [dispatch]);
 
   const handleKey = useCallback(
     (code: number, event: KeyboardEvent) => {
@@ -1316,7 +1336,12 @@ export function useVodNavigation(options: VodNavigationOptions): VodNavigation {
         before.zone === "search-field" && document.activeElement instanceof HTMLInputElement;
       const inlineStart = optionsRef.current.direction === "rtl" ? KEY.RIGHT : KEY.LEFT;
       const inlineEnd = optionsRef.current.direction === "rtl" ? KEY.LEFT : KEY.RIGHT;
-      if (before.zone === "rail" && code === inlineStart) {
+      if (
+        code === inlineStart &&
+        (before.zone === "rail" ||
+          (before.zone === "retry" && before.search && !before.details))
+      ) {
+        if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
         optionsRef.current.onAppNavigationFocus?.();
         event.preventDefault();
         return;
@@ -1332,21 +1357,6 @@ export function useVodNavigation(options: VodNavigationOptions): VodNavigation {
       }
       if (before.zone === "search-field" && (code === KEY.UP || code === inlineStart)) {
         if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
-        optionsRef.current.onAppNavigationFocus?.();
-        event.preventDefault();
-        return;
-      }
-      if (
-        before.zone === "detail-actions" &&
-        before.details &&
-        code === KEY.UP &&
-        before.details.actionIndex === 0
-      ) {
-        optionsRef.current.onAppNavigationFocus?.();
-        event.preventDefault();
-        return;
-      }
-      if (before.zone === "detail-back" && code === inlineStart) {
         optionsRef.current.onAppNavigationFocus?.();
         event.preventDefault();
         return;
@@ -1383,6 +1393,14 @@ export function useVodNavigation(options: VodNavigationOptions): VodNavigation {
           return;
         }
       }
+      if (
+        before.zone === "detail-copy" &&
+        (code === KEY.UP || code === KEY.DOWN) &&
+        optionsRef.current.onInfoScroll?.(code === KEY.DOWN ? 1 : -1)
+      ) {
+        event.preventDefault();
+        return;
+      }
       if (before.zone === "episode-summary" && (code === KEY.UP || code === KEY.DOWN)) {
         optionsRef.current.onSummaryScroll?.(code === KEY.DOWN ? 1 : -1);
         event.preventDefault();
@@ -1405,15 +1423,14 @@ export function useVodNavigation(options: VodNavigationOptions): VodNavigation {
         return;
       }
       if (before.zone === "search-submit" && code === KEY.ENTER) {
-        if (before.search?.query.trim()) submitQuery();
+        if (!event.repeat && before.search?.query.trim()) submitQuery();
         event.preventDefault();
         return;
       }
       const next = dispatch({ type: "key", code });
       if (code === KEY.ENTER) {
         if (before.zone === "retry") {
-          optionsRef.current.onRetry(before);
-          dispatch({ type: "retry-exit" });
+          retry();
         } else if (
           before.zone === "header" ||
           before.zone === "grid" ||
@@ -1426,7 +1443,7 @@ export function useVodNavigation(options: VodNavigationOptions): VodNavigation {
       }
       event.preventDefault();
     },
-    [context, dispatch, selectCategory, submitQuery],
+    [context, dispatch, retry, selectCategory, submitQuery],
   );
 
   const handleWheel = useCallback(
@@ -1479,7 +1496,6 @@ export function useVodNavigation(options: VodNavigationOptions): VodNavigation {
     if (state.mode === options.mode) return;
     window.clearTimeout(categoryTimer.current);
     window.clearTimeout(posterTimer.current);
-    window.clearTimeout(queryTimer.current);
     setPosterFetchReady(false);
     setState(renderedState);
   }, [options.mode, renderedState, state.mode]);
@@ -1493,7 +1509,6 @@ export function useVodNavigation(options: VodNavigationOptions): VodNavigation {
     () => () => {
       window.clearTimeout(categoryTimer.current);
       window.clearTimeout(posterTimer.current);
-      window.clearTimeout(queryTimer.current);
     },
     [],
   );
@@ -1546,13 +1561,15 @@ export function useVodNavigation(options: VodNavigationOptions): VodNavigation {
     rememberWindow,
     setQuery,
     submitQuery,
+    focusSearchControl: (control) => dispatch({ type: "search-control-focus", control }),
+    retry,
     openSearch: () => dispatch({ type: "search-open" }),
     closeSearch: () => dispatch({ type: "search-close" }),
     openDetails: (itemKey) =>
       dispatch({ type: "details-open", itemKey, origin: originOf(stateRef.current) }),
     focusFirstDetailAction: () => dispatch({ type: "details-ready" }),
-    focusDetailBack: () => dispatch({ type: "detail-back-focus" }),
     focusDetailAction: (index) => dispatch({ type: "detail-action-focus", index }),
+    focusDetailCopy: () => dispatch({ type: "detail-copy-focus" }),
     focusRetry: () => dispatch({ type: "retry-focus" }),
     setDrawerOpen: (open) => dispatch({ type: "drawer", open }),
     toggleEpisodes: () => dispatch({ type: "episodes-toggle" }),

@@ -1,6 +1,8 @@
 import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import {
   artworkOf,
+  DETAIL_POSTER_BOX,
+  displayArtworkBox,
   loadBackdrop,
   paletteCss,
   peekArtworkPalette,
@@ -17,11 +19,12 @@ import type { LibraryResource } from "../../stores/library";
 import type { ResolvedPlaybackProgress } from "../../stores/personal";
 import { Artwork } from "../Artwork";
 import { Icon } from "../Icon";
+import { clock } from "../PlaybackBanner";
 import { Text } from "../Text";
 import { VodCredits } from "./VodCredits";
 import { VodTitleRow } from "./VodTitleRow";
 
-export type MovieAction = "play" | "resume" | "restart" | "favourite";
+export type MovieAction = "play" | "resume" | "restart" | "info" | "favourite";
 
 export interface MoviePlaybackChoice {
   resumeAt: number;
@@ -32,7 +35,7 @@ export function movieActions(
   progress: ResolvedPlaybackProgress | undefined,
   _more: boolean,
 ): MovieAction[] {
-  return progress ? ["resume", "restart", "favourite"] : ["play", "favourite"];
+  return progress ? ["resume", "restart", "info", "favourite"] : ["play", "info", "favourite"];
 }
 
 export interface VodDetailsProps {
@@ -43,7 +46,7 @@ export interface VodDetailsProps {
   progress?: ResolvedPlaybackProgress;
   favourite: boolean;
   playbackPending?: boolean;
-  focus: { zone: "actions" | "drawer" | "retry" | null; index: number };
+  focus: { zone: "actions" | "copy" | "drawer" | "retry" | null; index: number };
   drawerOpen?: boolean;
   onToggleFavourite: () => void;
   onFocusAction?: (index: number) => void;
@@ -166,29 +169,41 @@ export function VodDetailTags({
   )
     return null;
   return (
-    <div className="deck-tags vod-detail-tags">
-      {year && <span>{year}</span>}
-      {rating && (
-        <span className="deck-rating" title={t("vod.rating", { rating })}>
-          <Icon name="star" />
-          {rating}
-        </span>
+    <div className="vod-detail-meta">
+      <div className="deck-tags vod-detail-tags">
+        {year && <span>{year}</span>}
+        {rating && (
+          <span className="deck-rating" title={t("vod.rating", { rating })}>
+            <Icon name="star" />
+            {rating}
+          </span>
+        )}
+        {duration && <span>{duration}</span>}
+        {seasons !== undefined && seasons > 0 && (
+          <span>{t("vod.seasons", { count: seasons })}</span>
+        )}
+        {flags.map((flag) => (
+          <span className="vod-country-flag" lang="en" key={flag.code}>
+            <img
+              src={`${import.meta.env.BASE_URL}flags/${flag.code}.svg`}
+              alt={flag.name}
+              width={28}
+              height={21}
+            />
+          </span>
+        ))}
+      </div>
+      {genre && (
+        <div className="vod-detail-genres">
+          {genre
+            .split(",")
+            .map((value) => value.trim())
+            .filter(Boolean)
+            .map((value, index) => (
+              <span key={`${index}:${value}`}>{value}</span>
+            ))}
+        </div>
       )}
-      {genre && <span>{genre}</span>}
-      {duration && <span>{duration}</span>}
-      {seasons !== undefined && seasons > 0 && (
-        <span>{t("vod.seasons", { count: seasons })}</span>
-      )}
-      {flags.map((flag) => (
-        <span className="vod-country-flag" lang="en" key={flag.code}>
-          <img
-            src={`${import.meta.env.BASE_URL}flags/${flag.code}.svg`}
-            alt={flag.name}
-            width={28}
-            height={21}
-          />
-        </span>
-      ))}
     </div>
   );
 }
@@ -197,10 +212,12 @@ export function VodDetailSkeleton({
   titleRow,
   poster = "",
   palette,
+  actionCount,
 }: {
   titleRow: ReactNode;
   poster?: string;
   palette?: ArtworkPalette;
+  actionCount: number;
 }) {
   const { t } = useLocale();
   return (
@@ -209,11 +226,31 @@ export function VodDetailSkeleton({
       <div className="vod-hero">
         <div className="vod-copy-panel">
           {titleRow}
-          <div className="vod-detail-copy-skeleton" aria-hidden="true">
-            <span className="skeleton-line medium" />
-            <span className="skeleton-line" />
-            <span className="skeleton-line" />
-            <span className="skeleton-line short" />
+          <div className="vod-hero-copy" aria-hidden="true">
+            <div className="vod-detail-skeleton-content">
+              <div className="vod-skeleton-tags">
+                <span className="skeleton-line" />
+                <span className="skeleton-line" />
+                <span className="skeleton-line" />
+              </div>
+              <div className="vod-detail-copy-skeleton">
+                <span className="skeleton-line short" />
+                <span className="skeleton-line" />
+                <span className="skeleton-line" />
+                <span className="skeleton-line medium" />
+              </div>
+              <div className="vod-detail-copy-skeleton">
+                <span className="skeleton-line short" />
+                <span className="skeleton-line" />
+                <span className="skeleton-line short" />
+                <span className="skeleton-line medium" />
+              </div>
+            </div>
+          </div>
+          <div className="vod-actions" aria-hidden="true">
+            {Array.from({ length: actionCount }, (_, index) => (
+              <span key={index} className="skeleton-line vod-action-skeleton" />
+            ))}
           </div>
         </div>
         <span
@@ -238,11 +275,12 @@ export function VodDetails({
   onFocusAction,
   onFocusRetry,
   onPlay,
-  onOverflowChange,
+  onDrawerChange,
   onRetry,
 }: VodDetailsProps) {
   const { t } = useLocale();
   const detail = resource.value;
+  const posterBox = displayArtworkBox(DETAIL_POSTER_BOX);
   const [posterPalette, setPosterPalette] = useState<ArtworkPalette | undefined>();
   const [backdropPalette, setBackdropPalette] = useState<ArtworkPalette | undefined>();
   const handlePosterPalette = useCallback((palette: ArtworkPalette) => {
@@ -253,12 +291,15 @@ export function VodDetails({
   }, []);
   const titleRow = <VodTitleRow title={detail?.name ?? title ?? ""} />;
 
-  useEffect(() => {
-    onOverflowChange?.(false);
-  }, [onOverflowChange]);
-
   if (resource.state === "loading" || resource.state === "idle") {
-    return <VodDetailSkeleton titleRow={titleRow} poster={poster} palette={posterPalette} />;
+    return (
+      <VodDetailSkeleton
+        titleRow={titleRow}
+        poster={poster}
+        palette={posterPalette}
+        actionCount={movieActions(progress, false).length}
+      />
+    );
   }
   if (resource.state === "failed" || !detail) {
     return (
@@ -291,16 +332,17 @@ export function VodDetails({
     if (action === "favourite")
       return t(favourite ? "vod.removeFavourite" : "vod.addFavourite");
     if (action === "resume") {
-      const resumeMinutes = durationMinutes(progress?.seconds) ?? 0;
-      return t("vod.resume", { time: t("vod.minutes", { count: resumeMinutes }) });
+      return t("vod.resume", { time: clock(progress?.seconds ?? 0) });
     }
     if (action === "restart") return t("vod.restart");
+    if (action === "info") return t("library.details");
     return t("vod.play");
   };
   const activate = (action: MovieAction) => {
     if (action === "resume") onPlay({ resumeAt: progress?.seconds ?? 0, restart: false });
     else if (action === "restart") onPlay({ resumeAt: 0, restart: true });
     else if (action === "play") onPlay({ resumeAt: 0, restart: false });
+    else if (action === "info") onDrawerChange?.(true);
     else if (action === "favourite") onToggleFavourite();
   };
 
@@ -325,16 +367,10 @@ export function VodDetails({
                 minutes !== undefined ? t("vod.minutes", { count: minutes }) : undefined
               }
             />
-            {!!detail.plot && (
-              <p className="vod-synopsis">
-                {detail.plot}
-              </p>
-            )}
+            {!!detail.plot && <p className="vod-synopsis">{detail.plot}</p>}
             <VodCredits cast={detail.metadata.cast} director={detail.metadata.director} />
             {!!detail.metadata.ageRating && (
-              <p className="vod-credit">
-                {detail.metadata.ageRating}
-              </p>
+              <p className="vod-credit">{detail.metadata.ageRating}</p>
             )}
           </div>
           <div className="vod-actions">
@@ -353,7 +389,13 @@ export function VodDetails({
               >
                 <Icon
                   name={
-                    action === "favourite" ? "star" : action === "restart" ? "refresh" : "play"
+                    action === "favourite"
+                      ? "star"
+                      : action === "info"
+                        ? "about"
+                        : action === "restart"
+                          ? "refresh"
+                          : "play"
                   }
                 />
                 <Text value={actionLabel(action)} />
@@ -365,8 +407,8 @@ export function VodDetails({
           src={detail.logo}
           alt={t("vod.movieArtwork")}
           kind="poster"
-          width={192}
-          height={288}
+          width={posterBox.width}
+          height={posterBox.height}
           placeholderIcon="movie"
           palette={backdropPalette ?? posterPalette}
           onPalette={handlePosterPalette}

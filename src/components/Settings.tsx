@@ -7,7 +7,7 @@ import { useSpatialNav } from "../hooks/useSpatialNav";
 import { useToast } from "../hooks/useToast";
 import type { MessageKey } from "../services/locale";
 import { Icon, type IconName } from "./Icon";
-import { KeyGuide } from "./KeyGuide";
+import { KeyGuide, NavigationGuide } from "./KeyGuide";
 import { About } from "./settings/About";
 import { Appearance } from "./settings/Appearance";
 import { Playback } from "./settings/Behaviour";
@@ -146,6 +146,7 @@ function revealSettingsControl(target: HTMLElement, body: HTMLElement) {
 
 export function Settings({
   onClose,
+  onPageTransition,
   onAppNavigationFocus,
   onPopupChange,
   remoteAccess,
@@ -154,6 +155,7 @@ export function Settings({
   inputEnabled = true,
 }: {
   onClose: () => void;
+  onPageTransition?: (commit: () => void) => void;
   onAppNavigationFocus?: () => void;
   onPopupChange?: (open: boolean) => void;
   remoteAccess: RemoteAccessControl;
@@ -379,14 +381,18 @@ export function Settings({
     if (detail) dismissDetail(detail.id);
   }, [dismissDetail]);
 
-  const transitionDetail = useCallback((commit: () => void) => {
-    if (!inputEnabledRef.current || askingRef.current) return;
-    commit();
-  }, []);
+  const transitionDetail = useCallback(
+    (commit: () => void) => {
+      if (!inputEnabledRef.current || askingRef.current) return;
+      if (onPageTransition) onPageTransition(commit);
+      else commit();
+    },
+    [onPageTransition],
+  );
   const backDetail = useCallback(() => {
     if (!inputEnabledRef.current || askingRef.current) return;
-    backDetailNow();
-  }, [backDetailNow]);
+    transitionDetail(backDetailNow);
+  }, [backDetailNow, transitionDetail]);
 
   const openDetail = useCallback(
     (id: string, label: string, returnFocus: string, close: () => void) => {
@@ -956,6 +962,7 @@ export function Settings({
           )}
           {section === "about" && <About onAsking={ask} navigation={detailNavigation} />}
         </div>
+        {showEdgeBack && <NavigationGuide className="page-key-guide" />}
       </div>
     </div>
   );

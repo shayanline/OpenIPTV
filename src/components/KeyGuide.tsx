@@ -1,3 +1,5 @@
+import { useLocale } from "../hooks/useLocale";
+
 /**
  * The line of "press this, get that" that appears on every screen.
  *
@@ -57,5 +59,41 @@ export function KeyGuide({
         </span>
       ))}
     </div>
+  );
+}
+
+export function NavigationGuide({
+  className = "",
+  scroll = false,
+}: {
+  className?: string;
+  scroll?: boolean;
+}) {
+  const { t } = useLocale();
+  return (
+    <KeyGuide
+      className={className}
+      items={[
+        {
+          keys: scroll ? ["\u2191", "\u2193"] : ["\u2191", "\u2193", "\u2190", "\u2192"],
+          label: t(scroll ? "common.scroll" : "common.move"),
+        },
+        { keys: ["OK"], label: t("common.select") },
+        { keys: ["Return"], label: t("common.back") },
+      ]}
+    />
+  );
+}
+
+export function DialogGuide() {
+  const { t } = useLocale();
+  return (
+    <KeyGuide
+      className="page-key-guide dialog-key-guide"
+      items={[
+        { keys: ["OK"], label: t("common.select") },
+        { keys: ["Return"], label: t("common.back") },
+      ]}
+    />
   );
 }

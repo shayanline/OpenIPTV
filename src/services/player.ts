@@ -175,7 +175,7 @@ export type PlaybackDynamicRange =
   | "Dolby Vision";
 
 export interface PlaybackStats {
-  engine: "AVPlay" | "hls.js" | "Native HLS";
+  engine: "AVPlay" | "hls.js" | "Native HLS" | "Native video";
   width?: number;
   height?: number;
   dynamicRange?: PlaybackDynamicRange;
@@ -420,6 +420,9 @@ export class Player {
   private subtitlesEnabled = true;
   private textTrackCleanup: (() => void) | null = null;
   private metadataCleanup: (() => void) | null = null;
+  private nativeTrackCleanup: (() => void) | null = null;
+  private nativeCorsFallback: (() => void) | null = null;
+  private nativeAttempt = 0;
   private sourceUrl = "";
   private avPlayDynamicRange?: PlaybackDynamicRange;
   private avPlayMetadataProbed = false;
@@ -565,13 +568,28 @@ export class Player {
     this.video = null;
   }
 
-  private onPlaying = () => this.emit({ type: "playing" });
+  private onPlaying = () => {
+    this.nativeCorsFallback = null;
+    this.emit({ type: "playing" });
+  };
   private onPaused = () => this.emit({ type: "paused" });
   private onWaiting = () => this.emit({ type: "buffering-start" });
   private onEnded = () => this.emit({ type: "ended" });
   // Native media errors cannot establish whether access failed or the format is unsupported.
-  private onMediaError = () =>
+  private onMediaError = () => {
+    if (this.retryNativeWithoutCors()) return;
     this.fail(this.mode === "finite" ? "FINITE_SOURCE_UNAVAILABLE" : "NOT_SUPPORTED");
+  };
+
+  private retryNativeWithoutCors(): boolean {
+    if (this.failed || !this.nativeCorsFallback || this.video?.readyState !== 0) return false;
+    const code = this.video.error?.code;
+    if (code !== undefined && code !== 2 && code !== 4) return false;
+    const retry = this.nativeCorsFallback;
+    this.nativeCorsFallback = null;
+    retry();
+    return true;
+  }
 
   play(request: PlayerOpenRequest): void {
     const { url, browserRepair, bufferSeconds, segmentSeconds, mode, startSeconds } = request;
@@ -622,8 +640,9 @@ export class Player {
    * instead, and the viewer sees the ordinary loading state until then.
    */
   private tryPlay(video: HTMLVideoElement, generation = this.generation) {
+    const attempt = this.nativeAttempt;
     Promise.resolve(video.play()).catch((e: unknown) => {
-      if (generation !== this.generation) return;
+      if (generation !== this.generation || attempt !== this.nativeAttempt) return;
       const name = (e as { name?: string })?.name;
       /*
        * An abort is this application's own doing and never news.
@@ -637,6 +656,7 @@ export class Player {
        * underneath, having buried "the TV could not reach this channel's server".
        */
       if (name === "AbortError") return;
+      if (name === "NotSupportedError" && this.retryNativeWithoutCors()) return;
       if (name !== "NotAllowedError") {
         this.fail(codeOf(e));
         return;
@@ -954,6 +974,28 @@ export class Player {
     }
   }
 
+  private playNative(
+    video: HTMLVideoElement,
+    url: string,
+    startSeconds: number,
+    generation: number,
+  ): void {
+    this.watchNativeTracks(video, generation);
+    const start = () => {
+      this.nativeAttempt += 1;
+      video.src = url;
+      if (startSeconds > 0) video.currentTime = startSeconds;
+      if (!this.held) this.tryPlay(video, generation);
+    };
+    // Embedded text tracks require CORS access, while some providers permit only opaque playback.
+    video.crossOrigin = "anonymous";
+    this.nativeCorsFallback = () => {
+      video.removeAttribute("crossorigin");
+      start();
+    };
+    start();
+  }
+
   private async playBrowser(
     url: string,
     browserRepair: boolean,
@@ -967,10 +1009,7 @@ export class Player {
 
     const extension = extensionOf(url);
     if (this.mode === "finite" && extension !== "m3u8") {
-      video.src = url;
-      if (startSeconds > 0) video.currentTime = startSeconds;
-      this.watchLoadedMetadata(video, generation, () => this.readNativeTracks(video));
-      this.tryPlay(video, generation);
+      this.playNative(video, url, startSeconds, generation);
       return;
     }
 
@@ -986,9 +1025,7 @@ export class Player {
     // not run.
     if (!Hls.isSupported()) {
       if (video.canPlayType("application/vnd.apple.mpegurl")) {
-        video.src = url;
-        this.watchLoadedMetadata(video, generation, () => this.readNativeTracks(video));
-        this.tryPlay(video, generation);
+        this.playNative(video, url, startSeconds, generation);
       } else {
         this.fail("NOT_SUPPORTED");
       }
@@ -1102,6 +1139,41 @@ export class Player {
     };
     video.addEventListener("loadedmetadata", handler);
     this.metadataCleanup = () => video.removeEventListener("loadedmetadata", handler);
+  }
+
+  private watchNativeTracks(video: HTMLVideoElement, generation: number): void {
+    this.nativeTrackCleanup?.();
+    let lists: (EventTarget | undefined)[] = [];
+    const events = ["addtrack", "removetrack", "change"];
+    const bindLists = () => {
+      const next = [
+        (video as HTMLVideoElement & { audioTracks?: EventTarget }).audioTracks,
+        video.textTracks,
+      ];
+      if (next.every((list, index) => list === lists[index])) return;
+      for (const list of lists) {
+        for (const event of events) list?.removeEventListener?.(event, read);
+      }
+      lists = next;
+      for (const list of lists) {
+        for (const event of events) list?.addEventListener?.(event, read);
+      }
+    };
+    const read = () => {
+      if (generation !== this.generation) return;
+      bindLists();
+      this.readNativeTracks(video);
+    };
+    bindLists();
+    const mediaEvents = ["loadeddata", "canplay", "playing"];
+    for (const event of mediaEvents) video.addEventListener(event, read);
+    this.nativeTrackCleanup = () => {
+      for (const event of mediaEvents) video.removeEventListener(event, read);
+      for (const list of lists) {
+        for (const event of events) list?.removeEventListener?.(event, read);
+      }
+    };
+    this.watchLoadedMetadata(video, generation, read);
   }
 
   private setTracks(tracks: MediaTrack[]): void {
@@ -1458,7 +1530,11 @@ export class Player {
     }
 
     const stats: PlaybackStats = {
-      engine: this.hls ? "hls.js" : "Native HLS",
+      engine: this.hls
+        ? "hls.js"
+        : this.mode === "finite" && extensionOf(this.sourceUrl) !== "m3u8"
+          ? "Native video"
+          : "Native HLS",
       switches: this.switches,
     };
     const video = this.video;
@@ -1671,6 +1747,8 @@ export class Player {
    */
   private teardown(release: boolean) {
     this.generation += 1;
+    this.nativeCorsFallback = null;
+    this.nativeAttempt += 1;
     this.pausedByViewer = false;
     this.held = false;
     this.ungate();
@@ -1678,6 +1756,8 @@ export class Player {
     this.textTrackCleanup = null;
     this.metadataCleanup?.();
     this.metadataCleanup = null;
+    this.nativeTrackCleanup?.();
+    this.nativeTrackCleanup = null;
     this.manifestProbe?.abort();
     this.manifestProbe = null;
     this.sourceUrl = "";

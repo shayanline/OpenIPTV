@@ -207,6 +207,16 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+test("Series information uses the same full metadata surface without an episode target.", async () => {
+  await mountDetails({
+    target: { ...MOVIE_TARGET, kind: "series" },
+    series: SERIES_DETAIL,
+  });
+  expect(document.body.textContent).toContain(SERIES_DETAIL.name);
+  expect(document.body.textContent).toContain(SERIES_DETAIL.plot);
+  expect(document.body.textContent).toContain(SERIES_DETAIL.metadata.director);
+});
+
 test("A movie displays its provider metadata beside separate artwork frames.", async () => {
   await mountDetails({ target: MOVIE_TARGET, movie: MOVIE_DETAIL, durationSeconds: 5400 });
   const dialog = document.querySelector(".playback-details");
@@ -551,8 +561,8 @@ test.each([
     );
     expect(request).toMatchObject({
       src: id === "poster" ? MOVIE_DETAIL.logo : MOVIE_DETAIL.metadata.backdrops[0],
-      width: 1280,
-      height: 720,
+      width: id === "poster" ? 1175 : 1920,
+      height: id === "poster" ? 1763 : 1080,
       kind: "poster",
       fit: "contain",
     });

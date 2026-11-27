@@ -4,6 +4,7 @@ import { pointerOnly } from "../../hooks/usePointerAwake";
 import { KEY, useRemote } from "../../hooks/useRemote";
 import { useSpatialNav } from "../../hooks/useSpatialNav";
 import { Icon, type IconName } from "../Icon";
+import { DialogGuide } from "../KeyGuide";
 
 export interface ActionMenuAction {
   id: string;
@@ -145,6 +146,7 @@ export function ActionMenu({
           ))}
         </div>
         <div className="dialog-actions action-menu-actions">
+          <DialogGuide />
           <button
             type="button"
             className="btn tonal"

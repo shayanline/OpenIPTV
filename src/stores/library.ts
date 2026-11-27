@@ -15,6 +15,7 @@ import {
   loadXtreamMovies,
   loadXtreamSeries,
   loadXtreamSeriesDetail,
+  searchXtreamCatalogue,
   XtreamRequestError,
   type XtreamCategory,
   type XtreamContentKind,
@@ -27,6 +28,7 @@ import {
   type XtreamSession,
 } from "../services/xtream";
 import type { Channel, PlaybackProgressSeed, PlaybackTarget } from "../types";
+import { searchVodItems, type SearchResults } from "../services/search";
 import type { Playlist } from "./settings";
 import {
   type FavouriteSnapshot,
@@ -110,6 +112,11 @@ interface LibraryState {
   };
   loadIndex: (kind: LibraryKind, reason: "all" | "search") => Promise<void>;
   loadSearch: (kind: LibraryKind) => Promise<void>;
+  searchCatalogue: (
+    kind: LibraryKind,
+    query: string,
+    signal: AbortSignal,
+  ) => Promise<SearchResults<LibraryItem>>;
   loadMovie: (movieKey: string) => Promise<void>;
   loadSeries: (seriesKey: string) => Promise<void>;
   categoriesFor: (kind: LibraryKind) => VodCategoryRow[];
@@ -204,6 +211,7 @@ const controllers = new Set<AbortController>();
 const requests = new Map<string, Promise<void>>();
 const idleRefreshes = new Map<string, () => void>();
 const loadedSearches = new Set<string>();
+const queryCache = new Map<string, SearchResults<LibraryItem>>();
 const staleResources = new Set<string>();
 const sessions = new Map<string, XtreamSession>();
 const sessionRequests = new Map<string, Promise<XtreamSession>>();
@@ -249,6 +257,14 @@ function libraryItem(itemKey: string): LibraryItem | undefined {
     const item = frame.items.find((candidate) => candidate.key === itemKey);
     if (item) return item;
   }
+  if (selected) {
+    const prefix = `${selectionKey(selected)}:`;
+    for (const [key, result] of queryCache) {
+      if (!key.startsWith(prefix)) continue;
+      const item = result.matches.find((candidate) => candidate.key === itemKey);
+      if (item) return item;
+    }
+  }
   return undefined;
 }
 
@@ -281,9 +297,10 @@ function providerId(itemKey: string, kind: LibraryKind): string {
 
 async function cached<T>(key: string): Promise<T | null> {
   const value = await readDisk(key);
-  if (typeof value !== "string") return null;
+  if (typeof value !== "string" && !(value instanceof Blob)) return null;
   try {
-    return JSON.parse(value) as T;
+    const json = typeof value === "string" ? value : await new Response(value).text();
+    return JSON.parse(json) as T;
   } catch {
     return null;
   }
@@ -302,6 +319,7 @@ function abortRequests() {
   for (const cancel of idleRefreshes.values()) cancel();
   idleRefreshes.clear();
   loadedSearches.clear();
+  queryCache.clear();
   staleResources.clear();
   requests.clear();
 }
@@ -829,7 +847,11 @@ export const useLibrary = create<LibraryState>((set, get) => ({
                 [categoryKey]: { state: items.length ? "loaded" : "empty", items },
               },
             });
-            void writeDisk(key, JSON.stringify(items), "catalogue");
+            void writeDisk(
+              key,
+              new Blob([JSON.stringify(items)], { type: "application/json" }),
+              "catalogue",
+            );
           }
           staleResources.delete(categoryKey);
           write(stampKey(key), String(Date.now()));
@@ -864,6 +886,48 @@ export const useLibrary = create<LibraryState>((set, get) => ({
       }
       await refresh();
     });
+  },
+
+  async searchCatalogue(kind, query, signal) {
+    const playlist = selected;
+    if (!playlist || signal.aborted) throw new XtreamRequestError("aborted");
+    const index = get().searchItems[kind];
+    if (
+      index.state === "loaded" ||
+      (index.state === "empty" && loadedSearches.has(`${selectionKey(playlist)}:${kind}`))
+    )
+      return searchVodItems(index.items, query);
+    const key = `${selectionKey(playlist)}:${kind}:${query.trim().toLowerCase()}`;
+    const held = queryCache.get(key);
+    if (held) {
+      queryCache.delete(key);
+      queryCache.set(key, held);
+      return held;
+    }
+    const owned = generation;
+    const controller = new AbortController();
+    const abort = () => controller.abort();
+    signal.addEventListener("abort", abort, { once: true });
+    controllers.add(controller);
+    try {
+      const session = await sessionFor(playlist);
+      if (controller.signal.aborted) throw new XtreamRequestError("aborted");
+      const result = await searchXtreamCatalogue(
+        session,
+        playlist.id,
+        kind,
+        query,
+        controller.signal,
+      );
+      if (owned !== generation || controller.signal.aborted)
+        throw new XtreamRequestError("aborted");
+      queryCache.set(key, result);
+      while (queryCache.size > 6) queryCache.delete(queryCache.keys().next().value!);
+      return result;
+    } finally {
+      controllers.delete(controller);
+      signal.removeEventListener("abort", abort);
+    }
   },
 
   async loadIndex(kind, _reason) {
@@ -914,7 +978,11 @@ export const useLibrary = create<LibraryState>((set, get) => ({
             if (kind === "movie" && !controller.signal.aborted && owned === generation) {
               resolveMovieProgress(playlist, items as XtreamMovie[]);
             }
-            void writeDisk(key, JSON.stringify(items), "catalogue");
+            void writeDisk(
+              key,
+              new Blob([JSON.stringify(items)], { type: "application/json" }),
+              "catalogue",
+            );
           }
           staleResources.delete(`${kind}:all`);
           write(stampKey(key), String(Date.now()));

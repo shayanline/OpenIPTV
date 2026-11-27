@@ -45,6 +45,24 @@ export interface WarmOptions {
 }
 
 export const POSTER_BOX = { width: 192, height: 288 } as const;
+export const DETAIL_POSTER_BOX = { width: 360, height: 540 } as const;
+export const EPISODE_PREVIEW_BOX = { width: 512, height: 288 } as const;
+const MAX_DISPLAY_ARTWORK_PIXELS = 1920 * 1080;
+
+export function displayArtworkBox(
+  box: { width: number; height: number },
+  pixelRatio = globalThis.devicePixelRatio || 1,
+) {
+  const density = Number.isFinite(pixelRatio) ? Math.min(2, Math.max(1, pixelRatio)) : 1;
+  const scale = Math.min(
+    density,
+    Math.sqrt(MAX_DISPLAY_ARTWORK_PIXELS / (box.width * box.height)),
+  );
+  return {
+    width: Math.max(1, Math.floor(box.width * scale)),
+    height: Math.max(1, Math.floor(box.height * scale)),
+  };
+}
 
 const MAX_RETRIES = 5;
 const RETRY_STEP_MS = 1000;
@@ -510,10 +528,18 @@ function persist(key: string, entry: ArtworkEntry, kind: ArtworkKind) {
   schedulePersistence();
 }
 
+function recentArtwork(key: string): ArtworkEntry | null {
+  const entry = cache.get(key);
+  if (!entry) return null;
+  cache.delete(key);
+  cache.set(key, entry);
+  return entry;
+}
+
 export function artworkOf(
   request: Omit<ArtworkRequest, "eager" | "signal">,
 ): ArtworkEntry | null {
-  return cache.get(keyOf(request)) ?? null;
+  return recentArtwork(keyOf(request));
 }
 
 export function subscribeArtwork(
@@ -564,7 +590,7 @@ function retryDelay(work: ArtworkWork, delay: number): Promise<void> {
 
 export function loadArtwork(request: ArtworkRequest): Promise<ArtworkEntry | null> {
   const key = keyOf(request);
-  const ready = cache.get(key);
+  const ready = recentArtwork(key);
   if (ready) return Promise.resolve(ready);
   const failedAt = failed.get(key);
   if (failedAt !== undefined) {
@@ -719,6 +745,7 @@ export function warmArtworkChain(
   requests: ArtworkRequest[],
   { delay = 0, timeout = 600 }: WarmOptions = {},
 ): () => void {
+  const owned = generation;
   let live = true;
   let cancelIdle: (() => void) | undefined;
   let timer = 0;
@@ -733,6 +760,7 @@ export function warmArtworkChain(
     timer = 0;
   };
   const schedule = () => {
+    if (owned !== generation) return stop();
     if (!live || cancelIdle || timer) return;
     if (!queue.length) {
       if (!active) stop();
@@ -746,6 +774,7 @@ export function warmArtworkChain(
   };
   const step = () => {
     cancelIdle = undefined;
+    if (owned !== generation) return stop();
     if (!live) return;
     while (queue.length && active < artworkWorkload().prefetch) {
       const request = queue.shift();
@@ -805,11 +834,15 @@ export async function loadBackdrop(
   };
 }
 
-export function releaseAllArtwork(): void {
-  const cachedKeys = [...cache.keys()];
+export function cancelArtworkWork(): void {
   generation += 1;
   for (const [key, work] of Array.from(inflight)) cancelWork(key, work.controller);
   dropQueuedArtwork();
+}
+
+export function releaseAllArtwork(): void {
+  const cachedKeys = [...cache.keys()];
+  cancelArtworkWork();
   persistenceCancel?.();
   persistenceCancel = null;
   pendingPersistence.clear();

@@ -8,6 +8,7 @@ import type { MessageKey } from "../../services/locale";
 import { APP_VERSION } from "../../meta";
 import { PageHeader } from "./Field";
 import { Icon } from "../Icon";
+import { KeyGuide } from "../KeyGuide";
 
 /**
  * What this particular television is, and what its remote actually sends.
@@ -214,9 +215,14 @@ export function Diagnostics({
   useEffect(() => {
     if (!testing) return;
     const onKey = (event: KeyboardEvent) => {
+      if (event.metaKey || event.ctrlKey || event.altKey) return;
       event.preventDefault();
       event.stopImmediatePropagation();
-      if (event.keyCode === KEY.BACK || event.keyCode === KEY.ESC) {
+      if (
+        event.keyCode === KEY.BACK ||
+        event.keyCode === KEY.ESC ||
+        event.keyCode === KEY.ENTER
+      ) {
         closeTester();
         return;
       }
@@ -313,9 +319,10 @@ export function Diagnostics({
                 </span>
               ))}
             </div>
-            <button type="button" className="btn tonal" onClick={closeTester}>
-              <span>{t("common.close")}</span>
-            </button>
+            <KeyGuide
+              className="page-key-guide"
+              items={[{ keys: ["OK", "Return"], label: t("common.close") }]}
+            />
           </div>
         </div>
       )}

@@ -396,6 +396,27 @@ const playSeries = async () => {
 };
 
 test.each(["Movies", "Series"] as const)(
+  "the clock follows the setting only while %s playback controls are open",
+  async (mode) => {
+    await mountVod();
+    if (mode === "Movies") await playMovie();
+    else await playSeries();
+    const { useSettings } = await import("../src/stores/settings");
+    const clock = () => document.querySelector(".top-strip .clock");
+    press(KEY.ENTER);
+    expect(document.querySelector(".playback-deck")).toBeTruthy();
+    expect(clock()).toBeTruthy();
+    act(() => useSettings.getState().set("showClock", false));
+    expect(clock()).toBeNull();
+    act(() => useSettings.getState().set("showClock", true));
+    expect(clock()).toBeTruthy();
+    press(KEY.BACK);
+    expect(document.querySelector(".playback-deck")).toBeNull();
+    expect(clock()).toBeNull();
+  },
+);
+
+test.each(["Movies", "Series"] as const)(
   "Right on %s details cannot activate the focused playback action",
   async (mode) => {
     await mountVod();

@@ -5,6 +5,8 @@ import {
   CACHE_BUDGET_BYTES,
   entries,
   evictionPlan,
+  forget,
+  forgetAll,
   read,
   usage,
   usageByClass,
@@ -149,16 +151,15 @@ test("each class refuses an item larger than its own allowance", () => {
 /**
  * jsdom has no IndexedDB, which makes this the no database case for free.
  *
- * Worth asserting rather than assuming. Private browsing refuses to open one and a corrupt
- * store refuses too, and on a television neither is worth interrupting anybody over: the
- * whole thing is a cache, so the answer to not having it is to fetch things again. Every
- * function has to behave as though the cache were simply empty, and none may throw.
+ * Writes cannot persist without a database, but bounded warm metadata can still be reused
+ * until the app closes. Persistent usage remains empty, and cache clearing covers memory.
  */
-test("with no database at all, the cache is empty and nothing throws", async () => {
+test("without a database, writes stay in warm memory without claiming persistent usage", async () => {
   assert.equal(typeof indexedDB, "undefined", "jsdom grew an IndexedDB, so rewrite this test");
 
   assert.equal(await read("anything"), null);
   assert.equal(await write("anything", "some text", "catalogue"), false);
+  assert.equal(await read("anything"), "some text");
   assert.deepEqual(await entries(), []);
   assert.deepEqual(await usage(), { bytes: 0, count: 0 });
   assert.deepEqual(await usageByClass(), {
@@ -166,4 +167,32 @@ test("with no database at all, the cache is empty and nothing throws", async () 
     poster: { bytes: 0, count: 0 },
     logo: { bytes: 0, count: 0 },
   });
+  await forgetAll();
+  assert.equal(await read("anything"), null);
+});
+
+test("warm metadata promotes revisits and evicts the least recently used entry", async () => {
+  await forgetAll();
+  for (let index = 0; index < 64; index += 1) {
+    await write(`warm:${index}`, `catalogue ${index}`, "catalogue");
+  }
+  assert.equal(await read("warm:0"), "catalogue 0");
+  await write("warm:64", "next catalogue", "catalogue");
+  assert.equal(await read("warm:0"), "catalogue 0");
+  assert.equal(await read("warm:1"), null);
+  await forget((key) => key.startsWith("warm:"));
+  assert.equal(await read("warm:0"), null);
+});
+
+test("warm metadata is byte bounded and does not retain artwork blobs", async () => {
+  await forgetAll();
+  await write("warm:first", "a".repeat(1024 * 1024), "catalogue");
+  await write("warm:second", "b".repeat(1024 * 1024), "catalogue");
+  await write("warm:third", "c".repeat(1024 * 1024), "catalogue");
+  assert.equal(await read("warm:first"), null);
+  assert.notEqual(await read("warm:second"), null);
+  const image = new Blob(["image"], { type: "image/jpeg" });
+  await write("warm:image", image, "poster");
+  assert.equal(await read("warm:image"), null);
+  await forgetAll();
 });

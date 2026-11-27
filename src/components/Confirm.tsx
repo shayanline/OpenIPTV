@@ -3,6 +3,7 @@ import { pointerOnly } from "../hooks/usePointerAwake";
 import { KEY, useRemote } from "../hooks/useRemote";
 import { useSpatialNav } from "../hooks/useSpatialNav";
 import { Icon, type IconName } from "./Icon";
+import { DialogGuide } from "./KeyGuide";
 
 /**
  * Asking before doing something that cannot be undone.
@@ -22,7 +23,7 @@ export function Confirm({
   confirmLabel,
   cancelLabel,
   destructive,
-  confirmIcon = "remove",
+  confirmIcon,
   busy = false,
   onConfirm,
   onCancel,
@@ -155,16 +156,8 @@ export function Confirm({
       >
         <h2>{title}</h2>
         {body && <p>{body}</p>}
-        {/*
-         * Both buttons are tonal, and only the focus is loud.
-         *
-         * Filling the confirming button would give the dialog two things shouting at once:
-         * the focus ring on the safe answer and a solid fill beside it, which reads as the
-         * one that is chosen. Checklist 4.2 allows one focused object and 4.3 wants it
-         * clearly recognisable against the others, so nothing else may compete with it. A
-         * destructive action still says so in its text colour.
-         */}
         <div className="dialog-actions">
+          <DialogGuide />
           <button
             type="button"
             ref={cancelRef}
@@ -173,18 +166,23 @@ export function Confirm({
             onPointerEnter={(event) => pointerOnly(() => event.currentTarget.focus())}
             onClick={() => dismiss.current()}
           >
+            <Icon name="back" />
             <span>{cancelLabel}</span>
           </button>
           <button
             type="button"
-            className={`btn tonal ${destructive ? "danger" : ""}`}
+            className={`btn tonal ${destructive ? "danger" : confirmIcon ? "confirm-emphasis" : ""}`}
             disabled={busy}
             onPointerEnter={(event) => pointerOnly(() => event.currentTarget.focus())}
             onClick={onConfirm}
           >
-            {(destructive || busy) && (
+            {(confirmIcon || destructive || busy) && (
               <span className="confirm-action-icon" aria-hidden="true">
-                {busy ? <span className="spinner small" /> : <Icon name={confirmIcon} />}
+                {busy ? (
+                  <span className="spinner small" />
+                ) : (
+                  <Icon name={confirmIcon ?? "remove"} />
+                )}
               </span>
             )}
             <span>{confirmLabel}</span>

@@ -6,7 +6,7 @@ import { usePersonal } from "./personal";
 import { keys, read, remove, write } from "../services/store";
 import * as disk from "../services/disk";
 import { whenIdle } from "../services/idle";
-import { releaseAllArtwork } from "../services/artwork";
+import { cancelArtworkWork } from "../services/artwork";
 import { translate, resolveLocale, type MessageKey } from "../services/locale";
 import {
   adoptCatalogue,
@@ -699,7 +699,7 @@ export const useChannels = create<State>((set, get) => {
       cancelPending?.();
       cancelPending = null;
       inFlight?.abort();
-      releaseAllArtwork();
+      cancelArtworkWork();
       useLibrary.getState().selectPlaylist(undefined);
       useSettings.getState().set("activePlaylistId", playlist.id);
       useLibrary.getState().selectPlaylist(playlist);

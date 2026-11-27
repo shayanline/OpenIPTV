@@ -47,6 +47,16 @@ const finishPageTransition = async () => {
   await settle(300);
 };
 
+const closeSettings = async () => {
+  if (document.activeElement instanceof HTMLInputElement) document.activeElement.blur();
+  for (let level = 0; level < 5; level += 1) {
+    if (!document.querySelector(".settings-host:not(.hidden) .sheet")) break;
+    press(KEY.BACK);
+    await settle(0);
+  }
+  expect(document.querySelector(".settings-host:not(.hidden) .sheet")).toBeNull();
+};
+
 const navigationItemsFor = (sourceKind: "m3u" | "xtream") =>
   appNavigationItems(sourceKind === "xtream" ? ["live", "movie", "series"] : ["live"], (key) =>
     translate("en", key),
@@ -729,7 +739,7 @@ test("mounted pointer hover expands the rail and becomes the arrow origin", asyn
   expect(document.activeElement).toBe(screen.getByRole("button", { name: "Appearance" }));
 });
 
-test("clicking the active Live action returns focus to the content", async () => {
+test("clicking the active Live action opens its channel list", async () => {
   await mountApp(PLAYLIST);
   press(KEY.LEFT);
   press(KEY.LEFT);
@@ -739,10 +749,12 @@ test("clicking the active Live action returns focus to the content", async () =>
   await settle(0);
 
   expect(document.querySelector(".app-navigation.expanded")).toBeNull();
-  expect(document.querySelector(".panel .cursor")).toBeTruthy();
-  expect(screen.getByRole("button", { name: "Live" }).getAttribute("aria-current")).toBe(
-    "page",
-  );
+  expect(panelOpen()).toBe(true);
+  expect(
+    document
+      .querySelector('.app-navigation [data-navigation-action="live"]')
+      ?.getAttribute("aria-current"),
+  ).toBe("page");
 });
 
 test("right selects an inactive navigation destination", async () => {
@@ -757,23 +769,78 @@ test("right selects an inactive navigation destination", async () => {
   expect(document.querySelector(".app-navigation.expanded")).toBeNull();
 });
 
-test("right from Settings navigation returns focus to the Settings rail", async () => {
+test("Exit preserves the visible application menu behind its modal", async () => {
+  await mountXtream();
+  fireEvent.click(screen.getByRole("button", { name: "Movies" }));
+  await settle(300);
+  expect(document.querySelector(".app-navigation.visible")).toBeTruthy();
+  press(KEY.BACK);
+  await settle(0);
+  expect(screen.getByRole("heading", { name: "Exit OpenIPTV?" })).toBeTruthy();
+  expect(document.querySelector(".app-navigation.visible")).toBeTruthy();
+  expect(document.querySelector(".app.app-navigation-visible")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Keep app open" }));
+  await settle(0);
+  expect(document.querySelector(".app-navigation.visible")).toBeTruthy();
+});
+
+test("playlist failure retries each selected content context without forcing Live", async () => {
+  const fetch = vi.fn(async () => {
+    throw new Error("offline");
+  });
+  await mountApp("", { source: XTREAM_SOURCE, fetchImplementation: fetch });
+  for (const name of ["Movies", "Series", "Live"]) {
+    const attempts = fetch.mock.calls.length;
+    fireEvent.click(screen.getByRole("button", { name }));
+    await settle(300);
+    expect(fetch.mock.calls.length).toBeGreaterThan(attempts);
+    expect(document.querySelector(".playlist-recovery-context")?.textContent).toContain(name);
+  }
+  const attempts = fetch.mock.calls.length;
+  fireEvent.click(screen.getByRole("button", { name: /^Search/ }));
+  await settle(300);
+  expect(fetch.mock.calls.length).toBeGreaterThan(attempts);
+  expect(document.querySelector(".playlist-recovery-context")?.textContent).toContain("Search");
+});
+
+test("playlist error actions move horizontally before handing focus to the menu", async () => {
+  await mountApp("", {
+    fetchImplementation: async () => {
+      throw new Error("offline");
+    },
+  });
+  press(KEY.RIGHT);
+  await settle(0);
+  expect(
+    document.querySelector(".playlist-recovery-actions [data-selected]")?.textContent,
+  ).toContain("Manage playlists");
+  press(KEY.LEFT);
+  await settle(0);
+  expect(
+    document.querySelector(".playlist-recovery-actions [data-selected]")?.textContent,
+  ).toContain("Retry");
+  expect(document.querySelector(".app-navigation.expanded")).toBeNull();
+  press(KEY.LEFT);
+  await settle(0);
+  expect(document.querySelector(".app-navigation.expanded")).toBeTruthy();
+});
+
+test("Settings keeps focus inside its full screen page at the logical start", async () => {
   await mountApp(PLAYLIST);
   fireEvent.click(screen.getByRole("button", { name: "Settings" }));
   await settle(0);
 
   press(KEY.LEFT);
   await settle(0);
-  expect(document.querySelector(".app-navigation.expanded")).toBeTruthy();
+  expect(document.querySelector(".app-navigation.expanded")).toBeNull();
+  expect(screen.queryByRole("navigation", { name: "Application navigation" })).toBeNull();
 
-  press(KEY.RIGHT);
-  await settle(0);
   expect(document.activeElement).toBe(screen.getByRole("button", { name: "Appearance" }));
   expect(document.querySelector(".sheet-rail .cursor")).toBeTruthy();
 });
 
 test.each(["click", "enter"] as const)(
-  "reselecting the active Settings rail opens its root (%s)",
+  "leaving and reopening Settings opens its root (%s)",
   async (mode) => {
     await mountApp(PLAYLIST);
     fireEvent.click(screen.getByRole("button", { name: "Settings" }));
@@ -784,6 +851,8 @@ test.each(["click", "enter"] as const)(
     await settle(0);
     expect(screen.getByRole("heading", { name: "Saved playlists" })).toBeTruthy();
 
+    press(KEY.BACK);
+    press(KEY.BACK);
     const settings = screen.getByRole("button", { name: "Settings" });
     fireEvent.pointerMove(settings);
     fireEvent.pointerEnter(settings);
@@ -807,7 +876,7 @@ test.each(["click", "enter"] as const)(
   },
 );
 
-test("Right from the expanded app rail resumes the suspended Settings detail", async () => {
+test("Settings details retain their content when focus reaches the Back edge", async () => {
   await mountApp(PLAYLIST);
   fireEvent.click(screen.getByRole("button", { name: "Settings" }));
   await settle(0);
@@ -819,11 +888,12 @@ test("Right from the expanded app rail resumes the suspended Settings detail", a
   const firstRow = document.querySelector(".pl-line .pl-open");
   expect(firstRow).toBeTruthy();
 
-  const settings = screen.getByRole("button", { name: "Settings" });
-  fireEvent.pointerMove(settings);
-  fireEvent.pointerEnter(settings);
+  const back = document.querySelector<HTMLButtonElement>("[data-settings-edge-back]")!;
+  fireEvent.focus(back);
+  press(KEY.LEFT);
   await settle(0);
-  expect(document.querySelector(".app-navigation.expanded")).toBeTruthy();
+  expect(document.querySelector(".app-navigation.expanded")).toBeNull();
+  expect(document.activeElement).toBe(back);
   expect(screen.getByRole("heading", { name: "Saved playlists" })).toBe(savedHeading);
 
   press(KEY.RIGHT);
@@ -881,22 +951,26 @@ test("the M3U application mounts one rail without the old Live header", async ()
   expect(document.querySelector(".panel-bar")).toBeNull();
 });
 
-test("Settings keeps the application rail visible and offsets the sheet", async () => {
+test("Settings fills the screen without the application rail or its offset", async () => {
   await mountApp(PLAYLIST);
   press(KEY.YELLOW);
   await settle();
 
   expect(document.querySelector(".settings-host:not(.hidden) .sheet")).toBeTruthy();
-  expect(document.querySelector(".app-navigation")).toBeTruthy();
+  expect(screen.queryByRole("navigation", { name: "Application navigation" })).toBeNull();
+  expect(document.querySelector(".app")?.classList.contains("app-navigation-visible")).toBe(
+    false,
+  );
   const styles = readFileSync("src/styles/app.css", "utf8");
   expect(styles).toMatch(/\.settings-host \{[^}]*background: var\(--sheet\);/);
-  expect(styles).toMatch(/\.sheet \{[^}]*left: var\(--app-nav-collapsed-w\);/);
+  expect(styles).toMatch(/\.sheet \{[^}]*left: 0;/);
 });
 
 test("Search selected from Settings opens a fresh scoped Live search", async () => {
   await mountApp(PLAYLIST);
   press(KEY.YELLOW);
   await settle();
+  press(KEY.BACK);
   fireEvent.click(screen.getByRole("button", { name: "Search Live" }));
   await settle();
 
@@ -1527,28 +1601,50 @@ test("Live search keeps application navigation and removes the category rail fro
   expect(document.querySelector(".panel .list")).toBeTruthy();
 });
 
-test("Settings owns its section input while the application rail remains visible", async () => {
+test("Settings owns its section input without the application rail", async () => {
   await mountApp(PLAYLIST);
   fireEvent.click(screen.getByRole("button", { name: "Settings" }));
   await settle(0);
 
   const appearance = screen.getByRole("button", { name: "Appearance" });
   expect(screen.getByRole("heading", { name: "Settings" })).toBeTruthy();
-  expect(document.querySelector(".app-navigation")).toBeTruthy();
+  expect(screen.queryByRole("navigation", { name: "Application navigation" })).toBeNull();
   expect(document.activeElement).toBe(appearance);
   expect(appearance.classList.contains("cursor")).toBe(true);
   expect(document.querySelectorAll(".sheet .cursor")).toHaveLength(1);
 });
 
-test("returning to Live focuses its category rail", async () => {
-  await mountXtream();
-  fireEvent.click(screen.getByRole("button", { name: "Series" }));
-  await settle(300);
-  fireEvent.click(screen.getByRole("button", { name: "Live" }));
-  await settle(0);
+test.each(["Movies", "Series"])(
+  "returning from %s keeps the Live list open with its remembered channel focused",
+  async (mode) => {
+    await mountApp("", {
+      source: XTREAM_SOURCE,
+      fetchImplementation: xtreamFetch(
+        [{ category_id: "10", category_name: "News" }],
+        [
+          { stream_id: "1", name: "Provider One", category_id: "10", stream_type: "live" },
+          { stream_id: "2", name: "Provider Two", category_id: "10", stream_type: "live" },
+        ],
+      ),
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Provider Two/ }));
+    await settle(0);
+    const lastLiveUrl = played.at(-1);
+    press(KEY.LEFT);
+    fireEvent.click(screen.getByRole("button", { name: mode }));
+    await finishPageTransition();
+    fireEvent.click(screen.getByRole("button", { name: "Live" }));
+    await finishPageTransition();
 
-  expect(document.querySelector(".panel .rail.focused")).toBeTruthy();
-});
+    expect(played.at(-1)).toBe(lastLiveUrl);
+    expect(panelOpen()).toBe(true);
+    await settle(1000);
+    expect(panelOpen()).toBe(true);
+    expect(
+      document.querySelector(".panel .list.focused .row.cursor .row-label")?.textContent,
+    ).toBe("Provider Two");
+  },
+);
 
 test.each(["Live", "Search Live", "Movies", "Series"])(
   "Settings opens on Appearance from %s",
@@ -1566,6 +1662,23 @@ test.each(["Live", "Search Live", "Movies", "Series"])(
   },
 );
 
+test("Settings preserves the hidden menu's expansion and restores the same menu on return", async () => {
+  await mountXtream();
+  press(KEY.LEFT);
+  press(KEY.LEFT);
+  const navigation = document.querySelector(".app-navigation");
+  expect(navigation?.classList.contains("expanded")).toBe(true);
+
+  fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+  expect(navigation?.classList.contains("expanded")).toBe(true);
+  expect(navigation?.getAttribute("aria-hidden")).toBe("true");
+  expect(document.querySelector(".app")?.classList.contains("navigation-static")).toBe(true);
+
+  await closeSettings();
+  expect(document.querySelector(".app-navigation")).toBe(navigation);
+  expect(navigation?.getAttribute("aria-hidden")).toBe("false");
+});
+
 test("reopening Settings focuses Appearance and clears the previous detail", async () => {
   await mountApp(PLAYLIST);
   fireEvent.click(screen.getByRole("button", { name: "Settings" }));
@@ -1574,7 +1687,7 @@ test("reopening Settings focuses Appearance and clears the previous detail", asy
   fireEvent.click(screen.getByRole("button", { name: "Add a playlist" }));
   expect(screen.getByLabelText("Playlist name")).toBeTruthy();
 
-  fireEvent.click(screen.getByRole("button", { name: "Live" }));
+  await closeSettings();
   fireEvent.click(screen.getByRole("button", { name: "Settings" }));
   await settle(0);
 
@@ -1588,6 +1701,7 @@ test("Settings refocuses Appearance after leaving for Series", async () => {
   await mountXtream();
   fireEvent.click(screen.getByRole("button", { name: "Settings" }));
   await settle(0);
+  await closeSettings();
   fireEvent.click(screen.getByRole("button", { name: "Series" }));
   await settle(300);
   fireEvent.click(screen.getByRole("button", { name: "Settings" }));
@@ -1598,10 +1712,12 @@ test("Settings refocuses Appearance after leaving for Series", async () => {
   expect(appearance.classList.contains("cursor")).toBe(true);
 });
 
-test("rapid Settings to Series to Settings navigation refocuses the first item", async () => {
+test("repeated Settings entry after a mode change refocuses the first item", async () => {
   await mountXtream();
   fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+  await closeSettings();
   fireEvent.click(screen.getByRole("button", { name: "Series" }));
+  await settle(300);
   fireEvent.click(screen.getByRole("button", { name: "Settings" }));
   await settle(0);
 
@@ -1618,7 +1734,7 @@ test("pointer Settings entry clears body focus before selecting the rail", async
 
   const language = screen.getByRole("button", { name: /Language, System/ });
   language.focus();
-  fireEvent.click(screen.getByRole("button", { name: "Live" }));
+  await closeSettings();
   fireEvent.click(screen.getByRole("button", { name: "Settings" }));
   await settle(0);
 
@@ -1653,7 +1769,7 @@ test("right to left Settings entry focuses one selected section row", async () =
   expect(document.querySelectorAll(".sheet .cursor")).toHaveLength(1);
 });
 
-test("Settings indices stay unchanged while application navigation owns directions", async () => {
+test("Settings retains direction input at the page edge", async () => {
   await mountApp(PLAYLIST);
   fireEvent.click(screen.getByRole("button", { name: "Settings" }));
   await settle(0);
@@ -1666,8 +1782,9 @@ test("Settings indices stay unchanged while application navigation owns directio
   await settle(0);
 
   expect(appearance.getAttribute("aria-current")).toBe("page");
-  expect(document.querySelectorAll(".app-navigation .cursor")).toHaveLength(1);
-  expect(document.querySelectorAll(".sheet .cursor")).toHaveLength(0);
+  expect(document.querySelectorAll(".app-navigation .cursor")).toHaveLength(0);
+  expect(document.querySelectorAll(".sheet .cursor")).toHaveLength(1);
+  expect(screen.queryByRole("navigation", { name: "Application navigation" })).toBeNull();
 });
 
 test("the Xtream application keeps one rail while switching to VOD", async () => {
@@ -1724,7 +1841,7 @@ test("a saved playlist startup failure offers retry and playlist management", as
     "Could not load the playlist: offline",
   );
   expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
-  expect(screen.getByRole("button", { name: "Choose another playlist" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Manage playlists" })).toBeTruthy();
   expect(document.querySelector(".app-navigation")).toBeTruthy();
 
   press(KEY.LEFT);
@@ -1744,7 +1861,7 @@ test("playlist recovery routes Settings to the failed playlist without entering 
     },
   });
 
-  fireEvent.click(screen.getByRole("button", { name: "Choose another playlist" }));
+  fireEvent.click(screen.getByRole("button", { name: "Manage playlists" }));
   await vi.waitFor(
     async () => {
       await settle(16);
@@ -1800,7 +1917,7 @@ test("playlist recovery actions use icons, ordinary target styling, and suppress
 
   const retry = screen.getByRole("button", { name: "Retry" }) as HTMLButtonElement;
   const choose = screen.getByRole("button", {
-    name: "Choose another playlist",
+    name: "Manage playlists",
   }) as HTMLButtonElement;
   expect(retry.classList.contains("filled")).toBe(false);
   expect(retry.querySelector(".icon-refresh")).toBeTruthy();
@@ -1810,7 +1927,7 @@ test("playlist recovery actions use icons, ordinary target styling, and suppress
   fireEvent.click(retry);
   expect(attempts).toBe(2);
   expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
-  expect(screen.queryByRole("button", { name: "Choose another playlist" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Manage playlists" })).toBeNull();
   expect(document.querySelector(".splash")?.getAttribute("aria-busy")).toBe("true");
 
   finish?.({ ok: true, text: async () => PLAYLIST });
@@ -1887,7 +2004,7 @@ test("a failed playlist refresh keeps cached browsing available with a warning",
   fireEvent.click(screen.getByRole("button", { name: "Live" }));
   await settle(0);
 
-  expect(screen.queryByRole("button", { name: "Choose another playlist" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Manage playlists" })).toBeNull();
   expect(document.querySelector(".playlist-recovery")).toBeNull();
   expect(document.querySelector(".toast-host .toast")?.textContent).toContain(
     "Showing the last saved copy",
@@ -1909,7 +2026,7 @@ test("playlist recovery can replace the failed active address", async () => {
     },
   });
 
-  fireEvent.click(screen.getByRole("button", { name: "Choose another playlist" }));
+  fireEvent.click(screen.getByRole("button", { name: "Manage playlists" }));
   await settle(0);
   fireEvent.click(screen.getByRole("button", { name: "Actions, Test" }));
   await settle(0);
@@ -1937,7 +2054,7 @@ test("playlist recovery can remove the failed saved playlist", async () => {
     },
   });
 
-  fireEvent.click(screen.getByRole("button", { name: "Choose another playlist" }));
+  fireEvent.click(screen.getByRole("button", { name: "Manage playlists" }));
   await settle(0);
   fireEvent.click(screen.getByRole("button", { name: "Actions, Test" }));
   await settle(0);
@@ -2378,7 +2495,7 @@ test("a newer activation replaces the selected marker while the outgoing page st
   expect(document.querySelector(".vod-host:not(.hidden) .vod-screen")).toBeNull();
 });
 
-test("a Settings destination keeps its own focus when the entrance finishes", async () => {
+test("Settings and its full screen details fade without collapsing the expanded menu", async () => {
   document.documentElement.style.setProperty("--t-navigation", "180ms");
   await mountXtream();
   press(KEY.LEFT);
@@ -2392,20 +2509,65 @@ test("a Settings destination keeps its own focus when the entrance finishes", as
   fireEvent.click(screen.getByRole("button", { name: "Settings" }));
   const app = document.querySelector(".app")!;
   expect(app.getAttribute("data-page-transition")).toBe("leaving");
-  expect(document.activeElement).not.toBe(screen.getByRole("button", { name: "Settings" }));
-  expect(document.querySelector(".settings-host:not(.hidden) .sheet")).toBeNull();
-
-  await settle(300);
-  expect(app.getAttribute("data-page-transition")).toBe("settling");
+  expect(app.getAttribute("data-page-leave-motion")).toBe("fade");
+  expect(app.getAttribute("data-page-enter-motion")).toBe("fade");
+  expect(app.getAttribute("data-page-fade-scope")).toBe("screen");
+  expect(document.querySelector(".app-navigation.expanded")).toBeTruthy();
+  await finishPageTransition();
+  expect(document.querySelector(".settings-host:not(.hidden) .sheet")).toBeTruthy();
+  expect(document.querySelector(".app-navigation.visible")).toBeNull();
   const appearance = screen.getByRole("button", { name: "Appearance" });
   expect(document.activeElement).toBe(appearance);
 
-  await settle(60);
-  expect(app.getAttribute("data-page-transition")).toBe("entering");
-  await settle(300);
+  fireEvent.click(screen.getByRole("button", { name: "Content & playlists" }));
+  fireEvent.click(screen.getByRole("button", { name: "Open, Manage playlists" }));
+  expect(app.getAttribute("data-page-transition")).toBe("leaving");
+  await finishPageTransition();
+  expect(screen.getByRole("heading", { name: "Saved playlists" })).toBeTruthy();
+  press(KEY.BACK);
+  expect(app.getAttribute("data-page-transition")).toBe("leaving");
+  await finishPageTransition();
+  expect(screen.queryByRole("heading", { name: "Saved playlists" })).toBeNull();
+  press(KEY.BACK);
+  expect(app.getAttribute("data-page-transition")).toBe("leaving");
+  await finishPageTransition();
   expect(app.classList.contains("page-transition-active")).toBe(false);
-  // Finishing the transition must not blur the destination's focused control.
-  expect(document.activeElement).toBe(appearance);
+  expect(document.querySelector(".settings-host:not(.hidden) .sheet")).toBeNull();
+  expect(document.querySelector(".app-navigation.visible")).toBeTruthy();
+});
+
+test("Change Playlist fades in both directions without collapsing the expanded menu", async () => {
+  document.documentElement.style.setProperty("--t-navigation", "180ms");
+  await mountApp(PLAYLIST);
+  const { useSettings } = await import("../src/stores/settings");
+  act(() =>
+    useSettings.getState().addPlaylist("Second", {
+      kind: "m3u",
+      url: "http://second.invalid/list.m3u",
+    }),
+  );
+  await settle(0);
+  press(KEY.LEFT);
+  press(KEY.LEFT);
+  const navigation = document.querySelector(".app-navigation");
+  expect(navigation?.classList.contains("expanded")).toBe(true);
+  fireEvent.click(screen.getByRole("button", { name: /^Playlists,/ }));
+  const app = document.querySelector(".app")!;
+  expect(app.getAttribute("data-page-leave-motion")).toBe("fade");
+  expect(app.getAttribute("data-page-enter-motion")).toBe("fade");
+  expect(app.getAttribute("data-page-fade-scope")).toBe("screen");
+  expect(navigation?.classList.contains("expanded")).toBe(true);
+  await finishPageTransition();
+  expect(app.classList.contains("full-screen-page")).toBe(true);
+  expect(navigation?.getAttribute("aria-hidden")).toBe("true");
+
+  fireEvent.click(screen.getByRole("button", { name: "Back" }));
+  expect(app.getAttribute("data-page-transition")).toBe("leaving");
+  expect(app.getAttribute("data-page-leave-motion")).toBe("fade");
+  expect(app.getAttribute("data-page-enter-motion")).toBe("fade");
+  await finishPageTransition();
+  expect(app.classList.contains("full-screen-page")).toBe(false);
+  expect(navigation?.getAttribute("aria-hidden")).toBe("false");
 });
 
 test("Back cancels a pending activation and a newer press retargets the latest destination", async () => {
@@ -2430,9 +2592,9 @@ test("Back cancels a pending activation and a newer press retargets the latest d
   fireEvent.click(screen.getByRole("button", { name: "Movies" }));
   expect(app.getAttribute("data-page-transition")).toBe("leaving");
   fireEvent.click(screen.getByRole("button", { name: "Settings" }));
-  await settle(300);
-  expect(app.getAttribute("data-page-transition")).toBe("settling");
-  await settle(400);
+  expect(app.getAttribute("data-page-transition")).toBe("leaving");
+  expect(app.getAttribute("data-page-enter-motion")).toBe("fade");
+  await settle(700);
   expect(app.classList.contains("page-transition-active")).toBe(false);
   expect(document.querySelector(".settings-host:not(.hidden) .sheet")).toBeTruthy();
   expect(document.querySelector(".vod-host:not(.hidden) .vod-screen")).toBeNull();
@@ -2499,7 +2661,7 @@ test("leaving Search for Live never resurrects the old query field", async () =>
   ).toBe("");
 });
 
-test("Live rail legs carry rail motion and swap content only after the exit", async () => {
+test("Live search uses fades and swaps content only under the transition shade", async () => {
   document.documentElement.style.setProperty("--t-navigation", "180ms");
   await mountXtream();
   press(KEY.LEFT);
@@ -2509,8 +2671,10 @@ test("Live rail legs carry rail motion and swap content only after the exit", as
   fireEvent.click(screen.getByRole("button", { name: /^Search/ }));
   const app = document.querySelector(".app")!;
   expect(app.getAttribute("data-page-transition")).toBe("leaving");
-  expect(app.getAttribute("data-page-leave-motion")).toBe("rail");
-  expect(app.getAttribute("data-page-enter-motion")).toBe("rail");
+  expect(app.getAttribute("data-page-leave-motion")).toBe("fade");
+  expect(app.getAttribute("data-page-enter-motion")).toBe("fade");
+  expect(app.getAttribute("data-page-fade-scope")).toBe("content");
+  expect(app.classList.contains("navigation-static")).toBe(true);
   expect(document.querySelector(".search-field")).toBeNull();
   expect(document.querySelector(".panel .rail")).toBeTruthy();
 
@@ -2523,7 +2687,7 @@ test("Live rail legs carry rail motion and swap content only after the exit", as
   await settle(60);
   expect(app.getAttribute("data-page-transition")).toBe("entering");
   expect(document.querySelector(".live-panel-host")).toBe(host);
-  expect(app.getAttribute("data-page-enter-motion")).toBe("rail");
+  expect(app.getAttribute("data-page-enter-motion")).toBe("fade");
   expect(document.activeElement).not.toBe(document.querySelector(".search-field"));
   await settle(300);
   expect(app.classList.contains("page-transition-active")).toBe(false);
@@ -2531,8 +2695,8 @@ test("Live rail legs carry rail motion and swap content only after the exit", as
   expect(document.activeElement).toBe(document.querySelector(".search-field"));
 
   fireEvent.click(screen.getByRole("button", { name: "Live" }));
-  expect(app.getAttribute("data-page-leave-motion")).toBe("rail");
-  expect(app.getAttribute("data-page-enter-motion")).toBe("rail");
+  expect(app.getAttribute("data-page-leave-motion")).toBe("fade");
+  expect(app.getAttribute("data-page-enter-motion")).toBe("fade");
   expect(document.querySelector(".search-field")).toBeTruthy();
 
   await settle(300);
@@ -2543,7 +2707,7 @@ test("Live rail legs carry rail motion and swap content only after the exit", as
 });
 
 test.each(["Movies", "Series"])(
-  "%s returns to Live through one parked host and a rail entrance",
+  "%s returns to Live through one host with a content fade that excludes the menu",
   async (name) => {
     document.documentElement.style.setProperty("--t-navigation", "180ms");
     await mountXtream();
@@ -2556,7 +2720,9 @@ test.each(["Movies", "Series"])(
     fireEvent.click(screen.getByRole("button", { name: "Live" }));
     expect(app.getAttribute("data-page-transition")).toBe("leaving");
     expect(app.getAttribute("data-page-leave-motion")).toBe("fade");
-    expect(app.getAttribute("data-page-enter-motion")).toBe("rail");
+    expect(app.getAttribute("data-page-enter-motion")).toBe("fade");
+    expect(app.getAttribute("data-page-fade-scope")).toBe("content");
+    expect(app.classList.contains("navigation-static")).toBe(true);
     expect(host?.getAttribute("aria-hidden")).toBe("true");
     await settle(300);
     expect(app.getAttribute("data-page-transition")).toBe("settling");
@@ -2564,11 +2730,12 @@ test.each(["Movies", "Series"])(
     expect(document.querySelector(".live-panel-host")).toBe(host);
     await settle(60);
     expect(app.getAttribute("data-page-transition")).toBe("entering");
-    expect(app.getAttribute("data-page-enter-motion")).toBe("rail");
+    expect(app.getAttribute("data-page-enter-motion")).toBe("fade");
     expect(document.querySelector(".live-panel-host")).toBe(host);
     await settle(300);
     expect(app.getAttribute("data-page-transition")).toBe("idle");
     expect(document.querySelectorAll(".live-panel-host")).toHaveLength(1);
+    expect(panelOpen()).toBe(true);
     expect(document.querySelector(".panel .rail")).toBeTruthy();
   },
 );
@@ -2618,8 +2785,10 @@ test("external destinations keep fade legs on both sides of the swap", async () 
 
   fireEvent.click(screen.getByRole("button", { name: "Movies" }));
   const app = document.querySelector(".app")!;
-  expect(app.getAttribute("data-page-leave-motion")).toBe("rail");
+  expect(app.getAttribute("data-page-leave-motion")).toBe("fade");
   expect(app.getAttribute("data-page-enter-motion")).toBe("fade");
+  expect(app.getAttribute("data-page-fade-scope")).toBe("content");
+  expect(document.querySelector(".app-navigation.expanded")).toBeNull();
   await finishPageTransition();
   expect(app.classList.contains("page-transition-active")).toBe(false);
 
@@ -2637,12 +2806,12 @@ test("external destinations keep fade legs on both sides of the swap", async () 
 
   fireEvent.click(screen.getByRole("button", { name: "Live" }));
   expect(app.getAttribute("data-page-leave-motion")).toBe("fade");
-  expect(app.getAttribute("data-page-enter-motion")).toBe("rail");
+  expect(app.getAttribute("data-page-enter-motion")).toBe("fade");
   await finishPageTransition();
   expect(app.classList.contains("page-transition-active")).toBe(false);
 });
 
-test("transport keys still answer once while a Live rail transition releases navigation focus", async () => {
+test("transport keys still answer once while a Live page fade releases navigation focus", async () => {
   document.documentElement.style.setProperty("--t-navigation", "180ms");
   await mountXtream();
   for (let attempt = 0; attempt < 3 && panelOpen(); attempt += 1) {
@@ -2727,7 +2896,7 @@ test("a scope change closes local Search on both screens without resurrecting it
   expect(document.querySelector(".panel .rail")).toBeTruthy();
 });
 
-test("the playlist shortcut restores menu focus and switches only on a different choice", async () => {
+test("the playlist shortcut keeps its Back control and switches only on a different choice", async () => {
   await mountApp(PLAYLIST);
   const { useSettings } = await import("../src/stores/settings");
   expect(useSettings.getState().playlistShortcut).toBe(true);
@@ -2751,8 +2920,9 @@ test("the playlist shortcut restores menu focus and switches only on a different
   const current = screen.getByRole("menuitemradio", { name: "Test" });
   expect(current.getAttribute("aria-checked")).toBe("true");
   expect(document.activeElement).toBe(current);
+  expect(screen.queryByRole("navigation", { name: "Application navigation" })).toBeNull();
   press(KEY.LEFT);
-  expect(document.activeElement).toBe(shortcut());
+  expect(document.activeElement).toBe(screen.getByRole("button", { name: "Back" }));
   press(KEY.RIGHT);
   expect(document.activeElement).toBe(current);
   const requests = vi.mocked(fetch).mock.calls.length;
@@ -2774,11 +2944,11 @@ test("the playlist shortcut restores menu focus and switches only on a different
     "false",
   );
   expect(document.activeElement).toBe(screen.getByRole("menuitemradio", { name: "Second" }));
-  expect(shortcut().querySelector(".playlist-avatar-initials")?.textContent).toBe("S");
-  expect(shortcut().querySelector(".playlist-avatar-number")?.textContent).toBe("2");
-  fireEvent.click(screen.getByRole("button", { name: "Live" }));
+  fireEvent.click(screen.getByRole("button", { name: "Back" }));
   await finishPageTransition();
   expect(screen.queryByRole("menu", { name: "Saved playlists" })).toBeNull();
+  expect(shortcut().querySelector(".playlist-avatar-initials")?.textContent).toBe("S");
+  expect(shortcut().querySelector(".playlist-avatar-number")?.textContent).toBe("2");
   act(() => useSettings.getState().set("playlistShortcut", false));
   expect(screen.queryByRole("button", { name: /^Playlists,/ })).toBeNull();
   expect(screen.getByRole("button", { name: "Search Live" })).toBeTruthy();
@@ -2800,13 +2970,13 @@ test.each([false, true])(
         url: "http://second.invalid/list.m3u",
       }),
     );
-    press(KEY.YELLOW);
+    press(KEY.LEFT);
     await settle(0);
     fireEvent.click(screen.getByRole("button", { name: /^Playlists,/ }));
     await finishPageTransition();
     expect(pauseCalls).toBe(initialPauses + (alreadyPaused ? 0 : 1));
     expect(played).toHaveLength(initialPlays);
-    fireEvent.click(screen.getByRole("button", { name: "Live" }));
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
     await finishPageTransition();
     expect(played).toHaveLength(initialPlays + (alreadyPaused ? 0 : 1));
   },
@@ -2838,7 +3008,7 @@ http://second.invalid/last-b.m3u8`;
     }),
   );
   const switchTo = async (name: string) => {
-    press(KEY.YELLOW);
+    press(KEY.LEFT);
     await settle(0);
     fireEvent.click(screen.getByRole("button", { name: /^Playlists,/ }));
     await finishPageTransition();
@@ -2846,18 +3016,71 @@ http://second.invalid/last-b.m3u8`;
     fireEvent.click(screen.getByRole("menuitemradio", { name }));
     await settle(700);
     expect(played).toHaveLength(before);
-    fireEvent.click(screen.getByRole("button", { name: "Live" }));
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
     await finishPageTransition();
   };
   await switchTo("Second");
   expect(played.at(-1)).toBe("http://second.invalid/b.m3u8");
+  expect(panelOpen()).toBe(true);
   fireEvent.click(screen.getByText("Last B"));
   await settle(0);
   expect(played.at(-1)).toBe("http://second.invalid/last-b.m3u8");
   await switchTo("Test");
   expect(played.at(-1)).toBe("http://example.invalid/last-a.m3u8");
+  expect(
+    document.querySelector(".panel .list.focused .row.cursor .row-label")?.textContent,
+  ).toBe("Last A");
   await switchTo("Second");
   expect(played.at(-1)).toBe("http://second.invalid/last-b.m3u8");
+  expect(
+    document.querySelector(".panel .list.focused .row.cursor .row-label")?.textContent,
+  ).toBe("Last B");
+});
+
+test("playlist switching opens the current Live channel list and restores the other playlist's Movies section", async () => {
+  localStorage.removeItem("app:last-mode:pl-1");
+  const provider = xtreamFetch(
+    [{ category_id: "10", category_name: "News" }],
+    [{ stream_id: "1", name: "Provider One", category_id: "10", stream_type: "live" }],
+  );
+  await mountApp("", {
+    source: XTREAM_SOURCE,
+    fetchImplementation: (input) =>
+      String(input).includes("live-only.invalid")
+        ? Promise.resolve(new Response(PLAYLIST, { status: 200 }))
+        : provider(input),
+  });
+  const { useSettings } = await import("../src/stores/settings");
+  const { read } = await import("../src/services/store");
+  const original = useSettings.getState().activePlaylistId;
+  act(() =>
+    useSettings.getState().addPlaylist("Live only", {
+      kind: "m3u",
+      url: "http://live-only.invalid/list.m3u",
+    }),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Movies" }));
+  await finishPageTransition();
+  expect(read(`app:last-mode:${original}`)).toBe("movie");
+
+  const switchTo = async (name: string) => {
+    fireEvent.click(screen.getByRole("button", { name: /^Playlists,/ }));
+    await finishPageTransition();
+    fireEvent.click(screen.getByRole("menuitemradio", { name }));
+    await settle(700);
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    await finishPageTransition();
+  };
+  await switchTo("Live only");
+  expect(panelOpen()).toBe(true);
+  expect(
+    document.querySelector(".panel .list.focused .row.cursor .row-label")?.textContent,
+  ).toBe("First Channel");
+  expect(read(`app:last-mode:${original}`)).toBe("movie");
+
+  await switchTo("Test");
+  expect(read(`app:last-mode:${original}`)).toBe("movie");
+  expect(document.querySelector(".vod-host:not(.hidden) [data-mode='movie']")).toBeTruthy();
 });
 
 test("saved playlist numbers retain their full order when the management list is filtered", async () => {
@@ -3041,7 +3264,7 @@ test("playlist search resets pagination while preserving saved numbers and input
   expect(useSettings.getState().activePlaylistId).toBe(base.id);
 });
 
-test("Playlists preserves the content type and closes when only one playlist remains", async () => {
+test("Playlists restores the destination section and closes when only one playlist remains", async () => {
   await mountXtream();
   fireEvent.click(screen.getByRole("button", { name: "Movies" }));
   await finishPageTransition();
@@ -3053,11 +3276,10 @@ test("Playlists preserves the content type and closes when only one playlist rem
   fireEvent.click(screen.getByRole("button", { name: /^Playlists,/ }));
   await finishPageTransition();
   expect(screen.getByRole("heading", { name: "Playlists" })).toBeTruthy();
-  expect(screen.queryByRole("button", { name: "Back" })).toBeNull();
-  expect(screen.getByRole("button", { name: "Search Movies" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Back" })).toBeTruthy();
   fireEvent.click(screen.getByRole("menuitemradio", { name: "Second" }));
   await settle(700);
-  expect(screen.getByRole("button", { name: "Search Movies" })).toBeTruthy();
+  expect(document.querySelector(".vod-host [data-mode='series']")).toBeTruthy();
   expect(screen.getByRole("menu", { name: "Saved playlists" })).toBeTruthy();
   await act(async () => {
     expect(await useSettings.getState().removePlaylist("pl-1")).toBe(true);
@@ -3067,5 +3289,5 @@ test("Playlists preserves the content type and closes when only one playlist rem
   expect(useSettings.getState().playlists).toHaveLength(1);
   expect(screen.queryByRole("button", { name: /^Playlists,/ })).toBeNull();
   expect(screen.queryByRole("menu", { name: "Saved playlists" })).toBeNull();
-  expect(document.querySelector(".vod-host:not(.hidden) [data-mode='movie']")).toBeTruthy();
+  expect(document.querySelector(".vod-host:not(.hidden) [data-mode='series']")).toBeTruthy();
 });

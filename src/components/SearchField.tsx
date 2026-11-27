@@ -25,6 +25,8 @@ export function SearchField({
   placeholder,
   ariaLabel,
   onChange,
+  onFocus,
+  onSubmit,
   onExitUp,
   onExitDown,
   onExitStart,
@@ -42,6 +44,8 @@ export function SearchField({
   placeholder?: string;
   ariaLabel?: string;
   onChange: (value: string) => void;
+  onFocus?: () => void;
+  onSubmit?: () => void;
   onExitUp?: () => void;
   onExitDown?: () => void;
   onExitStart?: () => void;
@@ -78,14 +82,18 @@ export function SearchField({
         className="search-field"
         value={value}
         onChange={(e) => onChange(e.target.value)}
+        onFocus={onFocus}
         onExitStart={onExitStart}
         onExitEnd={onExitEnd}
         onExitUp={onExitUp}
         onExitDown={onExitDown}
         onKeyDown={(event) => {
+          if (event.defaultPrevented) return;
           if (event.keyCode === KEY.ENTER) {
+            if (event.nativeEvent.isComposing) return;
             event.preventDefault();
             event.stopPropagation();
+            onSubmit?.();
             return;
           }
           if ((event.keyCode === 10009 || event.keyCode === 27) && onDismissKeyboard) {

@@ -139,9 +139,9 @@ export const panelOpen = () => {
  * Let a debounce land.
  *
  * The interface deliberately answers some keys in two stages, so that holding one down is
- * not thirty times the work of pressing it once: the rail cursor moves on the press and the
- * channel column follows once the pressing stops. A test that asserts on the column has to
- * wait for the second stage, and one that asserts on the cursor must not.
+ * not thirty times the work of pressing it once. Fresh category presses apply immediately,
+ * while held repeats refresh the column at a bounded interval. Tests for deferred work
+ * wait here, while assertions about immediate input feedback must precede that wait.
  */
 export async function settle(ms = 260) {
   await act(async () => {

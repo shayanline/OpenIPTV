@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { KEY } from "../../hooks/useRemote";
 import { Icon, type IconName } from "../Icon";
+import { NavigationGuide } from "../KeyGuide";
 import type { PlaybackDeckFocus } from "./PlaybackDeck";
 
 export type PlaybackDrawerOrigin = PlaybackDeckFocus | "live-browser";
@@ -84,7 +85,7 @@ export function PlaybackDrawer({
         )}
       </div>
       <div className="playback-drawer-body">{children}</div>
-      {footer && <div className="playback-drawer-footer">{footer}</div>}
+      <div className="playback-drawer-footer">{footer ?? <NavigationGuide />}</div>
     </aside>
   );
 }

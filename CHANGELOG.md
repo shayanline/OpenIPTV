@@ -4,7 +4,7 @@ Notable changes, newest first, in the format of [Keep a Changelog](https://keepa
 
 ## 2.0.0
 
-- Movies and Series now have full VOD browsing and playback.
+- Movies and Series now have full VOD browsing, playback and search across large catalogues.
 - Continue watching and Favourites are available for Movies and Series.
 - Navigation and Settings have been redesigned.
 - Playlist management has been redesigned on the TV and remote dashboard.

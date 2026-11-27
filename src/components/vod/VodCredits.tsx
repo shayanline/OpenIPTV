@@ -5,25 +5,25 @@ export function VodCredits({ cast, director }: { cast: readonly string[]; direct
   const { t } = useLocale();
   if (!director && !cast.length) return null;
   return (
-    <>
+    <dl className="vod-credits">
       {!!director && (
-        <p className="vod-credit-row">
-          <Icon name="movie" />
-          <span className="vod-credit-label">{t("vod.directedBy")}</span>
-          <span className="vod-credit-names">
-            {director}
-          </span>
-        </p>
+        <div className="vod-credit-row">
+          <dt className="vod-credit-label">
+            <Icon name="movie" />
+            {t("vod.directedBy")}
+          </dt>
+          <dd className="vod-credit-names">{director}</dd>
+        </div>
       )}
       {!!cast.length && (
-        <p className="vod-credit-row">
-          <Icon name="cast" />
-          <span className="vod-credit-label">{t("vod.starring")}</span>
-          <span className="vod-credit-names">
-            {cast.join(", ")}
-          </span>
-        </p>
+        <div className="vod-credit-row">
+          <dt className="vod-credit-label">
+            <Icon name="cast" />
+            {t("vod.starring")}
+          </dt>
+          <dd className="vod-credit-names">{cast.join(", ")}</dd>
+        </div>
       )}
-    </>
+    </dl>
   );
 }

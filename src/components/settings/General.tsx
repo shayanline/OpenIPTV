@@ -64,6 +64,7 @@ export function ApplicationData({ onAsking }: { onAsking: (asking: boolean) => v
           title={t("settings.clearCacheQuestion")}
           body={t("settings.clearCacheBody")}
           confirmLabel={t("settings.clearCache")}
+          confirmIcon="clear"
           cancelLabel={t("common.cancel")}
           onCancel={() => askClear(false)}
           onConfirm={() => {
@@ -79,6 +80,7 @@ export function ApplicationData({ onAsking }: { onAsking: (asking: boolean) => v
           title={t("settings.resetDataQuestion")}
           body={`${t("settings.resetDataBody")} ${t("settings.resetRemoteHint")}${resetError ? ` ${t("lineup.persistenceFailed")}` : ""}`}
           confirmLabel={resetError ? t("remote.retry") : t("settings.resetData")}
+          confirmIcon={resetError ? "refresh" : "remove"}
           cancelLabel={t("common.cancel")}
           destructive
           onCancel={() => ask(false)}

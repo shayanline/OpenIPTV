@@ -4,6 +4,7 @@ import { useLocale } from "../../hooks/useLocale";
 import { KEY, useRemote } from "../../hooks/useRemote";
 import { containsOwnedFocus, useSpatialNav } from "../../hooks/useSpatialNav";
 import { Icon } from "../Icon";
+import { DialogGuide } from "../KeyGuide";
 import { textInputExit } from "../TextInput";
 
 const FOCUSABLE = "button, input, select, textarea, [href], [tabindex]";
@@ -213,6 +214,7 @@ export function SettingsDialog({
                 : "dialog-actions-close"
           }`}
         >
+          <DialogGuide />
           {footerStart && <div className="dialog-footer-start">{footerStart}</div>}
           <button type="button" className="btn tonal" disabled={busy} onClick={dismiss}>
             <Icon name="close" />

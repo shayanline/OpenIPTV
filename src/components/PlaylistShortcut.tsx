@@ -6,14 +6,14 @@ import { useViewport } from "../hooks/useViewport";
 import { useNavigableWindow } from "../hooks/useWindowed";
 import type { Playlist } from "../stores/settings";
 import { Icon } from "./Icon";
-import { KeyGuide } from "./KeyGuide";
+import { NavigationGuide } from "./KeyGuide";
 import { PlaylistAvatar } from "./PlaylistAvatar";
 import { ScrollIndicator } from "./ScrollIndicator";
 import { TextInput, textInputExit } from "./TextInput";
 
 const PLAYLIST_ROW_BASE = 104;
 const PAGE_SIZE = 5;
-type FocusTarget = "row" | "search" | "clear" | "previous" | "next";
+type FocusTarget = "row" | "search" | "clear" | "previous" | "next" | "back";
 
 export function PlaylistShortcut({
   playlists,
@@ -21,8 +21,7 @@ export function PlaylistShortcut({
   scale,
   inputEnabled,
   onSelect,
-  onRequestExit,
-  onNavigation,
+  onClose,
   onContentFocus,
 }: {
   playlists: readonly Playlist[];
@@ -30,8 +29,7 @@ export function PlaylistShortcut({
   scale: number;
   inputEnabled: boolean;
   onSelect: (id: string) => void;
-  onRequestExit: () => void;
-  onNavigation: () => void;
+  onClose: () => void;
   onContentFocus: () => void;
 }) {
   const { t, number, direction, locale } = useLocale();
@@ -40,6 +38,7 @@ export function PlaylistShortcut({
     playlists.findIndex((item) => item.id === activePlaylistId),
   );
   const [query, setQuery] = useState("");
+  const back = useRef<HTMLButtonElement>(null);
   const [page, setPage] = useState(() => Math.floor(activeIndex / PAGE_SIZE));
   const [focus, setFocus] = useState<{ id: string; target: FocusTarget }>({
     id: activePlaylistId,
@@ -148,6 +147,7 @@ export function PlaylistShortcut({
             clear: clear.current,
             previous: previous.current,
             next: next.current,
+            back: back.current,
           }[focus.target];
     if (!target || target.matches(":disabled")) {
       target = viewport.current?.querySelector<HTMLButtonElement>("button") ?? search.current;
@@ -169,6 +169,25 @@ export function PlaylistShortcut({
         }
         const inlineStart = direction === "rtl" ? KEY.RIGHT : KEY.LEFT;
         const inlineEnd = direction === "rtl" ? KEY.LEFT : KEY.RIGHT;
+        if (focus.target === "back") {
+          if (code === KEY.ENTER || code === KEY.BACK || code === KEY.ESC) onClose();
+          else if (code === inlineEnd) {
+            if (pageEntries.length) focusRow(pageStart + cursor);
+            else focusControl("search");
+          }
+          if (
+            code === KEY.ENTER ||
+            code === KEY.BACK ||
+            code === KEY.ESC ||
+            code === KEY.UP ||
+            code === KEY.DOWN ||
+            code === inlineStart ||
+            code === inlineEnd
+          ) {
+            event.preventDefault();
+          }
+          return;
+        }
         if (focus.target === "search") {
           const field = search.current;
           if (!field) return;
@@ -177,10 +196,10 @@ export function PlaylistShortcut({
             event.preventDefault();
             if (pageEntries.length) focusRow(pageStart);
             else if (query) focusControl("clear");
-            else onNavigation();
+            else focusControl("back");
           } else if (exit === "start") {
             event.preventDefault();
-            onNavigation();
+            focusControl("back");
           } else if (exit === "end" && query) {
             event.preventDefault();
             focusControl("clear");
@@ -210,7 +229,7 @@ export function PlaylistShortcut({
           event.preventDefault();
           if (focus.target === "clear") focusControl("search");
           else if (focus.target === "next" && currentPage > 0) focusControl("previous");
-          else onNavigation();
+          else focusControl("back");
         } else if (code === inlineEnd) {
           event.preventDefault();
           if (pages > 1) focusControl(currentPage < pages - 1 ? "next" : "previous");
@@ -225,7 +244,7 @@ export function PlaylistShortcut({
             setPage(Math.floor(index / PAGE_SIZE));
             pendingPageFocus.current = true;
             setFocus({ id: playlists[index]?.id ?? "", target: "row" });
-          } else onRequestExit();
+          } else onClose();
         } else if (code === KEY.ENTER) {
           event.preventDefault();
           if (focus.target === "previous") goToPage(currentPage - 1);
@@ -244,8 +263,7 @@ export function PlaylistShortcut({
         focusRow,
         goToPage,
         inputEnabled,
-        onRequestExit,
-        onNavigation,
+        onClose,
         onSelect,
         pageEntries,
         pageStart,
@@ -280,6 +298,21 @@ export function PlaylistShortcut({
           onContentFocus();
       }}
     >
+      <div className="sheet-edge-back">
+        <button
+          ref={back}
+          type="button"
+          className="btn tonal"
+          aria-label={t("common.back")}
+          disabled={!inputEnabled}
+          tabIndex={inputEnabled ? 0 : -1}
+          onFocus={() => focusControl("back")}
+          onPointerEnter={() => pointerOnly(() => focusControl("back"))}
+          onClick={onClose}
+        >
+          <Icon name="return" logicalDirection />
+        </button>
+      </div>
       <div className="playlist-shortcut-content">
         <header className="playlist-shortcut-heading">
           <div className="playlist-shortcut-intro">
@@ -446,20 +479,7 @@ export function PlaylistShortcut({
             </button>
           </nav>
         )}
-        <KeyGuide
-          className="playlist-shortcut-keys ruled"
-          items={[
-            { keys: ["OK"], label: t("common.select") },
-            {
-              keys: [direction === "rtl" ? "\u2192" : "\u2190"],
-              label: t("playlist.mainMenu"),
-            },
-            {
-              keys: ["Return"],
-              label: t(focus.target === "search" || query ? "common.back" : "common.closeApp"),
-            },
-          ]}
-        />
+        <NavigationGuide className="playlist-shortcut-keys ruled" />
       </div>
     </section>
   );

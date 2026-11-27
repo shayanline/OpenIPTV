@@ -26,15 +26,6 @@ export const initialBufferSeconds = (longestSegment: number): number =>
   Math.max(DEFAULT_INITIAL_BUFFER_SECONDS, Math.ceil(longestSegment) + 1);
 
 /**
- * How much of the window to publish, in seconds.
- *
- * Long enough that a player which starts three target durations behind the live edge still has
- * room in front of it, short enough that the response stays small. Window length costs bytes and
- * nothing else: it is not what the player's reload rate depends on.
- */
-const WINDOW_SECONDS = 150;
-
-/**
  * What to declare as the target duration, which is deliberately not the real segment length.
  *
  * This is the one field written here that differs from the truth on purpose, and it took the
@@ -118,14 +109,12 @@ export interface Window {
   segments: Segment[];
   /** What to declare as the target duration. */
   target: number;
+  /** The source tags and addresses, preserving track metadata and the complete seek window. */
+  lines: string[];
 }
 
 /**
- * The tail of a playlist, as segments the player can be given.
- *
- * Trimmed to the tail not because size is the problem, which it is not, but because this runs on
- * the television: a shorter list is fewer bytes to copy into the module on every refresh, and
- * nobody watching live television needs two hours of history.
+ * The complete media playlist, retaining the provider's seek window and playback metadata.
  *
  * Addresses are made absolute, because a repaired manifest can be served from another origin.
  * They are resolved against the address the playlist actually came from, which is not always the
@@ -133,23 +122,30 @@ export interface Window {
  * and segments from another.
  */
 export function windowOf(text: string, from: string): Window {
-  const lines = text.split("\n");
+  const lines = text.split(/\r?\n/).map((raw) => {
+    const line = raw.trim();
+    if (line.startsWith("#EXTINF:")) return `${line.split(",")[0]},`;
+    if (!line || line.startsWith("#")) {
+      return line.replace(/URI="([^"]*)"/g, (_, uri: string) => `URI="${absolute(uri, from)}"`);
+    }
+    return absolute(line, from);
+  });
   const { longest } = readPlaylist(text);
 
   const segments: Segment[] = [];
-  for (let i = 0; i < lines.length; i += 1) {
-    if (!lines[i].startsWith("#EXTINF")) continue;
-    const uri = (lines[i + 1] ?? "").trim();
-    if (!uri || uri.startsWith("#")) continue;
-    // The title after the comma is dropped: nothing reads it, and on these streams it is another
-    // sixteen digit number for a parser to trip over.
-    segments.push({ duration: `${lines[i].split(",")[0]},`, uri: absolute(uri, from) });
+  let duration = "";
+  for (const line of lines) {
+    if (line.startsWith("#EXTINF:")) duration = line;
+    else if (duration && line && !line.startsWith("#")) {
+      segments.push({ duration, uri: line });
+      duration = "";
+    }
   }
 
   const each = longest || 2;
-  const keep = Math.min(segments.length, Math.max(3, Math.ceil(WINDOW_SECONDS / each)));
   return {
-    segments: segments.slice(-keep),
+    segments,
+    lines,
     // Never below the real longest segment, which is the one thing the field must not understate.
     target: Math.max(DECLARED_TARGET, Math.ceil(each)),
   };
@@ -170,16 +166,21 @@ export function windowOf(text: string, from: string): Window {
  * when the source is a clock.
  */
 export function renderPlaylist(window: Window, sequence: number): string {
-  const out = [
+  const out = window.lines.filter(
+    (line) =>
+      line &&
+      line !== "#EXTM3U" &&
+      !line.startsWith("#EXT-X-TARGETDURATION:") &&
+      !line.startsWith("#EXT-X-MEDIA-SEQUENCE:"),
+  );
+  if (!out.some((line) => line.startsWith("#EXT-X-VERSION:"))) {
+    out.unshift("#EXT-X-VERSION:3");
+  }
+  out.unshift(
     "#EXTM3U",
-    "#EXT-X-VERSION:3",
     `#EXT-X-TARGETDURATION:${window.target}`,
     `#EXT-X-MEDIA-SEQUENCE:${Math.max(0, sequence)}`,
-  ];
-  for (const { duration, uri } of window.segments) {
-    out.push(duration);
-    out.push(uri);
-  }
+  );
   return `${out.join("\n")}\n`;
 }
 

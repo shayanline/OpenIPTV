@@ -76,6 +76,45 @@ const logoRequest = (url: string) => ({
   height: 48,
 });
 
+test.each([
+  {
+    name: "standard detail",
+    box: { width: 360, height: 540 },
+    density: 1,
+    expected: { width: 360, height: 540 },
+  },
+  {
+    name: "Retina detail",
+    box: { width: 360, height: 540 },
+    density: 2,
+    expected: { width: 720, height: 1080 },
+  },
+  {
+    name: "Retina episode",
+    box: { width: 512, height: 288 },
+    density: 2,
+    expected: { width: 1024, height: 576 },
+  },
+  {
+    name: "density ceiling",
+    box: { width: 360, height: 540 },
+    density: 4,
+    expected: { width: 720, height: 1080 },
+  },
+  {
+    name: "viewer pixel ceiling",
+    box: { width: 1920, height: 1080 },
+    density: 2,
+    expected: { width: 1920, height: 1080 },
+  },
+])(
+  "$name preserves display detail within the pixel budget",
+  async ({ box, density, expected }) => {
+    const { displayArtworkBox } = await artwork();
+    expect(displayArtworkBox(box, density)).toEqual(expected);
+  },
+);
+
 const smallPng = () =>
   new Uint8Array(
     Buffer.from(
@@ -1663,32 +1702,62 @@ test("a failed second logo resize closes its partial bitmap", async () => {
   assert.equal(partial.close.mock.calls.length, 1);
 });
 
-test("poster memory keeps three eighteen item pages and evicts the oldest next", async () => {
+test.each([false, true])(
+  "poster memory preserves recently revisited pages, revisit=%s",
+  async (revisit) => {
+    const service = await artwork();
+    const sources = Array.from({ length: 55 }, () => bitmap(400, 600));
+    const finals = Array.from({ length: 55 }, () => bitmap(192, 288));
+    let index = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(new Blob(["poster"]))),
+    );
+    vi.stubGlobal(
+      "createImageBitmap",
+      vi.fn(async (...args: unknown[]) =>
+        args.length > 1 ? finals[index++].value : sources[index].value,
+      ),
+    );
+
+    const first = posterRequest("https://images.example/0.jpg");
+    for (let at = 0; at < 55; at += 1) {
+      if (revisit && at === 54) assert.notEqual(service.artworkOf(first), null);
+      await service.loadArtwork({
+        ...posterRequest(`https://images.example/${at}.jpg`),
+        eager: false,
+      });
+    }
+
+    const evicted = revisit ? 1 : 0;
+    assert.equal(
+      service.artworkOf(posterRequest(`https://images.example/${evicted}.jpg`)),
+      null,
+    );
+    assert.equal(finals[evicted].close.mock.calls.length, 1);
+    if (revisit) assert.notEqual(service.artworkOf(first), null);
+  },
+);
+
+test("owner cancellation retains finished artwork for a warm playlist return", async () => {
   const service = await artwork();
-  const sources = Array.from({ length: 55 }, () => bitmap(400, 600));
-  const finals = Array.from({ length: 55 }, () => bitmap(192, 288));
-  let index = 0;
-  vi.stubGlobal(
-    "fetch",
-    vi.fn(async () => new Response(new Blob(["poster"]))),
-  );
+  const source = bitmap(400, 600);
+  const final = bitmap(192, 288);
+  const fetch = vi.fn(async () => new Response(new Blob(["poster"])));
+  vi.stubGlobal("fetch", fetch);
   vi.stubGlobal(
     "createImageBitmap",
-    vi.fn(async (...args: unknown[]) =>
-      args.length > 1 ? finals[index++].value : sources[index].value,
-    ),
+    vi.fn(async (...args: unknown[]) => (args.length > 1 ? final.value : source.value)),
   );
-
-  const first = posterRequest("https://images.example/0.jpg");
-  for (let at = 0; at < 55; at += 1) {
-    await service.loadArtwork({
-      ...posterRequest(`https://images.example/${at}.jpg`),
-      eager: false,
-    });
-  }
-
-  assert.equal(service.artworkOf(first), null);
-  assert.equal(finals[0].close.mock.calls.length, 1);
+  const request = posterRequest("https://images.example/return.jpg");
+  const ready = await service.loadArtwork(request);
+  service.cancelArtworkWork();
+  assert.equal(service.artworkOf(request), ready);
+  assert.equal(await service.loadArtwork(request), ready);
+  expect(fetch).toHaveBeenCalledTimes(1);
+  expect(final.close).not.toHaveBeenCalled();
+  service.releaseAllArtwork();
+  assert.equal(service.artworkOf(request), null);
 });
 
 test("poster memory evicts by the twelve MiB byte budget", async () => {

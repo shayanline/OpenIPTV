@@ -61,7 +61,7 @@ test("a file written by an older version keeps working, and gains the new defaul
 
   assert.equal(s.showClock, false, "what was saved is kept");
   assert.equal(s.resumeLast, false);
-  assert.equal(s.aspectId, "fill", "what is new arrives at its default");
+  assert.equal(s.aspectId, "fit", "new preferences preserve the whole picture");
   assert.equal(s.continuousReconnect, false, "continuous reconnect stays opt in");
   assert.equal(s.showPlaybackStats, false, "the restored setting arrives at its default");
   assert.equal(s.hideEmptyCategories, true, "empty categories stay hidden by default");

@@ -298,6 +298,33 @@ export async function usageByClass(): Promise<
  */
 const unflushed = new Map<string, number>();
 let flushing: (() => void) | null = null;
+const WARM_METADATA_BYTES = 4 * 1024 * 1024;
+const WARM_METADATA_ENTRIES = 64;
+const warmMetadata = new Map<
+  string,
+  { value: string | Blob; bytes: number; persisted: boolean }
+>();
+let warmBytes = 0;
+let warmRevision = 0;
+
+function rememberMetadata(key: string, value: Blob | string, persisted: boolean): void {
+  const previous = warmMetadata.get(key);
+  if (previous) {
+    warmBytes -= previous.bytes;
+    warmMetadata.delete(key);
+  }
+  if (typeof value !== "string" && value.type !== "application/json") return;
+  const bytes = typeof value === "string" ? value.length * 2 : value.size;
+  if (bytes > WARM_METADATA_BYTES) return;
+  warmMetadata.set(key, { value, bytes, persisted });
+  warmBytes += bytes;
+  while (warmBytes > WARM_METADATA_BYTES || warmMetadata.size > WARM_METADATA_ENTRIES) {
+    const oldest = warmMetadata.entries().next();
+    if (oldest.done) break;
+    warmMetadata.delete(oldest.value[0]);
+    warmBytes -= oldest.value[1].bytes;
+  }
+}
 
 function flushSoon(): void {
   if (flushing) return;
@@ -349,10 +376,22 @@ async function flushTouches(): Promise<void> {
  * wait on a write to bookkeeping.
  */
 export async function read(key: string): Promise<Blob | string | null> {
+  const warm = warmMetadata.get(key);
+  if (warm) {
+    warmMetadata.delete(key);
+    warmMetadata.set(key, warm);
+    if (warm.persisted) {
+      unflushed.set(key, Date.now());
+      flushSoon();
+    }
+    return warm.value;
+  }
+  const revision = warmRevision;
   const db = await open();
   if (!db) return null;
   const value = await get<Blob | string>(db, VALUES, (s) => s.get(key));
   if (value == null) return null;
+  if (revision === warmRevision) rememberMetadata(key, value, true);
 
   // One transaction, and nothing else waited on. When it was read is noted and applied later;
   // see flushTouches for why the index is deliberately not loaded here.
@@ -376,6 +415,8 @@ export async function write(
   value: Blob | string,
   cacheClass: CacheClass,
 ): Promise<boolean> {
+  warmRevision += 1;
+  rememberMetadata(key, value, false);
   const db = await open();
   if (!db) return false;
 
@@ -410,6 +451,8 @@ export async function write(
   indexedUsage[cacheClass] += bytes;
   held.set(key, meta);
   unflushed.delete(key); // just written through, so nothing outstanding for it
+  const warm = warmMetadata.get(key);
+  if (warm?.value === value) warm.persisted = true;
   return true;
 }
 
@@ -421,6 +464,13 @@ export async function write(
  * configured, and a prefix match cannot express the second.
  */
 export async function forget(doomed: (key: string) => boolean): Promise<number> {
+  warmRevision += 1;
+  for (const [key, entry] of warmMetadata) {
+    if (doomed(key)) {
+      warmMetadata.delete(key);
+      warmBytes -= entry.bytes;
+    }
+  }
   const db = await open();
   if (!db) return 0;
   const held = await loadIndex();

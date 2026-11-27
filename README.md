@@ -188,6 +188,8 @@ The hosted HTTPS demo requires provider API, artwork and stream addresses to sup
 
 Browsers can also support fewer codecs and containers than the TV's Samsung AVPlay player, especially for movie and episode files.
 
+Embedded audio and subtitle tracks may be unavailable to the browser even when the TV can select them. Use a provider HLS source with alternate tracks when one is available.
+
 ### Common issues
 
 <details>

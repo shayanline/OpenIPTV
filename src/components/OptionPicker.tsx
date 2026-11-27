@@ -90,6 +90,10 @@ export function OptionPicker<T extends string>({
       setPlacement(null);
       return;
     }
+    const margin =
+      Number.parseFloat(
+        getComputedStyle(document.documentElement).getPropertyValue("--safe-x"),
+      ) || 48;
     const position = (event?: Event) => {
       const trigger = currentRef.current;
       const list = listRef.current;
@@ -102,7 +106,6 @@ export function OptionPicker<T extends string>({
         setOpen(false);
         return;
       }
-      const margin = 8;
       const gap = 8;
       const width = Math.min(
         Math.max(bounds.width, 380),

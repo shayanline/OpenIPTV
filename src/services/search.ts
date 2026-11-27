@@ -32,6 +32,7 @@ export interface SearchResults<T> {
   matches: T[];
   /** How many matched in total, which may be more than were kept. */
   total: number;
+  totalIsLowerBound?: boolean;
 }
 
 export type Results = SearchResults<Channel>;

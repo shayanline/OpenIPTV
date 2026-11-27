@@ -289,6 +289,10 @@ test("channel management uses static identities with explicit labelled actions",
   const editor = document.querySelector<HTMLElement>("[data-settings-dialog]")!;
   expect(editor.getAttribute("role")).toBe("dialog");
   expect(editor.getAttribute("aria-modal")).toBe("true");
+  expect(document.querySelector(".sheet-page > .page-key-guide")?.textContent).toContain(
+    "Return",
+  );
+  expect(editor.querySelector(".page-key-guide")?.textContent).toContain("OK");
   expect(document.querySelector(".lineup-manager")).toBeTruthy();
   expect(
     [...editor.querySelectorAll<HTMLElement>(".dialog-actions button")].map((button) =>
@@ -2955,7 +2959,7 @@ test("a playlist recovery error notifies once as a transient toast", async () =>
     },
   });
   await settle(0);
-  fireEvent.click(screen.getByRole("button", { name: "Choose another playlist" }));
+  fireEvent.click(screen.getByRole("button", { name: "Manage playlists" }));
   await settle(0);
 
   const body = document.querySelector<HTMLElement>(".sheet-body")!;
@@ -6903,7 +6907,7 @@ test.each([
   { name: "LTR", locale: undefined, towardRail: KEY.LEFT, backToBody: KEY.RIGHT },
   { name: "RTL", locale: "ar" as const, towardRail: KEY.RIGHT, backToBody: KEY.LEFT },
 ])(
-  "nested settings pages keep one edge Back rail with sidebar routes ($name)",
+  "nested settings pages keep one edge Back rail without the application menu ($name)",
   async ({ locale, towardRail, backToBody }) => {
     await mountApp(REORDER_PLAYLIST, locale ? { locale } : {});
 
@@ -6917,7 +6921,7 @@ test.each([
       expect(back.closest(".settings-list-header")).toBeNull();
       expect(back.closest(".lineup-header-actions")).toBeNull();
 
-      // Body logical start reaches Back, then the app sidebar, then back.
+      // Logical start reaches Back and stays inside the full screen page.
       const opener =
         document.querySelector<HTMLElement>(".sheet-body [data-settings-detail-first]") ??
         document.querySelector<HTMLElement>(".sheet-body button, .sheet-body [tabindex='0']");
@@ -6933,14 +6937,9 @@ test.each([
       press(towardRail);
       await settle(0);
       expect(document.querySelector(".sheet")?.classList.contains("input-suspended")).toBe(
-        true,
-      );
-
-      press(backToBody);
-      await settle(0);
-      expect(document.querySelector(".sheet")?.classList.contains("input-suspended")).toBe(
         false,
       );
+      expect(screen.queryByRole("navigation", { name: "Application navigation" })).toBeNull();
       expect(document.activeElement).toBe(back);
 
       // Logical end returns to the remembered body control.

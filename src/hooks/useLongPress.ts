@@ -36,8 +36,11 @@ export function useLongPress({
   }, []);
 
   useEffect(() => {
-    if (!enabled) cancel();
-  }, [cancel, enabled]);
+    if (!enabled) {
+      window.clearTimeout(timerRef.current);
+      timerRef.current = undefined;
+    }
+  }, [enabled]);
 
   useEffect(() => {
     const activateLong = () => {
@@ -52,6 +55,8 @@ export function useLongPress({
       event.preventDefault();
       event.stopImmediatePropagation();
       pressedRef.current = true;
+      // Keep ownership until release when a long press changes the active surface.
+      if (!enabledRef.current) return;
       if (event.repeat) {
         activateLong();
         return;
@@ -70,10 +75,12 @@ export function useLongPress({
     };
     window.addEventListener("keydown", onDown, capture);
     window.addEventListener("keyup", onUp, capture);
+    window.addEventListener("blur", cancel);
     return () => {
       cancel();
       window.removeEventListener("keydown", onDown, capture);
       window.removeEventListener("keyup", onUp, capture);
+      window.removeEventListener("blur", cancel);
     };
   }, [cancel, capture, code, delayMs]);
 }

@@ -955,6 +955,11 @@ test.each(["live", "finite"] as const)(
     browser.attach(video);
     browser.play(mode === "finite" ? finiteRequest() : liveRequest());
     video.dispatchEvent(new Event("error"));
+    if (mode === "finite") {
+      expect(browserEvents.filter((event) => event.type === "error")).toEqual([]);
+      expect(video.getAttribute("crossorigin")).toBeNull();
+      video.dispatchEvent(new Event("error"));
+    }
 
     expect(browserEvents.filter((event) => event.type === "error")).toEqual([
       {
@@ -966,6 +971,30 @@ test.each(["live", "finite"] as const)(
     browser.stop();
   },
 );
+
+test("native CORS fallback preserves playback and ignores the first attempt's late rejection", async () => {
+  delete (window as unknown as { webapis?: unknown }).webapis;
+  const events: PlayerEvent[] = [];
+  const browser = new Player((event) => events.push(event));
+  const video = document.createElement("video");
+  let rejectFirst!: (error: unknown) => void;
+  video.play = vi.fn()
+    .mockImplementationOnce(() => new Promise<void>((_resolve, reject) => {
+      rejectFirst = reject;
+    }))
+    .mockResolvedValue(undefined);
+  Object.defineProperty(video, "error", { configurable: true, value: { code: 4 } });
+  browser.attach(video);
+  browser.play(finiteRequest());
+  expect(video.crossOrigin).toBe("anonymous");
+  video.dispatchEvent(new Event("error"));
+  expect(video.getAttribute("crossorigin")).toBeNull();
+  expect(video.play).toHaveBeenCalledTimes(2);
+  rejectFirst({ name: "NotSupportedError" });
+  await vi.advanceTimersByTimeAsync(0);
+  expect(events.filter((event) => event.type === "error")).toEqual([]);
+  browser.stop();
+});
 
 test("browser finite unsupported containers report the media element failure", async () => {
   delete (window as unknown as { webapis?: unknown }).webapis;
@@ -1257,20 +1286,46 @@ test("native tracks are reported at loadedmetadata rather than the same tick", a
     addEventListener: () => {},
     removeEventListener: () => {},
   };
-  Object.defineProperty(video, "textTracks", { configurable: true, value: [track] });
+  const textTracks = Object.assign(new EventTarget(), { 0: track, length: 1 });
+  const audioTracks = Object.assign(new EventTarget(), { length: 0 });
+  Object.defineProperty(video, "textTracks", { configurable: true, value: textTracks });
+  Object.defineProperty(video, "audioTracks", { configurable: true, value: audioTracks });
   browser.attach(video);
 
   browser.play(finiteRequest());
   // The list is only valid once the browser has read the metadata, so before that event
   // the only tracks reported are the empty set teardown publishes.
   assert.deepEqual(browser.getTracks(), []);
+  expect(browser.getStats().engine).toBe("Native video");
 
   video.dispatchEvent(new Event("loadedmetadata"));
   assert.deepEqual(
     browser.getTracks().map((entry) => entry.kind),
     ["subtitle"],
   );
+  Object.assign(audioTracks, {
+    0: { label: "French", language: "fr", enabled: true },
+    length: 1,
+  });
+  audioTracks.dispatchEvent(new Event("addtrack"));
+  expect(browser.getTracks().map((entry) => entry.kind)).toEqual(["audio", "subtitle"]);
+  const replacedAudio = Object.assign(new EventTarget(), {
+    0: { label: "German", language: "de", enabled: true },
+    length: 1,
+  });
+  Object.defineProperty(video, "audioTracks", { configurable: true, value: replacedAudio });
+  video.dispatchEvent(new Event("loadeddata"));
+  expect(browser.getTracks().find((entry) => entry.kind === "audio")?.language).toBe("de");
+  replacedAudio[0].enabled = false;
+  replacedAudio.dispatchEvent(new Event("change"));
+  expect(browser.getTracks().find((entry) => entry.kind === "audio")?.selected).toBe(false);
+  track.mode = "disabled";
+  textTracks.dispatchEvent(new Event("change"));
+  expect(browser.getTracks().find((entry) => entry.kind === "subtitle")?.selected).toBe(false);
   browser.stop();
+  replacedAudio.dispatchEvent(new Event("addtrack"));
+  video.dispatchEvent(new Event("canplay"));
+  expect(browser.getTracks()).toEqual([]);
 });
 
 test("hls.js publishes audio tracks that become available after manifest parsing", async () => {

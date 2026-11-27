@@ -21,6 +21,7 @@ import { UNCATEGORISED } from "../services/m3u";
 import { searchChannels } from "../services/search";
 import { KEY, useRemote } from "../hooks/useRemote";
 import { useLongPress } from "../hooks/useLongPress";
+import { pointerOnly } from "../hooks/usePointerAwake";
 import { ChannelList } from "../components/ChannelList";
 import { Sidebar } from "../components/Sidebar";
 import { PlaybackBanner } from "../components/PlaybackBanner";
@@ -95,26 +96,11 @@ const FIELD = -1;
 const NO_FAVOURITES: ReadonlySet<string> = new Set<string>();
 
 /**
- * How long the rail waits, after the last press, before the channel column follows it.
- *
- * Walking the rail is the most expensive thing anyone can ask of this app, because arriving
- * at a category throws away every row in the channel column and builds another twenty from
- * channel objects the memo has never seen. Measured on the floor profile, holding the key
- * down cost a median frame of 99ms and fifteen stalls in eighteen presses, which is about
- * six frames a second: the highlight crawled.
- *
- * The fix is the one this app already uses twice, for the same reason. Channel up and down
- * wait 450ms before tuning, so holding the key changes channel once rather than thirty
- * times, and the channel list waits before asking for artwork. This is the third: the
- * cursor moves on the press, and the column follows once the viewer has stopped. Eighteen
- * rebuilds become one.
- *
- * 150ms rather than the tuner's 450ms because nothing is torn down and nothing is fetched,
- * so the only cost of being wrong is a rebuild, and because the column trailing the cursor
- * by half a second would read as the app lagging rather than as the app waiting. Short
- * enough to feel immediate on a single press, long enough that a held key never pays twice.
+ * Fresh category presses apply immediately. Held repeats refresh the expensive channel
+ * column at this interval while the cursor still answers every command. Each deadline is
+ * measured from the last refresh, so continued input cannot postpone it until release.
  */
-const RAIL_SETTLE_MS = 150;
+const RAIL_REFRESH_MS = 150;
 
 /**
  * How long the search waits, after the last keystroke, before answering.
@@ -167,6 +153,7 @@ export interface LiveScreenProps {
   navigationTransitionActive?: boolean;
   onOpenSettings: () => void;
   onChoosePlaylist: () => void;
+  recoveryContext?: string;
   onRequestExit: () => void;
   onFiniteReturn?: () => void;
   onFiniteStep?: (delta: -1 | 1) => void;
@@ -221,6 +208,7 @@ export function LiveScreen({
   navigationTransitionActive = false,
   onOpenSettings,
   onChoosePlaylist,
+  recoveryContext,
   onRequestExit,
   onFiniteReturn,
   onFiniteStep,
@@ -418,22 +406,13 @@ export function LiveScreen({
     window.clearTimeout(queryTimer.current);
     const owner = searchOwnerId.current;
     searchOwnerId.current = 0;
+    searchingRef.current = false;
     setSearching(false);
     if (owner) onSearchClosed?.("live", owner);
   }, [onSearchClosed]);
 
-  useLayoutEffect(() => {
-    if (!entryRequestId || entryRequestId === handledEntryId.current) return;
-    handledEntryId.current = entryRequestId;
-    window.clearTimeout(queryTimer.current);
-    searchExit.current = null;
-    endSearch();
-    setPane("rail");
-    setCursor(category + 1);
-    setView("panel");
-  }, [category, endSearch, entryRequestId, setView]);
-
   const railTimer = useRef<number | undefined>(undefined);
+  const railAppliedAt = useRef<number | null>(null);
   const [revealHidden, setRevealHidden] = useState(false);
   const [softHidden, setSoftHidden] = useState<string[]>([]);
   const previousSurface = useRef(surface);
@@ -589,6 +568,10 @@ export function LiveScreen({
   const ended = snapshot.phase === "ended";
   const fault = snapshot.fault ?? "";
 
+  useLayoutEffect(() => {
+    if (current?.mode === "finite") setDeckFocus("play-pause");
+  }, [current?.id, current?.mode]);
+
   useEffect(() => {
     if (
       !paused ||
@@ -625,7 +608,7 @@ export function LiveScreen({
     if (!focused?.xtream) return;
     guideTimer.current = window.setTimeout(() => {
       void useLibrary.getState().loadGuide(focused);
-    }, RAIL_SETTLE_MS);
+    }, RAIL_REFRESH_MS);
     return () => window.clearTimeout(guideTimer.current);
   }, [column, guideChannelId, index, pane, view]);
 
@@ -854,22 +837,22 @@ export function LiveScreen({
   );
 
   /**
-   * Put a category in the channel column, now or once the viewer has stopped moving.
+   * Put a category in the channel column now or at the next bounded refresh.
    *
    * The category and the row within it move together, always, and that is not tidiness. A
    * deferred category with an immediate index would reset the highlight to the top of the
    * list still on screen, so the column the viewer is reading would jump while they were
    * only passing over its name in the rail.
    *
-   * Deferred for the rail walk, immediate for everything that is a jump rather than a
-   * scroll: reopening the panel on what is playing, dialling a number, and the green key's
-   * correction. A jump also cancels a walk that has not landed yet, which is why they all
-   * come through here rather than calling setCategory themselves.
+   * Fresh directional presses and jumps apply immediately. Repeated commands share a
+   * refresh deadline, so the column keeps following while held without rebuilding for
+   * every repeat. A jump cancels any pending refresh.
    */
   const showCategory = useCallback(
     (to: number, at: number, now: boolean) => {
       window.clearTimeout(railTimer.current);
       const apply = () => {
+        railAppliedAt.current = performance.now();
         /*
          * A category arriving is the end of a search, and it has to be, because the two want the
          * same column.
@@ -888,8 +871,12 @@ export function LiveScreen({
         setCategory(to);
         setIndex(at);
       };
-      if (now) apply();
-      else railTimer.current = window.setTimeout(apply, RAIL_SETTLE_MS);
+      const elapsed =
+        railAppliedAt.current === null
+          ? RAIL_REFRESH_MS
+          : performance.now() - railAppliedAt.current;
+      if (now || elapsed >= RAIL_REFRESH_MS) apply();
+      else railTimer.current = window.setTimeout(apply, RAIL_REFRESH_MS - elapsed);
     },
     [endSearch],
   );
@@ -925,6 +912,9 @@ export function LiveScreen({
    * on screen, in the category that channel belongs to.
    */
   const revealPanel = useCallback(() => {
+    window.clearTimeout(queryTimer.current);
+    searchExit.current = null;
+    endSearch();
     const target = currentRef.current;
     const playing =
       target?.mode === "live"
@@ -944,7 +934,18 @@ export function LiveScreen({
     }
     setPane("list");
     openPanel();
-  }, [channels, locate, lists, openPanel, showCategory]);
+  }, [channels, endSearch, locate, lists, openPanel, showCategory]);
+
+  const panelWasVisible = useRef(false);
+  useLayoutEffect(() => {
+    const panelVisible = visible && surface === "panel";
+    const entering = panelVisible && !panelWasVisible.current;
+    panelWasVisible.current = panelVisible;
+    if (!panelVisible) return;
+    if (!entering && entryRequestId === handledEntryId.current) return;
+    handledEntryId.current = entryRequestId;
+    revealPanel();
+  }, [entryRequestId, revealPanel, surface, visible]);
 
   /**
    * Resume whatever was on last time, once the playlist has arrived.
@@ -984,19 +985,15 @@ export function LiveScreen({
   }, [channels, browsableChannels, lastPlayed?.itemKey, resumeLiveOnMount]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /**
-   * Put the rail cursor somewhere, and let the category follow.
-   *
-   * The cursor moves on the press, which is the first of the two Tab UI behaviours Samsung
-   * describes and the half that has to be immediate: the highlight is the app answering the
-   * key. The column it names follows once the walking stops, for the reason set out at
-   * RAIL_SETTLE_MS. Row zero is the Settings key, which is not a category and shows nothing.
+   * The cursor answers every command. Fresh presses also update the category immediately,
+   * while held repeats keep the channel column within the bounded refresh interval.
    */
   const moveCursor = useCallback(
-    (to: number) => {
+    (to: number, now = false) => {
       const next = Math.max(1, Math.min(Math.max(1, lists.length), to));
       cursorRef.current = next;
       setCursor(next);
-      if (lists.length) showCategory(next - 1, 0, false);
+      if (lists.length) showCategory(next - 1, 0, now);
     },
     [lists.length, showCategory],
   );
@@ -1011,10 +1008,10 @@ export function LiveScreen({
   }, [category, showCategory]);
 
   const nudgeCursor = useCallback(
-    (delta: number) => {
+    (delta: number, now = false) => {
       const previous = cursorRef.current;
       const next = cycleIndex(previous - 1, delta, lists.length) + 1;
-      if (next !== previous) moveCursor(next);
+      if (next !== previous) moveCursor(next, now);
     },
     [lists.length, moveCursor],
   );
@@ -1458,14 +1455,15 @@ export function LiveScreen({
         event.keyCode === KEY.FORWARD
       ) {
         seekRepeat.current = { direction: 0, startedAt: 0, steppedAt: 0 };
+        playback.settleSeek();
       }
     };
     window.addEventListener("keyup", resetSeekRepeat, true);
     return () => window.removeEventListener("keyup", resetSeekRepeat, true);
-  }, [playback.commitStep]);
+  }, [playback.commitStep, playback.settleSeek]);
 
   const seekDeck = useCallback(
-    (seconds: number) => playback.seekTo(seconds),
+    (seconds: number, waitForRelease = false) => playback.seekTo(seconds, waitForRelease),
     [playback.seekTo],
   );
 
@@ -1808,20 +1806,16 @@ export function LiveScreen({
         return true;
       }
 
-      /*
-       * A playlist that produced nothing has its own screen, and exactly two keys mean
-       * anything on it. Answered here rather than in the panel branch, because the panel is
-       * behind it with no rows to move through, so every press would land on nothing.
-       */
       if (loadFailed) {
         if (code === inlineStart) {
           event.preventDefault();
-          focusApplicationNavigation();
+          if (recoveryAction === "settings") setRecoveryAction("retry");
+          else focusApplicationNavigation();
           return true;
         }
         if (code === KEY.UP || code === KEY.DOWN || code === inlineEnd) {
           event.preventDefault();
-          setRecoveryAction((action) => (action === "retry" ? "settings" : "retry"));
+          setRecoveryAction(code === KEY.UP ? "retry" : "settings");
           return true;
         }
         if (code === KEY.ENTER) {
@@ -2173,12 +2167,12 @@ export function LiveScreen({
       } else {
         if (code === KEY.UP) {
           event.preventDefault();
-          nudgeCursor(-1);
+          nudgeCursor(-1, !event.repeat);
           return;
         }
         if (code === KEY.DOWN) {
           event.preventDefault();
-          nudgeCursor(1);
+          nudgeCursor(1, !event.repeat);
           return;
         }
         if (code === inlineStart) {
@@ -2457,6 +2451,7 @@ export function LiveScreen({
             ? t("channel.uncategorised")
             : l.name,
         count: l.channels.length,
+        favourite: isFavouritesList(l),
         hidden: !isFavouritesList(l) && savedHidden.has(l.key),
       })),
     [lists, savedHidden, t],
@@ -2562,16 +2557,6 @@ export function LiveScreen({
           picture for no reason, and one more layer for the compositor to think about. */}
       {!onTizen() && <video ref={videoRef} className="video" playsInline muted={false} />}
 
-      {/*
-       * A configured playlist that produced nothing.
-       *
-       * The way out is named rather than drawn. Checklist 2.2 and 3.2 both require every
-       * selectable object to be reachable with the four directional buttons, and a button
-       * on this screen would have to earn that: there is no list to move through here, so
-       * nothing would focus it and it would be a dead end with a control drawn on it.
-       * Naming the keys that already work is the honest answer, and it is what the rest of
-       * the app does. OK and the yellow key both open Settings from here.
-       */}
       {configured &&
         (loadFailed ||
           (!channels.length && (loading || activePlaylist?.source.kind !== "xtream"))) && (
@@ -2580,60 +2565,71 @@ export function LiveScreen({
             role={loadFailed ? "alert" : loading ? "status" : undefined}
             aria-busy={loading || retryingPlaylist || undefined}
           >
-            {/*
-             * The mark above the name, because this is the first thing a viewer sees after choosing
-             * the app and a launcher tile that turns into a word on a black screen does not look like
-             * the same application starting. The same file the launcher itself draws, so the two
-             * cannot drift: scripts/icon.mjs renders the bitmap from this vector.
-             */}
-            <img className="splash-mark" src="./icon.svg" alt="" aria-hidden="true" />
-            <h1>OpenIPTV</h1>
-            <p>
-              {loadFailed
-                ? errorKey
-                  ? t(errorKey, { detail: errorDetail })
-                  : error
-                : loading
-                  ? t("app.loadingPlaylist")
-                  : t("app.emptyPlaylist")}
-            </p>
-            {/* Under the line it belongs to rather than above the name, so the eye reads the mark, then
-              what is happening, and the moving thing is last: a spinner at the top of a column drags
-              attention off the words it is supposed to be explaining. */}
-            {loading && <div className="spinner" />}
-            {loadFailed && (
-              <div className="playlist-recovery-actions">
-                <button
-                  type="button"
-                  className="btn tonal"
-                  data-selected={inputEnabled && recoveryAction === "retry" ? true : undefined}
-                  disabled={retryingPlaylist}
-                  onClick={() => void retryPlaylist()}
-                >
-                  <Icon name="refresh" />
-                  <span>{t("vod.retry")}</span>
-                </button>
-                <button
-                  type="button"
-                  className="btn tonal"
-                  data-selected={
-                    inputEnabled && recoveryAction === "settings" ? true : undefined
-                  }
-                  disabled={retryingPlaylist}
-                  onClick={onChoosePlaylist}
-                >
-                  <Icon name="playlists" />
-                  <span>{t("app.chooseAnotherPlaylist")}</span>
-                </button>
-              </div>
-            )}
+            <div className={loadFailed ? "playlist-recovery-body" : "splash-body"}>
+              {loadFailed ? (
+                <span className="playlist-recovery-icon" aria-hidden="true">
+                  <Icon name="warn" />
+                </span>
+              ) : (
+                <img className="splash-mark" src="./icon.svg" alt="" aria-hidden="true" />
+              )}
+              {loadFailed && (
+                <p className="playlist-recovery-context">
+                  {activePlaylist?.name}
+                  {recoveryContext ? ` / ${recoveryContext}` : ""}
+                </p>
+              )}
+              <h1>{loadFailed ? t("app.playlistUnavailable") : "OpenIPTV"}</h1>
+              <p>
+                {loadFailed
+                  ? errorKey
+                    ? t(errorKey, { detail: errorDetail })
+                    : error
+                  : loading
+                    ? t("app.loadingPlaylist")
+                    : t("app.emptyPlaylist")}
+              </p>
+              {loading && <div className="spinner" />}
+              {loadFailed && (
+                <div className="playlist-recovery-actions">
+                  <button
+                    type="button"
+                    className="btn tonal"
+                    data-selected={
+                      inputEnabled && recoveryAction === "retry" ? true : undefined
+                    }
+                    disabled={retryingPlaylist}
+                    onFocus={() => setRecoveryAction("retry")}
+                    onPointerEnter={() => pointerOnly(() => setRecoveryAction("retry"))}
+                    onClick={() => void retryPlaylist()}
+                  >
+                    <Icon name="refresh" />
+                    <span>{t("vod.retry")}</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="btn tonal"
+                    data-selected={
+                      inputEnabled && recoveryAction === "settings" ? true : undefined
+                    }
+                    disabled={retryingPlaylist}
+                    onFocus={() => setRecoveryAction("settings")}
+                    onPointerEnter={() => pointerOnly(() => setRecoveryAction("settings"))}
+                    onClick={onChoosePlaylist}
+                  >
+                    <Icon name="playlists" />
+                    <span>{t("playlist.managePlaylists")}</span>
+                  </button>
+                </div>
+              )}
+            </div>
             {!loading && (
               <KeyGuide
                 className="splash-keys"
                 items={
                   loadFailed
                     ? [
-                        { keys: ["↑", "↓"], label: t("common.move") },
+                        { keys: ["↑", "↓", "←", "→"], label: t("common.move") },
                         { keys: ["OK"], label: t("common.select") },
                         { keys: ["Return"], label: t("common.closeApp") },
                       ]
@@ -2700,19 +2696,16 @@ export function LiveScreen({
        * Its timer starts with the selection and does not depend on loading or playback.
        * It names the selected channel, which may differ from the playing channel during a zap.
        */}
-      {playback.shown?.mode === "live" &&
-        bannerChannel &&
-        atPlayer &&
-        !fault && (
-          <PlaybackBanner
-            visible={chrome.banner}
-            channel={bannerChannel}
-            programme={{
-              current: bannerGuide?.current?.title,
-            }}
-            targetKey={playback.shown?.id ?? bannerChannel.id}
-          />
-        )}
+      {playback.shown?.mode === "live" && bannerChannel && atPlayer && !fault && (
+        <PlaybackBanner
+          visible={chrome.banner}
+          channel={bannerChannel}
+          programme={{
+            current: bannerGuide?.current?.title,
+          }}
+          targetKey={playback.shown?.id ?? bannerChannel.id}
+        />
+      )}
 
       {/* ---- layer 3, the playback deck and its drawers ------------------------------ */}
       {current && deckVisible && (
@@ -2818,10 +2811,7 @@ export function LiveScreen({
        * Open controls own the cue so CSS can anchor it above their complete height.
        * Other picture surfaces use the normal safe area position.
        */}
-      <SubtitleLayer
-        cue={playback.subtitleCue}
-        hidden={!subtitlesVisible || deckVisible}
-      />
+      <SubtitleLayer cue={playback.subtitleCue} hidden={!subtitlesVisible || deckVisible} />
 
       {guideChannel && !modal && (
         <PlaybackDrawer

@@ -1,5 +1,6 @@
 import type { Channel } from "../types";
 import type { XtreamOutput, XtreamSource } from "./playlistUrl";
+import { SEARCH_LIMIT, searchVodItems, type SearchResults } from "./search";
 
 export type XtreamContentKind = "live" | "movie" | "series";
 
@@ -191,16 +192,23 @@ export interface XtreamRequestOptions {
   signal?: AbortSignal;
   timeoutMs?: number;
   maxBytes: number;
+  maxResponseBytes?: number;
+  mapRecord?: (record: Record<string, unknown>) => unknown;
 }
 
 const REQUEST_TIMEOUT_MS = 30_000;
+const INDEX_TIMEOUT_MS = 120_000;
+const INDEX_SLICE_MS = 8;
+const INDEX_SCAN_CHARACTERS = 8192;
+const INDEX_RECORD_CHARACTERS = 8 * 1024 * 1024;
 
-/** Response ceilings in bytes, one per catalogue endpoint class. */
+/** Endpoint response ceilings and the retained normalized index budget, in bytes. */
 export const XTREAM_LIMITS = {
   categories: 1 * 1024 * 1024,
   contents: 8 * 1024 * 1024,
   detail: 4 * 1024 * 1024,
   index: 12 * 1024 * 1024,
+  indexResponse: 128 * 1024 * 1024,
 } as const;
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -329,6 +337,118 @@ const endpoint = (
   return url.toString();
 };
 
+/** Buffer one raw record at a time and retain only budgeted, normalized catalogue data. */
+async function readIndex(
+  response: Response,
+  options: XtreamRequestOptions,
+): Promise<unknown[]> {
+  const reader = response.body!.getReader();
+  const decoder = new TextDecoder("utf-8");
+  const encoder = new TextEncoder();
+  const result: unknown[] = [];
+  let received = 0;
+  let retained = 2;
+  const parser: { state: "start" | "value" | "done" } = { state: "start" };
+  let allowEnd = true;
+  const parts: string[] = [];
+  let reading = false;
+  let recordCharacters = 0;
+  let depth = 0;
+  let quoted = false;
+  let escaped = false;
+  let scanned = 0;
+  let yieldedAt = performance.now();
+  const malformed = () => new XtreamRequestError("malformed");
+  const consume = async (chunk: string) => {
+    let from = reading ? 0 : -1;
+    for (let index = 0; index < chunk.length; index += 1) {
+      const character = chunk[index];
+      scanned += 1;
+      if (scanned >= INDEX_SCAN_CHARACTERS) {
+        scanned = 0;
+        if (performance.now() - yieldedAt >= INDEX_SLICE_MS) {
+          await new Promise<void>((resolve) => setTimeout(resolve, 0));
+          if (options.signal?.aborted) throw new XtreamRequestError("aborted");
+          yieldedAt = performance.now();
+        }
+      }
+      if (parser.state === "start") {
+        if (/\s/.test(character)) continue;
+        if (character !== "[") throw malformed();
+        parser.state = "value";
+        continue;
+      }
+      if (parser.state === "done") {
+        if (!/\s/.test(character)) throw malformed();
+        continue;
+      }
+      if (!reading && /\s/.test(character)) continue;
+      if (!quoted && depth === 0 && (character === "," || character === "]")) {
+        if (!reading) {
+          if (character !== "]" || !allowEnd) throw malformed();
+          parser.state = "done";
+          continue;
+        }
+        let parsed: unknown;
+        try {
+          parts.push(chunk.slice(from, index));
+          parsed = JSON.parse(parts.join(""));
+        } catch {
+          throw malformed();
+        }
+        const mapped = isRecord(parsed) ? options.mapRecord!(parsed) : null;
+        if (mapped != null) {
+          retained += encoder.encode(JSON.stringify(mapped)).byteLength + 1;
+          if (retained > options.maxBytes) throw new XtreamRequestError("too-large");
+          result.push(mapped);
+        }
+        parts.length = 0;
+        reading = false;
+        recordCharacters = 0;
+        from = -1;
+        parser.state = character === "]" ? "done" : "value";
+        allowEnd = false;
+        continue;
+      }
+      if (!reading) {
+        reading = true;
+        from = index;
+      }
+      recordCharacters += 1;
+      if (recordCharacters > INDEX_RECORD_CHARACTERS) throw new XtreamRequestError("too-large");
+      if (quoted) {
+        if (escaped) escaped = false;
+        else if (character === "\\") escaped = true;
+        else if (character === '"') quoted = false;
+      } else if (character === '"') quoted = true;
+      else if (character === "{" || character === "[") depth += 1;
+      else if (character === "}" || character === "]") {
+        depth -= 1;
+        if (depth < 0) throw malformed();
+      }
+    }
+    if (reading) parts.push(chunk.slice(from));
+  };
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      received += value.byteLength;
+      if (received > (options.maxResponseBytes ?? XTREAM_LIMITS.indexResponse))
+        throw new XtreamRequestError("too-large");
+      await consume(decoder.decode(value, { stream: true }));
+    }
+    await consume(decoder.decode());
+    if (parser.state !== "done") throw malformed();
+    return result;
+  } catch (error) {
+    void reader.cancel().catch(() => {});
+    throw error;
+  } finally {
+    reader.releaseLock();
+  }
+}
+
 async function requestXtreamJson(url: string, options: XtreamRequestOptions): Promise<unknown> {
   const caller = options.signal;
   if (caller?.aborted) throw new XtreamRequestError("aborted");
@@ -356,12 +476,21 @@ async function requestXtreamJson(url: string, options: XtreamRequestOptions): Pr
     ]);
     if (!response.ok) throw new XtreamRequestError("http", response.status);
     const declared = Number(response.headers?.get("content-length"));
-    if (Number.isFinite(declared) && declared > options.maxBytes) {
+    const responseLimit =
+      options.maxResponseBytes ??
+      (options.mapRecord ? XTREAM_LIMITS.indexResponse : options.maxBytes);
+    if (Number.isFinite(declared) && declared > responseLimit) {
       void response.body?.cancel();
       throw tooLarge();
     }
     let parsed: unknown;
     if (response.body) {
+      if (options.mapRecord) {
+        return await Promise.race([
+          readIndex(response, { ...options, signal: controller.signal }),
+          aborted,
+        ]);
+      }
       const reader = response.body.getReader();
       const chunks: Uint8Array[] = [];
       let received = 0;
@@ -906,12 +1035,87 @@ export function directSourceFingerprint(value: string): string | undefined {
   return (hash >>> 0).toString(36);
 }
 
+function querySelection(query: string) {
+  const needle = query.trim().toLowerCase();
+  const seen = new Set<string>();
+  const retained = new Set<string>();
+  let identityCharacters = 0;
+  const ranks = [0, 0];
+  return {
+    total: 0,
+    totalIsLowerBound: false,
+    rank(name: string) {
+      const at = name.toLowerCase().indexOf(needle);
+      return at < 0 ? -1 : at === 0 ? 0 : 1;
+    },
+    accept(identity: string, rank: number) {
+      if (rank < 0 || seen.has(identity) || retained.has(identity)) return false;
+      // Bound identity tracking too, while later records still compete for result slots.
+      if (seen.size < 50_000 && identityCharacters + identity.length <= 512 * 1024) {
+        seen.add(identity);
+        identityCharacters += identity.length;
+        this.total += 1;
+      } else this.totalIsLowerBound = true;
+      if (ranks[rank] >= SEARCH_LIMIT) return false;
+      ranks[rank] += 1;
+      retained.add(identity);
+      return true;
+    },
+  };
+}
+
+export async function searchXtreamCatalogue(
+  session: XtreamSession,
+  playlistId: string,
+  kind: "movie" | "series",
+  query: string,
+  signal?: AbortSignal,
+): Promise<SearchResults<XtreamMovie | XtreamSeries>> {
+  if (!query.trim()) return { matches: [], total: 0 };
+  const selection = querySelection(query);
+  const items: (XtreamMovie | XtreamSeries)[] =
+    kind === "movie"
+      ? await loadXtreamMovies(session, playlistId, "", signal, selection)
+      : await loadXtreamSeries(session, playlistId, "", signal, selection);
+  return {
+    matches: searchVodItems(items, query).matches,
+    total: Math.max(selection.total, items.length),
+    totalIsLowerBound: selection.totalIsLowerBound,
+  };
+}
+
 export async function loadXtreamMovies(
   session: XtreamSession,
   playlistId: string,
   categoryId: string,
   signal?: AbortSignal,
+  selection?: ReturnType<typeof querySelection>,
 ): Promise<XtreamMovie[]> {
+  const seen = new Set<string>();
+  const normalize = (movie: Record<string, unknown>): XtreamMovie | null => {
+    const name = normalizeProviderText(movie.name);
+    const rank = selection?.rank(name) ?? 0;
+    if (rank < 0) return null;
+    const streamId = text(movie.stream_id);
+    const directSource = address(movie.direct_source, session.streamOrigin);
+    const identity = streamId || directSourceFingerprint(directSource);
+    if (!identity || (selection ? !selection.accept(identity, rank) : seen.has(identity)))
+      return null;
+    if (!selection) seen.add(identity);
+    const itemCategory = text(movie.category_id) || categoryId;
+    const extension = normalizeExtension(movie.container_extension);
+    return {
+      key: itemKey(playlistId, "movie", identity),
+      streamId,
+      categoryKey: vodCategoryKey("movie", itemCategory),
+      name,
+      logo: address(movie.stream_icon, session.streamOrigin),
+      ...(extension !== undefined ? { extension } : {}),
+      directSource,
+      year: yearFrom([movie.year, movie.releaseDate, movie.release_date]),
+      rating: normalizeXtreamRating(movie.rating, movie.rating_5based),
+    };
+  };
   const payload = await api(
     session,
     "get_vod_streams",
@@ -919,29 +1123,15 @@ export async function loadXtreamMovies(
     {
       signal,
       maxBytes: categoryId ? XTREAM_LIMITS.contents : XTREAM_LIMITS.index,
+      ...(!categoryId ? { mapRecord: normalize, timeoutMs: INDEX_TIMEOUT_MS } : {}),
+      ...(selection ? { maxResponseBytes: Infinity } : {}),
     },
   );
+  if (!categoryId) return payload as XtreamMovie[];
   const result: XtreamMovie[] = [];
-  const seen = new Set<string>();
   for (const movie of records(payload)) {
-    const streamId = text(movie.stream_id);
-    const directSource = address(movie.direct_source, session.streamOrigin);
-    const identity = streamId || directSourceFingerprint(directSource);
-    if (!identity || seen.has(identity)) continue;
-    seen.add(identity);
-    const itemCategory = text(movie.category_id) || categoryId;
-    const extension = normalizeExtension(movie.container_extension);
-    result.push({
-      key: itemKey(playlistId, "movie", identity),
-      streamId,
-      categoryKey: vodCategoryKey("movie", itemCategory),
-      name: normalizeProviderText(movie.name),
-      logo: address(movie.stream_icon, session.streamOrigin),
-      ...(extension !== undefined ? { extension } : {}),
-      directSource,
-      year: yearFrom([movie.year, movie.releaseDate, movie.release_date]),
-      rating: normalizeXtreamRating(movie.rating, movie.rating_5based),
-    });
+    const item = normalize(movie);
+    if (item) result.push(item);
   }
   return result;
 }
@@ -951,7 +1141,28 @@ export async function loadXtreamSeries(
   playlistId: string,
   categoryId: string,
   signal?: AbortSignal,
+  selection?: ReturnType<typeof querySelection>,
 ): Promise<XtreamSeries[]> {
+  const seen = new Set<string>();
+  const normalize = (series: Record<string, unknown>): XtreamSeries | null => {
+    const name = normalizeProviderText(series.name);
+    const rank = selection?.rank(name) ?? 0;
+    if (rank < 0) return null;
+    const seriesId = text(series.series_id);
+    if (!seriesId || (selection ? !selection.accept(seriesId, rank) : seen.has(seriesId)))
+      return null;
+    if (!selection) seen.add(seriesId);
+    const itemCategory = text(series.category_id) || categoryId;
+    return {
+      key: itemKey(playlistId, "series", seriesId),
+      seriesId,
+      categoryKey: vodCategoryKey("series", itemCategory),
+      name,
+      logo: address(series.cover, session.streamOrigin),
+      year: yearFrom([series.year, series.releaseDate, series.release_date]),
+      rating: normalizeXtreamRating(series.rating, series.rating_5based),
+    };
+  };
   const payload = await api(
     session,
     "get_series",
@@ -959,24 +1170,15 @@ export async function loadXtreamSeries(
     {
       signal,
       maxBytes: categoryId ? XTREAM_LIMITS.contents : XTREAM_LIMITS.index,
+      ...(!categoryId ? { mapRecord: normalize, timeoutMs: INDEX_TIMEOUT_MS } : {}),
+      ...(selection ? { maxResponseBytes: Infinity } : {}),
     },
   );
+  if (!categoryId) return payload as XtreamSeries[];
   const result: XtreamSeries[] = [];
-  const seen = new Set<string>();
   for (const series of records(payload)) {
-    const seriesId = text(series.series_id);
-    if (!seriesId || seen.has(seriesId)) continue;
-    seen.add(seriesId);
-    const itemCategory = text(series.category_id) || categoryId;
-    result.push({
-      key: itemKey(playlistId, "series", seriesId),
-      seriesId,
-      categoryKey: vodCategoryKey("series", itemCategory),
-      name: normalizeProviderText(series.name),
-      logo: address(series.cover, session.streamOrigin),
-      year: yearFrom([series.year, series.releaseDate, series.release_date]),
-      rating: normalizeXtreamRating(series.rating, series.rating_5based),
-    });
+    const item = normalize(series);
+    if (item) result.push(item);
   }
   return result;
 }

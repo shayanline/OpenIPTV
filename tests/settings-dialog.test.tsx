@@ -47,6 +47,7 @@ test("the dialog is modal, traps Tab and keeps disabled controls out of the cycl
   expect(dialog.getAttribute("role")).toBe("dialog");
   expect(dialog.getAttribute("aria-modal")).toBe("true");
   expect(dialog.getAttribute("aria-label")).toBe("Rename");
+  expect(dialog.querySelector(".page-key-guide")?.textContent).toContain("Return");
 
   const name = document.getElementById("dialog-name")!;
   const cancel = screen.getByRole("button", { name: "Cancel" });
@@ -441,6 +442,37 @@ test("className lands on the dialog panel without a wrapper", () => {
   expect(dialog.className).toContain("playlist-dialog");
   expect(dialog.parentElement?.className).toBe("settings-dialog-scrim");
 });
+
+test.each(["ltr", "rtl"] as const)(
+  "option popups remain inside the 48px safe area near viewport edges in %s",
+  (direction) => {
+    vi.spyOn(document.documentElement, "clientWidth", "get").mockReturnValue(800);
+    vi.spyOn(document.documentElement, "clientHeight", "get").mockReturnValue(600);
+    render(
+      <OptionPicker
+        label="Format"
+        value="0"
+        options={Array.from({ length: 10 }, (_, index) => ({
+          value: String(index),
+          label: `Format ${index}`,
+        }))}
+        onChange={vi.fn()}
+      />,
+    );
+    const trigger = screen.getByRole("button", { name: /Format 0/ });
+    trigger.style.direction = direction;
+    vi.spyOn(trigger, "getBoundingClientRect").mockReturnValue(
+      direction === "ltr" ? new DOMRect(700, 520, 100, 64) : new DOMRect(0, 0, 100, 64),
+    );
+    fireEvent.click(trigger);
+    const popup = screen.getByRole("listbox");
+    const { top, left, width, maxHeight } = popup.style;
+    expect(Number.parseFloat(top)).toBeGreaterThanOrEqual(48);
+    expect(Number.parseFloat(left)).toBeGreaterThanOrEqual(48);
+    expect(Number.parseFloat(top) + Number.parseFloat(maxHeight)).toBeLessThanOrEqual(552);
+    expect(Number.parseFloat(left) + Number.parseFloat(width)).toBeLessThanOrEqual(752);
+  },
+);
 
 test("the OptionPicker keeps check slots as selection moves between labeled options", async () => {
   const onChange = vi.fn();

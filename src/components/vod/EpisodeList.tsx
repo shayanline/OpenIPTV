@@ -3,7 +3,12 @@ import { useLocale } from "../../hooks/useLocale";
 import { activatePointerInput, pointerOnly } from "../../hooks/usePointerAwake";
 import { useViewport } from "../../hooks/useViewport";
 import { normalizeWheelDelta, useNavigableWindow } from "../../hooks/useWindowed";
-import { type ArtworkPalette, paletteCss } from "../../services/artwork";
+import {
+  type ArtworkPalette,
+  displayArtworkBox,
+  EPISODE_PREVIEW_BOX,
+  paletteCss,
+} from "../../services/artwork";
 import type { MessageKey, MessageValues } from "../../services/locale";
 import type { XtreamEpisode, XtreamSeasonKey, XtreamSeriesDetail } from "../../services/xtream";
 import type { ResolvedPlaybackProgress } from "../../stores/personal";
@@ -75,6 +80,7 @@ export function EpisodeList({
   onWheel,
 }: EpisodeListProps) {
   const { t, number } = useLocale();
+  const previewBox = displayArtworkBox(EPISODE_PREVIEW_BOX);
   const viewport = useRef<HTMLDivElement>(null);
   const previewCopy = useRef<HTMLDivElement>(null);
   const seasons = useRef<HTMLDivElement>(null);
@@ -286,17 +292,15 @@ export function EpisodeList({
                 alt={t("vod.episodeArtwork")}
                 kind="poster"
                 fit="contain"
-                width={512}
-                height={288}
+                width={previewBox.width}
+                height={previewBox.height}
                 placeholderIcon="episode"
                 fetchable={visible}
                 onPalette={onPalette}
               />
             </div>
             <div className="episode-preview-heading">
-              <h3 className="episode-preview-title">
-                {selected.name || t("vod.untitled")}
-              </h3>
+              <h3 className="episode-preview-title">{selected.name || t("vod.untitled")}</h3>
               {(selected.durationSeconds !== undefined ||
                 !!selected.metadata.rating ||
                 !!selected.metadata.releaseDate) && (

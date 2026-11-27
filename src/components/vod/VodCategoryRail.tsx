@@ -5,6 +5,7 @@ import { useViewport } from "../../hooks/useViewport";
 import { RAIL_ROW_BASE, useNavigableWindow } from "../../hooks/useWindowed";
 import type { VodCategoryRow } from "../../stores/library";
 import { ScrollIndicator } from "../ScrollIndicator";
+import { Icon } from "../Icon";
 import { Text } from "../Text";
 
 export interface VodCategoryRailProps {
@@ -29,6 +30,7 @@ export interface VodCategoryRailProps {
 
 interface CategoryRowProps {
   name: string;
+  icon?: "time" | "star";
   index: number;
   selected: boolean;
   highlighted: boolean;
@@ -40,6 +42,7 @@ interface CategoryRowProps {
 
 const CategoryRow = memo(function CategoryRow({
   name,
+  icon,
   index,
   selected,
   highlighted,
@@ -52,7 +55,7 @@ const CategoryRow = memo(function CategoryRow({
     <>
       <button
         type="button"
-        className={`vod-category ${selected ? "selected" : ""} ${highlighted ? "cursor" : ""}`}
+        className={`vod-category ${icon ? "has-icon" : ""} ${selected ? "selected" : ""} ${highlighted ? "cursor" : ""}`}
         onPointerEnter={() => pointerOnly(() => onFocus(index))}
         onClick={() => {
           onFocus(index);
@@ -60,6 +63,7 @@ const CategoryRow = memo(function CategoryRow({
         }}
         aria-current={selected ? "true" : undefined}
       >
+        {icon && <Icon name={icon} />}
         <Text value={name} className="vod-category-name" marquee active={marqueeActive} />
       </button>
       {separatesSynthetic && <div className="vod-synthetic-divider" aria-hidden="true" />}
@@ -143,6 +147,13 @@ export function VodCategoryRail({
             <CategoryRow
               key={item.key}
               name={name}
+              icon={
+                item.source === "continue"
+                  ? "time"
+                  : item.source === "favourites"
+                    ? "star"
+                    : undefined
+              }
               index={index}
               selected={selectedKey === item.key}
               highlighted={highlighted}

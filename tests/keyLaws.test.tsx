@@ -4,6 +4,7 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { PictureState } from "../src/components/PictureState";
 import { KEY } from "../src/hooks/useRemote";
 import { SEEK_SETTLE_MS } from "../src/services/playbackRange";
+import { PLAYBACK_CHROME_TIMEOUT_MS } from "../src/services/playbackChrome";
 import type { MediaTrack } from "../src/types";
 import {
   emitPlayback,
@@ -851,13 +852,31 @@ test("double clicking anywhere in the app toggles browser fullscreen", async () 
   assert.equal(document.exitFullscreen.mock.calls.length, 0);
 
   act(() => document.dispatchEvent(new Event("fullscreenchange")));
+  press(KEY.YELLOW);
+  assert.ok(document.querySelector(".settings-host:not(.hidden) .sheet"));
+  for (const modifier of ["metaKey", "ctrlKey"] as const) {
+    const refresh = new KeyboardEvent("keydown", {
+      key: "r",
+      code: "KeyR",
+      [modifier]: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    Object.defineProperty(refresh, "keyCode", { value: 82 });
+    act(() => window.dispatchEvent(refresh));
+    assert.equal(refresh.defaultPrevented, false, `${modifier}+R was intercepted`);
+  }
   press(KEY.ESC);
+  assert.equal(document.querySelector(".settings-host:not(.hidden) .sheet"), null);
   assert.equal(document.exitFullscreen.mock.calls.length, 0);
 
+  press(KEY.YELLOW);
   pressDown(KEY.ESC);
   await settle(500);
   assert.equal(document.exitFullscreen.mock.calls.length, 1);
+  act(() => document.dispatchEvent(new Event("fullscreenchange")));
   pressDown(KEY.ESC, true);
+  assert.ok(document.querySelector(".settings-host:not(.hidden) .sheet"));
   release(KEY.ESC);
 
   act(() => panel.dispatchEvent(new MouseEvent("dblclick", { bubbles: true })));
@@ -1023,7 +1042,7 @@ const VOD_FETCH = async (input: string | URL) => {
   });
 };
 
-async function startMovie(slowPicture = 0, faultPicture = false) {
+async function startMovie(slowPicture = 0, faultPicture = false, keepControls = false) {
   await mountApp("", {
     source: XTREAM_SOURCE,
     fetchImplementation: VOD_FETCH,
@@ -1049,7 +1068,20 @@ async function startMovie(slowPicture = 0, faultPicture = false) {
     },
     { interval: 10 },
   );
+  if (!keepControls && document.querySelector(".playback-deck")) press(KEY.BACK);
 }
+
+test("a movie starts with playback controls and dismisses them after the Live banner interval", async () => {
+  await startMovie(0, false, true);
+  expect(document.querySelector(".playback-deck")).toBeTruthy();
+  expect(
+    document.querySelector('[data-control="play-pause"]')?.hasAttribute("data-selected"),
+  ).toBe(true);
+  await settle(1000);
+  expect(document.querySelector(".playback-deck")).toBeTruthy();
+  await settle(PLAYBACK_CHROME_TIMEOUT_MS - 1000);
+  expect(document.querySelector(".playback-deck")).toBeNull();
+});
 
 async function startPendingMovie() {
   let resolveUrl: ((url: string) => void) | undefined;
@@ -1078,12 +1110,40 @@ async function startPendingMovie() {
 }
 
 test.each([
-  ["Movies", "Film", "en", KEY.LEFT, KEY.RIGHT],
-  ["Series", "Show", "en", KEY.LEFT, KEY.RIGHT],
-  ["Movies", "Film", "ar", KEY.RIGHT, KEY.LEFT],
+  ["Movies", "Film"],
+  ["Series", "Show"],
+] as const)("%s details use the shared fade for entry and Back", async (mode, title) => {
+  document.documentElement.style.setProperty("--t-navigation", "0ms");
+  await mountApp("", { source: XTREAM_SOURCE, fetchImplementation: VOD_FETCH });
+  fireEvent.click(screen.getByRole("button", { name: mode, exact: true }));
+  await settle(300);
+  document.documentElement.style.setProperty("--t-navigation", "180ms");
+  fireEvent.click(screen.getByRole("button", { name: title, exact: true }));
+  const app = document.querySelector(".app")!;
+  expect(app.getAttribute("data-page-transition")).toBe("leaving");
+  expect(app.getAttribute("data-page-leave-motion")).toBe("fade");
+  expect(app.getAttribute("data-page-enter-motion")).toBe("fade");
+  expect(document.querySelector(".vod-details")).toBeNull();
+  await settle(700);
+  expect(app.getAttribute("data-page-transition")).toBe("idle");
+  expect(document.querySelector(".vod-details")).toBeTruthy();
+
+  press(KEY.BACK);
+  expect(app.getAttribute("data-page-transition")).toBe("leaving");
+  expect(app.getAttribute("data-page-leave-motion")).toBe("fade");
+  expect(app.getAttribute("data-page-enter-motion")).toBe("fade");
+  await settle(700);
+  expect(app.getAttribute("data-page-transition")).toBe("idle");
+  expect(document.querySelector(".vod-details")).toBeNull();
+});
+
+test.each([
+  ["Movies", "Film", "en", KEY.LEFT],
+  ["Series", "Show", "en", KEY.LEFT],
+  ["Movies", "Film", "ar", KEY.RIGHT],
 ] as const)(
-  "%s details give %s a Back rail in %s",
-  async (mode, title, locale, inlineStart, inlineEnd) => {
+  "%s details show %s full screen without a Back rail in %s",
+  async (mode, title, locale, inlineStart) => {
     await mountApp("", { source: XTREAM_SOURCE, fetchImplementation: VOD_FETCH, locale });
     const { translate } = await import("../src/services/locale");
     const navigationButton = screen.getByRole("button", {
@@ -1096,27 +1156,29 @@ test.each([
     const poster = screen.getByRole("button", { name: title, exact: true });
     poster.focus();
     fireEvent.click(poster);
+    expect(document.querySelector(".vod-details")).toBeTruthy();
+    expect(document.querySelector(".app.full-screen-page")).toBeTruthy();
     await settle(0);
 
-    const back = screen.getByRole("button", {
-      name: translate(locale, "common.back"),
-      exact: true,
-    });
-    expect(back.classList.contains("vod-detail-back")).toBe(true);
-    expect(back.textContent).toBe("");
-    expect(document.querySelectorAll(".vod-detail-back")).toHaveLength(1);
+    expect(
+      screen.queryByRole("button", {
+        name: translate(locale, "common.back"),
+        exact: true,
+      }),
+    ).toBeNull();
+    expect(document.querySelector(".vod-detail-back-rail")).toBeNull();
+    expect(document.querySelector(".app")?.classList.contains("app-navigation-visible")).toBe(
+      false,
+    );
     const firstAction = document.querySelector<HTMLButtonElement>(".vod-action")!;
     firstAction.focus();
     const callsBeforeBack = playCalls.length;
     press(inlineStart);
-    expect(back.hasAttribute("data-selected")).toBe(true);
-    expect(document.querySelector(".app-navigation.expanded")).toBeNull();
-    press(KEY.DOWN);
-    expect(back.hasAttribute("data-selected")).toBe(true);
-    press(inlineEnd);
     expect(firstAction.classList.contains("cursor")).toBe(true);
-    press(inlineStart);
-    press(KEY.ENTER);
+    expect(document.querySelector(".app-navigation.expanded")).toBeNull();
+    press(KEY.UP);
+    expect(firstAction.classList.contains("cursor")).toBe(true);
+    press(KEY.BACK);
     await settle(0);
 
     expect(document.querySelector(".vod-details")).toBeNull();
@@ -1128,7 +1190,7 @@ test.each([
   },
 );
 
-test("pointer Back restores the movie catalogue selection and its rendered window", async () => {
+test("Back restores the movie catalogue selection and its rendered window", async () => {
   await mountApp("", {
     source: XTREAM_SOURCE,
     fetchImplementation: async (input) => {
@@ -1169,7 +1231,7 @@ test("pointer Back restores the movie catalogue selection and its rendered windo
   );
   fireEvent.click(selected);
   await settle(0);
-  fireEvent.click(screen.getByRole("button", { name: "Back", exact: true }));
+  press(KEY.BACK);
   await settle(0);
   expect(document.querySelector(".poster-card.cursor")?.getAttribute("data-poster-index")).toBe(
     index,
@@ -1184,7 +1246,7 @@ test("pointer Back restores the movie catalogue selection and its rendered windo
   ).toEqual(renderedIndices);
 });
 
-test("pointer Back restores the movie search query, selection and rendered window", async () => {
+test("Back restores the movie search query, selection and rendered window", async () => {
   await mountApp("", { source: XTREAM_SOURCE, fetchImplementation: VOD_FETCH });
   const movies = screen.getByRole("button", { name: "Movies" });
   movies.focus();
@@ -1194,6 +1256,7 @@ test("pointer Back restores the movie search query, selection and rendered windo
   expect(document.querySelector(".vod-detail-back")).toBeNull();
   const input = screen.getByRole("textbox", { name: "Search Movies" });
   fireEvent.change(input, { target: { value: "Film" } });
+  fireEvent.click(document.querySelector<HTMLButtonElement>(".vod-search-submit")!);
   await settle(300);
   const film = screen.getByRole("button", { name: /^Film$/ });
   film.focus();
@@ -1201,7 +1264,7 @@ test("pointer Back restores the movie search query, selection and rendered windo
   const windowTransform = document.querySelector<HTMLElement>(".poster-grid")!.style.transform;
   fireEvent.click(film);
   await settle(0);
-  fireEvent.click(screen.getByRole("button", { name: "Back", exact: true }));
+  press(KEY.BACK);
   await settle(0);
   expect(document.querySelector(".vod-search")).toBeTruthy();
   expect(screen.getByRole("textbox", { name: "Search Movies" })).toHaveProperty(
@@ -1217,7 +1280,7 @@ test("pointer Back restores the movie search query, selection and rendered windo
   expect(document.querySelector(".vod-detail-back")).toBeNull();
 });
 
-test("Series pointer Back collapses episodes before restoring the catalogue", async () => {
+test("Series Back collapses episodes before restoring the catalogue", async () => {
   await mountApp("", { source: XTREAM_SOURCE, fetchImplementation: VOD_FETCH });
   const series = screen.getByRole("button", { name: "Series" });
   series.focus();
@@ -1231,12 +1294,12 @@ test("Series pointer Back collapses episodes before restoring the catalogue", as
   episodes.focus();
   fireEvent.click(episodes);
   expect(document.querySelector(".series-details.panel-open")).toBeTruthy();
-  const back = screen.getByRole("button", { name: "Back", exact: true });
-  fireEvent.click(back);
+  expect(screen.queryByRole("button", { name: "Back", exact: true })).toBeNull();
+  press(KEY.BACK);
   expect(document.querySelector(".series-details.panel-open")).toBeNull();
   expect(document.querySelector(".vod-details")).toBeTruthy();
-  expect(back.hasAttribute("data-selected")).toBe(true);
-  fireEvent.click(back);
+  expect(document.querySelector(".vod-action.cursor")).toBeTruthy();
+  press(KEY.BACK);
   expect(document.querySelector(".vod-details")).toBeNull();
   expect(document.querySelector(".poster-card.cursor")?.textContent).toContain("Show");
 
@@ -1279,21 +1342,19 @@ test.each([
     poster.focus();
     fireEvent.click(poster);
     await settle(0);
-    const back = screen.getByRole("button", { name: "Back", exact: true });
+    expect(screen.queryByRole("button", { name: "Back", exact: true })).toBeNull();
     expect(document.querySelector(".vod-details.loading")).toBeTruthy();
     press(KEY.LEFT);
-    expect(back.hasAttribute("data-selected")).toBe(true);
+    expect(document.querySelector(".app-navigation.expanded")).toBeNull();
     press(KEY.RIGHT);
-    expect(back.hasAttribute("data-selected")).toBe(true);
+    expect(document.querySelector(".vod-details.loading")).toBeTruthy();
     finishDetail!(new Response("{}", { status: 503 }));
     await settle(0);
     expect(document.querySelector(".vod-details.failed")).toBeTruthy();
-    expect(back.hasAttribute("data-selected")).toBe(true);
-    press(KEY.RIGHT);
     expect(document.querySelector(".vod-retry")?.hasAttribute("data-selected")).toBe(true);
     press(KEY.LEFT);
     const beforeBack = detailRequests;
-    press(KEY.ENTER);
+    press(KEY.BACK);
     await settle(0);
     expect(document.querySelector(".vod-details")).toBeNull();
     expect(detailRequests).toBe(beforeBack);
@@ -1301,20 +1362,8 @@ test.each([
   },
 );
 
-test("pointer Back cancels pending VOD resolution before returning to its poster", async () => {
-  const resolveUrl = await startPendingMovie();
-  const back = screen.getByRole("button", { name: "Back", exact: true });
-  expect(back.hasAttribute("disabled")).toBe(false);
-  fireEvent.click(back);
-  resolveUrl();
-  await settle(0);
-  expect(document.querySelector(".vod-details")).toBeNull();
-  expect(playCalls).toHaveLength(0);
-  expect(document.querySelector(".poster-card.cursor")?.textContent).toContain("Film");
-});
-
 test.each(["empty", "too-large"] as const)(
-  "Back returns to Retry when the raw movie detail resource is %s without a value",
+  "Back leaves Retry when the raw movie detail resource is %s without a value",
   async (state) => {
     await mountApp("", { source: XTREAM_SOURCE, fetchImplementation: VOD_FETCH });
     const movies = screen.getByRole("button", { name: "Movies" });
@@ -1332,12 +1381,10 @@ test.each(["empty", "too-large"] as const)(
         movieDetails: { ...useLibrary.getState().movieDetails, [itemKey]: { state } },
       }),
     );
-    const back = screen.getByRole("button", { name: "Back", exact: true });
-    fireEvent.focus(back);
-    press(KEY.RIGHT);
+    expect(screen.queryByRole("button", { name: "Back", exact: true })).toBeNull();
     expect(document.querySelector(".vod-retry")?.hasAttribute("data-selected")).toBe(true);
     press(KEY.LEFT);
-    press(KEY.ENTER);
+    press(KEY.BACK);
     expect(document.querySelector(".vod-details")).toBeNull();
     expect(playCalls).toHaveLength(0);
   },
@@ -2145,9 +2192,7 @@ test.each([
       await finishContentMotion();
       expect(document.querySelector(".vod-details")).toBeTruthy();
       expect(document.querySelector(".vod-action.cursor")).toBeTruthy();
-      expect(document.querySelector(".vod-detail-back")?.hasAttribute("data-selected")).toBe(
-        false,
-      );
+      expect(document.querySelector(".vod-detail-back")).toBeNull();
 
       press(KEY.BACK);
       expect(document.querySelector(".vod-details")).toBeNull();

@@ -555,11 +555,44 @@ test("Retry returns to the owning region on inline start and Back", () => {
   assert.equal(key(failed, KEY.LEFT).zone, "rail");
   assert.equal(key(failed, KEY.BACK).zone, "rail");
 
-  const search = reduceVodNavigation(root(), { type: "search-open" }, context());
+  let search = reduceVodNavigation(root(), { type: "search-open" }, context());
+  expect(key(search, KEY.DOWN, { searchRegionState: "failed" }).zone).toBe("search-field");
+  search = reduceVodNavigation(search, { type: "query-apply", value: "pilot" }, context());
   const searchRetry = key(search, KEY.DOWN, { searchRegionState: "failed" });
   assert.equal(searchRetry.zone, "retry");
   assert.equal(key(searchRetry, KEY.BACK).zone, "search-field");
 });
+
+test.each(["ltr", "rtl"] as const)(
+  "Search recovery uses vertical navigation in %s and returns to its originating control",
+  (direction) => {
+    const failed = context({ direction, searchRegionState: "failed" });
+    let search = reduceVodNavigation(root(), { type: "search-open" }, failed);
+    search = reduceVodNavigation(search, { type: "query-apply", value: "pilot" }, failed);
+    for (const control of ["search-field", "search-submit"] as const) {
+      const bar = reduceVodNavigation(
+        search,
+        { type: "search-control-focus", control },
+        failed,
+      );
+      const retry = reduceVodNavigation(bar, { type: "key", code: KEY.DOWN }, failed);
+      expect(retry.zone).toBe("retry");
+      expect(retry.search?.keyboardOpen).toBe(false);
+      expect(reduceVodNavigation(retry, { type: "key", code: KEY.UP }, failed).zone).toBe(
+        control,
+      );
+      expect(reduceVodNavigation(retry, { type: "key", code: KEY.LEFT }, failed).zone).toBe(
+        "retry",
+      );
+      expect(reduceVodNavigation(retry, { type: "key", code: KEY.RIGHT }, failed).zone).toBe(
+        "retry",
+      );
+      const loading = reduceVodNavigation(retry, { type: "retry-exit" }, failed);
+      expect(loading.zone).toBe("search-submit");
+      expect(loading.search?.keyboardOpen).toBe(false);
+    }
+  },
+);
 
 test("Search grid returns to Search controls at its edges", () => {
   let search = reduceVodNavigation(root(), { type: "search-open" }, context());
@@ -1052,7 +1085,7 @@ test.each([
   ["ltr", KEY.LEFT, KEY.RIGHT],
   ["rtl", KEY.RIGHT, KEY.LEFT],
 ] as const)(
-  "mounted %s details visit Back before application navigation and retain each action",
+  "mounted %s details keep focus inside the full screen page",
   (direction, inlineStart, inlineEnd) => {
     const onAppNavigationFocus = vi.fn();
     const { result, unmount } = renderHook(() =>
@@ -1077,7 +1110,7 @@ test.each([
       act(() => result.current.focusDetailAction(actionIndex));
       const event = { preventDefault: vi.fn() } as unknown as KeyboardEvent;
       act(() => result.current.handleKey(inlineStart, event));
-      expect(result.current.state.zone).toBe("detail-back");
+      expect(result.current.state.zone).toBe("detail-actions");
       expect(onAppNavigationFocus).not.toHaveBeenCalled();
       expect(event.preventDefault).toHaveBeenCalledOnce();
       act(() => result.current.handleKey(inlineEnd, event));
@@ -1088,18 +1121,18 @@ test.each([
     const event = { preventDefault: vi.fn() } as unknown as KeyboardEvent;
     act(() => result.current.handleKey(inlineStart, event));
     act(() => result.current.handleKey(inlineStart, event));
-    expect(onAppNavigationFocus).toHaveBeenCalledOnce();
-    expect(result.current.state.zone).toBe("detail-back");
+    expect(onAppNavigationFocus).not.toHaveBeenCalled();
+    expect(result.current.state.zone).toBe("detail-actions");
     act(() => result.current.handleKey(inlineEnd, event));
     act(() => result.current.focusDetailAction(0));
     act(() => result.current.handleKey(KEY.UP, event));
-    expect(onAppNavigationFocus).toHaveBeenCalledTimes(2);
+    expect(onAppNavigationFocus).not.toHaveBeenCalled();
     expect(result.current.state.zone).toBe("detail-actions");
     unmount();
   },
 );
 
-test("Back remains reachable during loading and keeps focus when details become ready", () => {
+test("loading details keep their action focus until the details become ready", () => {
   const origin: VodOrigin = {
     mode: "movie",
     surface: "category",
@@ -1114,29 +1147,22 @@ test("Back remains reachable during loading and keeps focus when details become 
     { type: "details-open", itemKey: origin.itemKey, origin },
     loading,
   );
-  expect(opened.details?.backReturnZone).toBe("detail-actions");
   const back = reduceVodNavigation(opened, { type: "key", code: KEY.LEFT }, loading);
-  expect(back.zone).toBe("detail-back");
+  expect(back.zone).toBe("detail-actions");
   expect(reduceVodNavigation(back, { type: "key", code: KEY.RIGHT }, loading)).toBe(back);
-  expect(key(back, KEY.UP)).toBe(back);
-  expect(key(back, KEY.DOWN)).toBe(back);
+  expect(reduceVodNavigation(back, { type: "key", code: KEY.UP }, loading)).toBe(back);
+  expect(reduceVodNavigation(back, { type: "key", code: KEY.DOWN }, loading)).toBe(back);
   const ready = reduceVodNavigation(back, { type: "details-ready" }, context());
-  expect(ready.zone).toBe("detail-back");
-  expect(key(ready, KEY.RIGHT).details?.actionIndex).toBe(0);
-  expect(key(ready, KEY.RIGHT).zone).toBe("detail-actions");
+  expect(ready.zone).toBe("detail-actions");
+  expect(ready.details?.actionIndex).toBe(0);
   const reopened = reduceVodNavigation(
     ready,
     { type: "details-open", itemKey: "movie:2", origin },
     context(),
   );
   expect(reopened.zone).toBe("detail-actions");
-  expect(reopened.details?.backReturnZone).toBe("detail-actions");
   expect(reopened.details?.actionIndex).toBe(0);
-  const noDetails = root();
-  expect(reduceVodNavigation(noDetails, { type: "detail-back-focus" }, context())).toBe(
-    noDetails,
-  );
-  expect(reduceVodNavigation(back, { type: "detail-back-focus" }, context())).toBe(back);
+  expect(key(opened, KEY.BACK).details).toBeNull();
 });
 
 test("the detail drawer owns input until physical Back closes it", () => {
@@ -1154,17 +1180,15 @@ test("the detail drawer owns input until physical Back closes it", () => {
     context(),
   );
   const drawer = reduceVodNavigation(opened, { type: "drawer", open: true }, context());
-  expect(reduceVodNavigation(drawer, { type: "detail-back-focus" }, context())).toBe(drawer);
   expect(key(drawer, KEY.LEFT)).toBe(drawer);
   const closed = key(drawer, KEY.BACK);
   expect(closed.details?.drawerOpen).toBe(false);
   expect(closed.details?.itemKey).toBe(origin.itemKey);
-  const back = reduceVodNavigation(closed, { type: "detail-back-focus" }, context());
-  expect(back.zone).toBe("detail-back");
-  expect(back.details?.backReturnZone).toBe("detail-actions");
+  expect(closed.zone).toBe("detail-actions");
+  expect(key(closed, KEY.LEFT)).toBe(closed);
 });
 
-test("detail Retry returns through Back according to the detail resource capability", () => {
+test("detail Retry stays inside the page until physical Back restores its origin", () => {
   const origin: VodOrigin = {
     mode: "movie",
     surface: "category",
@@ -1179,18 +1203,78 @@ test("detail Retry returns through Back according to the detail resource capabil
     context(),
   );
   const retry = reduceVodNavigation(opened, { type: "retry-focus" }, context());
-  const back = key(retry, KEY.LEFT);
-  expect(back.zone).toBe("detail-back");
-  expect(key(back, KEY.RIGHT, { detailRetryAvailable: true }).zone).toBe("retry");
-  expect(key(back, KEY.RIGHT, { regionState: "failed" }).zone).toBe("detail-actions");
-  expect(key(back, KEY.RIGHT, { detailActionCount: 0 })).toBe(back);
+  expect(key(retry, KEY.LEFT)).toBe(retry);
+  expect(key(retry, KEY.RIGHT, { detailRetryAvailable: true })).toBe(retry);
+  expect(key(retry, KEY.BACK).details).toBeNull();
   expect(key({ ...root(), zone: "retry" }, KEY.LEFT).zone).toBe("rail");
   const search = reduceVodNavigation(root(), { type: "search-open" }, context());
-  expect(key({ ...search, zone: "retry" }, KEY.LEFT).zone).toBe("search-field");
+  expect(key({ ...search, zone: "retry" }, KEY.LEFT).zone).toBe("retry");
+});
+
+test.each([
+  ["ltr", KEY.LEFT],
+  ["rtl", KEY.RIGHT],
+] as const)(
+  "search feedback hands its %s leading edge to the application menu",
+  (direction, inlineStart) => {
+    const onAppNavigationFocus = vi.fn();
+    const { result, unmount } = renderHook(() =>
+      useVodNavigation({
+        ...context({ direction, searchRegionState: "failed" }),
+        mode: "movie",
+        onCategorySettled: () => undefined,
+        onQuerySettled: () => undefined,
+        onPosterSettled: () => undefined,
+        onActivate: () => undefined,
+        onRetry: () => undefined,
+        onRequestExit: () => undefined,
+        onAppNavigationFocus,
+      }),
+    );
+    act(() => result.current.openSearch());
+    act(() => result.current.setQuery("Film"));
+    act(() => result.current.submitQuery());
+    act(() => result.current.focusRetry());
+    act(() => result.current.handleKey(inlineStart, { preventDefault() {} } as KeyboardEvent));
+    expect(onAppNavigationFocus).toHaveBeenCalledOnce();
+    expect(result.current.state.zone).toBe("retry");
+    expect(result.current.state.search?.applied).toBe("Film");
+    unmount();
+  },
+);
+
+test("long detail information scrolls before Down returns to playback actions", () => {
+  const onInfoScroll = vi.fn().mockReturnValueOnce(true).mockReturnValue(false);
+  const { result, unmount } = renderHook(() =>
+    useVodNavigation({
+      ...context({ detailInfoOverflow: true }),
+      mode: "movie",
+      onCategorySettled: () => undefined,
+      onQuerySettled: () => undefined,
+      onPosterSettled: () => undefined,
+      onActivate: () => undefined,
+      onRetry: () => undefined,
+      onRequestExit: () => undefined,
+      onInfoScroll,
+    }),
+  );
+  act(() => result.current.selectCategory(0, false));
+  act(() => result.current.openDetails("movie:1"));
+  act(() => result.current.focusFirstDetailAction());
+  const press = (code: number) =>
+    act(() => result.current.handleKey(code, { preventDefault() {} } as KeyboardEvent));
+  press(KEY.UP);
+  expect(result.current.state.zone).toBe("detail-copy");
+  press(KEY.DOWN);
+  expect(result.current.state.zone).toBe("detail-copy");
+  press(KEY.DOWN);
+  expect(result.current.state.zone).toBe("detail-actions");
+  expect(result.current.state.details?.actionIndex).toBe(0);
+  unmount();
 });
 
 test.each(["season-row", "episode-list", "episode-summary"] as const)(
-  "pointer Back remembers %s with the selected season and episode",
+  "physical Back closes %s while retaining the selected season and episode",
   (zone) => {
     const origin: VodOrigin = {
       mode: "series",
@@ -1214,23 +1298,16 @@ test.each(["season-row", "episode-list", "episode-summary"] as const)(
       context(),
     );
     state = { ...state, zone };
-    const back = reduceVodNavigation(state, { type: "detail-back-focus" }, context());
-    expect(back.details?.backReturnZone).toBe(zone);
-    const restored = key(back, KEY.RIGHT);
-    expect(restored.zone).toBe(zone);
-    expect(restored.episodes).toEqual(state.episodes);
-    expect(restored.details?.actionIndex).toBe(2);
-    const closed = key(back, KEY.BACK);
+    const closed = key(state, KEY.BACK);
     expect(closed.zone).toBe("detail-actions");
     expect(closed.episodes?.open).toBe(false);
-    const focused = reduceVodNavigation(closed, { type: "detail-back-focus" }, context());
-    expect(focused.details?.backReturnZone).toBe("detail-actions");
-    expect(key(focused, KEY.RIGHT).zone).toBe("detail-actions");
+    expect(closed.episodes?.episodeKey).toBe(state.episodes?.episodeKey);
+    expect(closed.episodes?.selectedSeason).toBe(state.episodes?.selectedSeason);
   },
 );
 
 test.each(["category", "search"] as const)(
-  "physical Back from the details rail restores the exact %s origin",
+  "physical Back from details restores the exact %s origin",
   (surface) => {
     const origin: VodOrigin = {
       mode: "movie",
@@ -1246,8 +1323,7 @@ test.each(["category", "search"] as const)(
       { type: "details-open", itemKey: origin.itemKey, origin },
       context(),
     );
-    const back = reduceVodNavigation(opened, { type: "detail-back-focus" }, context());
-    const restored = key(back, KEY.BACK);
+    const restored = key(opened, KEY.BACK);
     expect(restored.details).toBeNull();
     expect(restored.zone).toBe(surface === "search" ? "search-grid" : "grid");
     expect(restored.displayedCategoryKey).toBe(origin.categoryKey);
@@ -1386,6 +1462,43 @@ const detailTransitionOptions = (
   onRetry: () => undefined,
   onRequestExit: () => undefined,
   ...(onDetailsTransition ? { onDetailsTransition } : {}),
+});
+
+test("VOD typing keeps the submitted query until Search is activated and preserves both across details", () => {
+  vi.useFakeTimers();
+  const submitted = vi.fn();
+  const { result, unmount } = renderHook(() =>
+    useVodNavigation({
+      ...detailTransitionOptions(),
+      onQuerySettled: submitted,
+    }),
+  );
+  try {
+    act(() => result.current.openSearch());
+    act(() => result.current.setQuery("Film"));
+    act(() => vi.advanceTimersByTime(1000));
+    expect(result.current.state.search?.applied).toBe("");
+    expect(submitted).not.toHaveBeenCalled();
+    act(() => result.current.submitQuery());
+    expect(result.current.state.search?.applied).toBe("Film");
+    expect(result.current.state.zone).toBe("search-submit");
+    expect(submitted).toHaveBeenCalledTimes(1);
+    act(() => result.current.setQuery("Unsubmitted"));
+    act(() => vi.advanceTimersByTime(1000));
+    expect(result.current.state.search?.applied).toBe("Film");
+    expect(submitted).toHaveBeenCalledTimes(1);
+    act(() => result.current.selectItem(0));
+    act(() => result.current.openDetails("movie:9"));
+    expect(result.current.state.details?.origin.query).toBe("Unsubmitted");
+    expect(result.current.state.details?.origin.appliedQuery).toBe("Film");
+    act(() => result.current.handleKey(KEY.BACK, { preventDefault() {} } as KeyboardEvent));
+    expect(result.current.state.search?.query).toBe("Unsubmitted");
+    expect(result.current.state.search?.applied).toBe("Film");
+    expect(submitted).toHaveBeenCalledTimes(1);
+  } finally {
+    unmount();
+    vi.useRealTimers();
+  }
 });
 
 test("pointer selection preserves a partially visible poster window", () => {

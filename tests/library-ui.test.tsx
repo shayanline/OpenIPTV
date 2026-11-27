@@ -1081,20 +1081,18 @@ test("VOD browsing reaches physical edges while static headings and details stay
   }
   expect(styles).toMatch(/\.vod-screen\.safe-area \{[^}]*padding:\s*0;/);
   expect(styles).toMatch(
-    /\.vod-screen\.safe-area\.details-open \{[^}]*padding:\s*0 var\(--content-gutter\) var\(--safe-y\);/,
+    /\.vod-screen\.safe-area\.details-open \{[^}]*padding:\s*var\(--safe-y\) var\(--safe-x\);/,
   );
   expect(styles).toMatch(
     /\.vod-category-header \{[^}]*padding:\s*var\(--safe-y\) var\(--s4\) var\(--s2\);/,
   );
 });
 
-test("loaded VOD details animate in after their skeleton", () => {
+test("VOD details open without menu collapse or content entrance motion", () => {
   const styles = readFileSync("src/styles/app.css", "utf8");
+  expect(styles).toMatch(/\.full-screen-page \.app-content \{[^}]*transition:\s*none;/);
   expect(styles).toMatch(
-    /\.vod-details\.loaded \.vod-hero \{[^}]*animation:\s*vod-detail-content-in var\(--t-panel\) var\(--ease-enter\);/,
-  );
-  expect(styles).toMatch(
-    /@keyframes vod-detail-content-in[\s\S]*from \{[^}]*opacity:\s*0;[^}]*transform:\s*translateY\(var\(--s2\)\);[\s\S]*to \{[^}]*opacity:\s*1;[^}]*transform:\s*translateY\(0\);/,
+    /\.full-screen-page \.app-navigation-motion \{[^}]*transition:\s*none;/,
   );
   expect(styles).toMatch(
     /\.vod-details\.loaded \.vod-hero \{[^}]*animation:\s*none;[^}]*transform:\s*none;/,
@@ -1115,12 +1113,12 @@ test("VOD Search keeps poster columns compact like category grids", () => {
   expect(styles).toMatch(/\.vod-search \.poster-grid-row \{[^}]*justify-content:\s*center;/);
 });
 
-test("the TV edge uses a 40px Safe-Y and a 48px Safe-X", () => {
+test("every display edge uses the same 48px safe margin", () => {
   const tokens = readFileSync("src/styles/tokens.css", "utf8");
   const styles = readFileSync("src/styles/app.css", "utf8");
 
   expect(tokens).toMatch(/--safe-x:\s*48px;/);
-  expect(tokens).toMatch(/--safe-y:\s*40px;/);
+  expect(tokens).toMatch(/--safe-y:\s*var\(--safe-x\);/);
   expect(styles).toMatch(/\.app-navigation \{[^}]*padding:\s*var\(--safe-y\)/);
   expect(styles).toMatch(
     /\.panel-bar \{[^}]*padding:\s*var\(--safe-y\) var\(--safe-x\) var\(--s2\);/,
@@ -1129,13 +1127,13 @@ test("the TV edge uses a 40px Safe-Y and a 48px Safe-X", () => {
   expect(styles).toMatch(/\.vod-rail \{[^}]*padding:\s*var\(--safe-y\)/);
   expect(styles).toMatch(/\.vod-category-header \{[^}]*padding:\s*var\(--safe-y\)/);
   expect(styles).toMatch(/\.sheet-rail \{[^}]*var\(--safe-y\)/);
-  expect(styles).toMatch(/\.sheet-body \{[^}]*var\(--safe-y\)/);
+  expect(styles).toMatch(/\.sheet-page \{[^}]*padding:\s*var\(--safe-y\) 0;/);
   expect(styles).toMatch(/\.playlist-recovery \{[^}]*padding:\s*var\(--safe-y\)/);
 });
 
 test("VOD category rows keep balanced physical insets beside the divider", () => {
   const styles = readFileSync("src/styles/app.css", "utf8");
-  expect(styles).toMatch(/\.vod-rail \{[^}]*padding:\s*var\(--safe-y\) 0;/);
+  expect(styles).toMatch(/\.vod-rail \{[^}]*padding:\s*var\(--safe-y\) 0 var\(--s2\);/);
   expect(styles).toMatch(
     /\.vod-rail-window \{[^}]*left:\s*var\(--s4\);[^}]*right:\s*var\(--s4\);/,
   );
@@ -1160,47 +1158,44 @@ test("Live lists and full pages use the shared VOD insets", () => {
   expect(readFileSync("src/styles/tokens.css", "utf8")).toMatch(
     /--panel-w:\s*calc\(var\(--rail-w\) \+ var\(--list-w\)\);/,
   );
-  expect(styles).toMatch(
-    /\.sheet-body \{[^}]*padding:\s*var\(--safe-y\) var\(--content-gutter\);/,
-  );
+  expect(styles).toMatch(/\.sheet-body \{[^}]*padding:\s*0 0 0 var\(--content-gutter\);/);
   expect(styles).toMatch(/\.vod-details \{[^}]*padding:\s*0;/);
   expect(styles).toMatch(
-    /html\[dir="rtl"\] \.sheet-body \{[^}]*padding:\s*var\(--safe-y\) var\(--content-gutter\);/,
+    /html\[dir="rtl"\] \.sheet-body \{[^}]*padding:\s*0 var\(--content-gutter\) 0 0;/,
   );
   expect(styles).toMatch(/html\[dir="rtl"\] \.vod-details \{[^}]*padding:\s*0;/);
   expect(styles).toMatch(/\.sheet-rail \.rail-scroll \.row \{[^}]*margin-right:\s*0;/);
   expect(styles).toMatch(
-    /\.poster-grid-region \{[^}]*padding:\s*var\(--s2\) var\(--s4\) var\(--safe-y\);/,
+    /\.poster-grid-region \{[^}]*padding:\s*var\(--s2\) var\(--s4\) var\(--s2\);/,
   );
 });
 
-test("navigation and content surfaces share the 32px inner gutter", () => {
+test("full pages keep TV safe edges outside their shared inner gutter", () => {
   const styles = readFileSync("src/styles/app.css", "utf8");
   const tokens = readFileSync("src/styles/tokens.css", "utf8");
 
   expect(tokens).toMatch(/--content-gutter:\s*var\(--s4\);/);
   expect(tokens).toMatch(/--app-nav-gutter:\s*var\(--safe-x\);/);
   expect(styles).toMatch(/\.rail \{[^}]*padding-left:\s*0;/);
+  expect(styles).toMatch(/\.sheet \{[^}]*padding:\s*0 var\(--safe-x\);/);
   expect(styles).toMatch(
-    /\.sheet-rail \{[^}]*padding:\s*var\(--safe-y\) var\(--content-gutter\);/,
+    /\.sheet-rail \{[^}]*padding:\s*var\(--safe-y\) var\(--content-gutter\) var\(--safe-y\) 0;/,
   );
   expect(styles).toMatch(
-    /\.vod-screen\.safe-area\.details-open \{[^}]*padding:\s*0 var\(--content-gutter\) var\(--safe-y\);/,
+    /\.vod-screen\.safe-area\.details-open \{[^}]*padding:\s*var\(--safe-y\) var\(--safe-x\);/,
   );
 });
 
 test("Settings keeps vertical breathing while VOD content uses wider grid margins", () => {
   const styles = readFileSync("src/styles/app.css", "utf8");
 
-  expect(styles).toMatch(
-    /\.sheet-body \{[^}]*padding:\s*var\(--safe-y\) var\(--content-gutter\);/,
-  );
+  expect(styles).toMatch(/\.sheet-body \{[^}]*padding:\s*0 0 0 var\(--content-gutter\);/);
   expect(styles).toMatch(
     /\.vod-category-header \{[^}]*padding:\s*var\(--safe-y\) var\(--s4\) var\(--s2\);/,
   );
   expect(styles).not.toMatch(/\.vod-category-header \{[^}]*min-height:/);
   expect(styles).toMatch(
-    /\.poster-grid-region \{[^}]*padding:\s*var\(--s2\) var\(--s4\) var\(--safe-y\);/,
+    /\.poster-grid-region \{[^}]*padding:\s*var\(--s2\) var\(--s4\) var\(--s2\);/,
   );
 });
 
@@ -1481,7 +1476,7 @@ test("VOD Search leaves the keyboard before leaving the search surface", async (
   expect(document.querySelector(".vod-search")).toBeNull();
 });
 
-test("VOD Search applies a typed query after its settle delay", async () => {
+test("VOD Search applies queries only after Search or Enter", async () => {
   await mountLibrary();
   await chooseMode("Movies");
   fireEvent.click(screen.getByRole("button", { name: /^Search/ }));
@@ -1489,11 +1484,27 @@ test("VOD Search applies a typed query after its settle delay", async () => {
   const field = screen.getByRole("textbox", { name: /Search Movies/ });
 
   fireEvent.input(field, { target: { value: "Film" } });
+  await settle(500);
+  expect(document.querySelector(".vod-search .poster-card")).toBeNull();
+  expect(document.querySelector(".vod-search .search .count")).toBeNull();
+  expect(screen.getByText("Type a title, then select Search or press Enter.")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Search", exact: true }));
   await settle(200);
 
   expect(document.querySelector(".vod-search .poster-card")?.textContent).toContain(
     "Film, exactly",
   );
+  act(() => field.focus());
+  fireEvent.input(field, { target: { value: "No match" } });
+  await settle(500);
+  expect(document.querySelector(".vod-search .poster-card")?.textContent).toContain(
+    "Film, exactly",
+  );
+  expect(screen.getByText('Results for "Film". Select Search to update them.')).toBeTruthy();
+  fireEvent.keyDown(field, { keyCode: KEY.ENTER });
+  await settle(200);
+  expect(screen.getByRole("heading", { name: "No results for No match" })).toBeTruthy();
+  expect(screen.getByText("Check the spelling or try a shorter title.")).toBeTruthy();
 });
 
 test("Search grid owns focus and exits to application navigation", async () => {
@@ -1503,6 +1514,7 @@ test("Search grid owns focus and exits to application navigation", async () => {
   await settle(0);
   const field = screen.getByRole("textbox", { name: /Search Movies/ });
   fireEvent.input(field, { target: { value: "Film" } });
+  fireEvent.click(screen.getByRole("button", { name: "Search", exact: true }));
   await settle(300);
 
   fireEvent.keyDown(field, { keyCode: KEY.DOWN });
@@ -1527,15 +1539,40 @@ test("Search Retry reloads the current nonempty query without a category id", as
   await settle(0);
   const field = screen.getByRole("textbox");
   fireEvent.input(field, { target: { value: "Film" } });
+  fireEvent.click(screen.getByRole("button", { name: "Search", exact: true }));
   await settle(200);
-  fireEvent.keyDown(field, { keyCode: KEY.DOWN });
+  expect(screen.getByRole("heading", { name: "Search is unavailable" })).toBeTruthy();
+  expect(document.querySelector(".vod-search .search .count")).toBeNull();
+  press(KEY.DOWN);
   const retry = screen.getByRole("button", { name: "Retry" });
   expect(retry).toBeTruthy();
   expect(retry.getAttribute("data-selected")).toBe("true");
+  expect(document.activeElement).toBe(retry);
+  press(KEY.UP);
+  expect(document.activeElement).toBe(
+    screen.getByRole("button", { name: "Search", exact: true }),
+  );
+  act(() => field.focus());
+  press(KEY.DOWN);
+  expect(document.activeElement).toBe(retry);
+  press(KEY.UP);
+  expect(document.activeElement).toBe(field);
+  press(KEY.DOWN);
+
+  press(KEY.LEFT);
+  await settle(0);
+  expect(document.querySelector(".app-navigation.expanded")).toBeTruthy();
+  press(KEY.RIGHT);
+  await settle(0);
+  expect(document.activeElement).toBe(retry);
 
   press(KEY.ENTER);
   await settle(0);
 
+  expect(document.activeElement).toBe(
+    screen.getByRole("button", { name: "Search", exact: true }),
+  );
+  expect((field as HTMLInputElement).value).toBe("Film");
   const fetch = view.fetch as ReturnType<typeof vi.fn>;
   const indexCalls = fetch.mock.calls.filter(([input]) => {
     const url = new URL(String(input));
@@ -1726,8 +1763,7 @@ test("failed Movie details expose one local Retry action", async () => {
   await chooseMode("Movies");
   await chooseButton(/Film, exactly/);
 
-  const back = screen.getByRole("button", { name: "Back", exact: true });
-  expect(back.classList.contains("vod-detail-back")).toBe(true);
+  expect(screen.queryByRole("button", { name: "Back", exact: true })).toBeNull();
   const retry = screen.getByRole("button", { name: "Retry" });
   fireEvent.click(retry);
   expect(document.querySelector(".vod-details.loading")).toBeTruthy();
@@ -2011,12 +2047,12 @@ test("Series continuation is derived once per input change and keeps playback ta
     const lastPlayed = view.usePersonal.getState().lastPlayed;
     act(() => view.usePersonal.getState().rememberProgress(seed, 605, 3600, "pause"));
     expect(view.usePersonal.getState().lastPlayed).toBe(lastPlayed);
-    expect(screen.getByRole("button", { name: "Continue S1:E1, 50 min" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Continue S1:E1 (10:05)" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Start from beginning S1:E1" })).toBeTruthy();
     expect(derive).toHaveBeenCalledTimes(2);
 
     act(() => view.usePersonal.getState().rememberProgress(seed, 905, 3600, "pause"));
-    expect(screen.getByRole("button", { name: "Continue S1:E1, 45 min" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Continue S1:E1 (15:05)" })).toBeTruthy();
     expect(derive).toHaveBeenCalledTimes(3);
 
     act(() => view.usePersonal.setState({ progress: [] }));
@@ -2062,9 +2098,9 @@ test("Series continuation is derived once per input change and keeps playback ta
     const nextSeed = view.useLibrary.getState().progressSeedFor(detail.episodes[1], detail);
     if (!nextSeed) throw new Error("expected a progress seed for the second episode");
     act(() => view.usePersonal.getState().rememberProgress(nextSeed, 1200, 3600, "pause"));
-    expect(screen.getByRole("button", { name: "Continue S2:E1, 40 min" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Continue S2:E1 (20:00)" })).toBeTruthy();
     expect(replacement).toHaveBeenCalledTimes(2);
-    await chooseButton("Continue S2:E1, 40 min");
+    await chooseButton("Continue S2:E1 (20:00)");
     expect(playCalls[0][4]).toBe(1200);
   } finally {
     act(() => view.useLibrary.setState({ seriesContinueFor: original }));
@@ -2954,16 +2990,16 @@ test("detail titles wrap and the copy panel aligns with the poster", () => {
     /\.vod-detail-title \{[^}]*line-height:\s*1\.12;[^}]*white-space:\s*normal;[^}]*overflow-wrap:\s*break-word;/,
   );
   expect(styles).toMatch(
-    /\.vod-copy-panel \{[^}]*top:\s*12%;[^}]*bottom:\s*7%;[^}]*justify-content:\s*center;/,
+    /\.vod-hero \{[^}]*grid-template-columns:\s*minmax\(0, 1fr\) minmax\(0, 1fr\);[^}]*column-gap:\s*var\(--safe-x\);/,
   );
   expect(styles).toMatch(
-    /\.vod-hero > \.artwork,[\s\S]*top:\s*50%;[\s\S]*transform:\s*translateY\(-50%\);/,
+    /\.vod-copy-panel \{[^}]*grid-column:\s*1;[^}]*height:\s*100%;[^}]*overflow-y:\s*auto;/,
   );
   expect(styles).toMatch(
     /\.series-poster \{[\s\S]*top:\s*50%;[\s\S]*transform:\s*translateY\(-50%\) scale\(1\);/,
   );
   expect(styles).toMatch(
-    /\.vod-detail-poster-skeleton \{[\s\S]*top:\s*50%;[\s\S]*transform:\s*translateY\(-50%\);/,
+    /\.vod-detail-poster-skeleton \{[^}]*grid-column:\s*2;[^}]*justify-self:\s*end;/,
   );
 });
 

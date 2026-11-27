@@ -506,6 +506,18 @@ export async function walk(cdp, port, selectors, { before } = {}) {
             '.vod-screen .vod-title-row',
             '.vod-screen .cursor',
             '.sheet .cursor',
+            '.sheet-body',
+            '.sheet-edge-back .btn',
+            '.page-key-guide',
+            '.vod-search-bar',
+            '.playlist-shortcut h1',
+            '.playlist-shortcut-content',
+            '.option-picker-list',
+            '.dialog :focus',
+            '.diag-tester',
+            '.playback-details',
+            '.picture-state.failed',
+            '.onboard-box',
             '.onboard input:focus',
             '.onboard button:focus'
           ]) {
@@ -517,6 +529,55 @@ export async function walk(cdp, port, selectors, { before } = {}) {
                 errors.push(selector + ' leaves the safe area: ' +
                   [rect.left, rect.top, rect.right, rect.bottom].map(Math.round).join(','));
               }
+            }
+          }
+          for (const page of document.querySelectorAll(
+            '.settings-host .sheet, .vod-host .vod-screen, .playlist-shortcut, .dialog, .diag-tester, .playback-drawer'
+          )) {
+            if (!visible(page)) continue;
+            if (![...page.querySelectorAll('.hints')].some(visible)) {
+              errors.push('page is missing its remote key guide: ' + page.className);
+            }
+          }
+          for (const backdrop of document.querySelectorAll('.vod-screen.details-open .vod-backdrop')) {
+            if (!visible(backdrop)) continue;
+            const rect = box(backdrop);
+            if (rect.left > 1 || rect.top > 1 ||
+                rect.right < innerWidth - 1 || rect.bottom < innerHeight - 1) {
+              errors.push('detail backdrop does not cover the full display behind its footer: ' +
+                [rect.left, rect.top, rect.right, rect.bottom].map(Math.round).join(','));
+            }
+          }
+          for (const hero of document.querySelectorAll('.vod-hero')) {
+            const copy = hero.querySelector('.vod-copy-panel');
+            const poster = hero.closest('.series-details.panel-open')
+              ? hero.querySelector('.episode-panel')
+              : hero.querySelector(':scope > .artwork, :scope > .placeholder, :scope > canvas, .series-poster, .vod-detail-poster-skeleton');
+            if (!copy || !poster || !visible(copy) || !visible(poster)) continue;
+            const text = box(copy);
+            const image = box(poster);
+            const rtl = getComputedStyle(hero).direction === 'rtl';
+            const leading = rtl ? innerWidth - text.right : text.left;
+            const trailing = rtl ? image.left : innerWidth - image.right;
+            if (Math.abs(leading - trailing) > 1 || Math.min(leading, trailing) < safeX - 1) {
+              errors.push('detail text and poster have unequal outer margins: ' +
+                [leading, trailing].map(Math.round).join(','));
+            }
+          }
+          for (const rail of document.querySelectorAll('.sheet-edge-back')) {
+            const button = rail.querySelector('.btn');
+            if (!button || !visible(rail) || !visible(button)) continue;
+            const outer = box(rail);
+            const inner = box(button);
+            const style = getComputedStyle(rail);
+            const rtl = style.direction === 'rtl';
+            const dividerGap = rtl
+              ? inner.left - outer.left - parseFloat(style.borderLeftWidth)
+              : outer.right - parseFloat(style.borderRightWidth) - inner.right;
+            const screenGap = rtl ? innerWidth - inner.right : inner.left;
+            if (Math.abs(dividerGap - safeX) > 1 || Math.abs(screenGap - safeX) > 1) {
+              errors.push('Return button screen and divider clearances differ from the safe margin: ' +
+                [screenGap, dividerGap].map(Math.round).join(','));
             }
           }
           const navigation = document.querySelector('.app-navigation');
@@ -784,11 +845,15 @@ export async function walk(cdp, port, selectors, { before } = {}) {
   await click("Search", "!!document.querySelector('.vod-search .search-field')");
   for (const ch of "Movie 010")
     await cdp.send("Input.dispatchKeyEvent", { type: "char", text: ch });
-  await d.waitFor("!!document.querySelector('.vod-search .poster-card')");
+  await d.press(
+    "ArrowRight",
+    39,
+    "document.activeElement && document.activeElement.classList.contains('vod-search-submit')",
+  );
+  await d.press("Enter", 13, "!!document.querySelector('.vod-search .poster-card')");
   await capture(XTREAM_JOURNEYS.scopedSearchReturn);
   redesign.complete(REDESIGN_JOURNEYS.vodSearchReturn);
-  await d.press("Escape", 27, "!!document.querySelector('.vod-search .search-field')");
-  await d.press("Escape", 27, "!!document.querySelector('.poster-grid')");
+  await d.press("Escape", 27, "!!document.querySelector('.vod-catalogue .poster-grid')");
   await d.press(
     "Enter",
     13,

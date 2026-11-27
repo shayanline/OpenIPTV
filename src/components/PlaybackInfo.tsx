@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useLocale } from "../hooks/useLocale";
 import { usePlaybackPresence } from "../hooks/usePlaybackPresence";
 import { cssMs } from "../services/metrics";
-import { RETRY_DELAYS_MS, type RecoveryCause } from "../services/playbackRecovery";
+import type { RecoveryCause } from "../services/playbackRecovery";
 import type { PlaybackStats } from "../services/player";
 import { KeyGuide } from "./KeyGuide";
 
@@ -113,23 +113,6 @@ export function PlaybackInfo({
       t("playbackInfo.switches"),
       stats.switches === undefined ? missing : String(stats.switches),
     ],
-    ...(recovery?.cause
-      ? [[t("playbackInfo.recovery"), t(`recovery.cause.${recovery.cause}`)]]
-      : []),
-    ...(recovery && recovery.attempt > 0
-      ? [
-          [
-            t("playbackInfo.attemptLabel"),
-            /* A continuous reconnect has no bound, so the attempt is reported without one. */
-            recovery.continuous
-              ? String(recovery.attempt)
-              : t("playbackInfo.attempt", {
-                  attempt: recovery.attempt,
-                  total: RETRY_DELAYS_MS.length,
-                }),
-          ],
-        ]
-      : []),
   ];
 
   return (

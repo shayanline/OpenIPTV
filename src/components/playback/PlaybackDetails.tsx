@@ -4,6 +4,7 @@ import { pointerOnly } from "../../hooks/usePointerAwake";
 import { KEY } from "../../hooks/useRemote";
 import {
   artworkOf,
+  displayArtworkBox,
   paletteCss,
   peekArtworkPalette,
   POSTER_BOX,
@@ -16,12 +17,17 @@ import type { PlaybackTarget } from "../../types";
 import { Artwork } from "../Artwork";
 import { KeyGuide } from "../KeyGuide";
 import { ScrollIndicator } from "../ScrollIndicator";
+import { Icon } from "../Icon";
 import { episodeReference } from "../vod/EpisodeList";
 import { VodCredits } from "../vod/VodCredits";
 import { VodDetailTags } from "../vod/VodDetails";
 
 export interface PlaybackDetailsProps {
-  target: PlaybackTarget;
+  target: Omit<PlaybackTarget, "kind" | "mode" | "url"> & {
+    kind: PlaybackTarget["kind"] | "series";
+    mode?: PlaybackTarget["mode"];
+    url?: string;
+  };
   movie?: XtreamMovieDetail;
   series?: XtreamSeriesDetail;
   durationSeconds?: number;
@@ -51,12 +57,16 @@ function PlaybackDetailsContent({
   inputEnabled = true,
 }: PlaybackDetailsProps) {
   const { t, number, direction } = useLocale();
+  const posterBox = displayArtworkBox(POSTER_BOX);
+  const imageBox = displayArtworkBox({ width: 320, height: 180 });
   const episodePlayback = target.kind === "episode";
+  const titleDetail = movie ?? (!episodePlayback ? series : undefined);
   const episode = episodePlayback
     ? series?.episodes.find((item) => item.key === target.id)
     : undefined;
   const title =
-    (episodePlayback ? episode?.name || target.progress?.name : movie?.name) || target.name;
+    (episodePlayback ? episode?.name || target.progress?.name : titleDetail?.name) ||
+    target.name;
   const parentName = series?.name || target.progress?.parentName || "";
   const reference = episodePlayback
     ? episodeReference(
@@ -69,7 +79,10 @@ function PlaybackDetailsContent({
     : "";
   const date = episodePlayback
     ? episode?.metadata.releaseDate
-    : movie?.metadata.releaseDate || movie?.releaseDate || movie?.year || target.year;
+    : titleDetail?.metadata.releaseDate ||
+      titleDetail?.releaseDate ||
+      titleDetail?.year ||
+      target.year;
   const seconds =
     (episodePlayback
       ? (episode?.durationSeconds ?? episode?.metadata.durationSeconds)
@@ -80,15 +93,17 @@ function PlaybackDetailsContent({
       : undefined;
   const rating = episodePlayback
     ? episode?.metadata.rating
-    : movie?.metadata.rating || movie?.rating || target.rating;
+    : titleDetail?.metadata.rating || titleDetail?.rating || target.rating;
   const poster = movie?.logo || series?.logo || target.logo;
   const backdrop = episodePlayback
     ? episode?.metadata.image || series?.metadata.backdrops[0]
-    : movie?.metadata.backdrops[0];
-  const synopsis = episodePlayback ? episode?.metadata.plot : movie?.plot;
-  const mainGenre = !episodePlayback ? movie?.metadata.genre || movie?.genre : undefined;
-  const movieCountry = !episodePlayback ? movie?.metadata.country : undefined;
-  const movieAgeRating = !episodePlayback ? movie?.metadata.ageRating : undefined;
+    : titleDetail?.metadata.backdrops[0];
+  const synopsis = episodePlayback ? episode?.metadata.plot : titleDetail?.plot;
+  const mainGenre = !episodePlayback
+    ? titleDetail?.metadata.genre || titleDetail?.genre
+    : undefined;
+  const movieCountry = !episodePlayback ? titleDetail?.metadata.country : undefined;
+  const movieAgeRating = !episodePlayback ? titleDetail?.metadata.ageRating : undefined;
   const seriesDate = series?.metadata.releaseDate || series?.releaseDate || series?.year;
   const seriesRating = series?.metadata.rating || series?.rating;
   const seriesGenre = series?.metadata.genre || series?.genre;
@@ -130,6 +145,9 @@ function PlaybackDetailsContent({
   const artworkRefs = useRef<Partial<Record<DetailsArtwork["id"], HTMLButtonElement>>>({});
   const viewerRef = useRef<HTMLButtonElement>(null);
   const [viewing, setViewing] = useState<DetailsArtwork | null>(null);
+  const viewerBox = displayArtworkBox(
+    viewing?.portrait ? { width: 1280, height: 1920 } : { width: 1920, height: 1080 },
+  );
   const [imagePalette, setImagePalette] = useState<{
     url: string;
     palette: ArtworkPalette;
@@ -140,8 +158,8 @@ function PlaybackDetailsContent({
     ? {
         url: paletteSource,
         kind: "poster" as const,
-        width: portraitPalette ? POSTER_BOX.width : 320,
-        height: portraitPalette ? POSTER_BOX.height : 180,
+        width: portraitPalette ? posterBox.width : imageBox.width,
+        height: portraitPalette ? posterBox.height : imageBox.height,
       }
     : null;
   const cachedArtwork = paletteRequest
@@ -345,8 +363,8 @@ function PlaybackDetailsContent({
               src={viewing.url}
               alt={`${title}, ${viewing.label}`}
               kind="poster"
-              width={1280}
-              height={720}
+              width={viewerBox.width}
+              height={viewerBox.height}
               fit="contain"
               className="playback-details-viewer-image"
               palette={palette}
@@ -357,7 +375,10 @@ function PlaybackDetailsContent({
         ) : (
           <>
             <header className="playback-details-head">
-              <span className="playback-details-label">{t("library.details")}</span>
+              <h2 className="playback-details-label">
+                <Icon name="about" />
+                <span>{t("library.details")}</span>
+              </h2>
             </header>
             <div className="playback-details-body">
               {!!artworks.length && (
@@ -392,8 +413,8 @@ function PlaybackDetailsContent({
                           src={artwork.url}
                           alt={`${title}, ${artwork.label}`}
                           kind="poster"
-                          width={artwork.portrait ? POSTER_BOX.width : 320}
-                          height={artwork.portrait ? POSTER_BOX.height : 180}
+                          width={artwork.portrait ? posterBox.width : imageBox.width}
+                          height={artwork.portrait ? posterBox.height : imageBox.height}
                           fit="contain"
                           className="playback-details-artwork-image"
                           onPalette={
@@ -429,13 +450,9 @@ function PlaybackDetailsContent({
                         <span>{reference}</span>
                       </p>
                     ) : target.group ? (
-                      <p className="playback-details-context">
-                        {target.group}
-                      </p>
+                      <p className="playback-details-context">{target.group}</p>
                     ) : null}
-                    <h1 id="playback-details-title">
-                      {title}
-                    </h1>
+                    <h1 id="playback-details-title">{title}</h1>
                     <VodDetailTags
                       year={date}
                       rating={rating}
@@ -449,20 +466,21 @@ function PlaybackDetailsContent({
                       </div>
                     )}
                     {synopsis && (
-                      <p className="playback-details-synopsis">
-                        {synopsis}
-                      </p>
+                      <section className="playback-details-overview">
+                        <h2>{t("vod.overview")}</h2>
+                        <p className="playback-details-synopsis">{synopsis}</p>
+                      </section>
                     )}
-                    {!episodePlayback && movie && (
+                    {!episodePlayback && titleDetail && (
                       <VodCredits
                         cast={
-                          movie.metadata.cast.length
-                            ? movie.metadata.cast
-                            : movie.cast
-                              ? [movie.cast]
+                          titleDetail.metadata.cast.length
+                            ? titleDetail.metadata.cast
+                            : titleDetail.cast
+                              ? [titleDetail.cast]
                               : []
                         }
-                        director={movie.metadata.director || movie.director}
+                        director={titleDetail.metadata.director || titleDetail.director}
                       />
                     )}
                     {episodePlayback && series && showSeries && (
@@ -484,9 +502,7 @@ function PlaybackDetailsContent({
                           </div>
                         )}
                         {series.plot && (
-                          <p className="playback-details-synopsis">
-                            {series.plot}
-                          </p>
+                          <p className="playback-details-synopsis">{series.plot}</p>
                         )}
                         <VodCredits cast={seriesCast} director={seriesDirector} />
                       </section>

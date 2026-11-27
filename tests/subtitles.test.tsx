@@ -10,8 +10,8 @@ import { emitPlayback, emitSubtitle, mountApp, press, settle } from "./support/a
 /**
  * Subtitle text and the track drawers behind it.
  *
- * The layer is the application's own caption surface: whatever a provider embeds is rendered
- * as text, never as markup, inside the television safe area. The drawers are option lists
+ * The layer is the application's own caption surface, which allows subtitle formatting
+ * without provider attributes or executable content. The drawers are option lists
  * that apply immediately, keep every direction inside themselves, and restore the row that
  * is actually selected when the engine refuses a choice.
  */
@@ -54,9 +54,30 @@ afterEach(() => {
 
 // ---- the subtitle layer ----------------------------------------------------------------
 
-test("subtitle markup is rendered as text, not interpreted", () => {
-  render(<SubtitleLayer cue="<b>Provider words</b>" hidden={false} />);
-  expect(screen.getByText("<b>Provider words</b>")).toBeTruthy();
+test("subtitles render line breaks, formatting and entities without provider attributes", () => {
+  render(
+    <SubtitleLayer
+      cue={'<b class="provider" onclick="alert(1)">First &amp; second</b><br><i>Next</i><BR /><u>Last</u>\nPlain'}
+      hidden={false}
+    />,
+  );
+  expect(screen.getByText("First & second").tagName).toBe("B");
+  expect(screen.getByText("Next").tagName).toBe("I");
+  expect(screen.getByText("Last").tagName).toBe("U");
+  expect(document.querySelectorAll(".subtitle-cue br")).toHaveLength(2);
+  expect(document.querySelector(".subtitle-cue b")?.attributes).toHaveLength(0);
+  expect(subtitleText()).toContain("Last\nPlain");
+});
+
+test("subtitle content cannot introduce scripts, resources, links or direction overrides", () => {
+  render(
+    <SubtitleLayer
+      cue={'<script>alert(1)</script><style>body{display:none}</style><img src="/unwanted"><svg onload="alert(1)"><text>Hidden</text></svg><a href="javascript:alert(1)"><span dir="rtl">Caption</span></a>'}
+      hidden={false}
+    />,
+  );
+  expect(subtitleText()).toBe("Caption");
+  expect(document.querySelector(".subtitle-cue")?.children).toHaveLength(0);
 });
 
 test("an empty or hidden cue renders nothing", () => {
@@ -90,12 +111,13 @@ test("the complete controls own the cue while open and return it to the picture 
   expect(subtitleText()).toBe("A caption that stays above the entire panel");
 });
 
-test("AVPlay subtitle markup is rendered as text and clears at its duration", async () => {
+test("AVPlay subtitle markup is formatted and clears at its duration", async () => {
   await mountApp(PLAYLIST, { playerTracks: subtitleOn });
   press(KEY.ENTER);
 
-  emitSubtitle("<b>Provider words</b>", 2_000);
-  expect(screen.getByText("<b>Provider words</b>")).toBeTruthy();
+  emitSubtitle("<b>Provider words</b><br>Second line", 2_000);
+  expect(screen.getByText("Provider words").tagName).toBe("B");
+  expect(document.querySelector(".subtitle-cue br")).toBeTruthy();
 
   await settle(2_100);
   assert.equal(subtitleText(), "");

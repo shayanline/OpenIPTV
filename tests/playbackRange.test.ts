@@ -89,6 +89,9 @@ test("repeat bursts cannot accelerate seeking and release or reversal resets the
   for (let event = 1; event < 100; event += 1) {
     expect(seekStepFromKey(held, 1, true, 1000 + event)).toBe(0);
   }
+  expect(seekStepFromKey(held, 1, true, 1100)).toBe(10);
+  expect(seekStepFromKey(held, 1, true, 1199)).toBe(0);
+  expect(seekStepFromKey(held, 1, true, 1200)).toBe(10);
   expect(seekStepFromKey(held, 1, true, 2600)).toBe(20);
   expect(seekStepFromKey(held, -1, true, 2601)).toBe(10);
   expect(seekStepFromKey(held, -1, false, 5000)).toBe(10);

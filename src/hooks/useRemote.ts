@@ -164,7 +164,10 @@ export function useRemote(
   }, [handler]);
   // Keep long press listeners ahead of this stable listener when effects are installed.
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => current.current(e.keyCode, e);
+    const onKey = (e: KeyboardEvent) => {
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      current.current(e.keyCode, e);
+    };
     window.addEventListener("keydown", onKey, capture);
     return () => window.removeEventListener("keydown", onKey, capture);
   }, [capture]);

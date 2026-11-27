@@ -33,12 +33,12 @@
 /**
  * Room for a manifest, and a deliberate ceiling on one.
  *
- * A repaired playlist is a short window of a few dozen segments with long names, which measures
- * around 18KB. 64KB is generous for that and small enough that the module's memory is never
- * interesting. Anything larger is refused rather than truncated: half a playlist is a playlist
+ * Repair preserves the complete provider window and its track metadata. One MiB accommodates
+ * long segment addresses and seek history while keeping a fixed memory bound.
+ * Anything larger is refused rather than truncated: half a playlist is a playlist
  * that plays for a while and then fails somewhere the viewer cannot be told about.
  */
-#define MANIFEST_MAX 65536
+#define MANIFEST_MAX 1048576
 
 static char manifest[MANIFEST_MAX];
 static size_t manifest_length = 0;

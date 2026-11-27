@@ -7,11 +7,7 @@ import {
   type PlaybackExpansionOrigin,
 } from "../../hooks/usePlaybackExpansion";
 import { PLAYBACK_CHROME_TIMEOUT_MS } from "../../services/playbackChrome";
-import {
-  clampSeekTarget,
-  type SeekHold,
-  seekStepFromKey,
-} from "../../services/playbackRange";
+import { clampSeekTarget, type SeekHold, seekStepFromKey } from "../../services/playbackRange";
 import type { MessageKey } from "../../services/locale";
 import type { PlaybackSnapshot, PlaybackTarget } from "../../types";
 import { Artwork } from "../Artwork";
@@ -66,7 +62,7 @@ export interface PlaybackDeckProps {
   nextEnabled: boolean;
 
   onFocus(focus: PlaybackDeckFocus): void;
-  onSeek(targetSeconds: number): void;
+  onSeek(targetSeconds: number, waitForRelease?: boolean): void;
   onAction(action: PlaybackDeckAction): void;
   onClose(): void;
   onInteraction(): void;
@@ -188,7 +184,7 @@ export function PlaybackDeck({
     return () => {
       window.clearTimeout(closeTimer.current);
     };
-  }, [interact, inputEnabled]);
+  }, [interact, inputEnabled, targetKey]);
   useEffect(() => {
     const resetSeekRepeat = (event: KeyboardEvent) => {
       if (event.keyCode === KEY.LEFT || event.keyCode === KEY.RIGHT) {
@@ -268,7 +264,7 @@ export function PlaybackDeck({
       targetTouched.current = true;
       targetRef.current = next;
       setTarget(next);
-      onSeek(next);
+      onSeek(next, true);
     },
     [range, seekable, live, onFocus, onSeek],
   );
@@ -594,6 +590,7 @@ export function PlaybackDeck({
               <section
                 key="guide"
                 className={`deck-programme-panel${hasProgrammes ? " has-programmes" : ""}`}
+                data-selected={focus === "guide" && !disabled("guide") ? true : undefined}
                 aria-label={t("guide.subtitle")}
               >
                 {hasProgrammes && (
@@ -647,7 +644,9 @@ export function PlaybackDeck({
         type="button"
         className={`btn tonal deck-control ${className}`.trim()}
         data-control={control}
-        data-selected={!disabled(control) && focus === control ? true : undefined}
+        data-selected={
+          control !== "guide" && !disabled(control) && focus === control ? true : undefined
+        }
         aria-label={t(entry.key)}
         aria-pressed={control === "play-pause" ? snapshot.paused : undefined}
         disabled={disabled(control)}

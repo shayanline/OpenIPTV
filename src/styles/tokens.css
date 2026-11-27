@@ -137,7 +137,9 @@
   --content-gutter: var(--s4);
 
   --safe-x: 48px;
-  --safe-y: 40px;
+  --safe-y: var(--safe-x);
+  /* The Return rail includes its divider after one safe margin beyond the button. */
+  --page-back-w: calc(var(--s6) + var(--safe-x) + 1px);
 
   /* Fixed, because the lists render a window of rows rather than all of them and the
      arithmetic needs an exact height. ROW_BASE and RAIL_ROW_BASE in useWindowed.ts are the
@@ -203,7 +205,7 @@
   --ease-enter: cubic-bezier(0, 0, 0.2, 1);
   --ease-exit: cubic-bezier(0.4, 0, 1, 1);
   --t-fast: 150ms;
-  --t-med: 250ms;
+  --t-med: var(--t-navigation);
   /*
    * For the panels sliding in and out, which is the one movement a viewer waits on rather
    * than watches. 250ms is well inside the 100 to 500ms the motion guidance allows, but the

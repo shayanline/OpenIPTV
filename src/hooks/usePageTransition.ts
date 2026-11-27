@@ -108,7 +108,7 @@ export function usePageTransition<T>({
         if (generationRef.current !== generation) return;
         if (phaseRef.current === "leaving") settleLeaving();
         else if (phaseRef.current === "entering") settleEntering();
-      }, cssMs("--t-navigation") + 100);
+      }, cssMs("--t-navigation"));
     },
     [settleEntering, settleLeaving],
   );

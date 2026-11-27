@@ -1,12 +1,14 @@
 import { afterEach, expect, test, vi } from "vitest";
 import assert from "node:assert/strict";
-import { cleanup, fireEvent, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, screen } from "@testing-library/react";
 import { KEY } from "../src/hooks/useRemote";
 import {
   mountApp,
   panelOpen,
   played,
   press,
+  pressDown,
+  release,
   settle,
   XTREAM_SOURCE,
   xtreamFetch,
@@ -49,6 +51,47 @@ test("the panel owns directions while it is open", async () => {
 
   expect(played).toHaveLength(started);
   expect(channelUnderCursor()).toBe("Second Channel");
+});
+
+test("the clock follows the enabled setting across the Live list and playback overlays", async () => {
+  await mountApp(PLAYLIST);
+  const { useSettings } = await import("../src/stores/settings");
+  const clock = () => document.querySelector(".top-strip .clock");
+  expect(panelOpen()).toBe(true);
+  expect(clock()).toBeTruthy();
+
+  act(() => useSettings.getState().set("showClock", false));
+  expect(clock()).toBeNull();
+  act(() => useSettings.getState().set("showClock", true));
+  expect(clock()).toBeTruthy();
+
+  press(KEY.ENTER);
+  expect(panelOpen()).toBe(false);
+  expect(clock()).toBeTruthy();
+  press(KEY.RIGHT);
+  expect(document.querySelector(".playback-deck")).toBeTruthy();
+  expect(clock()).toBeTruthy();
+  act(() => useSettings.getState().set("showClock", false));
+  expect(clock()).toBeNull();
+  act(() => useSettings.getState().set("showClock", true));
+  expect(clock()).toBeTruthy();
+  press(KEY.BACK);
+  expect(clock()).toBeNull();
+
+  press(KEY.LEFT);
+  expect(panelOpen()).toBe(true);
+  expect(clock()).toBeTruthy();
+  press(KEY.YELLOW);
+  expect(document.querySelector(".sheet")).toBeTruthy();
+  expect(clock()).toBeNull();
+  press(KEY.BACK);
+  expect(clock()).toBeTruthy();
+
+  act(() => useSettings.getState().set("showClock", false));
+  press(KEY.BACK);
+  press(KEY.LEFT);
+  expect(panelOpen()).toBe(true);
+  expect(clock()).toBeNull();
 });
 
 test("pointer hover becomes the Live arrow origin without activating", async () => {
@@ -106,22 +149,73 @@ test("Enter selects the highlighted Live search result", async () => {
   expect(panelOpen()).toBe(false);
 });
 
-test("category focus settles the displayed category without activating a channel", async () => {
+test("category keydown changes the channel list before release without starting playback", async () => {
   await mountApp(PLAYLIST);
+  const started = played.length;
   press(KEY.LEFT);
   await settle();
   expect(document.querySelector(".rail .row.showing .row-label")?.textContent).toBe("News");
 
-  press(KEY.DOWN);
-  await settle();
+  pressDown(KEY.DOWN);
   expect(categoryUnderCursor()).toBe("Sport");
   expect(document.querySelector(".rail .row.showing .row-label")?.textContent).toBe("Sport");
-  expect(played[played.length - 1]?.name).not.toBe("Third Channel");
+  expect(document.querySelector(".list .row-label")?.textContent).toBe("Third Channel");
+  expect(played).toHaveLength(started);
+  release(KEY.DOWN);
+  pressDown(KEY.UP);
+  expect(document.querySelector(".rail .row.showing .row-label")?.textContent).toBe("News");
+  expect(document.querySelector(".list .row-label")?.textContent).toBe("First Channel");
+  release(KEY.UP);
+  pressDown(KEY.DOWN);
+  expect(document.querySelector(".rail .row.showing .row-label")?.textContent).toBe("Sport");
+  release(KEY.DOWN);
 
   press(KEY.RIGHT);
   await settle();
   expect(document.querySelector(".rail .row.showing .row-label")?.textContent).toBe("Sport");
   expect(channelUnderCursor()).toBe("Third Channel");
+  expect(played).toHaveLength(started);
+});
+
+test("held category commands refresh the channel list before release without rebuilding every repeat", async () => {
+  await mountApp(`${PLAYLIST}
+#EXTINF:-1 group-title="Culture",Culture Channel
+http://example.invalid/4.m3u8
+#EXTINF:-1 group-title="Music",Music Channel
+http://example.invalid/5.m3u8
+`);
+  press(KEY.LEFT);
+  await settle();
+  const started = played.length;
+  const showing = () =>
+    document.querySelector(".rail .row.showing .row-label")?.textContent;
+
+  pressDown(KEY.DOWN);
+  expect(showing()).toBe("Sport");
+  await settle(40);
+  pressDown(KEY.DOWN, true);
+  await settle(40);
+  pressDown(KEY.DOWN, true);
+  await settle(40);
+  pressDown(KEY.DOWN, true);
+  expect(categoryUnderCursor()).toBe("News");
+  await settle(29);
+  expect(showing()).toBe("Sport");
+  await settle(1);
+  expect(showing()).toBe("News");
+  expect(document.querySelector(".list .row-label")?.textContent).toBe("First Channel");
+
+  await settle(10);
+  pressDown(KEY.DOWN, true);
+  await settle(40);
+  pressDown(KEY.DOWN, true);
+  await settle(100);
+  expect(showing()).toBe("Culture");
+  expect(document.querySelector(".list .row-label")?.textContent).toBe("Culture Channel");
+  release(KEY.DOWN);
+  await settle();
+  expect(showing()).toBe("Culture");
+  expect(played).toHaveLength(started);
 });
 
 test("left and right switch between lists without losing either cursor", async () => {

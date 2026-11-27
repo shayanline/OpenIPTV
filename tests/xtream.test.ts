@@ -14,6 +14,7 @@ import {
   loadXtreamMovies,
   loadXtreamSeries,
   loadXtreamSeriesDetail,
+  searchXtreamCatalogue,
 } from "../src/services/xtream";
 
 const source: XtreamSource = {
@@ -806,6 +807,106 @@ describe("hostile provider data", () => {
 });
 
 describe("bounded requests", () => {
+  test("query search streams a catalogue beyond the full index budget without retaining unrelated artwork", async () => {
+    const session = await authenticate();
+    const logo = `https://images.example/${"x".repeat(64 * 1024)}`;
+    const payload = JSON.stringify([
+      ...Array.from({ length: 220 }, (_, index) => ({
+        stream_id: index + 1,
+        name: `Other title ${index}`,
+        stream_icon: logo,
+      })),
+      { stream_id: 1000, name: "A Needle story" },
+      { stream_id: 1001, name: "Needle first" },
+    ]);
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(payload, {
+        headers: { "Content-Length": String(256 * 1024 * 1024) },
+      }),
+    );
+    const result = await searchXtreamCatalogue(session, "pl", "movie", "Needle");
+    expect(result.matches.map((item) => item.name)).toEqual(["Needle first", "A Needle story"]);
+    expect(result.total).toBe(2);
+    expect(JSON.stringify(result).length).toBeLessThan(2048);
+  }, 20_000);
+
+  test.each([
+    ["movie", loadXtreamMovies, "stream_id"],
+    ["series", loadXtreamSeries, "series_id"],
+  ] as const)(
+    "the %s index discards verbose provider fields before applying its retained budget",
+    async (_kind, load, identity) => {
+      const session = await authenticate();
+      const padding = "x".repeat(512 * 1024);
+      const payload = JSON.stringify(
+        Array.from({ length: 27 }, (_, index) => ({
+          [identity]: index + 1,
+          name: `Title ${index}`,
+          plot: padding,
+        })),
+      );
+      expect(payload.length).toBeGreaterThan(12 * 1024 * 1024);
+      vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+        new Response(payload, { headers: { "Content-Length": String(payload.length) } }),
+      );
+      const items = await load(session, "pl", "");
+      expect(items).toHaveLength(27);
+      expect(items[0].name).toBe("Title 0");
+      expect(JSON.stringify(items).length).toBeLessThan(16 * 1024);
+    },
+    20_000,
+  );
+
+  test("index records survive UTF-8 and escaped JSON boundaries between chunks", async () => {
+    const session = await authenticate();
+    const title = 'Film [one] } "quoted" 🎬';
+    const bytes = new TextEncoder().encode(
+      JSON.stringify([
+        { stream_id: 1, name: title, metadata: { text: '\\"}]' } },
+        { stream_id: 2, name: "Another film" },
+      ]),
+    );
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        for (let index = 0; index < bytes.length; index += 3) {
+          controller.enqueue(bytes.slice(index, index + 3));
+        }
+        controller.close();
+      },
+    });
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(new Response(body));
+    const items = await loadXtreamMovies(session, "pl", "");
+    expect(items.map((item) => item.name)).toEqual([title, "Another film"]);
+  });
+
+  test.each(['[{"stream_id":1},]', '[{"stream_id":1} garbage]', '[{"stream_id":1}'])(
+    "malformed streamed indexes fail without publishing partial results: %s",
+    async (payload) => {
+      const session = await authenticate();
+      vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(response(payload));
+      await expect(loadXtreamMovies(session, "pl", "")).rejects.toMatchObject({
+        reason: "malformed",
+      });
+    },
+  );
+
+  test("the normalized index still refuses data beyond its retained memory budget", async () => {
+    const session = await authenticate();
+    const logo = `https://images.example/${"p".repeat(300)}.jpg`;
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      response(
+        Array.from({ length: 28_000 }, (_, index) => ({
+          stream_id: index + 1,
+          name: "n".repeat(120),
+          stream_icon: logo,
+        })),
+      ),
+    );
+    await expect(loadXtreamMovies(session, "pl", "")).rejects.toMatchObject({
+      reason: "too-large",
+    });
+  }, 20_000);
+
   test("a declared body over the limit rejects before reading, leaking no credentials", async () => {
     const session = await authenticate();
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
@@ -886,7 +987,7 @@ describe("bounded requests", () => {
       });
     const fetch = vi
       .spyOn(globalThis, "fetch")
-      .mockResolvedValueOnce(over(13))
+      .mockResolvedValueOnce(over(129))
       .mockResolvedValueOnce(over(5));
 
     await expect(loadXtreamMovies(session, "pl", "")).rejects.toMatchObject({

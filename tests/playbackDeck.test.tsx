@@ -527,6 +527,7 @@ test("Live programme rows and their clock belong only to the trailing Guide card
       new Date(seconds * 1000),
     );
   renderDeck({
+    focus: "guide",
     snapshot: finiteSnapshot({ seekRange: null }),
     metadata: {
       kind: "live",
@@ -549,6 +550,8 @@ test("Live programme rows and their clock belong only to the trailing Guide card
   const next = copy?.querySelector(".deck-programme-next");
   expect(panel?.tagName).toBe("SECTION");
   expect(panel?.getAttribute("aria-label")).toBe("Programme Guide");
+  expect(panel?.hasAttribute("data-selected")).toBe(true);
+  expect(panel?.querySelector("button")?.hasAttribute("data-selected")).toBe(false);
   expect(panel?.classList.contains("has-programmes")).toBe(true);
   expect(copy?.children).toHaveLength(2);
   expect(copy?.firstElementChild).toBe(current);
@@ -699,9 +702,9 @@ test("the programme card shares the banner secondary palette and retains Guide s
   expect(rule(".deck-programme-title")).toMatch(/min-width:\s*0(?:px)?;/);
   expect(rule(".deck-programme-time")).toContain("flex: 0 0 auto;");
   expect(rule(".deck-programme-time")).toContain("white-space: nowrap;");
-  expect(rule('.deck-control[data-control="guide"] .icon')).toContain("width: 58px;");
-  expect(rule('.deck-control[data-control="guide"] .icon')).toContain("height: 58px;");
-  expect(rule('.deck-control[data-control="guide"] .icon')).toContain("padding: 17px;");
+  expect(rule(".deck-control .icon")).toContain("width: 50px;");
+  expect(rule(".deck-control .icon")).toContain("height: 50px;");
+  expect(styles).not.toContain('.deck-control[data-control="guide"] .icon {');
   expect(rule(".deck-controls")).toMatch(
     /grid-template-columns: minmax\(0(?:px)?, 1fr\) auto minmax\(0(?:px)?, 1fr\);/,
   );
@@ -1148,15 +1151,15 @@ test("Left and Right adjust the target and commit once input settles", () => {
   press(KEY.RIGHT);
   press(KEY.RIGHT);
   assert.equal(document.querySelector(".seekbar-target")?.textContent, "1:20");
-  expect(props.onSeek).toHaveBeenNthCalledWith(1, 70);
-  expect(props.onSeek).toHaveBeenNthCalledWith(2, 80);
+  expect(props.onSeek).toHaveBeenNthCalledWith(1, 70, true);
+  expect(props.onSeek).toHaveBeenNthCalledWith(2, 80, true);
   advance(400);
   expect(props.onSeek).toHaveBeenCalledTimes(2);
 
   // The target clamps at the media edges rather than running past them.
   for (let index = 0; index < 40; index += 1) press(KEY.RIGHT);
   advance(400);
-  expect(props.onSeek).toHaveBeenLastCalledWith(300);
+  expect(props.onSeek).toHaveBeenLastCalledWith(300, true);
 });
 
 test("held seek accelerates with elapsed time rather than a burst of repeat events", () => {
@@ -1179,7 +1182,7 @@ test("held seek accelerates with elapsed time rather than a burst of repeat even
   });
 
   expect(document.querySelector(".seekbar-target")?.textContent).toBe("3:10");
-  expect(props.onSeek).toHaveBeenLastCalledWith(190);
+  expect(props.onSeek).toHaveBeenLastCalledWith(190, true);
 });
 
 test("pointer seeking clamps through the range and commits like the remote", () => {
@@ -1436,12 +1439,14 @@ test("shows the reported dynamic range without guessing a PQ format", () => {
   expect(label?.nextElementSibling?.textContent).toBe("PQ (HDR)");
 });
 
-test("exposes a stable sanitised recovery cause diagnostic", () => {
+test("retains the recovery diagnostic without displaying recovery information", () => {
   const target = "http://viewer:secret@example.invalid/live/channel.m3u8";
   render(<PlaybackInfo read={() => null} recovery={{ cause: "engine-network", attempt: 2 }} />);
   const diagnostics = document.querySelector("[data-recovery-cause]");
   expect(diagnostics?.getAttribute("data-recovery-cause")).toBe("engine-network");
-  expect(diagnostics?.textContent).toContain("A network fault interrupted playback");
+  expect(diagnostics?.textContent).not.toContain("A network fault interrupted playback");
+  expect(diagnostics?.textContent).not.toContain("Recovery");
+  expect(diagnostics?.textContent).not.toContain("Attempt");
   expect(diagnostics?.textContent).not.toContain(target);
   expect(diagnostics?.textContent).not.toContain("secret");
 });

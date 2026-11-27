@@ -2,7 +2,8 @@ import type { SeekRange } from "../types";
 
 export const DEFAULT_SEGMENT_SECONDS = 3;
 export const SEEK_STEP_SECONDS = 10;
-export const SEEK_SETTLE_MS = 750;
+export const SEEK_SETTLE_MS = 375;
+export const SEEK_HOLD_FALLBACK_MS = 1000;
 export const SEEK_TIMEOUT_MS = 5000;
 
 export const seekStepForHold = (heldMs: number): number => {
@@ -33,7 +34,7 @@ export function seekStepFromKey(
     return SEEK_STEP_SECONDS;
   }
   // Time drives acceleration and caps unusually fast remote repeat streams.
-  if (now - hold.steppedAt < 200) return 0;
+  if (now - hold.steppedAt < 100) return 0;
   hold.steppedAt = now;
   return seekStepForHold(now - hold.startedAt);
 }

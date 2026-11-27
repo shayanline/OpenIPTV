@@ -25,13 +25,13 @@ An ordinary channel press commits after two animation frames, which let feedback
 
 Playback controls use the banner's opacity and vertical translation entrance through one shared animation rule, including its duration and easing. Live, Movies and Series use that same rule whether or not the banner was visible. Opening controls never measures or scales individual banner parts.
 
-The navigation menu's painted background and border move through a fixed width pseudo element using the channel panel's transform duration and easing. The content plane moves through a transform too. Menu and action widths update once, while labels animate only opacity and translation, so expanding the menu does not lay out its contents on every animation frame. The parked Live rail is measured before its entering transition starts so a busy renderer cannot combine the hidden and visible states into one frame. Search waits until that transition is idle before focusing its input, which keeps the native keyboard work out of the rail entrance.
+The navigation menu's painted background and border move through a fixed width pseudo element using the channel panel's transform duration and easing during ordinary channel browsing. Section changes between Live, Movies, Series and Search fade only the content area beside the application menu. The fade boundary follows the menu's collapsed or expanded width and mirrors in RTL. Full screen pages such as Settings, Change Playlist and VOD details fade the whole screen, including the menu. Rail geometry changes without animation during page navigation. Search waits until the fade is idle before focusing its input.
 
 Playback information and the banner share opacity and vertical translation animations for their entrance and exit. Dismissal releases accessibility immediately while the report finishes its exit. Information reserves its diagnostic rows before its first native read and samples after the entrance has painted, so synchronous AVPlay queries do not interrupt that animation. It never waits behind a full screen transition mask. Programme Guide uses the same right drawer as audio and subtitles, and opening it from the Live browser leaves that browser stationary underneath. Track selection records the viewer's intent before entering the player, updates accepted native selection flags in the cached track list and prevents synchronous track events from recursively selecting again.
 
 Loading preserves the initial decision to resume a picture or show the browser. It does not reveal navigation or change the Live panel's motion owner while the remembered channel's playlist arrives.
 
-Settings sections and their nested content tabs switch immediately, without fades or timed input blocking. Focus moves to the new section as part of its layout, while Back still restores the control and scroll position that opened a detail.
+Settings sections and their nested content tabs switch immediately when the surrounding page remains in place. Entering or leaving a full screen Settings detail uses the shared page fade, while Back restores the control and scroll position that opened that detail.
 
 The playlist switcher pauses the current picture and silences its output while it owns the screen. Closing it resumes the same item only if it was playing before the switcher opened. A playlist change stops the old player and defers tuning until Live is entered with the new lineup ready. Each playlist resumes its own saved Live channel, with its first channel as the fallback when no valid remembered channel remains.
 
@@ -152,11 +152,7 @@ the top with down, and reaching it from the bottom returns to the bottom with up
 switch columns without changing their remembered rows. Search and Settings themselves are a
 two control horizontal ring. Vertical movement leaves the ring for the list edge that matches the
 pressed direction.
-Arriving at a category is the most expensive thing this app does, because every row is thrown
-away and rebuilt from channel objects no memo has seen, and doing that on each press of a held
-key measured at six frames a second on a 2020 set. So the highlight moves at once and the column
-catches up 150ms after the pressing stops: walking past eight categories builds one list instead
-of eight. It is the same idea as the tuner waiting before it changes channel.
+Fresh Live category presses update the channel column on keydown without waiting for release. Held repeats move the cursor on every command, while the channel column refreshes at most once every 150ms. The next deadline is measured from the last applied category rather than the last repeated command, so the column keeps following while the button remains held. Category and channel cursor changes commit together, and category browsing never tunes a channel.
 
 Focus and selection are drawn differently, because the guidelines treat them as different
 states: the row the cursor is on inverts to a solid light fill only in the pane that holds the
@@ -175,13 +171,7 @@ address in Settings already relies on. While it has the field, left and right ar
 digits are text: a viewer correcting the third letter of a name must not be thrown into the
 category rail, and 0-9 cannot be dialling channels while somebody is typing.
 
-Two things about it are performance decisions rather than design ones. The query is answered
-150ms after the last keystroke, the same debounce the rail uses, because twelve thousand name
-comparisons is 60 to 120ms on a 2020 set and typing "sport" would otherwise search five times.
-And the results are capped at 300 with the header owning up to it, because one letter matches
-thousands and nobody walks to row four hundred. The cap is per rank rather than per result, so a
-channel actually called "BBC One" cannot be crowded out by three hundred channels with "bbc"
-buried in the middle of their names.
+Live search waits 150ms after the last keystroke to avoid running a catalogue query for each character. Results are capped at 300 per rank, so an exact or prefix match cannot be crowded out by matches elsewhere in a channel name.
 
 Choosing a result takes the rail to that channel's category, exactly as dialling a number does.
 Otherwise channel up and down would walk a category the playing channel is not in, and leaving
@@ -244,9 +234,25 @@ The category rail contains Continue watching when it has resolved progress, Favo
 
 Category badges count provider titles in their exact normalized category rather than episodes, without applying hidden or personal view filters. A successful category frame is preferred, followed by a valid provider total and then an explicitly loaded complete index. Counts are reused only within the same playlist and source version. An initial empty index does not qualify as loaded, so unknown counts remain blank. Badge rendering does not start catalogue requests, read additional disk data or persist count records because those operations would delay navigation solely to populate badges.
 
-Movie and Series search loads the complete index only after Search or All is selected. Input changes immediately, ranked results settle after 150 milliseconds, names that begin with the query precede names that contain it, and the grid retains at most 300 matches while reporting the complete count. Back restores the exact category or search result origin.
+Movie and Series search submits when Search is activated or Enter is pressed in its input. Typing edits the draft without applying it or starting a search request. Previous results remain tied to their submitted query until the next submission, with a notice when the draft differs. The field and button share one height. Search has distinct prompt, loading, empty and error responses, while result counts stay hidden until a completed search. Down reaches Retry from either search control, and Up returns to the control that led there. Retrying preserves the query and focuses Search without reopening the keyboard. Ranked names that begin with the query precede names that contain it, and the grid retains at most 300 matches. Back restores the exact category or search result origin, including the submitted query and any unsent draft.
 
-Movie details contain the provider title, artwork, supplied metadata, synopsis and playback actions. Movie and Series favourites are the final full button in the action column, sharing the playback buttons' focus and hover treatment. Series details keep the same title and hero geometry while Episodes replaces the poster region with a season selector and windowed episode list. Its preview stacks a full width thumbnail above the title, metadata and scrollable description. Series Continue is the only episode resume path, while a manually selected episode always starts from zero.
+Complete Movie and Series indexes normalize each provider record as the response arrives, rather than retaining the whole raw payload. The raw response is limited to 128 MiB, while retained normalized records share a 12 MiB budget. A single record is also bounded. Parsing yields between short work slices, and complete index requests have a bounded two minute timeout. Category and detail request limits remain unchanged. An index that exceeds these limits fails without publishing partial results.
+
+Browser native playback requests anonymous CORS access because cross origin media otherwise hides embedded text tracks. A startup access failure retries once without CORS so providers that permit ordinary video playback can still play. Native track discovery refreshes at metadata, data readiness, canplay and playing events, rebinding listeners if the browser replaces its track lists. Browsers may still omit embedded tracks for unsupported containers or codecs. Playback information identifies native file playback separately from native HLS.
+
+Movie and Series details use the cinematic layout with a bounded synopsis, compact genre lines and aligned director and cast rows. Resume labels use the playback timestamp format, which preserves seconds and displays hours when needed. Series continuation shows the episode reference and resume position. Information opens the same full metadata surface as playback controls, where the complete description, credits, poster and backdrop remain available. This surface owns the details drawer level in the application stack and restores the originating action on dismissal. Loading skeletons share the preview and action geometry and retain the poster radius. Favourites remain the final action. Series details keep the same hero geometry while Episodes replaces the poster region with the episode list.
+
+The synthetic Continue watching category uses a clock icon, while Favourites uses a star in Live, Movies and Series. Icons follow the current focus colour and reading direction. Provider categories retain their original labels without inheriting icons from names that happen to match a synthetic category.
+
+Loading action placeholders use the same action lists as the loaded detail page, based on the available progress and metadata. Large detail posters request a 360 by 540 pixel base rather than stretching the grid thumbnail. Detail posters, episode previews and information artwork account for up to two device pixels per CSS pixel, with a ceiling of 2,073,600 pixels per display request. Size remains part of the cache key, so a large view cannot reuse a smaller derivative. Grid thumbnail sizes and the existing cache and concurrency limits remain unchanged. Artwork can still be limited by the resolution supplied by the provider.
+
+Submitted searches reuse an available complete index or stream the provider response while retaining no more than 300 entries in each ranking group. Only the final 300 results enter the interface. Unrelated records are discarded immediately, so search does not inherit the full catalogue retention or response byte limit. Record size, retained result bytes, work slices and the request deadline remain bounded. Identity tracking has both a character budget and a count ceiling, after which the total becomes a lower bound. Six recent query results are cached in memory and participate in metadata lookup. Owner changes and cache resets cancel outstanding queries.
+
+Notifications use a minimum bottom inset of 2.5 times the vertical safe margin. Playback overlays can increase this clearance. Dialog and page fades share the navigation duration, including the transition fallback, while reduced motion still disables them. Seekbar direction presses update a preview without pausing playback. Release starts the 375ms settle period, while a one second fallback covers remotes that do not send release events.
+
+Playback aspect choices place Fit before Fill and Stretch. Fit is the default for new or reset preferences, while an existing saved choice remains unchanged.
+
+Playlist loading failures retain the selected content section and keep the application menu available. Selecting Live, Movies, Series or Search retries loading for that context. The recovery page shows the playlist and context above its error, offers Retry and Manage playlists, and places the key guide at the bottom safe edge. The leading arrow moves from Manage playlists to Retry, then from Retry into the menu. Up and Down provide the same action order without wrapping. Exit leaves the underlying menu visibility unchanged while its modal owns input.
 
 Movie, Series and finite Details country flags use only structured provider country metadata. A private table matches normalized ISO2 codes, ISO3 codes, canonical English names and reviewed aliases exactly. The whole field is matched before splitting on `;`, `/`, `|`, `&` or `+`. Each resulting chunk is matched as a whole name before splitting on commas or the word `and` surrounded by whitespace. Unsupported or ambiguous segments are omitted, while recognized list entries retain provider order after deduplication. At most 6 flags appear, and inputs longer than 512 characters are rejected. No country is inferred from a title, group or language, and provider data is never rewritten.
 
@@ -276,7 +282,27 @@ Provider detail editors and ordering views offer a tonal Reset button. In a deta
 
 Ordering Reset clears only the current section's or category's saved placements and returns that list to provider order through the optimistic queue. Choosing Custom again starts from provider order. Other names, numbers, visibility, memberships and sections remain unchanged.
 
-Every nested Settings detail carries one narrow Back rail beside the content. Directional input routes from the body edge to Back to the application sidebar, then restores the remembered control on return. While a managed playlist's catalogue is being read, a centered spinner has an accessible label naming that playlist. Back remains reachable before the content arrives.
+All TV and laptop app pages share a 48px safe margin on every display edge, including the application menu, playback overlays, forms and dropdowns. Backgrounds can fill the display. The inner Return button has 48px between its outer edge and the display, with another 48px between the button and its divider. Internal content gutters remain separate from these screen margins. A Settings page reserves its safe margin outside the scrolling body so its contents cannot scroll through the protected display edges.
+
+Movies and Series details share a two column layout with equal outer margins. Each side adds a 5% inset within the 48px TV safe area, matching the text's leading edge to the poster's trailing edge. Text occupies the leading column, while poster artwork aligns to the far edge of the trailing column. Loading artwork follows the same grid and uses the same corner radius as loaded artwork. Both detail pages keep a remote key guide below the content with matching horizontal insets, and poster sizes adjust for shorter viewports. Settings details, search pages and dialogs also show the shared navigation guide.
+
+Each saved playlist remembers its own Live, Movies or Series section. Activating another playlist reads that destination's saved section without replacing it with the outgoing playlist's section. If the remembered section is unavailable, the app uses the first supported section. Switching playlists into Live restores the destination's remembered channel with the browser open and focused on that channel. Returning from Movies or Series to Live also keeps the browser open and focuses the remembered channel, including after its playback starts.
+
+Movie and Series details use the shared page fade for entry and exit. Their layout changes under the fade without moving or collapsing the application menu. Metadata loads into the committed detail page without adding another navigation delay.
+
+Movie and Series backdrops cover the full page behind the content, remote key guide and display safe margins. The programme guide action in playback controls highlights its whole information wrapper rather than the icon button inside it.
+
+Browser fullscreen requests Escape locking where supported and permitted. A short Escape press follows the ordinary Back action, while holding Escape exits fullscreen without also navigating through pages. Browser shortcuts such as Cmd+R and Ctrl+R remain available, including in the remote key tester.
+
+Modal key guides share the action footer with their buttons and show Select and Back without the full page movement badges. Movies and episodes start with playback controls open on Play/Pause. Their dismissal timer uses the same interval as the Live banner and restarts for each playback target.
+
+Secondary playback controls share the Previous and Next geometry, while Play/Pause remains larger. The Live and loading indicators use the same visible circle size as secondary controls. Disabled controls use dimmed, hollow circles with a dashed edge and never acquire the active hover fill. Seek repeats accept a new step every 100ms, while the preview commits after 375ms without another step.
+
+The hidden application menu retains its last visible expansion while a full screen inner page is open. Entering and returning from those pages updates menu and content geometry without a collapse, slide or label transition. Main section changes retain the menu's normal collapse animation, while the content fade boundary follows its moving edge and the Live rail stays stationary.
+
+Native browser audio and subtitle lists are observed after metadata loading as well as when tracks are added, removed or changed. Tracks that arrive later update the playback controls without reopening the stream. The available choices still depend on the formats and track APIs that the browser exposes.
+
+Settings and Change Playlist use the shared page fade for entry and exit, without a separate wait for the application menu to collapse. Their full screen inner pages use the same transition. Content and the controls on Saved Playlists, Movie details and Series details stay inside the shared TV safe margins, while backgrounds can fill the display. Every nested Settings detail carries one narrow Back rail beside the content. Directional input stays inside the page and restores the remembered body control when leaving Back. While a managed playlist's catalogue is being read, a centered spinner has an accessible label naming that playlist. Back remains reachable before the content arrives.
 
 Settings dialogs and row action menus keep dismissal controls in a footer separated by a divider. Forms retain Cancel and Save, while the order dialog places Reset beside Close. The read only provider identity wrapper has a 64px minimum height matching the adjacent Reset control.
 
@@ -291,6 +317,10 @@ Live channel selection updates memory immediately and keeps its short launch key
 M3U overlay references use hexadecimal fingerprint identities rather than provider ids that may contain stream addresses. Reconciliation checks a complete fingerprint before considering a unique base fingerprint, while occurrence suffixes never fall back to another occurrence. Ambiguous overrides and memberships remain unavailable for explicit viewer action.
 
 The IndexedDB cache has a fixed 24 MiB budget split into 12 MiB for playlists and catalogue data, 8 MiB for JPEG poster derivatives, and 4 MiB for PNG logo derivatives. Each class evicts its own least recently used entries, so poster browsing cannot evict the catalogue needed at launch. Diagnostics reports total usage and each class.
+
+Small metadata payloads remain in a separate memory cache bounded to 4 MiB and 64 entries. Reads refresh their eviction order, while explicit cache removal invalidates pending memory fills. Unpersisted warm data remains usable when IndexedDB is unavailable without contributing to reported disk usage. Category and search arrays use UTF-8 JSON blobs on disk so a normalized index does not double its storage cost as a UTF-16 string. Readers also accept legacy string entries.
+
+Playlist switching cancels obsolete artwork requests and warming without discarding finished bitmaps. Cache reads refresh bitmap eviction priority, while explicit artwork clearing still releases every bitmap. This preserves warm returns within the existing poster and logo limits without increasing download or decode concurrency.
 
 `services/artwork` owns visible reference counts, queue cancellation, compressed byte limits, idle disk writes and independent bitmap limits. Its existing hard ceilings remain 18 load slots and 2 decode slots. A load slot remains held while decoding, which also bounds completed response buffers. Active jobs keep their slots when capacity shrinks until their native work actually finishes. Visible requests bypass the background quota, promote existing queued jobs and preempt unrelated unclaimed warming. Idle logo warming fills the available prefetch slots instead of processing every device through one serial chain.
 

@@ -9,6 +9,7 @@ import {
   isAtLiveEdge,
   safeLiveTarget,
   SEEK_SETTLE_MS,
+  SEEK_HOLD_FALLBACK_MS,
   usefulLiveRange,
 } from "../services/playbackRange";
 import {
@@ -74,7 +75,8 @@ export interface PlaybackController {
   setPlaying(play: boolean): boolean;
   togglePlaying(): boolean;
   seekBy(deltaSeconds: number): void;
-  seekTo(seconds: number): void;
+  seekTo(seconds: number, waitForRelease?: boolean): void;
+  settleSeek(): void;
   /**
    * Commit a debounced seek now rather than after its settle period, so dismissing the
    * controls never leaves a pending intent to fire behind whatever opened next.
@@ -895,6 +897,11 @@ export function usePlaybackController(options: PlaybackControllerOptions): Playb
         return;
       }
       seekInFlight.current = session;
+      if (playingIntent.current && parts.current.phase === "playing") {
+        engine.pause();
+        coordinator.current.paused(true);
+        parts.current.phase = "paused";
+      }
       setSeeking(true);
       const clamped = clampSeekTarget(session.target, range);
       const token = tuneToken.current;
@@ -977,7 +984,7 @@ export function usePlaybackController(options: PlaybackControllerOptions): Playb
   }, [commitSeek]);
 
   const queueSeek = useCallback(
-    (seconds: number, deltaSeconds = 0, goLive = false) => {
+    (seconds: number, deltaSeconds = 0, goLive = false, waitForRelease = false) => {
       const target = currentRef.current;
       if (!target) return;
       const range = parts.current.seekRange ?? finiteSeekRange(parts.current.duration);
@@ -985,19 +992,8 @@ export function usePlaybackController(options: PlaybackControllerOptions): Playb
       const next = clampSeekTarget(seconds, range);
       let session = seekSession.current;
       if (!session) {
-        if (
-          playingIntent.current &&
-          !seekInFlight.current &&
-          parts.current.phase === "playing"
-        ) {
-          if (!player.current.pause()) return;
-          coordinator.current.paused(true);
-          parts.current.phase = "paused";
-        }
         session = { target: next, ready: false, goLive };
         seekSession.current = session;
-        coordinator.current.seeking(true);
-        setSeeking(true);
       } else {
         /* The newest request always wins, including an ordinary seek superseding a
            queued Go live. */
@@ -1011,7 +1007,10 @@ export function usePlaybackController(options: PlaybackControllerOptions): Playb
         setQuickSeek({ deltaSeconds: pendingDelta.current, targetSeconds: next });
       }
       window.clearTimeout(quickSeekTimer.current);
-      quickSeekTimer.current = window.setTimeout(flushSeek, SEEK_SETTLE_MS);
+      quickSeekTimer.current = window.setTimeout(
+        flushSeek,
+        waitForRelease ? SEEK_HOLD_FALLBACK_MS : SEEK_SETTLE_MS,
+      );
       publish();
     },
     [flushSeek, publish],
@@ -1042,12 +1041,18 @@ export function usePlaybackController(options: PlaybackControllerOptions): Playb
     [queueSeek],
   );
 
+  const settleSeek = useCallback(() => {
+    if (!seekSession.current || seekSession.current.ready) return;
+    window.clearTimeout(quickSeekTimer.current);
+    quickSeekTimer.current = window.setTimeout(flushSeek, SEEK_SETTLE_MS);
+  }, [flushSeek]);
+
   const seekTo = useCallback(
-    (seconds: number) => {
+    (seconds: number, waitForRelease = false) => {
       pendingDelta.current = 0;
       quickSeekTarget.current = null;
       setQuickSeek(null);
-      queueSeek(seconds);
+      queueSeek(seconds, 0, false, waitForRelease);
     },
     [queueSeek],
   );
@@ -1074,9 +1079,10 @@ export function usePlaybackController(options: PlaybackControllerOptions): Playb
       const previous = chosenTracks.current[kind];
       const choice = selection ?? {
         identity:
-          player.current?.getTracks().find(
-            (track) => track.kind === kind && track.engineIndex === engineIndex,
-          )?.identity ?? null,
+          player.current
+            ?.getTracks()
+            .find((track) => track.kind === kind && track.engineIndex === engineIndex)
+            ?.identity ?? null,
       };
       chosenTracks.current[kind] = choice;
       applyingTracks.current = true;
@@ -1156,8 +1162,7 @@ export function usePlaybackController(options: PlaybackControllerOptions): Playb
       if (document.hidden) {
         flushPlaybackTrackChoices();
         coordinator.current.hidden();
-      }
-      else coordinator.current.visible();
+      } else coordinator.current.visible();
     };
     document.addEventListener("visibilitychange", onVisibility);
     return () => document.removeEventListener("visibilitychange", onVisibility);
@@ -1213,6 +1218,7 @@ export function usePlaybackController(options: PlaybackControllerOptions): Playb
     togglePlaying,
     seekBy,
     seekTo,
+    settleSeek,
     flushSeek,
     seeking,
     goLive,
