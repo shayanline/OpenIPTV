@@ -2016,7 +2016,7 @@ test("Series continuation is derived once per input change and keeps playback ta
   try {
     act(() => view.useLibrary.setState({ seriesContinueFor: derive }));
     expect(derive).toHaveBeenCalledTimes(1);
-    expect(screen.getByRole("button", { name: "Play S1:E1" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Play Season 1, Episode 1" })).toBeTruthy();
 
     press(KEY.DOWN);
     expect(screen.getByRole("button", { name: "Episodes" }).classList.contains("cursor")).toBe(
@@ -2025,7 +2025,9 @@ test("Series continuation is derived once per input change and keeps playback ta
     expect(derive).toHaveBeenCalledTimes(1);
     press(KEY.UP);
     expect(
-      screen.getByRole("button", { name: "Play S1:E1" }).classList.contains("cursor"),
+      screen
+        .getByRole("button", { name: "Play Season 1, Episode 1" })
+        .classList.contains("cursor"),
     ).toBe(true);
     expect(derive).toHaveBeenCalledTimes(1);
     await chooseButton("Episodes");
@@ -2047,16 +2049,22 @@ test("Series continuation is derived once per input change and keeps playback ta
     const lastPlayed = view.usePersonal.getState().lastPlayed;
     act(() => view.usePersonal.getState().rememberProgress(seed, 605, 3600, "pause"));
     expect(view.usePersonal.getState().lastPlayed).toBe(lastPlayed);
-    expect(screen.getByRole("button", { name: "Continue S1:E1 (10:05)" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Start from beginning S1:E1" })).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "Resume Season 1, Episode 1 from 10:05" }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "Restart episode, Season 1, Episode 1" }),
+    ).toBeTruthy();
     expect(derive).toHaveBeenCalledTimes(2);
 
     act(() => view.usePersonal.getState().rememberProgress(seed, 905, 3600, "pause"));
-    expect(screen.getByRole("button", { name: "Continue S1:E1 (15:05)" })).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "Resume Season 1, Episode 1 from 15:05" }),
+    ).toBeTruthy();
     expect(derive).toHaveBeenCalledTimes(3);
 
     act(() => view.usePersonal.setState({ progress: [] }));
-    expect(screen.getByRole("button", { name: "Play S1:E1" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Play Season 1, Episode 1" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: /^Continue / })).toBeNull();
     expect(derive).toHaveBeenCalledTimes(4);
 
@@ -2068,7 +2076,7 @@ test("Series continuation is derived once per input change and keeps playback ta
         categoryKey: detail.categoryKey,
       }),
     );
-    expect(screen.getByRole("button", { name: "Play S2:E1" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Continue Season 2, Episode 1" })).toBeTruthy();
     expect(derive).toHaveBeenCalledTimes(5);
     act(() =>
       view.usePersonal.getState().rememberLast({
@@ -2078,7 +2086,7 @@ test("Series continuation is derived once per input change and keeps playback ta
         categoryKey: detail.categoryKey,
       }),
     );
-    expect(screen.getByRole("button", { name: "Play S1:E1" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Play Season 1, Episode 1" })).toBeTruthy();
     expect(derive).toHaveBeenCalledTimes(6);
 
     act(() =>
@@ -2089,7 +2097,7 @@ test("Series continuation is derived once per input change and keeps playback ta
         },
       }),
     );
-    expect(screen.getByRole("button", { name: "Play S1:E1" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Play Season 1, Episode 1" })).toBeTruthy();
     expect(derive).toHaveBeenCalledTimes(7);
 
     const replacement = vi.fn(original);
@@ -2098,9 +2106,11 @@ test("Series continuation is derived once per input change and keeps playback ta
     const nextSeed = view.useLibrary.getState().progressSeedFor(detail.episodes[1], detail);
     if (!nextSeed) throw new Error("expected a progress seed for the second episode");
     act(() => view.usePersonal.getState().rememberProgress(nextSeed, 1200, 3600, "pause"));
-    expect(screen.getByRole("button", { name: "Continue S2:E1 (20:00)" })).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "Resume Season 2, Episode 1 from 20:00" }),
+    ).toBeTruthy();
     expect(replacement).toHaveBeenCalledTimes(2);
-    await chooseButton("Continue S2:E1 (20:00)");
+    await chooseButton("Resume Season 2, Episode 1 from 20:00");
     expect(playCalls[0][4]).toBe(1200);
   } finally {
     act(() => view.useLibrary.setState({ seriesContinueFor: original }));
@@ -2971,7 +2981,7 @@ test("Movie details keeps Favourite in its action column and emits explicit resu
   expect(document.querySelector(".vod-hero-copy")?.textContent).not.toContain("Italy");
   expect(screen.getByRole("button", { name: "Add to Favourites" })).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: /Resume from/ }));
-  fireEvent.click(screen.getByRole("button", { name: "Start from beginning" }));
+  fireEvent.click(screen.getByRole("button", { name: "Restart" }));
   expect(choices).toEqual([
     { resumeAt: 600, restart: false },
     { resumeAt: 0, restart: true },

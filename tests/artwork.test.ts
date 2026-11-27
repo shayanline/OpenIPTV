@@ -123,6 +123,37 @@ const smallPng = () =>
     ),
   );
 
+test("a larger episode source bypasses the cached thumbnail and shares the canonical image entry", async () => {
+  const service = await artwork();
+  const thumbnail = "https://image.tmdb.org/t/p/w185/still.jpg";
+  const source = "https://image.tmdb.org/t/p/w780/still.jpg";
+  disk.set(`poster:512x288:contain|${thumbnail}`, new Blob([smallPng()]));
+  const normalized = bitmap(512, 288);
+  vi.stubGlobal(
+    "createImageBitmap",
+    vi.fn(async () => normalized.value),
+  );
+  const fetch = vi.fn(async () => new Response(smallPng()));
+  vi.stubGlobal("fetch", fetch);
+  const request = {
+    url: thumbnail,
+    kind: "poster" as const,
+    width: 512,
+    height: 288,
+    fit: "contain" as const,
+  };
+  try {
+    const loaded = await service.loadArtwork(request);
+    expect(loaded?.bitmap).toBe(normalized.value);
+    expect(fetch).toHaveBeenCalledWith(source, expect.any(Object));
+    expect(await service.loadArtwork({ ...request, url: source })).toBe(loaded);
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(disk.has(`poster:512x288:contain|${thumbnail}`)).toBe(true);
+  } finally {
+    service.releaseAllArtwork();
+  }
+});
+
 test.each([undefined, "contain"] as const)(
   "small PNG fit %s normalizes directly from the encoded image",
   async (fit) => {

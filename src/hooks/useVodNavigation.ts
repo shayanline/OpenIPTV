@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Direction } from "../services/locale";
 import type { XtreamSeasonKey } from "../services/xtream";
+import { stepDetailAction } from "../services/vodActionLayout";
 import { pointerInputActive } from "./usePointerAwake";
 import { KEY } from "./useRemote";
 import { POSTER_COLUMNS, wheelStep, windowOf } from "./useWindowed";
@@ -1083,22 +1084,26 @@ export function reduceVodNavigation(
     return state;
   }
   if (state.zone === "detail-actions" && state.details) {
-    if (code === inlineStart) return state;
     if (!context.detailActionCount) return state;
     if (code === KEY.UP && state.details.actionIndex === 0 && context.detailInfoOverflow)
       return { ...state, zone: "detail-copy" };
-    if (code === KEY.UP)
+    const direction =
+      code === KEY.UP
+        ? "up"
+        : code === KEY.DOWN
+          ? "down"
+          : code === inlineStart
+            ? "start"
+            : code === inlineEnd
+              ? "end"
+              : undefined;
+    const next = direction
+      ? stepDetailAction(state.details.actionIndex, context.detailActionCount, direction)
+      : state.details.actionIndex;
+    if (next !== state.details.actionIndex)
       return {
         ...state,
-        details: { ...state.details, actionIndex: Math.max(0, state.details.actionIndex - 1) },
-      };
-    if (code === KEY.DOWN)
-      return {
-        ...state,
-        details: {
-          ...state.details,
-          actionIndex: Math.min(context.detailActionCount - 1, state.details.actionIndex + 1),
-        },
+        details: { ...state.details, actionIndex: next },
       };
     if (code === inlineEnd && state.episodes?.open) return { ...state, zone: "episode-list" };
     return state;

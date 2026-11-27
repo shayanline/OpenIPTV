@@ -11,6 +11,7 @@ import {
   type BackdropLease,
 } from "../../services/artwork";
 import { resolveCountryFlags } from "../../services/countryFlags";
+import { detailActionColumns } from "../../services/vodActionLayout";
 import type { XtreamMovieDetail } from "../../services/xtream";
 import type { VodOrigin } from "../../hooks/useVodNavigation";
 import { pointerOnly } from "../../hooks/usePointerAwake";
@@ -247,7 +248,11 @@ export function VodDetailSkeleton({
               </div>
             </div>
           </div>
-          <div className="vod-actions" aria-hidden="true">
+          <div
+            className="vod-actions"
+            data-columns={detailActionColumns(actionCount)}
+            aria-hidden="true"
+          >
             {Array.from({ length: actionCount }, (_, index) => (
               <span key={index} className="skeleton-line vod-action-skeleton" />
             ))}
@@ -334,7 +339,7 @@ export function VodDetails({
     if (action === "resume") {
       return t("vod.resume", { time: clock(progress?.seconds ?? 0) });
     }
-    if (action === "restart") return t("vod.restart");
+    if (action === "restart") return t("vod.restartShort");
     if (action === "info") return t("library.details");
     return t("vod.play");
   };
@@ -373,13 +378,14 @@ export function VodDetails({
               <p className="vod-credit">{detail.metadata.ageRating}</p>
             )}
           </div>
-          <div className="vod-actions">
+          <div className="vod-actions" data-columns={detailActionColumns(actions.length)}>
             {actions.map((action, index) => (
               <button
                 key={action}
                 type="button"
                 className={`vod-action ${action === "favourite" ? "vod-favourite" : ""} ${action === "favourite" && favourite ? "on" : ""} ${focus.zone === "actions" && focus.index === index ? "cursor" : ""}`}
                 aria-pressed={action === "favourite" ? favourite : undefined}
+                aria-label={actionLabel(action)}
                 disabled={playbackPending}
                 onPointerEnter={() => pointerOnly(() => onFocusAction?.(index))}
                 onClick={() => {
@@ -398,7 +404,22 @@ export function VodDetails({
                           : "play"
                   }
                 />
-                <Text value={actionLabel(action)} />
+                <span className="vod-action-copy">
+                  <Text
+                    value={
+                      action === "resume"
+                        ? t("library.resume")
+                        : action === "favourite"
+                          ? t("vod.favourites")
+                          : actionLabel(action)
+                    }
+                  />
+                  {action === "resume" && (
+                    <span className="vod-action-caption">
+                      {t("vod.resumeTime", { time: clock(progress?.seconds ?? 0) })}
+                    </span>
+                  )}
+                </span>
               </button>
             ))}
           </div>

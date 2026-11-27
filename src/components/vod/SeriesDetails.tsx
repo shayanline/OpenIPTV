@@ -8,6 +8,7 @@ import {
   type ArtworkPalette,
 } from "../../services/artwork";
 import type { XtreamSeriesDetail } from "../../services/xtream";
+import { detailActionColumns } from "../../services/vodActionLayout";
 import type { LibraryResource, SeriesContinueTarget } from "../../stores/library";
 import { Artwork } from "../Artwork";
 import { Icon } from "../Icon";
@@ -126,10 +127,27 @@ export function SeriesDetails({
   }
 
   const reference = continueTarget ? episodeReference(continueTarget.episode, t) : "";
+  const episodeDescription = continueTarget
+    ? [
+        continueTarget.episode.season !== undefined
+          ? t("library.season", { number: continueTarget.episode.season })
+          : "",
+        continueTarget.episode.number !== undefined
+          ? t("library.episode", { number: continueTarget.episode.number })
+          : "",
+      ]
+        .filter(Boolean)
+        .join(", ") || reference
+    : "";
   const continueLabel = continueTarget
     ? continueTarget.reason === "resume"
-      ? `${t("vod.continue", { episode: reference })} (${clock(continueTarget.resumeAt)})`
-      : `${t("vod.play")} ${reference}`
+      ? t("vod.resumeEpisode", {
+          episode: episodeDescription,
+          time: clock(continueTarget.resumeAt),
+        })
+      : continueTarget.reason === "next"
+        ? t("vod.continue", { episode: episodeDescription })
+        : `${t("vod.play")} ${episodeDescription}`
     : "";
   const actions = seriesActions(detail, continueTarget);
   const seasonCount = detail.seasons.filter((season) => season !== "unassigned").length;
@@ -168,24 +186,42 @@ export function SeriesDetails({
             <VodCredits cast={detail.metadata.cast} director={detail.metadata.director} />
             {!continueTarget && <p className="episode-state">{t("vod.noEpisodes")}</p>}
           </div>
-          <div className="vod-actions series-actions">
+          <div
+            className="vod-actions series-actions"
+            data-columns={detailActionColumns(actions.length)}
+          >
             {actions.map((action, index) => {
               const label =
                 action === "continue"
                   ? continueLabel
                   : action === "restart"
-                    ? `${t("vod.restart")} ${reference}`
+                    ? `${t("vod.restartEpisode")}, ${episodeDescription}`
                     : action === "info"
                       ? t("library.details")
                       : action === "favourite"
                         ? t(favourite ? "vod.removeFavourite" : "vod.addFavourite")
                         : t("vod.episodes");
+              const visibleLabel =
+                action === "continue"
+                  ? t(
+                      continueTarget?.reason === "resume"
+                        ? "library.resume"
+                        : continueTarget?.reason === "next"
+                          ? "vod.continueShort"
+                          : "vod.play",
+                    )
+                  : action === "restart"
+                    ? t("vod.restartEpisode")
+                    : action === "favourite"
+                      ? t("vod.favourites")
+                      : label;
               return (
                 <button
                   key={action}
                   type="button"
                   className={`vod-action ${action === "favourite" ? "vod-favourite" : ""} ${action === "favourite" && favourite ? "on" : ""} ${actionFocused && actionIndex === index ? "cursor" : ""}`}
                   aria-pressed={action === "favourite" ? favourite : undefined}
+                  aria-label={label}
                   disabled={playbackPending}
                   onPointerEnter={() => pointerOnly(() => onFocusAction?.(index))}
                   onClick={() => {
@@ -210,7 +246,21 @@ export function SeriesDetails({
                               : "play"
                     }
                   />
-                  <Text value={label} marquee active={actionFocused && actionIndex === index} />
+                  <span className="vod-action-copy">
+                    <Text value={visibleLabel} />
+                    {action === "continue" && (
+                      <span className="vod-action-caption">
+                        <span>{episodeDescription}</span>
+                        {continueTarget?.reason === "resume" && (
+                          <>
+                            {" "}
+                            &middot;{" "}
+                            {t("vod.resumeTime", { time: clock(continueTarget.resumeAt) })}
+                          </>
+                        )}
+                      </span>
+                    )}
+                  </span>
                 </button>
               );
             })}

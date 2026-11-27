@@ -2,6 +2,7 @@ import * as disk from "./disk";
 import { performArtworkOperation } from "./artwork-operations";
 import { artworkOperation } from "./artwork-worker-client";
 import { whenIdle } from "./idle";
+import { artworkSourceUrl } from "./artworkUrl";
 import {
   artworkWorkload,
   observeArtworkWorkload,
@@ -119,8 +120,11 @@ interface Waiter {
   cancel: () => void;
 }
 
+const sourceOf = (request: Pick<ArtworkRequest, "url" | "kind" | "width">) =>
+  request.kind === "poster" ? artworkSourceUrl(request.url, request.width) : request.url;
+
 const keyOf = (request: Omit<ArtworkRequest, "eager" | "signal">) =>
-  `${request.kind}:${request.width}x${request.height}${request.fit === "contain" ? ":contain" : ""}|${request.url}`;
+  `${request.kind}:${request.width}x${request.height}${request.fit === "contain" ? ":contain" : ""}|${sourceOf(request)}`;
 
 function notifyArtwork(key: string): void {
   for (const listener of listeners.get(key) ?? []) listener();
@@ -680,7 +684,7 @@ export function loadArtwork(request: ArtworkRequest): Promise<ArtworkEntry | nul
             return null;
           }
           if (!bitmap) {
-            const blob = await fetchBlob(request.url, controller.signal);
+            const blob = await fetchBlob(sourceOf(request), controller.signal);
             if (!live()) return null;
             bitmap = await decodeQueued(blob);
           }
