@@ -165,7 +165,7 @@ Tizen 7 and later can sign the released package for the connected TV. Earlier ve
 <details>
 <summary>Manual build and signing instructions</summary>
 
-Install [Node.js 22.18 or later](https://nodejs.org/) and Tizen Studio. Install the Samsung Certificate Extension, then use Certificate Manager to create an author certificate and a Samsung distributor certificate for your TV. Sign in with a Samsung account and keep the TV on and connected while creating the certificate.
+Install the [Node.js](https://nodejs.org/) version specified in [`.nvmrc`](.nvmrc) and Tizen Studio. Install the Samsung Certificate Extension, then use Certificate Manager to create an author certificate and a Samsung distributor certificate for your TV. Sign in with a Samsung account and keep the TV on and connected while creating the certificate.
 
 Name the signing profile `OpenIPTV`, or set `SIGNING_PROFILE` to its name.
 

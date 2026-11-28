@@ -8,7 +8,7 @@ React 19, TypeScript, zustand, Vite, Biome, Vitest. hls.js only on the browser p
 runtime dependencies, and adding one is a decision rather than a detail: it is compiled and run
 by a 2020 television every time somebody switches the set on.
 
-Node 22.18 or newer, pinned in `.nvmrc`.
+Use the Node.js version pinned in `.nvmrc`. Supported versions are declared in `package.json`.
 
 ## README audience
 
