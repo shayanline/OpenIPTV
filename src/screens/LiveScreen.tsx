@@ -165,6 +165,7 @@ export interface LiveScreenProps {
   finiteStepAvailable?: (delta: -1 | 1) => boolean;
   playbackPending: boolean;
   resumeLiveOnMount: boolean;
+  resumeChannelId?: string;
   inputEnabled: boolean;
 }
 
@@ -221,6 +222,7 @@ export function LiveScreen({
   finiteStepAvailable: canStepFinite,
   playbackPending,
   resumeLiveOnMount,
+  resumeChannelId = "",
   inputEnabled,
 }: LiveScreenProps): React.ReactElement {
   const loading = useChannels((state) => state.loading);
@@ -229,6 +231,7 @@ export function LiveScreen({
   const errorDetail = useChannels((state) => state.errorDetail);
   const load = useChannels((state) => state.load);
   const channels = useLineup((state) => state.channels);
+  const lineupPlaylistId = useLineup((state) => state.playlistId);
   const categories = useLineup((state) => state.categories);
   const numberIndex = useLineup((state) => state.numberIndex);
   const managedChannels = useLineup((state) => state.managedChannels);
@@ -247,6 +250,8 @@ export function LiveScreen({
   const loadGuide = useLibrary((state) => state.loadGuide);
   const guides = useLibrary((state) => (libraryActive ? state.guides : EMPTY_GUIDES));
   const activePlaylist = useSettings((state) => state.activePlaylist());
+  const loadingPlaylist =
+    loading && (!channels.length || lineupPlaylistId !== activePlaylist?.id);
   const configured = useSettings((state) => state.playlists.length > 0);
   const showLogos = useSettings((state) => state.showLogos);
   const scale = useSettings((state) => state.scale());
@@ -1023,12 +1028,13 @@ export function LiveScreen({
     if (!resumeLiveOnMount || !resumeLast) return;
 
     const rememberedItemKey =
-      lastPlayed && lastPlayed.playlistId === activePlaylist?.id ? lastPlayed.itemKey : "";
+      resumeChannelId ||
+      (lastPlayed && lastPlayed.playlistId === activePlaylist?.id ? lastPlayed.itemKey : "");
     const found = rememberedItemKey
       ? browsableChannels.find((c) => c.id === rememberedItemKey)
       : undefined;
     if (!found) {
-      if (usePersonal.getState().hasRememberedLast()) openPanel();
+      if (rememberedItemKey || usePersonal.getState().hasRememberedLast()) openPanel();
       return;
     }
     const cat = locate(found);
@@ -1039,7 +1045,7 @@ export function LiveScreen({
     }
     setPane("list");
     playback.start(found);
-  }, [channels, browsableChannels, lastPlayed?.itemKey, resumeLiveOnMount]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [channels, browsableChannels, lastPlayed?.itemKey, resumeLiveOnMount, resumeChannelId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /**
    * The cursor answers every command. Fresh presses also update the category immediately,
@@ -2817,6 +2823,7 @@ export function LiveScreen({
 
       {configured &&
         (loadFailed ||
+          loadingPlaylist ||
           (!channels.length && (loading || activePlaylist?.source.kind !== "xtream"))) && (
           <div
             className={`splash ${loadFailed ? "playlist-recovery" : ""}`}

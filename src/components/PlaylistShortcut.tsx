@@ -13,7 +13,7 @@ import { TextInput, textInputExit } from "./TextInput";
 
 const PLAYLIST_ROW_BASE = 104;
 const PAGE_SIZE = 5;
-type FocusTarget = "row" | "search" | "clear" | "previous" | "next" | "back";
+type FocusTarget = "row" | "search" | "clear" | "previous" | "next" | "back" | "manage";
 
 export function PlaylistShortcut({
   playlists,
@@ -21,24 +21,30 @@ export function PlaylistShortcut({
   scale,
   inputEnabled,
   onSelect,
+  onManage,
   onClose,
   onContentFocus,
+  startup = false,
 }: {
   playlists: readonly Playlist[];
   activePlaylistId: string;
   scale: number;
   inputEnabled: boolean;
   onSelect: (id: string) => void;
+  onManage?: () => void;
   onClose: () => void;
   onContentFocus: () => void;
+  startup?: boolean;
 }) {
   const { t, number, direction, locale } = useLocale();
+  const hasManage = !startup && !!onManage;
   const activeIndex = Math.max(
     0,
     playlists.findIndex((item) => item.id === activePlaylistId),
   );
   const [query, setQuery] = useState("");
   const back = useRef<HTMLButtonElement>(null);
+  const manage = useRef<HTMLButtonElement>(null);
   const [page, setPage] = useState(() => Math.floor(activeIndex / PAGE_SIZE));
   const [focus, setFocus] = useState<{ id: string; target: FocusTarget }>({
     id: activePlaylistId,
@@ -96,9 +102,13 @@ export function PlaylistShortcut({
     },
     [entries],
   );
-  const focusControl = useCallback((target: FocusTarget) => {
-    setFocus((current) => (current.target === target ? current : { ...current, target }));
-  }, []);
+  const focusControl = useCallback(
+    (target: FocusTarget) => {
+      if ((target === "back" && startup) || (target === "manage" && !hasManage)) return;
+      setFocus((current) => (current.target === target ? current : { ...current, target }));
+    },
+    [hasManage, startup],
+  );
   const pointAt = (index: number) =>
     pointerOnly(() => {
       onContentFocus();
@@ -148,6 +158,7 @@ export function PlaylistShortcut({
             previous: previous.current,
             next: next.current,
             back: back.current,
+            manage: manage.current,
           }[focus.target];
     if (!target || target.matches(":disabled")) {
       target = viewport.current?.querySelector<HTMLButtonElement>("button") ?? search.current;
@@ -163,12 +174,34 @@ export function PlaylistShortcut({
     useCallback(
       (code, event) => {
         if (!inputEnabled || event.defaultPrevented) return;
+        if (startup && (code === KEY.BACK || code === KEY.ESC)) {
+          event.preventDefault();
+          onClose();
+          return;
+        }
         if (code === KEY.ENTER && event.repeat) {
           event.preventDefault();
           return;
         }
         const inlineStart = direction === "rtl" ? KEY.RIGHT : KEY.LEFT;
         const inlineEnd = direction === "rtl" ? KEY.LEFT : KEY.RIGHT;
+        if (focus.target === "manage") {
+          if (code === KEY.ENTER) onManage?.();
+          else if (code === KEY.BACK || code === KEY.ESC) onClose();
+          else if (code === KEY.DOWN || code === inlineStart) focusControl("search");
+          if (
+            code === KEY.ENTER ||
+            code === KEY.BACK ||
+            code === KEY.ESC ||
+            code === KEY.UP ||
+            code === KEY.DOWN ||
+            code === inlineStart ||
+            code === inlineEnd
+          ) {
+            event.preventDefault();
+          }
+          return;
+        }
         if (focus.target === "back") {
           if (code === KEY.ENTER || code === KEY.BACK || code === KEY.ESC) onClose();
           else if (code === inlineEnd) {
@@ -200,10 +233,13 @@ export function PlaylistShortcut({
           } else if (exit === "start") {
             event.preventDefault();
             focusControl("back");
-          } else if (exit === "end" && query) {
+          } else if (exit === "end") {
             event.preventDefault();
-            focusControl("clear");
-          } else if (exit === "up") event.preventDefault();
+            focusControl(query ? "clear" : "manage");
+          } else if (exit === "up") {
+            event.preventDefault();
+            focusControl("manage");
+          }
           return;
         }
         if (code === KEY.UP || code === KEY.DOWN) {
@@ -233,6 +269,7 @@ export function PlaylistShortcut({
         } else if (code === inlineEnd) {
           event.preventDefault();
           if (pages > 1) focusControl(currentPage < pages - 1 ? "next" : "previous");
+          else focusControl("manage");
         } else if (code === KEY.BACK || code === KEY.ESC) {
           event.preventDefault();
           if (query) {
@@ -264,12 +301,14 @@ export function PlaylistShortcut({
         goToPage,
         inputEnabled,
         onClose,
+        onManage,
         onSelect,
         pageEntries,
         pageStart,
         pages,
         playlists,
         query,
+        startup,
       ],
     ),
     true,
@@ -291,46 +330,64 @@ export function PlaylistShortcut({
 
   return (
     <section
-      className="vod-screen playlist-shortcut"
+      className={`vod-screen playlist-shortcut${startup ? " playlist-startup" : ""}`}
       aria-labelledby="playlist-shortcut-title"
       onPointerDown={(event) => {
         if (event.target instanceof Element && event.target.closest("button, input"))
           onContentFocus();
       }}
     >
-      <div className="sheet-edge-back">
-        <button
-          ref={back}
-          type="button"
-          className="btn tonal"
-          aria-label={t("common.back")}
-          disabled={!inputEnabled}
-          tabIndex={inputEnabled ? 0 : -1}
-          onFocus={() => focusControl("back")}
-          onPointerEnter={() => pointerOnly(() => focusControl("back"))}
-          onClick={onClose}
-        >
-          <Icon name="return" logicalDirection />
-        </button>
-      </div>
+      {!startup && (
+        <div className="sheet-edge-back">
+          <button
+            ref={back}
+            type="button"
+            className="btn tonal"
+            aria-label={t("common.back")}
+            disabled={!inputEnabled}
+            tabIndex={inputEnabled ? 0 : -1}
+            onFocus={() => focusControl("back")}
+            onPointerEnter={() => pointerOnly(() => focusControl("back"))}
+            onClick={onClose}
+          >
+            <Icon name="return" logicalDirection />
+          </button>
+        </div>
+      )}
       <div className="playlist-shortcut-content">
         <header className="playlist-shortcut-heading">
           <div className="playlist-shortcut-intro">
             <div className="playlist-shortcut-title-line">
-              <h1 id="playlist-shortcut-title">{t("settings.playlists")}</h1>
+              <h1 id="playlist-shortcut-title">
+                {t(startup ? "playlist.startupTitle" : "settings.playlists")}
+              </h1>
               <span className="count">{number(entries.length)}</span>
             </div>
-            <p>{t("playlist.shortcutHint")}</p>
-          </div>
-          {active && (
-            <div className="playlist-shortcut-current">
-              <PlaylistAvatar name={active.name} number={number(activeIndex + 1)} />
-              <div className="playlist-shortcut-current-copy">
-                <span className="playlist-shortcut-current-label">{t("common.active")}</span>
+            <p>{t(startup ? "playlist.startupHint" : "playlist.shortcutHint")}</p>
+            {active && (
+              <p className="playlist-shortcut-current">
+                <span>{t(startup ? "playlist.lastActive" : "common.active")}</span>
                 <strong>{active.name}</strong>
-                <span>{description(active)}</span>
-              </div>
-            </div>
+              </p>
+            )}
+          </div>
+          {hasManage && (
+            <button
+              ref={manage}
+              type="button"
+              className="btn tonal playlist-shortcut-manage"
+              disabled={!inputEnabled}
+              tabIndex={inputEnabled ? 0 : -1}
+              onFocus={() => focusControl("manage")}
+              onPointerEnter={() => pointAtControl("manage")}
+              onPointerMove={() => pointAtControl("manage")}
+              onClick={() => {
+                if (inputEnabled) onManage?.();
+              }}
+            >
+              <Icon name="playlists" />
+              <span>{t("playlist.managePlaylists")}</span>
+            </button>
           )}
         </header>
         <div
@@ -389,11 +446,11 @@ export function PlaylistShortcut({
               <button
                 key={playlist.id}
                 type="button"
-                role="menuitemradio"
+                role="menuitem"
                 className={`playlist-shortcut-row${inputEnabled && focus.target === "row" && cursor === index ? " cursor" : ""}`}
                 data-playlist-shortcut-index={index}
                 aria-label={playlist.name}
-                aria-checked={selected}
+                aria-current={!startup && selected ? true : undefined}
                 aria-posinset={pageStart + index + 1}
                 aria-setsize={entries.length}
                 title={playlist.name}
@@ -413,19 +470,11 @@ export function PlaylistShortcut({
               >
                 <PlaylistAvatar name={playlist.name} number={number(ordinal)} />
                 <span className="playlist-shortcut-row-copy">
-                  <span className="playlist-shortcut-name">
-                    {playlist.name}
-                  </span>
+                  <span className="playlist-shortcut-name">{playlist.name}</span>
                   <span className="playlist-shortcut-meta">{description(playlist)}</span>
                 </span>
-                {selected && (
-                  <span className="playlist-shortcut-active-label">{t("common.active")}</span>
-                )}
-                <span
-                  className={`playlist-shortcut-radio${selected ? " on" : ""}`}
-                  aria-hidden="true"
-                >
-                  {selected && <Icon name="check" />}
+                <span className="playlist-shortcut-open" aria-hidden="true">
+                  <Icon name="chevronRight" logicalDirection />
                 </span>
               </button>
             );
@@ -479,7 +528,10 @@ export function PlaylistShortcut({
             </button>
           </nav>
         )}
-        <NavigationGuide className="playlist-shortcut-keys ruled" />
+        <NavigationGuide
+          className="playlist-shortcut-keys ruled"
+          returnLabel={startup ? t("exit.confirm") : undefined}
+        />
       </div>
     </section>
   );

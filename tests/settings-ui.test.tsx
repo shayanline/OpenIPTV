@@ -7872,6 +7872,39 @@ test("a playlist reset abandoned by a source change publishes nothing", async ()
   expect(document.querySelector(".dialog")).toBeNull();
 });
 
+test("startup settings choose a fixed playlist without changing the current session", async () => {
+  await mountApp(PLAYLIST);
+  const { useSettings } = await import("../src/stores/settings");
+  act(() =>
+    useSettings.getState().addPlaylist("Radio", {
+      kind: "m3u",
+      url: "http://radio.invalid/list.m3u",
+    }),
+  );
+  const original = useSettings.getState().activePlaylistId;
+  const radio = useSettings.getState().playlists.find((playlist) => playlist.name === "Radio")!;
+  const requests = vi.mocked(fetch).mock.calls.length;
+  press(KEY.YELLOW);
+  fireEvent.click(screen.getByRole("button", { name: "Content & playlists" }));
+  fireEvent.click(
+    screen.getByRole("button", { name: "Startup playlist, Last active playlist" }),
+  );
+  fireEvent.click(screen.getByRole("option", { name: "Specific playlist" }));
+  fireEvent.click(screen.getByRole("button", { name: "Playlist to open, Test" }));
+  fireEvent.click(screen.getByRole("option", { name: "Radio" }));
+  expect(useSettings.getState().startupPlaylist).toEqual({
+    mode: "specific",
+    playlistId: radio.id,
+  });
+  expect(useSettings.getState().activePlaylistId).toBe(original);
+  expect(fetch).toHaveBeenCalledTimes(requests);
+  fireEvent.click(screen.getByRole("button", { name: "Startup playlist, Specific playlist" }));
+  fireEvent.click(screen.getByRole("option", { name: "Always ask" }));
+  expect(useSettings.getState().startupPlaylist).toEqual({ mode: "ask" });
+  expect(screen.queryByRole("button", { name: /^Playlist to open,/ })).toBeNull();
+  expect(document.querySelector("[data-startup-playlists]")).toBeNull();
+});
+
 test("content settings keep their switches on the landing with section explanations", async () => {
   await mountApp(PLAYLIST);
   press(KEY.YELLOW);

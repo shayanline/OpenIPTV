@@ -68,6 +68,13 @@ const labels = {
   hideEmptyCategoriesHint: "Categories with nothing in them are left out.",
   playlistShortcut: "Playlist shortcut",
   playlistShortcutHint: "Show the active playlist in the main menu for quick switching.",
+  startupPlaylist: "Startup playlist",
+  startupPlaylistHint:
+    "Choose what opens when the app starts. Changes apply on the next launch.",
+  startupLast: "Last active playlist",
+  startupAsk: "Always ask",
+  startupSpecific: "Specific playlist",
+  startupSelection: "Playlist to open",
   showLive: "Live TV",
   showMovies: "Movies",
   showSeries: "Series",
@@ -166,6 +173,7 @@ const snapshot = (change: Record<string, unknown> = {}) => ({
     continuousReconnect: false,
     hideEmptyCategories: true,
     playlistShortcut: true,
+    startupPlaylist: { mode: "last" },
     showLive: true,
     showMovies: true,
     showSeries: true,
@@ -10085,6 +10093,79 @@ test("the playlist index pages at six cards, clamps after removal and keeps its 
   expect(document.querySelector(".playlist-pagination")).toBeNull();
 });
 
+test("startup choices on the phone save a specific playlist without activating it", async () => {
+  localStorage.setItem("openiptv.remote", JSON.stringify({ deviceId: "p", credential: "c" }));
+  const saved = [
+    ...snapshot().playlists,
+    { ...snapshot().playlists[0], id: "radio", name: "Radio" },
+  ];
+  let preference: Record<string, string> = { mode: "last" };
+  const commands: Array<{ type: string; key: string; value: Record<string, string> }> = [];
+  const state = () =>
+    snapshot({
+      playlists: saved,
+      revision: commands.length,
+      settings: { ...snapshot().settings, startupPlaylist: preference },
+    });
+  vi.stubGlobal(
+    "fetch",
+    vi.fn((path: string, options?: RequestInit) => {
+      if (path === "/api/v1/state") return reply(200, state());
+      if (path === "/api/v1/command") {
+        const command = JSON.parse(String(options?.body)).command;
+        commands.push(command);
+        preference = command.value;
+        return reply(200, { ok: true, snapshot: state() });
+      }
+      return reply(404, {});
+    }),
+  );
+  window.history.replaceState({}, "", "/");
+  await loadApp().start();
+  const mode = document.querySelector<HTMLSelectElement>('[data-setting="startupPlaylist"]')!;
+  mode.value = "specific";
+  mode.dispatchEvent(new Event("change", { bubbles: true }));
+  await vi.waitFor(() =>
+    expect(document.querySelector('select[name="startupPlaylistId"]')).toBeTruthy(),
+  );
+  const playlist = document.querySelector<HTMLSelectElement>(
+    'select[name="startupPlaylistId"]',
+  )!;
+  playlist.value = "radio";
+  playlist.dispatchEvent(new Event("change", { bubbles: true }));
+  await vi.waitFor(() => expect(commands).toHaveLength(2));
+  expect(commands[1]).toEqual({
+    type: "setting",
+    key: "startupPlaylist",
+    value: { mode: "specific", playlistId: "radio" },
+  });
+  expect(commands.every((command) => command.type === "setting")).toBe(true);
+  expect(state().activePlaylistId).toBe("pl-1");
+});
+
+test("a phone activation can confirm the active playlist while startup is waiting", async () => {
+  localStorage.setItem("openiptv.remote", JSON.stringify({ deviceId: "p", credential: "c" }));
+  const commands: unknown[] = [];
+  vi.stubGlobal(
+    "fetch",
+    vi.fn((path: string, options?: RequestInit) => {
+      if (path === "/api/v1/state") return reply(200, snapshot({ startupPending: true }));
+      if (path === "/api/v1/command") {
+        commands.push(JSON.parse(String(options?.body)).command);
+        return reply(200, {
+          ok: true,
+          snapshot: snapshot({ startupPending: false, revision: 1 }),
+        });
+      }
+      return reply(404, {});
+    }),
+  );
+  window.history.replaceState({}, "", "/#playlists/list");
+  await loadApp().start();
+  document.querySelector<HTMLButtonElement>('[data-action="playlist-activate"]')!.click();
+  await vi.waitFor(() => expect(commands).toEqual([{ type: "playlist.activate", id: "pl-1" }]));
+});
+
 test("the default route lands on content settings and follows the Saved list link", async () => {
   localStorage.setItem("openiptv.remote", JSON.stringify({ deviceId: "p", credential: "c" }));
   const commandBodies: Array<Record<string, unknown>> = [];
@@ -10110,7 +10191,7 @@ test("the default route lands on content settings and follows the Saved list lin
   expect(document.querySelector('[data-page="playlists"]')).toBeNull();
   expect(document.querySelector(".playlist-card")).toBeNull();
   const switches = document.querySelectorAll('[data-page="content-settings"] [data-setting]');
-  expect(switches).toHaveLength(5);
+  expect(switches).toHaveLength(6);
   expect(
     document.querySelector<HTMLInputElement>('[data-setting="playlistShortcut"]')?.checked,
   ).toBe(true);

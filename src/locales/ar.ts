@@ -1,6 +1,16 @@
 import type { MessageKey, MessageValues } from "../services/locale";
 
 export default {
+  "settings.startupPlaylist": "قائمة التشغيل عند البدء",
+  "settings.startupPlaylistHint":
+    "اختر ما يفتح عند بدء التطبيق. تسري التغييرات في التشغيل التالي.",
+  "settings.startupLast": "آخر قائمة تشغيل نشطة",
+  "settings.startupAsk": "السؤال دائماً",
+  "settings.startupSpecific": "قائمة تشغيل محددة",
+  "settings.startupSelection": "قائمة التشغيل المراد فتحها",
+  "playlist.startupTitle": "اختر قائمة تشغيل",
+  "playlist.startupHint": "اختر قائمة لبدء المشاهدة.",
+  "playlist.lastActive": "آخر قائمة نشطة",
   "vod.searchHint": "اكتب عنوانًا أو فئة، ثم اختر بحث أو اضغط Enter.",
   "vod.searching": "جارٍ البحث في الكتالوج…",
   "vod.searchFailed": "البحث غير متاح",
@@ -46,8 +56,7 @@ export default {
     `سيؤدي هذا إلى إخفاء جميع القنوات في ${category} ضمن ${playlist}، بما فيها القنوات في الصفحات الأخرى وخارج البحث الحالي.`,
   "lineup.hideAllChannels": "إخفاء جميع القنوات",
   "playbackInfo.frameCounts": ({ dropped, total }) => `${dropped} مفقودة / ${total} إجمالي`,
-  "playlist.shortcutHint":
-    "اختر قائمة تشغيل، ثم تصفح محتواها من القائمة الرئيسية. يمكنك إدارة قوائم التشغيل من الإعدادات.",
+  "playlist.shortcutHint": "اختر قائمة تشغيل، ثم تصفح محتواها من القائمة الرئيسية.",
   "playlist.mainMenu": "القائمة الرئيسية",
   "playlist.shortcutChannels": ({ count }) => `القنوات: ${count}`,
   "validation.enterServer": "أدخل عنوان الخادم.",

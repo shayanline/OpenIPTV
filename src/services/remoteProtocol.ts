@@ -6,10 +6,13 @@ import { useSetup } from "../stores/setup";
 import {
   ASPECTS,
   FONT_SIZES,
+  isStartupPlaylist,
   type AspectId,
   type Playlist,
+  type StartupPlaylist,
   useSettings,
 } from "../stores/settings";
+import { useStartup } from "../stores/startup";
 import {
   directionFor,
   isLocalePreference,
@@ -62,7 +65,8 @@ type SettingCommand =
   | { type: "setting"; key: BooleanSetting; value: boolean }
   | { type: "setting"; key: "locale"; value: LocalePreference }
   | { type: "setting"; key: "fontSizeId"; value: string }
-  | { type: "setting"; key: "aspectId"; value: AspectId };
+  | { type: "setting"; key: "aspectId"; value: AspectId }
+  | { type: "setting"; key: "startupPlaylist"; value: StartupPlaylist };
 
 type RemoteXtreamSource = Omit<XtreamSource, "password"> & { hasPassword: boolean };
 type RemotePlaylistSource = Exclude<PlaylistSource, XtreamSource> | RemoteXtreamSource;
@@ -90,6 +94,7 @@ export interface RemoteSnapshot {
   revision: number;
   locale: string;
   direction: "ltr" | "rtl";
+  startupPending: boolean;
   labels: Record<string, string>;
   localeOptions: { id: LocalePreference; label: string; secondary?: string }[];
   settings: {
@@ -105,6 +110,7 @@ export interface RemoteSnapshot {
     continuousReconnect: boolean;
     hideEmptyCategories: boolean;
     playlistShortcut: boolean;
+    startupPlaylist: StartupPlaylist;
     showLive: boolean;
     showMovies: boolean;
     showSeries: boolean;
@@ -240,6 +246,9 @@ function remoteSource(source: PlaylistSource): RemotePlaylistSource {
 
 function validSetting(key: unknown, value: unknown): SettingCommand | null {
   if (!text(key)) return null;
+  if (key === "startupPlaylist" && isStartupPlaylist(value)) {
+    return { type: "setting", key, value };
+  }
   if (BOOLEAN_SETTINGS.has(key as BooleanSetting) && typeof value === "boolean") {
     return { type: "setting", key: key as BooleanSetting, value };
   }
@@ -345,6 +354,7 @@ export function remoteSnapshot(): RemoteSnapshot {
     revision,
     locale,
     direction: directionFor(locale),
+    startupPending: useStartup.getState().pending,
     labels: {
       title: "OpenIPTV",
       pairTitle: t("remote.setupTitle"),
@@ -559,6 +569,12 @@ export function remoteSnapshot(): RemoteSnapshot {
       hideEmptyCategoriesHint: t("settings.hideEmptyCategoriesHint"),
       playlistShortcut: t("settings.playlistShortcut"),
       playlistShortcutHint: t("settings.playlistShortcutHint"),
+      startupPlaylist: t("settings.startupPlaylist"),
+      startupPlaylistHint: t("settings.startupPlaylistHint"),
+      startupLast: t("settings.startupLast"),
+      startupAsk: t("settings.startupAsk"),
+      startupSpecific: t("settings.startupSpecific"),
+      startupSelection: t("settings.startupSelection"),
       showLive: t("settings.showLive"),
       showMovies: t("settings.showMovies"),
       showSeries: t("settings.showSeries"),
@@ -636,6 +652,7 @@ export function remoteSnapshot(): RemoteSnapshot {
       continuousReconnect: settings.continuousReconnect,
       hideEmptyCategories: settings.hideEmptyCategories,
       playlistShortcut: settings.playlistShortcut,
+      startupPlaylist: settings.startupPlaylist,
       showLive: settings.showLive,
       showMovies: settings.showMovies,
       showSeries: settings.showSeries,
@@ -698,7 +715,16 @@ async function applySetting(
     rematerialise(resolveLocale(command.value));
   } else if (command.key === "fontSizeId") settings.set("fontSizeId", command.value);
   else if (command.key === "aspectId") settings.set("aspectId", command.value);
-  else settings.set(command.key, command.value);
+  else if (command.key === "startupPlaylist") {
+    const preference = command.value;
+    if (
+      preference.mode === "specific" &&
+      !settings.playlists.some((playlist) => playlist.id === preference.playlistId)
+    ) {
+      return "conflict";
+    }
+    settings.set("startupPlaylist", preference);
+  } else settings.set(command.key, command.value);
   if (command.key === "compatibility" && !command.value) stopRepair();
   return;
 }
@@ -836,7 +862,12 @@ async function perform(
     return;
   }
   if (command.type === "playlist.activate") {
-    if (useSettings.getState().activePlaylistId === command.id) return;
+    if (
+      useSettings.getState().activePlaylistId === command.id &&
+      !useStartup.getState().pending
+    ) {
+      return;
+    }
     const result = await channels.activatePlaylist(command.id);
     return result.activated ? undefined : "notFound";
   }

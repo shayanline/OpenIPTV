@@ -1,6 +1,16 @@
 import type { MessageKey, MessageValues } from "../services/locale";
 
 export default {
+  "settings.startupPlaylist": "Daftar putar saat mulai",
+  "settings.startupPlaylistHint":
+    "Pilih yang dibuka saat aplikasi dimulai. Perubahan berlaku saat aplikasi dibuka berikutnya.",
+  "settings.startupLast": "Daftar putar aktif terakhir",
+  "settings.startupAsk": "Selalu tanya",
+  "settings.startupSpecific": "Daftar putar tertentu",
+  "settings.startupSelection": "Daftar putar yang dibuka",
+  "playlist.startupTitle": "Pilih daftar putar",
+  "playlist.startupHint": "Pilih daftar putar untuk mulai menonton.",
+  "playlist.lastActive": "Terakhir aktif",
   "vod.searchHint": "Ketik judul atau kategori, lalu pilih Cari atau tekan Enter.",
   "vod.searching": "Mencari di katalog…",
   "vod.searchFailed": "Pencarian tidak tersedia",
@@ -46,8 +56,7 @@ export default {
     `Ini menyembunyikan semua saluran dalam ${category} untuk ${playlist}, termasuk saluran di halaman lain dan di luar pencarian saat ini.`,
   "lineup.hideAllChannels": "Sembunyikan semua saluran",
   "playbackInfo.frameCounts": ({ dropped, total }) => `${dropped} terlewat / ${total} total`,
-  "playlist.shortcutHint":
-    "Pilih daftar putar, lalu jelajahi kontennya melalui menu utama. Kelola daftar putar di Pengaturan.",
+  "playlist.shortcutHint": "Pilih daftar putar, lalu jelajahi kontennya melalui menu utama.",
   "playlist.mainMenu": "Menu utama",
   "playlist.shortcutChannels": ({ count }) => `${count} saluran`,
   "validation.enterServer": "Masukkan alamat server.",

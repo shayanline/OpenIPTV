@@ -6,6 +6,8 @@ The engine compatibility gate first opens the built widget through a `file:` add
 
 ## Choosing local checks
 
+`tests/startupPlaylists.test.tsx` covers the launch choice, provider isolation until the startup exit fade finishes, startup exit confirmation, the ordinary switcher's playlist management entry, paired phone activation and recovery. `tests/appNavigation.test.tsx` covers dismissal after the exit fade, selecting the active playlist without loading again, visible loading feedback while slow provider requests remain pending, stable navigation during restoration, failed load recovery and restored Live or VOD destinations. Startup preference persistence and deletion fallback are covered by `tests/settings.test.ts`, while `tests/settings-ui.test.tsx`, `tests/remoteProtocol.test.ts` and `tests/remoteWeb.test.ts` cover the TV and phone controls.
+
 Builds and packaging do not require approval, including native compilation, generated build artifacts and type checks invoked by a build. Run other verification commands only after explicit final approval under the verification rules in [AGENTS.md](../AGENTS.md). When approval is given, run the union of the checks the changed files justify rather than every row in this table.
 
 | What changed | What to run |

@@ -98,6 +98,7 @@ export function Playlists({
   navigation,
   recoveryPlaylistId,
   recoveryError,
+  savedPlaylists = false,
   onError,
   onSuccess,
   onClearFeedback,
@@ -106,6 +107,7 @@ export function Playlists({
   navigation: SettingsDetailNavigation;
   recoveryPlaylistId?: string;
   recoveryError?: string;
+  savedPlaylists?: boolean;
   onError: (message: string) => void;
   onSuccess: (message: string) => void;
   onClearFeedback?: () => void;
@@ -161,7 +163,7 @@ export function Playlists({
   const queueLayoutTask = useLayoutTask();
   const [page, setPage] = useState(0);
   const pendingPageFocus = useRef(false);
-  const [listOpen, setListOpen] = useState(() => !!recoveryPlaylistId);
+  const [listOpen, setListOpen] = useState(() => savedPlaylists || !!recoveryPlaylistId);
   const [query, setQuery] = useState("");
   const [searching, setSearching] = useState(false);
   const searchButton = useRef<HTMLButtonElement>(null);
@@ -796,14 +798,14 @@ export function Playlists({
       target?.focus({ preventScroll: true });
     }
   }, true);
-  const recoveryApplied = useRef(false);
+  const initialListApplied = useRef(false);
   useLayoutEffect(() => {
-    if (recoveryApplied.current || !recoveryPlaylistId) return;
-    recoveryApplied.current = true;
+    if (initialListApplied.current || (!recoveryPlaylistId && !savedPlaylists)) return;
+    initialListApplied.current = true;
     const index = s.playlists.findIndex((playlist) => playlist.id === recoveryPlaylistId);
     if (index >= 0) setPage(Math.floor(index / PAGE_SIZE));
     enterSavedList();
-  }, [recoveryPlaylistId, s.playlists, enterSavedList]);
+  }, [recoveryPlaylistId, savedPlaylists, s.playlists, enterSavedList]);
   useLayoutEffect(() => {
     if (!pendingPageFocus.current) return;
     if (
@@ -1106,9 +1108,7 @@ export function Playlists({
                       >
                         {number(s.playlists.findIndex((playlist) => playlist.id === p.id) + 1)}
                       </span>
-                      <span className="pl-name">
-                        {p.name}
-                      </span>
+                      <span className="pl-name">{p.name}</span>
                       <span className="pl-tags">
                         {/* Named, not just tinted. The accessibility guidance asks for a mark
                             alongside colour, since a tint alone says nothing in greyscale. */}

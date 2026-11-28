@@ -1,6 +1,16 @@
 import type { MessageKey, MessageValues } from "../services/locale";
 
 export default {
+  "settings.startupPlaylist": "시작 시 재생목록",
+  "settings.startupPlaylistHint":
+    "앱 시작 시 열 항목을 선택하세요. 변경 사항은 다음 실행부터 적용됩니다.",
+  "settings.startupLast": "마지막으로 사용한 재생목록",
+  "settings.startupAsk": "항상 묻기",
+  "settings.startupSpecific": "특정 재생목록",
+  "settings.startupSelection": "열 재생목록",
+  "playlist.startupTitle": "재생목록 선택",
+  "playlist.startupHint": "시청할 재생목록을 선택하세요.",
+  "playlist.lastActive": "마지막 사용",
   "vod.searchHint": "제목이나 카테고리를 입력한 후 검색을 선택하거나 Enter를 누르세요.",
   "vod.searching": "카탈로그 검색 중…",
   "vod.searchFailed": "검색을 사용할 수 없습니다",
@@ -46,8 +56,7 @@ export default {
     `${playlist}의 ${category}에 있는 모든 채널을 숨깁니다. 다른 페이지와 현재 검색 범위 밖의 채널도 포함됩니다.`,
   "lineup.hideAllChannels": "모든 채널 숨기기",
   "playbackInfo.frameCounts": ({ dropped, total }) => `${dropped} 누락 / 전체 ${total}`,
-  "playlist.shortcutHint":
-    "재생목록을 선택한 다음 기본 메뉴에서 콘텐츠를 탐색하세요. 재생목록은 설정에서 관리할 수 있습니다.",
+  "playlist.shortcutHint": "재생목록을 선택한 다음 기본 메뉴에서 콘텐츠를 탐색하세요.",
   "playlist.mainMenu": "기본 메뉴",
   "playlist.shortcutChannels": ({ count }) => `${count}개 채널`,
   "validation.enterServer": "서버 주소를 입력하세요.",

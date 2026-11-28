@@ -66,6 +66,7 @@ test("a file written by an older version keeps working, and gains the new defaul
   assert.equal(s.showPlaybackStats, false, "the restored setting arrives at its default");
   assert.equal(s.hideEmptyCategories, true, "empty categories stay hidden by default");
   assert.equal(s.playlistShortcut, true, "playlist switching is available by default");
+  expect(s.startupPlaylist).toEqual({ mode: "last" });
   assert.equal(s.showLive, true, "every section starts on");
   assert.equal(s.showMovies, true);
   assert.equal(s.showSeries, true);
@@ -106,6 +107,67 @@ test("the playlist shortcut remains disabled after settings are reloaded", async
   first.useSettings.getState().set("playlistShortcut", false);
   const second = await load();
   assert.equal(second.useSettings.getState().playlistShortcut, false);
+});
+
+test.each([
+  null,
+  "ask",
+  { mode: "other" },
+  { mode: "specific" },
+  { mode: "specific", playlistId: "missing" },
+  { mode: "ask", playlistId: "pl-x" },
+])(
+  "invalid startup preference %j falls back to the last active playlist",
+  async (preference) => {
+    localStorage.setItem(
+      KEY,
+      JSON.stringify({ playlists: [xtreamPlaylist], startupPlaylist: preference }),
+    );
+    const { useSettings } = await load();
+    expect(useSettings.getState().startupPlaylist).toEqual({ mode: "last" });
+    expect(JSON.parse(localStorage.getItem(KEY)!).startupPlaylist).toEqual({ mode: "last" });
+  },
+);
+
+test("a fixed startup playlist survives reload and resets only when that playlist is deleted", async () => {
+  localStorage.setItem(KEY, JSON.stringify({ playlists: [xtreamPlaylist] }));
+  const first = await load();
+  first.useSettings.getState().addPlaylist("Other", m3u("http://other.invalid/list.m3u"));
+  first.useSettings.getState().set("startupPlaylist", { mode: "specific", playlistId: "pl-x" });
+  const { useSettings } = await load();
+  expect(useSettings.getState().startupPlaylist).toEqual({
+    mode: "specific",
+    playlistId: "pl-x",
+  });
+  const other = useSettings.getState().playlists.find((playlist) => playlist.id !== "pl-x")!;
+  await useSettings.getState().removePlaylist(other.id);
+  expect(useSettings.getState().startupPlaylist.mode).toBe("specific");
+  useSettings.getState().addPlaylist("Replacement", m3u("http://new.invalid/list.m3u"));
+  const replacement = useSettings
+    .getState()
+    .playlists.find((playlist) => playlist.id !== "pl-x")!;
+  useSettings.getState().set("activePlaylistId", replacement.id);
+  await useSettings.getState().removePlaylist("pl-x");
+  expect(useSettings.getState().startupPlaylist).toEqual({ mode: "last" });
+  expect(useSettings.getState().activePlaylistId).toBe(replacement.id);
+  expect(JSON.parse(localStorage.getItem(KEY)!).startupPlaylist).toEqual({ mode: "last" });
+});
+
+test("a failed playlist deletion preserves its fixed startup preference", async () => {
+  localStorage.setItem(
+    KEY,
+    JSON.stringify({
+      playlists: [xtreamPlaylist],
+      startupPlaylist: { mode: "specific", playlistId: "pl-x" },
+    }),
+  );
+  const { useSettings } = await load();
+  personalDisk.remove.mockRejectedValueOnce(new Error("disk unavailable"));
+  expect(await useSettings.getState().removePlaylist("pl-x")).toBe(false);
+  expect(useSettings.getState().startupPlaylist).toEqual({
+    mode: "specific",
+    playlistId: "pl-x",
+  });
 });
 
 test("a saved state with every section disabled normalizes to one supported section before persisting", async () => {

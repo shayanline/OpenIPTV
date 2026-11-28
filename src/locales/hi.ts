@@ -1,6 +1,15 @@
 import type { MessageKey, MessageValues } from "../services/locale";
 
 export default {
+  "settings.startupPlaylist": "शुरुआती प्लेलिस्ट",
+  "settings.startupPlaylistHint": "ऐप शुरू होने पर क्या खुले, चुनें। बदलाव अगली बार ऐप खोलने पर लागू होंगे।",
+  "settings.startupLast": "अंतिम सक्रिय प्लेलिस्ट",
+  "settings.startupAsk": "हमेशा पूछें",
+  "settings.startupSpecific": "विशिष्ट प्लेलिस्ट",
+  "settings.startupSelection": "खोली जाने वाली प्लेलिस्ट",
+  "playlist.startupTitle": "एक प्लेलिस्ट चुनें",
+  "playlist.startupHint": "देखना शुरू करने के लिए प्लेलिस्ट चुनें।",
+  "playlist.lastActive": "अंतिम सक्रिय",
   "vod.searchHint": "शीर्षक या श्रेणी लिखें, फिर खोजें चुनें या Enter दबाएँ।",
   "vod.searching": "कैटलॉग में खोज जारी है…",
   "vod.searchFailed": "खोज उपलब्ध नहीं है",
@@ -45,8 +54,7 @@ export default {
     `इससे ${playlist} की ${category} श्रेणी के सभी चैनल छिप जाएँगे, जिनमें दूसरे पृष्ठों और वर्तमान खोज से बाहर के चैनल भी शामिल हैं।`,
   "lineup.hideAllChannels": "सभी चैनल छिपाएँ",
   "playbackInfo.frameCounts": ({ dropped, total }) => `${dropped} छूटे / कुल ${total}`,
-  "playlist.shortcutHint":
-    "एक प्लेलिस्ट चुनें, फिर मुख्य मेनू से उसकी सामग्री देखें। प्लेलिस्ट को सेटिंग में प्रबंधित करें।",
+  "playlist.shortcutHint": "एक प्लेलिस्ट चुनें, फिर मुख्य मेनू से उसकी सामग्री देखें।",
   "playlist.mainMenu": "मुख्य मेनू",
   "playlist.shortcutChannels": ({ count }) => `${count} चैनल`,
   "validation.enterServer": "सर्वर का पता दर्ज करें।",

@@ -1,6 +1,16 @@
 import type { MessageKey, MessageValues } from "../services/locale";
 
 export default {
+  "settings.startupPlaylist": "Wiedergabeliste beim Start",
+  "settings.startupPlaylistHint":
+    "Wählen Sie, was beim Appstart geöffnet wird. Änderungen gelten ab dem nächsten Start.",
+  "settings.startupLast": "Zuletzt aktive Wiedergabeliste",
+  "settings.startupAsk": "Immer fragen",
+  "settings.startupSpecific": "Bestimmte Wiedergabeliste",
+  "settings.startupSelection": "Zu öffnende Wiedergabeliste",
+  "playlist.startupTitle": "Wiedergabeliste auswählen",
+  "playlist.startupHint": "Wählen Sie eine Wiedergabeliste zum Ansehen.",
+  "playlist.lastActive": "Zuletzt aktiv",
   "vod.searchHint": "Titel oder Kategorie eingeben, dann Suchen wählen oder Enter drücken.",
   "vod.searching": "Katalog wird durchsucht…",
   "vod.searchFailed": "Suche nicht verfügbar",
@@ -49,7 +59,7 @@ export default {
   "lineup.hideAllChannels": "Alle Kanäle ausblenden",
   "playbackInfo.frameCounts": ({ dropped, total }) => `${dropped} verworfen / ${total} gesamt`,
   "playlist.shortcutHint":
-    "Wählen Sie eine Wiedergabeliste und durchsuchen Sie deren Inhalte über das Hauptmenü. Verwalten Sie Wiedergabelisten in den Einstellungen.",
+    "Wählen Sie eine Wiedergabeliste und durchsuchen Sie deren Inhalte über das Hauptmenü.",
   "playlist.mainMenu": "Hauptmenü",
   "playlist.shortcutChannels": ({ count, total }) =>
     `${count} ${Number(total) === 1 ? "Kanal" : "Kanäle"}`,

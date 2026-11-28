@@ -107,6 +107,13 @@ describe("remote command parsing", () => {
       { type: "setting", key: "continuousReconnect", value: true },
       { type: "setting", key: "hideEmptyCategories", value: false },
       { type: "setting", key: "playlistShortcut", value: false },
+      { type: "setting", key: "startupPlaylist", value: { mode: "last" } },
+      { type: "setting", key: "startupPlaylist", value: { mode: "ask" } },
+      {
+        type: "setting",
+        key: "startupPlaylist",
+        value: { mode: "specific", playlistId: "pl-1" },
+      },
       { type: "setting", key: "showLive", value: false },
       { type: "setting", key: "showMovies", value: false },
       { type: "setting", key: "showSeries", value: true },
@@ -144,6 +151,15 @@ describe("remote command parsing", () => {
       parseRemoteCommand({ type: "setting", key: "playlistShortcut", value: "yes" }),
     ).toBeNull();
     expect(parseRemoteCommand({ type: "setting", key: "showMovies", value: 1 })).toBeNull();
+    for (const value of [
+      "ask",
+      { mode: "unknown" },
+      { mode: "specific" },
+      { mode: "specific", playlistId: "" },
+      { mode: "ask", playlistId: "pl-1" },
+    ]) {
+      expect(parseRemoteCommand({ type: "setting", key: "startupPlaylist", value })).toBeNull();
+    }
     expect(
       parseRemoteCommand({ type: "setting", key: "hideEmptyCategories", value: "on" }),
     ).toBeNull();
@@ -886,6 +902,51 @@ test("the playlist shortcut preference can be changed through remote commands", 
   expect(result.ok).toBe(true);
   expect(result.snapshot.settings.playlistShortcut).toBe(false);
   expect(s.useSettings.getState().playlistShortcut).toBe(false);
+});
+
+test("remote startup settings validate the selected owner and do not activate it", async () => {
+  const s = await load();
+  s.useSettings.getState().addPlaylist("TV", {
+    kind: "m3u",
+    url: "http://tv.invalid/list.m3u",
+  });
+  s.useSettings.getState().addPlaylist("Radio", {
+    kind: "m3u",
+    url: "http://radio.invalid/list.m3u",
+  });
+  const original = s.useSettings.getState().activePlaylistId;
+  const radio = s.useSettings.getState().playlists[1];
+  const result = await s.applyRemoteCommand({
+    id: "startup-specific",
+    revision: 0,
+    command: {
+      type: "setting",
+      key: "startupPlaylist",
+      value: { mode: "specific", playlistId: radio.id },
+    },
+  });
+  expect(result.ok).toBe(true);
+  expect(result.snapshot.settings.startupPlaylist).toEqual({
+    mode: "specific",
+    playlistId: radio.id,
+  });
+  expect(result.snapshot.activePlaylistId).toBe(original);
+  expect(fetch).not.toHaveBeenCalled();
+  const missing = await s.applyRemoteCommand({
+    id: "startup-missing",
+    revision: result.snapshot.revision,
+    command: {
+      type: "setting",
+      key: "startupPlaylist",
+      value: { mode: "specific", playlistId: "missing" },
+    },
+  });
+  expect(missing.ok).toBe(false);
+  expect(missing.reason).toBe("conflict");
+  expect(s.useSettings.getState().startupPlaylist).toEqual({
+    mode: "specific",
+    playlistId: radio.id,
+  });
 });
 
 test("the last supported section guard holds through remote commands", async () => {

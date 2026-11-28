@@ -78,10 +78,12 @@ export function NavigationGuide({
   className = "",
   scroll = false,
   shortcuts = [],
+  returnLabel,
 }: {
   className?: string;
   scroll?: boolean;
   shortcuts?: Guide[];
+  returnLabel?: string;
 }) {
   const { t } = useLocale();
   return (
@@ -90,7 +92,7 @@ export function NavigationGuide({
       items={[
         ...(scroll ? [{ keys: ["\u2191", "\u2193"], label: t("common.scroll") }] : []),
         { keys: ["OK"], label: t("common.select") },
-        { keys: ["Return"], label: t("common.back") },
+        { keys: ["Return"], label: returnLabel ?? t("common.back") },
         ...shortcuts,
       ]}
     />

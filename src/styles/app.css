@@ -8055,6 +8055,9 @@ html[dir="rtl"].no-flex-gap .episode-meta-badge .icon {
   padding: var(--safe-y) var(--safe-x);
   padding-inline-start: calc(var(--safe-x) + var(--page-back-w) + var(--content-gutter));
 }
+.playlist-shortcut.playlist-startup {
+  padding-inline-start: var(--safe-x);
+}
 .playlist-shortcut > .sheet-edge-back {
   position: absolute;
   top: 0;
@@ -8112,43 +8115,39 @@ html[dir="rtl"] .playlist-shortcut > .sheet-edge-back {
   font-size: var(--t-label);
   line-height: var(--lh);
 }
-.playlist-shortcut-current {
+.playlist-shortcut-intro .playlist-shortcut-current {
   display: flex;
-  width: 380px;
-  max-width: 42%;
   min-width: 0;
-  flex: 0 1 auto;
   align-items: center;
-  padding: var(--s3);
-  border: 1px solid var(--line);
-  border-radius: var(--r-lg);
-  background: var(--surface-1);
+  color: var(--text-2);
+  font-size: var(--t-caption);
 }
-.playlist-shortcut-current .playlist-avatar,
+.playlist-shortcut-current span {
+  flex: 0 0 auto;
+  margin-inline-end: var(--s2);
+}
+.playlist-shortcut-current strong {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text);
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.playlist-shortcut-manage {
+  flex: 0 0 auto;
+  align-self: flex-start;
+  max-width: 42%;
+}
+.playlist-shortcut-manage span {
+  white-space: normal;
+}
 .playlist-shortcut-row .playlist-avatar {
   width: var(--s6);
   height: var(--s6);
   flex-basis: var(--s6);
   margin-inline-end: var(--s3);
   font-size: var(--t-section);
-}
-.playlist-shortcut-current-copy {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-  color: var(--text-2);
-  font-size: var(--t-caption);
-}
-.playlist-shortcut-current-copy strong {
-  margin: 4px 0;
-  overflow: hidden;
-  color: var(--text);
-  font-size: var(--t-label);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.playlist-shortcut-current-label {
-  color: var(--accent);
 }
 .playlist-shortcut-row-copy {
   display: flex;
@@ -8164,31 +8163,15 @@ html[dir="rtl"] .playlist-shortcut > .sheet-edge-back {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.playlist-shortcut-active-label {
-  margin-inline-start: var(--s2);
-  padding: 4px var(--s2);
-  border-radius: var(--r-pill);
-  background: var(--control-on);
-  color: var(--on-accent);
-  font-size: var(--t-caption);
-}
-.playlist-shortcut-radio {
+.playlist-shortcut-open {
   display: flex;
-  width: 32px;
-  height: 32px;
   flex: 0 0 auto;
   align-items: center;
   justify-content: center;
   margin-inline-start: var(--s3);
-  border: 2px solid var(--text-3);
-  border-radius: var(--r-pill);
+  color: var(--text-3);
 }
-.playlist-shortcut-radio.on {
-  border-color: var(--control-on);
-  background: var(--control-on);
-  color: var(--on-accent);
-}
-.playlist-shortcut-radio .icon {
+.playlist-shortcut-open .icon {
   width: 20px;
   height: 20px;
 }
@@ -8280,9 +8263,9 @@ html[data-input-mode="pointer"] .playlist-shortcut-row:hover .playlist-shortcut-
 html[data-input-mode="remote"] .playlist-shortcut-row.cursor .playlist-shortcut-meta {
   color: var(--target-muted);
 }
-html[data-input-mode="pointer"] .playlist-shortcut-row:hover .playlist-shortcut-radio:not(.on),
-html[data-input-mode="remote"] .playlist-shortcut-row.cursor .playlist-shortcut-radio:not(.on) {
-  border-color: var(--target-muted);
+html[data-input-mode="pointer"] .playlist-shortcut-row:hover .playlist-shortcut-open,
+html[data-input-mode="remote"] .playlist-shortcut-row.cursor .playlist-shortcut-open {
+  color: var(--target-text);
 }
 .hints.playlist-shortcut-keys {
   flex: 0 0 auto;
@@ -8321,8 +8304,7 @@ html[data-input-mode="remote"] .playlist-shortcut-row.cursor .playlist-shortcut-
     flex-direction: column;
     gap: var(--s2);
   }
-  .playlist-shortcut-current {
-    width: 100%;
+  .playlist-shortcut-manage {
     max-width: none;
   }
   .no-flex-gap .playlist-shortcut-heading > * + * {
@@ -8338,10 +8320,6 @@ html[data-input-mode="remote"] .playlist-shortcut-row.cursor .playlist-shortcut-
     overflow-wrap: break-word;
     font-size: var(--t-title);
   }
-  .playlist-shortcut-current,
-  .playlist-shortcut-active-label {
-    display: none;
-  }
   .playlist-shortcut-intro p {
     font-size: var(--t-caption);
   }
@@ -8354,7 +8332,7 @@ html[data-input-mode="remote"] .playlist-shortcut-row.cursor .playlist-shortcut-
     flex-basis: var(--s5);
     margin-inline-end: var(--s2);
   }
-  .playlist-shortcut-radio {
+  .playlist-shortcut-open {
     margin-inline-start: var(--s2);
   }
   .playlist-shortcut-pagination .playlist-shortcut-page-action {

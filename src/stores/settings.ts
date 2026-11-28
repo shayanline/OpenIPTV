@@ -62,6 +62,32 @@ export interface Playlist {
   channelCount?: number;
 }
 
+export type StartupPlaylist =
+  | { mode: "last" }
+  | { mode: "ask" }
+  | { mode: "specific"; playlistId: string };
+
+export function isStartupPlaylist(value: unknown): value is StartupPlaylist {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const preference = value as Record<string, unknown>;
+  return preference.mode === "specific"
+    ? Object.keys(preference).length === 2 &&
+        typeof preference.playlistId === "string" &&
+        preference.playlistId.length > 0
+    : Object.keys(preference).length === 1 &&
+        (preference.mode === "last" || preference.mode === "ask");
+}
+
+function startupPlaylistFor(value: unknown, playlists: readonly Playlist[]): StartupPlaylist {
+  if (!isStartupPlaylist(value)) return { mode: "last" };
+  if (value.mode === "specific") {
+    return playlists.some((playlist) => playlist.id === value.playlistId)
+      ? { mode: "specific", playlistId: value.playlistId }
+      : { mode: "last" };
+  }
+  return { mode: value.mode };
+}
+
 interface Settings extends ContentSectionVisibility {
   locale: LocalePreference;
   fontSizeId: string;
@@ -75,6 +101,7 @@ interface Settings extends ContentSectionVisibility {
   showPlaybackStats: boolean;
   hideEmptyCategories: boolean;
   playlistShortcut: boolean;
+  startupPlaylist: StartupPlaylist;
   // Live recovery keeps reopening forever instead of stopping after the bounded retries.
   continuousReconnect: boolean;
   resumeLast: boolean;
@@ -123,6 +150,7 @@ const DEFAULTS = {
   showPlaybackStats: false,
   hideEmptyCategories: true,
   playlistShortcut: true,
+  startupPlaylist: { mode: "last" } as StartupPlaylist,
   showLive: true,
   showMovies: true,
   showSeries: true,
@@ -281,6 +309,10 @@ function load(): typeof DEFAULTS {
   legacyOrderPlaylistIds = new Set(
     legacyOrderMode ? (merged.playlists as Playlist[]).map((playlist) => playlist.id) : [],
   );
+  merged.startupPlaylist = startupPlaylistFor(
+    merged.startupPlaylist,
+    merged.playlists as Playlist[],
+  );
   const appearance = merged as typeof DEFAULTS;
   if (!availableContentModes(contentSourceKind(appearance), appearance).length) {
     appearance.showLive = true;
@@ -321,6 +353,9 @@ function persist(state: Settings) {
 export const useSettings = create<Settings>((update, get) => {
   const set = (patch: Partial<Settings>) => {
     const next = { ...get(), ...patch };
+    if ("playlists" in patch || "startupPlaylist" in patch) {
+      patch.startupPlaylist = startupPlaylistFor(next.startupPlaylist, next.playlists);
+    }
     update(
       availableContentModes(contentSourceKind(next), next).length
         ? patch

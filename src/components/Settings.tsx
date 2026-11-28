@@ -45,6 +45,7 @@ export interface SettingsEntry {
   section: SettingsSection;
   playlistId?: string;
   loadError?: string;
+  savedPlaylists?: boolean;
 }
 
 /**
@@ -948,6 +949,7 @@ export function Settings({
               navigation={detailNavigation}
               recoveryPlaylistId={entry.playlistId}
               recoveryError={entry.loadError}
+              savedPlaylists={entry.savedPlaylists}
               onError={notifyError}
               onSuccess={notifySuccess}
               onClearFeedback={notifications.clear}

@@ -1,6 +1,16 @@
 import type { MessageKey, MessageValues } from "../services/locale";
 
 export default {
+  "settings.startupPlaylist": "Afspeellijst bij opstarten",
+  "settings.startupPlaylistHint":
+    "Kies wat wordt geopend bij het starten. Wijzigingen gelden vanaf de volgende start.",
+  "settings.startupLast": "Laatst actieve afspeellijst",
+  "settings.startupAsk": "Altijd vragen",
+  "settings.startupSpecific": "Specifieke afspeellijst",
+  "settings.startupSelection": "Te openen afspeellijst",
+  "playlist.startupTitle": "Kies een afspeellijst",
+  "playlist.startupHint": "Selecteer een afspeellijst om te beginnen.",
+  "playlist.lastActive": "Laatst actief",
   "vod.searchHint": "Typ een titel of categorie en kies Zoeken of druk op Enter.",
   "vod.searching": "Catalogus doorzoeken…",
   "vod.searchFailed": "Zoeken is niet beschikbaar",
@@ -49,7 +59,7 @@ export default {
   "playbackInfo.frameCounts": ({ dropped, total }) =>
     `${dropped} overgeslagen / ${total} totaal`,
   "playlist.shortcutHint":
-    "Selecteer een afspeellijst en blader door de inhoud via het hoofdmenu. Beheer afspeellijsten via Instellingen.",
+    "Selecteer een afspeellijst en blader door de inhoud via het hoofdmenu.",
   "playlist.mainMenu": "Hoofdmenu",
   "playlist.shortcutChannels": ({ count, total }) =>
     `${count} ${Number(total) === 1 ? "zender" : "zenders"}`,

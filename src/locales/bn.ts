@@ -1,6 +1,16 @@
 import type { MessageKey, MessageValues } from "../services/locale";
 
 export default {
+  "settings.startupPlaylist": "শুরুর প্লেলিস্ট",
+  "settings.startupPlaylistHint":
+    "অ্যাপ চালু হলে কী খুলবে তা বেছে নিন। পরিবর্তন পরের বার চালু হলে কার্যকর হবে।",
+  "settings.startupLast": "সর্বশেষ সক্রিয় প্লেলিস্ট",
+  "settings.startupAsk": "সবসময় জিজ্ঞাসা করুন",
+  "settings.startupSpecific": "নির্দিষ্ট প্লেলিস্ট",
+  "settings.startupSelection": "যে প্লেলিস্ট খুলবে",
+  "playlist.startupTitle": "একটি প্লেলিস্ট বেছে নিন",
+  "playlist.startupHint": "দেখা শুরু করতে একটি প্লেলিস্ট বেছে নিন।",
+  "playlist.lastActive": "সর্বশেষ সক্রিয়",
   "vod.searchHint": "শিরোনাম বা বিভাগ লিখে অনুসন্ধান নির্বাচন করুন অথবা Enter চাপুন।",
   "vod.searching": "ক্যাটালগে খোঁজা হচ্ছে…",
   "vod.searchFailed": "অনুসন্ধান উপলভ্য নয়",
@@ -45,8 +55,7 @@ export default {
     `এতে ${playlist} প্লেলিস্টের ${category} বিভাগের সব চ্যানেল লুকানো হবে, অন্য পৃষ্ঠার ও বর্তমান অনুসন্ধানের বাইরের চ্যানেলগুলোও এর অন্তর্ভুক্ত।`,
   "lineup.hideAllChannels": "সব চ্যানেল লুকান",
   "playbackInfo.frameCounts": ({ dropped, total }) => `${dropped} বাদ পড়েছে / মোট ${total}`,
-  "playlist.shortcutHint":
-    "একটি প্লেলিস্ট বেছে নিন, তারপর মূল মেনু থেকে এর কনটেন্ট দেখুন। সেটিংস থেকে প্লেলিস্ট পরিচালনা করুন।",
+  "playlist.shortcutHint": "একটি প্লেলিস্ট বেছে নিন, তারপর মূল মেনু থেকে এর কনটেন্ট দেখুন।",
   "playlist.mainMenu": "মূল মেনু",
   "playlist.shortcutChannels": ({ count }) => `${count}টি চ্যানেল`,
   "validation.enterServer": "সার্ভারের ঠিকানা লিখুন।",

@@ -1,6 +1,16 @@
 import type { MessageKey, MessageValues } from "../services/locale";
 
 export default {
+  "settings.startupPlaylist": "起動時のプレイリスト",
+  "settings.startupPlaylistHint":
+    "アプリの起動時に開く内容を選びます。変更は次回の起動から適用されます。",
+  "settings.startupLast": "最後に使用したプレイリスト",
+  "settings.startupAsk": "毎回確認する",
+  "settings.startupSpecific": "指定したプレイリスト",
+  "settings.startupSelection": "開くプレイリスト",
+  "playlist.startupTitle": "プレイリストを選択",
+  "playlist.startupHint": "視聴を始めるプレイリストを選択してください。",
+  "playlist.lastActive": "最後に使用",
   "vod.searchHint": "タイトルまたはカテゴリーを入力し、検索を選ぶかEnterを押してください。",
   "vod.searching": "カタログを検索中…",
   "vod.searchFailed": "検索を利用できません",
@@ -49,7 +59,7 @@ export default {
   "lineup.hideAllChannels": "すべてのチャンネルを非表示",
   "playbackInfo.frameCounts": ({ dropped, total }) => `ドロップ ${dropped} / 合計 ${total}`,
   "playlist.shortcutHint":
-    "プレイリストを選択し、メインメニューからコンテンツを閲覧してください。プレイリストは設定で管理できます。",
+    "プレイリストを選択し、メインメニューからコンテンツを閲覧してください。",
   "playlist.mainMenu": "メインメニュー",
   "playlist.shortcutChannels": ({ count }) => `${count} チャンネル`,
   "validation.enterServer": "サーバーアドレスを入力してください。",

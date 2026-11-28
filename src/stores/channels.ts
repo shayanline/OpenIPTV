@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { useStartup } from "./startup";
 import type { Channel } from "../types";
 import { groupByCategory, parseM3U, UNCATEGORISED } from "../services/m3u";
 import { legacyLineupOrderMode, useSettings, type Playlist } from "./settings";
@@ -714,6 +715,7 @@ export const useChannels = create<State>((set, get) => {
       useLibrary.getState().selectPlaylist(undefined);
       useSettings.getState().set("activePlaylistId", playlist.id);
       useLibrary.getState().selectPlaylist(playlist);
+      useStartup.getState().activationStarted();
       const result = await get().load(false, refreshCached);
       return { ...result, activated: true };
     },

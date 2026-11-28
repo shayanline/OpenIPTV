@@ -1,6 +1,16 @@
 import type { MessageKey, MessageValues } from "../services/locale";
 
 export default {
+  "settings.startupPlaylist": "Başlangıç oynatma listesi",
+  "settings.startupPlaylistHint":
+    "Uygulama başladığında ne açılacağını seçin. Değişiklikler sonraki açılışta uygulanır.",
+  "settings.startupLast": "Son etkin oynatma listesi",
+  "settings.startupAsk": "Her zaman sor",
+  "settings.startupSpecific": "Belirli oynatma listesi",
+  "settings.startupSelection": "Açılacak oynatma listesi",
+  "playlist.startupTitle": "Bir oynatma listesi seçin",
+  "playlist.startupHint": "İzlemeye başlamak için bir liste seçin.",
+  "playlist.lastActive": "Son etkin",
   "vod.searchHint": "Bir başlık veya kategori yazın, ardından Ara'yı seçin veya Enter'a basın.",
   "vod.searching": "Katalogda aranıyor…",
   "vod.searchFailed": "Arama kullanılamıyor",
@@ -48,7 +58,7 @@ export default {
   "lineup.hideAllChannels": "Tüm kanalları gizle",
   "playbackInfo.frameCounts": ({ dropped, total }) => `${dropped} düşen / ${total} toplam`,
   "playlist.shortcutHint":
-    "Bir oynatma listesi seçin, ardından içeriğine ana menüden göz atın. Oynatma listelerini Ayarlar bölümünden yönetebilirsiniz.",
+    "Bir oynatma listesi seçin, ardından içeriğine ana menüden göz atın.",
   "playlist.mainMenu": "Ana menü",
   "playlist.shortcutChannels": ({ count }) => `${count} kanal`,
   "validation.enterServer": "Sunucu adresini girin.",

@@ -1,6 +1,16 @@
 import type { MessageKey, MessageValues } from "../services/locale";
 
 export default {
+  "settings.startupPlaylist": "Lista de reprodução inicial",
+  "settings.startupPlaylistHint":
+    "Escolha o que abrir ao iniciar a aplicação. As alterações aplicam-se no próximo arranque.",
+  "settings.startupLast": "Última lista ativa",
+  "settings.startupAsk": "Perguntar sempre",
+  "settings.startupSpecific": "Lista específica",
+  "settings.startupSelection": "Lista a abrir",
+  "playlist.startupTitle": "Escolha uma lista",
+  "playlist.startupHint": "Selecione uma lista para começar.",
+  "playlist.lastActive": "Última ativa",
   "vod.searchHint": "Digite um título ou categoria e selecione Pesquisar ou pressione Enter.",
   "vod.searching": "Pesquisando no catálogo…",
   "vod.searchFailed": "A pesquisa não está disponível",
@@ -49,7 +59,7 @@ export default {
   "lineup.hideAllChannels": "Ocultar todos os canais",
   "playbackInfo.frameCounts": ({ dropped, total }) => `${dropped} perdidos / ${total} no total`,
   "playlist.shortcutHint":
-    "Selecione uma lista e utilize o menu principal para explorar o seu conteúdo. Faça a gestão das listas nas Definições.",
+    "Selecione uma lista e utilize o menu principal para explorar o seu conteúdo.",
   "playlist.mainMenu": "Menu principal",
   "playlist.shortcutChannels": ({ count, total }) =>
     `${count} ${Number(total) === 1 ? "canal" : "canais"}`,

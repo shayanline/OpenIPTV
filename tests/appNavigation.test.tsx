@@ -2808,7 +2808,7 @@ test("a scope change closes local Search on both screens without resurrecting it
   expect(document.querySelector(".panel .rail")).toBeTruthy();
 });
 
-test("the playlist shortcut keeps its Back control and switches only on a different choice", async () => {
+test("the playlist shortcut closes on selection and reloads only a different choice", async () => {
   await mountApp(PLAYLIST);
   const { useSettings } = await import("../src/stores/settings");
   expect(useSettings.getState().playlistShortcut).toBe(true);
@@ -2828,9 +2828,9 @@ test("the playlist shortcut keeps its Back control and switches only on a differ
   );
   fireEvent.click(shortcut());
   await finishPageTransition();
-  expect(screen.getByText(/Manage playlists in Settings\./)).toBeTruthy();
-  const current = screen.getByRole("menuitemradio", { name: "Test" });
-  expect(current.getAttribute("aria-checked")).toBe("true");
+  expect(screen.getByRole("button", { name: "Manage playlists" })).toBeTruthy();
+  const current = screen.getByRole("menuitem", { name: "Test" });
+  expect(current.getAttribute("aria-current")).toBe("true");
   expect(document.activeElement).toBe(current);
   expect(screen.queryByRole("navigation", { name: "Application navigation" })).toBeNull();
   press(KEY.LEFT);
@@ -2842,22 +2842,14 @@ test("the playlist shortcut keeps its Back control and switches only on a differ
   expect(useSettings.getState().activePlaylistId).toBe("pl-1");
   expect(vi.mocked(fetch).mock.calls.length).toBe(requests);
   press(KEY.UP);
-  fireEvent.click(current);
-  expect(screen.getByRole("menu", { name: "Saved playlists" })).toBeTruthy();
+  press(KEY.ENTER);
+  expect(screen.queryByRole("menu", { name: "Saved playlists" })).toBeNull();
   expect(vi.mocked(fetch).mock.calls.length).toBe(requests);
-  fireEvent.click(screen.getByRole("menuitemradio", { name: "Second" }));
+  fireEvent.click(shortcut());
+  await finishPageTransition();
+  fireEvent.click(screen.getByRole("menuitem", { name: "Second" }));
   await settle(700);
   expect(useSettings.getState().activePlaylistId).toBe(second.id);
-  expect(screen.getByRole("menu", { name: "Saved playlists" })).toBeTruthy();
-  expect(
-    screen.getByRole("menuitemradio", { name: "Second" }).getAttribute("aria-checked"),
-  ).toBe("true");
-  expect(screen.getByRole("menuitemradio", { name: "Test" }).getAttribute("aria-checked")).toBe(
-    "false",
-  );
-  expect(document.activeElement).toBe(screen.getByRole("menuitemradio", { name: "Second" }));
-  fireEvent.click(screen.getByRole("button", { name: "Back" }));
-  await finishPageTransition();
   expect(screen.queryByRole("menu", { name: "Saved playlists" })).toBeNull();
   expect(shortcut().querySelector(".playlist-avatar-initials")?.textContent).toBe("S");
   expect(shortcut().querySelector(".playlist-avatar-number")?.textContent).toBe("2");
@@ -2865,6 +2857,78 @@ test("the playlist shortcut keeps its Back control and switches only on a differ
   expect(screen.queryByRole("button", { name: /^Playlists,/ })).toBeNull();
   expect(screen.getByRole("button", { name: "Search" })).toBeTruthy();
 });
+
+test.each([
+  { name: "Test", status: 200 },
+  { name: "Second", status: 200 },
+  { name: "Second", status: 503 },
+])(
+  "the playlist switcher reveals $name loading without waiting for provider status $status",
+  async ({ name, status }) => {
+    let respond!: (response: Response) => void;
+    const response = new Promise<Response>((resolve) => {
+      respond = resolve;
+    });
+    await mountApp(PLAYLIST, {
+      fetchImplementation: (input) =>
+        String(input).includes("second.invalid")
+          ? response
+          : Promise.resolve(new Response(PLAYLIST, { status: 200 })),
+    });
+    const { useSettings } = await import("../src/stores/settings");
+    act(() =>
+      useSettings.getState().addPlaylist("Second", {
+        kind: "m3u",
+        url: "http://second.invalid/list.m3u",
+      }),
+    );
+    const selected = useSettings
+      .getState()
+      .playlists.find((playlist) => playlist.name === name)!;
+    fireEvent.click(screen.getByRole("button", { name: /^Playlists,/ }));
+    await finishPageTransition();
+    const requests = vi.mocked(fetch).mock.calls.length;
+    document.documentElement.style.setProperty("--t-navigation", "180ms");
+    fireEvent.click(screen.getByRole("menuitem", { name }));
+    expect(document.querySelector(".app")?.getAttribute("data-page-transition")).toBe(
+      "leaving",
+    );
+    expect(useSettings.getState().activePlaylistId).toBe("pl-1");
+    expect(vi.mocked(fetch).mock.calls.length).toBe(requests);
+    await settle(179);
+    expect(screen.getByRole("menu", { name: "Saved playlists" })).toBeTruthy();
+    await settle(1);
+    if (name === "Second") {
+      expect(document.querySelector(".app")?.getAttribute("data-page-transition")).toBe(
+        "settling",
+      );
+      await settle(400);
+      expect(document.querySelector(".app")?.getAttribute("data-page-transition")).toBe("idle");
+      expect(screen.queryByRole("menu", { name: "Saved playlists" })).toBeNull();
+      expect(
+        screen.getByText(translate("en", "app.loadingPlaylist")).closest('[role="status"]'),
+      ).toBeTruthy();
+      expect(document.querySelector(".app.navigation-static")).toBeTruthy();
+      expect(document.querySelector(".app-navigation.expanded")).toBeNull();
+      await act(async () => respond(new Response(status === 200 ? PLAYLIST : "", { status })));
+      await settle(0);
+    }
+    await finishPageTransition();
+    expect(screen.queryByRole("menu", { name: "Saved playlists" })).toBeNull();
+    expect(useSettings.getState().activePlaylistId).toBe(selected.id);
+    expect(vi.mocked(fetch).mock.calls.length).toBe(requests + (name === "Test" ? 0 : 1));
+    expect(document.querySelector(".app")?.getAttribute("data-page-transition")).toBe("idle");
+    if (name === "Second" && status === 200) {
+      expect(
+        document.querySelector(".panel .list.focused .row.cursor .row-label")?.textContent,
+      ).toBe("First Channel");
+    }
+    if (status !== 200) {
+      const { useChannels } = await import("../src/stores/channels");
+      expect(useChannels.getState().error).toBeTruthy();
+    }
+  },
+);
 
 test.each([false, true])(
   "the playlist switcher preserves prior Live pause intent (%s)",
@@ -2926,11 +2990,10 @@ http://second.invalid/last-b.m3u8`;
     fireEvent.click(screen.getByRole("button", { name: /^Playlists,/ }));
     await finishPageTransition();
     const before = played.length;
-    fireEvent.click(screen.getByRole("menuitemradio", { name }));
-    await settle(700);
-    expect(played).toHaveLength(before);
-    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    fireEvent.click(screen.getByRole("menuitem", { name }));
     await finishPageTransition();
+    expect(played).toHaveLength(before + 1);
+    expect(screen.queryByRole("menu", { name: "Saved playlists" })).toBeNull();
   };
   await switchTo("Second");
   expect(played.at(-1)).toBe("http://second.invalid/b.m3u8");
@@ -2979,10 +3042,9 @@ test("playlist switching opens the current Live channel list and restores the ot
   const switchTo = async (name: string) => {
     fireEvent.click(screen.getByRole("button", { name: /^Playlists,/ }));
     await finishPageTransition();
-    fireEvent.click(screen.getByRole("menuitemradio", { name }));
-    await settle(700);
-    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    fireEvent.click(screen.getByRole("menuitem", { name }));
     await finishPageTransition();
+    expect(screen.queryByRole("menu", { name: "Saved playlists" })).toBeNull();
   };
   await switchTo("Live only");
   expect(panelOpen()).toBe(true);
@@ -3058,14 +3120,13 @@ test.each([false, true])(
     expect(screen.getByRole("menu", { name: "Saved playlists" })).toBeTruthy();
 
     press(KEY.LEFT);
-    const current = screen.getByRole("menuitemradio", { name: "Test" });
+    const current = screen.getByRole("menuitem", { name: "Test" });
     fireEvent.pointerMove(current);
     fireEvent.pointerDown(current);
     fireEvent.click(current);
     expect(document.querySelector(".app-navigation.expanded")).toBeNull();
-    expect(screen.getByRole("menu", { name: "Saved playlists" })).toBeTruthy();
-    press(KEY.BACK);
-    await finishPageTransition();
+    expect(screen.queryByRole("menu", { name: "Saved playlists" })).toBeNull();
+    await settle(0);
     expect(host.hidden).toBe(false);
     expect(document.querySelector(".panel")).toBe(panel);
     if (field) {
@@ -3091,7 +3152,7 @@ test("the playlist shortcut focuses a distant active playlist without rendering 
   act(() => useSettings.setState({ playlists }));
   fireEvent.click(screen.getByRole("button", { name: /^Playlists,/ }));
   await finishPageTransition();
-  expect(screen.getAllByRole("menuitemradio").length).toBeLessThanOrEqual(5);
+  expect(screen.getAllByRole("menuitem").length).toBeLessThanOrEqual(5);
   expect(document.activeElement?.getAttribute("aria-label")).toBe("Playlist 250");
   const pagination = screen.getByRole("navigation", { name: "Saved playlists" });
   expect(pagination.textContent).toContain("50 / 50");
@@ -3105,7 +3166,7 @@ test("the playlist shortcut focuses a distant active playlist without rendering 
   fireEvent.keyDown(document.activeElement!, { keyCode: KEY.ENTER, repeat: true });
   fireEvent.keyUp(document.activeElement!, { keyCode: KEY.ENTER });
   expect(useSettings.getState().activePlaylistId).toBe(base.id);
-  expect(screen.queryByRole("menuitemradio", { name: "Playlist 250" })).toBeNull();
+  expect(screen.queryByRole("menuitem", { name: "Playlist 250" })).toBeNull();
   for (let index = 0; index < 5; index += 1) press(KEY.DOWN);
   expect(document.activeElement).toBe(screen.getByRole("button", { name: "Next" }));
   press(KEY.ENTER);
@@ -3140,7 +3201,7 @@ test("playlist search resets pagination while preserving saved numbers and input
   expect(document.activeElement).toBe(field);
   fireEvent.change(field, { target: { value: "Library 1" } });
   expect(screen.queryByRole("navigation", { name: "Saved playlists" })).toBeNull();
-  const first = screen.getByRole("menuitemradio", { name: "Library 10" });
+  const first = screen.getByRole("menuitem", { name: "Library 10" });
   expect(first.querySelector(".playlist-avatar-number")?.textContent).toBe("10");
   field.setSelectionRange(3, 3);
   press(KEY.LEFT);
@@ -3159,7 +3220,7 @@ test("playlist search resets pagination while preserving saved numbers and input
   expect(document.activeElement).toBe(field);
 
   fireEvent.change(field, { target: { value: "missing" } });
-  expect(screen.queryAllByRole("menuitemradio")).toHaveLength(0);
+  expect(screen.queryAllByRole("menuitem")).toHaveLength(0);
   expect(screen.getByRole("menu", { name: "Saved playlists" }).textContent).toContain(
     translate("en", "lineup.noMatches"),
   );
@@ -3190,9 +3251,16 @@ test("Playlists restores the destination section and closes when only one playli
   await finishPageTransition();
   expect(screen.getByRole("heading", { name: "Playlists" })).toBeTruthy();
   expect(screen.getByRole("button", { name: "Back" })).toBeTruthy();
-  fireEvent.click(screen.getByRole("menuitemradio", { name: "Second" }));
-  await settle(700);
+  document.documentElement.style.setProperty("--t-navigation", "180ms");
+  fireEvent.click(screen.getByRole("menuitem", { name: "Second" }));
+  await settle(180);
+  expect(document.querySelector(".app")?.getAttribute("data-page-transition")).toBe("settling");
+  expect(document.querySelector(".app.navigation-static")).toBeTruthy();
   expect(document.querySelector(".vod-host [data-mode='series']")).toBeTruthy();
+  await finishPageTransition();
+  expect(screen.queryByRole("menu", { name: "Saved playlists" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: /^Playlists,/ }));
+  await finishPageTransition();
   expect(screen.getByRole("menu", { name: "Saved playlists" })).toBeTruthy();
   await act(async () => {
     expect(await useSettings.getState().removePlaylist("pl-1")).toBe(true);

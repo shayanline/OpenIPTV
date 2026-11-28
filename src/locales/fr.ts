@@ -1,6 +1,16 @@
 import type { MessageKey, MessageValues } from "../services/locale";
 
 export default {
+  "settings.startupPlaylist": "Liste de lecture au démarrage",
+  "settings.startupPlaylistHint":
+    "Choisissez ce qui s’ouvre au démarrage. Les modifications s’appliquent au prochain lancement.",
+  "settings.startupLast": "Dernière liste active",
+  "settings.startupAsk": "Toujours demander",
+  "settings.startupSpecific": "Liste de lecture précise",
+  "settings.startupSelection": "Liste de lecture à ouvrir",
+  "playlist.startupTitle": "Choisir une liste de lecture",
+  "playlist.startupHint": "Sélectionnez une liste pour commencer.",
+  "playlist.lastActive": "Dernière liste active",
   "vod.searchHint":
     "Saisissez un titre ou une catégorie, puis choisissez Rechercher ou appuyez sur Entrée.",
   "vod.searching": "Recherche dans le catalogue…",
@@ -50,7 +60,7 @@ export default {
   "lineup.hideAllChannels": "Masquer toutes les chaînes",
   "playbackInfo.frameCounts": ({ dropped, total }) => `${dropped} perdues / ${total} au total`,
   "playlist.shortcutHint":
-    "Sélectionnez une liste de lecture, puis parcourez son contenu depuis le menu principal. Gérez les listes de lecture dans les paramètres.",
+    "Sélectionnez une liste de lecture, puis parcourez son contenu depuis le menu principal.",
   "playlist.mainMenu": "Menu principal",
   "playlist.shortcutChannels": ({ count, total }) =>
     `${count} ${Number(total) > 1 ? "chaînes" : "chaîne"}`,

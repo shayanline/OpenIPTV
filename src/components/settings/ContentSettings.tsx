@@ -2,6 +2,7 @@ import { useSettings } from "../../stores/settings";
 import { useLocale } from "../../hooks/useLocale";
 import { availableContentModes } from "../../services/contentSections";
 import { Icon } from "../Icon";
+import { OptionPicker } from "../OptionPicker";
 import { PageHeader, Row, Toggle } from "./Field";
 
 const CONTENT_SECTIONS = [
@@ -26,6 +27,13 @@ export function ContentSettings({ onManage }: { onManage: () => void }) {
   const sourceKind = s.activePlaylist()?.source.kind ?? "m3u";
   const availableModes = availableContentModes(sourceKind, s);
   const active = s.playlists.find((playlist) => playlist.id === s.activePlaylistId);
+  const startupOptions = [
+    { value: "last" as const, label: t("settings.startupLast") },
+    { value: "ask" as const, label: t("settings.startupAsk") },
+    ...(s.playlists.length
+      ? [{ value: "specific" as const, label: t("settings.startupSpecific") }]
+      : []),
+  ];
   return (
     <>
       <PageHeader title={t("settings.content")} />
@@ -46,6 +54,34 @@ export function ContentSettings({ onManage }: { onManage: () => void }) {
         </span>
         <Icon name="chevronRight" logicalDirection />
       </button>
+      <Row label={t("settings.startupPlaylist")} hint={t("settings.startupPlaylistHint")}>
+        <OptionPicker
+          label={t("settings.startupPlaylist")}
+          value={s.startupPlaylist.mode}
+          options={startupOptions}
+          onChange={(mode) => {
+            const playlist = s.activePlaylist();
+            if (mode === "specific") {
+              if (playlist) s.set("startupPlaylist", { mode, playlistId: playlist.id });
+            } else s.set("startupPlaylist", { mode });
+          }}
+        />
+      </Row>
+      {s.startupPlaylist.mode === "specific" && (
+        <Row label={t("settings.startupSelection")}>
+          <OptionPicker
+            label={t("settings.startupSelection")}
+            value={s.startupPlaylist.playlistId}
+            options={s.playlists.map((playlist) => ({
+              value: playlist.id,
+              label: playlist.name,
+            }))}
+            onChange={(playlistId) =>
+              s.set("startupPlaylist", { mode: "specific", playlistId })
+            }
+          />
+        </Row>
+      )}
       <Row label={t("settings.playlistShortcut")} hint={t("settings.playlistShortcutHint")}>
         <Toggle
           label={t("settings.playlistShortcut")}

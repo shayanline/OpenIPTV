@@ -1,6 +1,15 @@
 import type { MessageKey, MessageValues } from "../services/locale";
 
 export default {
+  "settings.startupPlaylist": "启动播放列表",
+  "settings.startupPlaylistHint": "选择应用启动时打开的内容。更改将在下次启动时生效。",
+  "settings.startupLast": "上次使用的播放列表",
+  "settings.startupAsk": "始终询问",
+  "settings.startupSpecific": "指定播放列表",
+  "settings.startupSelection": "要打开的播放列表",
+  "playlist.startupTitle": "选择播放列表",
+  "playlist.startupHint": "选择播放列表以开始观看。",
+  "playlist.lastActive": "上次使用",
   "vod.searchHint": "输入片名或分类，然后选择搜索或按 Enter。",
   "vod.searching": "正在搜索目录…",
   "vod.searchFailed": "搜索暂不可用",
@@ -45,7 +54,7 @@ export default {
     `这将隐藏 ${playlist} 中 ${category} 分类下的所有频道，包括其他页面以及当前搜索范围之外的频道。`,
   "lineup.hideAllChannels": "隐藏所有频道",
   "playbackInfo.frameCounts": ({ dropped, total }) => `丢帧 ${dropped} / 总帧数 ${total}`,
-  "playlist.shortcutHint": "选择播放列表，然后通过主菜单浏览其内容。可在设置中管理播放列表。",
+  "playlist.shortcutHint": "选择播放列表，然后通过主菜单浏览其内容。",
   "playlist.mainMenu": "主菜单",
   "playlist.shortcutChannels": ({ count }) => `${count} 个频道`,
   "validation.enterServer": "请输入服务器地址。",

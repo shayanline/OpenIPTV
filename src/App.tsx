@@ -24,6 +24,7 @@ import { PointerPad } from "./components/PointerPad";
 import { isRecoveryStatusVisible, RecoveryStatus } from "./components/playback/RecoveryStatus";
 import { Settings, type SettingsEntry, type SettingsSection } from "./components/Settings";
 import { remoteVisible, SmartRemote } from "./components/SmartRemote";
+import { StartupPlaylists } from "./components/StartupPlaylists";
 import { ToastHost } from "./components/ToastHost";
 import { useChrome } from "./hooks/useChrome";
 import { useLocale } from "./hooks/useLocale";
@@ -32,7 +33,7 @@ import { usePageTransition } from "./hooks/usePageTransition";
 import { usePlaybackController } from "./hooks/usePlaybackController";
 import { pointerInputActive, usePointerAwake } from "./hooks/usePointerAwake";
 import { KEY, registerRemoteKeys, sendKey, useRemote } from "./hooks/useRemote";
-import { useRemoteAccess } from "./hooks/useRemoteAccess";
+import { type RemoteAccessControl, useRemoteAccess } from "./hooks/useRemoteAccess";
 import { useToast } from "./hooks/useToast";
 import { LiveScreen } from "./screens/LiveScreen";
 import type { VodPlaybackRequest, VodScreenHandle } from "./screens/VodScreen";
@@ -58,6 +59,7 @@ import { useLineup } from "./stores/lineup";
 import { usePersonal } from "./stores/personal";
 import { useSettings } from "./stores/settings";
 import { useSetup } from "./stores/setup";
+import { useStartup } from "./stores/startup";
 import type { PlaybackTarget } from "./types";
 
 let loadedVodScreen: typeof import("./screens/VodScreen").VodScreen | null = null;
@@ -90,6 +92,61 @@ const rememberedLiveChannel = () => {
 };
 
 export default function App() {
+  const initialized = useStartup((state) => state.initialized);
+  const pending = useStartup((state) => state.pending);
+  // Keep the chooser mounted until its exit transition has finished.
+  const [startupVisible, setStartupVisible] = useState(pending);
+  const playlists = useSettings((state) => state.playlists);
+  const { locale } = useLocale();
+  const [settingsVisible, setSettingsVisible] = useState(false);
+  const developmentRemoteAccessEnabled = developmentRemoteAccess();
+  const remoteAccessSupported = onTizen() || developmentRemoteAccessEnabled;
+  const hasRemoteDevices = useSyncExternalStore(
+    subscribePairedDevices,
+    hasPairedDevices,
+    () => false,
+  );
+  // Keep the socket serving a phone command alive when that command resolves startup.
+  const remoteAccess = useRemoteAccess(
+    remoteAccessSupported && (!playlists.length || settingsVisible || hasRemoteDevices),
+    developmentRemoteAccessEnabled,
+  );
+  useLayoutEffect(() => {
+    applyDocumentLocale(locale);
+    useStartup.getState().prepare();
+  }, [locale]);
+  useEffect(() => registerRemoteKeys(), []);
+  useLayoutEffect(() => {
+    if (!pending) return;
+    setStartupVisible(true);
+    if (playlists.length < 2) {
+      useStartup.getState().choose(useSettings.getState().activePlaylist()?.id);
+    }
+  }, [pending, playlists]);
+  if (!initialized) return null;
+  const access = {
+    remoteAccess,
+    remoteAccessSupported,
+    onSettingsVisibilityChange: setSettingsVisible,
+  };
+  return pending || startupVisible ? (
+    <StartupPlaylists onExited={() => setStartupVisible(false)} />
+  ) : (
+    <Application {...access} />
+  );
+}
+
+interface ApplicationAccess {
+  remoteAccess: RemoteAccessControl;
+  remoteAccessSupported: boolean;
+  onSettingsVisibilityChange: (visible: boolean) => void;
+}
+
+function Application({
+  remoteAccess,
+  remoteAccessSupported,
+  onSettingsVisibilityChange,
+}: ApplicationAccess) {
   const VodScreen = loadedVodScreen ?? LazyVodScreen;
   const MemoVodScreen = useMemo(() => memo(VodScreen), [VodScreen]);
   const load = useChannels((state) => state.load);
@@ -116,7 +173,7 @@ export default function App() {
   const playlistShortcutAvailable = playlistShortcut && playlists.length > 1;
   const addPlaylist = useSettings((state) => state.addPlaylist);
   const configured = playlists.length > 0;
-  const { locale, direction, t } = useLocale();
+  const { direction, t } = useLocale();
   const appNavigationSourceKind = activePlaylist?.source.kind ?? "m3u";
   const enabledModes = useMemo(
     () => availableContentModes(appNavigationSourceKind, { showLive, showMovies, showSeries }),
@@ -136,8 +193,10 @@ export default function App() {
       ),
     [activePlaylist, enabledModes, playlistShortcutAvailable, playlists, t],
   );
+  const [initialLiveChannel] = useState(rememberedLiveChannel);
   const [liveSurface, setLiveSurface] = useState<LiveSurface>(() =>
-    useSettings.getState().resumeLast && usePersonal.getState().hasRememberedLast()
+    useSettings.getState().resumeLast &&
+    (initialLiveChannel || usePersonal.getState().hasRememberedLast())
       ? "picture"
       : "panel",
   );
@@ -150,7 +209,6 @@ export default function App() {
     "browsing",
   );
   const vodRef = useRef<VodScreenHandle>(null);
-  const [initialLiveChannel] = useState(rememberedLiveChannel);
   const rememberedLive = useRef(initialLiveChannel);
   const [pendingLivePlaylistId, setPendingLivePlaylistId] = useState<string | null>(null);
   const vodRequest = useRef<VodPlaybackRequest | null>(null);
@@ -196,7 +254,12 @@ export default function App() {
   );
   const entryToast = useToast("playlist-entry-completion");
   const openSettings = useCallback(
-    (destination?: { section?: SettingsSection; playlistId?: string; loadError?: string }) => {
+    (destination?: {
+      section?: SettingsSection;
+      playlistId?: string;
+      loadError?: string;
+      savedPlaylists?: boolean;
+    }) => {
       setPlaylistShortcutOpen(false);
       vodToken.current += 1;
       setVodPhase((phase) =>
@@ -210,6 +273,7 @@ export default function App() {
         section: destination?.section ?? "appearance",
         ...(destination?.playlistId ? { playlistId: destination.playlistId } : {}),
         ...(destination?.loadError ? { loadError: destination.loadError } : {}),
+        ...(destination?.savedPlaylists ? { savedPlaylists: true } : {}),
       }));
       setShowSettings(true);
     },
@@ -217,27 +281,17 @@ export default function App() {
   );
   const pointerAwake = usePointerAwake();
 
-  const developmentRemoteAccessEnabled = developmentRemoteAccess();
-  const remoteAccessSupported = onTizen() || developmentRemoteAccessEnabled;
-  const hasRemoteDevices = useSyncExternalStore(
-    subscribePairedDevices,
-    hasPairedDevices,
-    () => false,
-  );
-  const remoteAccess = useRemoteAccess(
-    remoteAccessSupported && (!configured || showSettings || hasRemoteDevices),
-    developmentRemoteAccessEnabled,
-  );
-
   useLayoutEffect(() => {
-    applyDocumentLocale(locale);
-  }, [locale]);
+    onSettingsVisibilityChange(showSettings);
+    return () => onSettingsVisibilityChange(false);
+  }, [onSettingsVisibilityChange, showSettings]);
 
   useEffect(() => {
-    registerRemoteKeys();
-    const playlist = useSettings.getState().activePlaylist();
-    if (playlist) void activatePlaylist(playlist.id, false);
-    else void load();
+    if (!useStartup.getState().activated) {
+      const playlist = useSettings.getState().activePlaylist();
+      if (playlist) void activatePlaylist(playlist.id, false);
+      else void load();
+    }
     return whenIdle(() => void sweep(), 8000);
   }, [activatePlaylist, load, sweep]);
 
@@ -478,16 +532,6 @@ export default function App() {
     releaseAppNavigation();
   }, [playlistShortcutAvailable, releaseAppNavigation]);
 
-  const selectShortcutPlaylist = useCallback(
-    (id: string) => {
-      if (id === useSettings.getState().activePlaylist()?.id) return;
-      void activatePlaylist(id).catch((cause: unknown) => {
-        chrome.say(cause instanceof Error ? cause.message : t("playlist.unavailable"), true);
-      });
-    },
-    [activatePlaylist, chrome.say, t],
-  );
-
   const focusAppNavigation = useCallback(() => {
     if (
       showSettings ||
@@ -560,14 +604,24 @@ export default function App() {
     ],
   );
 
+  const playlistOwnerKey = `${activePlaylist?.id ?? ""}:${activePlaylist?.sourceVersion ?? 0}`;
+  const [playlistHandoff, setPlaylistHandoff] = useState<{
+    from: string;
+    to: string;
+  } | null>(null);
   const pageTransition = usePageTransition<
     AppNavigationItem & { commit?: () => void; coverNavigation?: boolean }
   >({
-    ownerKey: `${activePlaylist?.id ?? ""}:${activePlaylist?.sourceVersion ?? 0}`,
+    ownerKey:
+      playlistHandoff &&
+      (playlistOwnerKey === playlistHandoff.from || playlistOwnerKey === playlistHandoff.to)
+        ? playlistHandoff.from
+        : playlistOwnerKey,
     onCommit: (request) => {
       if (request.commit) request.commit();
       else commitAppNavigation(request);
     },
+    onFinish: () => setPlaylistHandoff(null),
   });
   const {
     phase: pageTransitionPhase,
@@ -586,7 +640,7 @@ export default function App() {
     if (switched) resumeInitialLive.current = false;
     playbackOwner.current = next;
     vodToken.current += 1;
-    cancelPageTransition();
+    if (playlistHandoff?.to !== playlistOwnerKey) cancelPageTransition();
     chrome.clear();
     if (playback.snapshot.target) playback.stop();
     rememberedLive.current = rememberedLiveChannel();
@@ -610,6 +664,8 @@ export default function App() {
     chrome.clear,
     playback.snapshot.target,
     playback.stop,
+    playlistHandoff,
+    playlistOwnerKey,
   ]);
 
   useEffect(() => {
@@ -726,6 +782,36 @@ export default function App() {
       );
     },
     [appMode, appNavigationItems, playlistShortcutOpen, requestPageTransition, showSettings],
+  );
+  const selectShortcutPlaylist = useCallback(
+    (id: string) => {
+      const target = useSettings.getState().playlists.find((playlist) => playlist.id === id);
+      if (!target) return;
+      // Preserve the exit fade across the intentional playlist owner change.
+      const handoff = {
+        from: playlistOwnerKey,
+        to: `${target.id}:${target.sourceVersion ?? 0}`,
+      };
+      if (id !== useSettings.getState().activePlaylist()?.id) setPlaylistHandoff(handoff);
+      requestContentTransition(() => {
+        closePlaylistShortcut();
+        if (id === useSettings.getState().activePlaylist()?.id) return;
+        void activatePlaylist(id).catch((cause: unknown) => {
+          chrome.say(cause instanceof Error ? cause.message : t("playlist.unavailable"), true);
+          cancelPageTransition();
+        });
+      }, appMode);
+    },
+    [
+      activatePlaylist,
+      appMode,
+      cancelPageTransition,
+      chrome.say,
+      closePlaylistShortcut,
+      playlistOwnerKey,
+      requestContentTransition,
+      t,
+    ],
   );
   const requestSettings = useCallback(
     (destination?: Parameters<typeof openSettings>[0]) =>
@@ -1073,16 +1159,27 @@ export default function App() {
             event.preventDefault();
           return;
         }
+        if (playlistHandoff) {
+          event.preventDefault();
+          return;
+        }
         if (appNavigationFocused) handleAppNavigationKey(code, event);
       },
-      [appNavigationFocused, cancelPageTransition, handleAppNavigationKey, pageTransitionPhase],
+      [
+        appNavigationFocused,
+        cancelPageTransition,
+        handleAppNavigationKey,
+        pageTransitionPhase,
+        playlistHandoff,
+      ],
     ),
     true,
   );
   useRemote(
     useCallback(
       (code, event) => {
-        if (event.defaultPrevented || pageTransitionPhase === "leaving") return;
+        if (event.defaultPrevented || pageTransitionPhase === "leaving" || playlistHandoff)
+          return;
         if (surface !== "vod" && surface !== "playlists") return;
         if (code === KEY.YELLOW) {
           requestSettings();
@@ -1091,7 +1188,7 @@ export default function App() {
         }
         if (surface === "vod") vodRef.current?.handleKey(code, event);
       },
-      [requestSettings, pageTransitionPhase, surface],
+      [requestSettings, pageTransitionPhase, playlistHandoff, surface],
     ),
   );
 
@@ -1104,7 +1201,10 @@ export default function App() {
   const recoveryHidden = surface !== "picture" || !playback.recovery.hasPlayed;
   const compactRecoveryVisible = isRecoveryStatusVisible(playback.recovery, recoveryHidden);
   const loadingSplashVisible =
-    loading && !channels.length && !showSettings && !playlistShortcutOpen;
+    loading &&
+    (!channels.length || lineupPlaylistId !== activePlaylist?.id) &&
+    !showSettings &&
+    !playlistShortcutOpen;
   const clockVisible =
     showClock &&
     !loadingSplashVisible &&
@@ -1133,14 +1233,23 @@ export default function App() {
         : appMode);
   const appNavigationExpanded =
     appNavigationVisible && appNavigationFocused && pageTransitionPhase === "idle";
+  const navigationRestoring =
+    loadingSplashVisible ||
+    (appMode === "live" &&
+      !playlistRecovery &&
+      channels.length > 0 &&
+      pendingLivePlaylistId !== null);
   const navigationPresentation = useRef({
     fullScreen: fullScreenPage,
     expanded: appNavigationExpanded,
+    restoring: navigationRestoring,
   });
   const [navigationReturning, setNavigationReturning] = useState(false);
   const navigationStatic =
     fullScreenPage ||
     navigationPresentation.current.fullScreen ||
+    navigationRestoring ||
+    navigationPresentation.current.restoring ||
     navigationReturning ||
     pageTransitionPhase !== "idle";
   const navigationPresentedExpanded =
@@ -1154,10 +1263,14 @@ export default function App() {
     }
   }, [appNavigationExpanded, appNavigationVisible, pageTransitionPhase]);
   useLayoutEffect(() => {
-    const returning = navigationPresentation.current.fullScreen && !fullScreenPage;
+    const returning =
+      (navigationPresentation.current.fullScreen || navigationPresentation.current.restoring) &&
+      !fullScreenPage &&
+      !navigationRestoring;
     navigationPresentation.current.fullScreen = fullScreenPage;
+    navigationPresentation.current.restoring = navigationRestoring;
     if (!returning) {
-      if (fullScreenPage) setNavigationReturning(false);
+      if (fullScreenPage || navigationRestoring) setNavigationReturning(false);
       return;
     }
     setNavigationReturning(true);
@@ -1166,7 +1279,7 @@ export default function App() {
       frame = window.requestAnimationFrame(() => setNavigationReturning(false));
     });
     return () => window.cancelAnimationFrame(frame);
-  }, [fullScreenPage]);
+  }, [fullScreenPage, navigationRestoring]);
 
   const vodPageReadyContext = useRef({
     appMode,
@@ -1335,8 +1448,10 @@ export default function App() {
                 appMode === "live" &&
                 showLive
               }
+              resumeChannelId={initialLiveChannel}
               inputEnabled={
                 pageTransitionPhase !== "leaving" &&
+                !playlistHandoff &&
                 !appNavigationFocused &&
                 !showSettings &&
                 !showExit &&
@@ -1361,6 +1476,7 @@ export default function App() {
                 active={
                   vodVisible &&
                   pageTransitionPhase !== "leaving" &&
+                  !playlistHandoff &&
                   !appNavigationFocused &&
                   !playlistShortcutOpen &&
                   !showSettings &&
@@ -1398,6 +1514,7 @@ export default function App() {
               pageTransitionPhase !== "leaving"
             }
             onSelect={selectShortcutPlaylist}
+            onManage={() => requestSettings({ section: "playlists", savedPlaylists: true })}
             onClose={() => requestContentTransition(closePlaylistShortcut, appMode)}
             onContentFocus={() => setAppNavigationFocused(false)}
           />

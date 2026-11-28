@@ -1,6 +1,16 @@
 import type { MessageKey, MessageValues } from "../services/locale";
 
 export default {
+  "settings.startupPlaylist": "Плейлист при запуске",
+  "settings.startupPlaylistHint":
+    "Выберите, что открывать при запуске. Изменения вступят в силу при следующем запуске.",
+  "settings.startupLast": "Последний активный плейлист",
+  "settings.startupAsk": "Всегда спрашивать",
+  "settings.startupSpecific": "Определённый плейлист",
+  "settings.startupSelection": "Открываемый плейлист",
+  "playlist.startupTitle": "Выберите плейлист",
+  "playlist.startupHint": "Выберите плейлист для просмотра.",
+  "playlist.lastActive": "Последний активный",
   "vod.searchHint": "Введите название или категорию, затем выберите Поиск или нажмите Enter.",
   "vod.searching": "Поиск в каталоге…",
   "vod.searchFailed": "Поиск недоступен",
@@ -48,7 +58,7 @@ export default {
   "lineup.hideAllChannels": "Скрыть все каналы",
   "playbackInfo.frameCounts": ({ dropped, total }) => `${dropped} пропущено / ${total} всего`,
   "playlist.shortcutHint":
-    "Выберите плейлист, затем откройте его содержимое через главное меню. Управляйте плейлистами в настройках.",
+    "Выберите плейлист, затем откройте его содержимое через главное меню.",
   "playlist.mainMenu": "Главное меню",
   "playlist.shortcutChannels": ({ count, total }) => {
     const n = Number(total) % 100;

@@ -3,6 +3,7 @@ import { StrictMode } from "react";
 import { afterEach, expect, vi } from "vitest";
 import type { LocalePreference } from "../../src/services/locale";
 import type { PlaylistSource } from "../../src/services/playlistUrl";
+import type { Playlist, StartupPlaylist } from "../../src/stores/settings";
 import type { XtreamEpisode, XtreamMovie } from "../../src/services/xtream";
 import type { MediaTrack } from "../../src/types";
 
@@ -161,6 +162,10 @@ export async function finishPageEntry() {
 }
 
 export interface MountOptions {
+  savedPlaylists?: Playlist[];
+  activePlaylistId?: string;
+  startupPlaylist?: StartupPlaylist;
+  playlistShortcut?: boolean;
   /** Resume the last watched channel, with the id to remember as having been on. */
   resume?: string;
   /**
@@ -218,6 +223,10 @@ export async function mountApp(
     resume,
     awaitPlaylist = true,
     emptyPlaylists = false,
+    savedPlaylists,
+    activePlaylistId,
+    startupPlaylist,
+    playlistShortcut,
     slowPicture = 0,
     continuousReconnect = false,
     liveDvr = false,
@@ -389,15 +398,17 @@ export async function mountApp(
       ...(appearance ?? {}),
       playlists: emptyPlaylists
         ? []
-        : [
+        : (savedPlaylists ?? [
             {
               id: "pl-1",
               name: "Test",
               ...(source ? { source, sourceVersion: 1 } : { url: "http://list.invalid/a.m3u" }),
               hiddenCategories,
             },
-          ],
-      activePlaylistId: emptyPlaylists ? "" : "pl-1",
+          ]),
+      activePlaylistId: emptyPlaylists ? "" : (activePlaylistId ?? "pl-1"),
+      ...(startupPlaylist ? { startupPlaylist } : {}),
+      ...(playlistShortcut === undefined ? {} : { playlistShortcut }),
       resumeLast: !!resume,
       continuousReconnect,
       ...(locale ? { locale } : {}),

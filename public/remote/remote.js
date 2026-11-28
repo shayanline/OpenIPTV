@@ -164,6 +164,12 @@
     hideEmptyCategoriesHint: "Categories with nothing in them are left out.",
     playlistShortcut: "Playlist shortcut",
     playlistShortcutHint: "Show the active playlist in the main menu for quick switching.",
+    startupPlaylist: "Startup playlist",
+    startupPlaylistHint: "Choose what opens when the app starts. Changes apply on the next launch.",
+    startupLast: "Last active playlist",
+    startupAsk: "Always ask",
+    startupSpecific: "Specific playlist",
+    startupSelection: "Playlist to open",
     showLive: "Live TV",
     showMovies: "Movies",
     showSeries: "Series",
@@ -7776,6 +7782,40 @@
 
   function playlistsLandingMarkup(l) {
     var active = playlistById(current.activePlaylistId);
+    var startup = current.settings.startupPlaylist || { mode: "last" };
+    var startupOptions = [
+      ["last", l.startupLast],
+      ["ask", l.startupAsk],
+    ];
+    if (current.playlists.length) startupOptions.push(["specific", l.startupSpecific]);
+    var startupMarkup =
+      '<div class="select-setting"><span>' +
+      escape(l.startupPlaylist) +
+      '<span class="setting-hint">' +
+      escape(l.startupPlaylistHint) +
+      "</span></span>" +
+      optionPickerMarkup({
+        setting: "startupPlaylist",
+        label: l.startupPlaylist,
+        value: startup.mode,
+        options: startupOptions,
+      }) +
+      "</div>";
+    if (startup.mode === "specific") {
+      startupMarkup +=
+        '<div class="select-setting"><span>' +
+        escape(l.startupSelection) +
+        "</span>" +
+        optionPickerMarkup({
+          name: "startupPlaylistId",
+          label: l.startupSelection,
+          value: startup.playlistId,
+          options: current.playlists.map(function (playlist) {
+            return [playlist.id, playlist.name];
+          }),
+        }) +
+        "</div>";
+    }
     var sourceKind =
       active && active.source && active.source.kind === "xtream" ? "xtream" : "m3u";
     var modes = [];
@@ -7830,6 +7870,7 @@
       "</span></span>" +
       icon("right", "content-manage-chevron") +
       "</a>" +
+      startupMarkup +
       '<label class="setting content-setting"><span class="setting-text">' +
       escape(l.playlistShortcut) +
       '<span class="setting-hint">' +
@@ -8899,7 +8940,8 @@
     if (playlistRowProgress(playlist)) return Promise.resolve(false);
     if (
       command.type === "playlist.activate" &&
-      playlist.id === current.activePlaylistId
+      playlist.id === current.activePlaylistId &&
+      !current.startupPending
     ) {
       return Promise.resolve(false);
     }
@@ -9767,7 +9809,7 @@
     root.querySelectorAll("[data-action=playlist-activate]").forEach(function (button) {
       button.addEventListener("click", function () {
         var target = playlistById(button.dataset.id || "");
-        if (target && target.id !== current.activePlaylistId) {
+        if (target && (target.id !== current.activePlaylistId || current.startupPending)) {
           void sendPlaylistRowCommand({ type: "playlist.activate", id: target.id }, button);
         }
       });
@@ -9843,9 +9885,20 @@
   }
 
   function bindSettingsPage() {
-    root.querySelectorAll("[data-setting]").forEach(function (control) {
+    root.querySelectorAll("[data-setting], select[name=startupPlaylistId]").forEach(function (control) {
       control.addEventListener("change", function () {
         var value = control.type === "checkbox" ? control.checked : control.value;
+        var key = control.dataset.setting;
+        if (control.name === "startupPlaylistId") {
+          key = "startupPlaylist";
+          value = { mode: "specific", playlistId: control.value };
+        } else if (key === "startupPlaylist") {
+          var startupTarget = playlistById(current.activePlaylistId) || current.playlists[0];
+          if (control.value === "specific" && !startupTarget) return;
+          value = control.value === "specific"
+            ? { mode: "specific", playlistId: startupTarget.id }
+            : { mode: control.value };
+        }
         var source = control;
         if (control.hasAttribute("data-picker-native")) {
           var wrapper = control.closest(".option-picker");
@@ -9853,7 +9906,7 @@
             (wrapper && wrapper.querySelector("[data-picker-trigger]")) || control;
         }
         void sendCommand(
-          { type: "setting", key: control.dataset.setting, value: value },
+          { type: "setting", key: key, value: value },
           false,
           source,
         );

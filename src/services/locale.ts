@@ -324,6 +324,16 @@ const ENGLISH = {
     "Display the clock with the channel list, playback banner or playback controls",
   "settings.hideEmptyCategories": "Hide empty categories",
   "settings.playlistShortcut": "Playlist shortcut",
+  "settings.startupPlaylist": "Startup playlist",
+  "settings.startupPlaylistHint":
+    "Choose what opens when the app starts. Changes apply on the next launch.",
+  "settings.startupLast": "Last active playlist",
+  "settings.startupAsk": "Always ask",
+  "settings.startupSpecific": "Specific playlist",
+  "settings.startupSelection": "Playlist to open",
+  "playlist.startupTitle": "Choose a playlist",
+  "playlist.startupHint": "Select a playlist to start watching.",
+  "playlist.lastActive": "Last active",
   "settings.playlistShortcutHint":
     "Show the active playlist in the main menu for quick switching.",
   "settings.hideEmptyCategoriesHint":
@@ -631,8 +641,7 @@ const ENGLISH = {
   "playlist.addToStart": "Add an M3U playlist address to start watching.",
   "playlist.storedLocally": "Playlists are stored on this device only.",
   "playlist.savedPlaylists": "Saved playlists",
-  "playlist.shortcutHint":
-    "Select a playlist, then use the main menu to browse its content. Manage playlists in Settings.",
+  "playlist.shortcutHint": "Select a playlist, then use the main menu to browse its content.",
   "playlist.mainMenu": "Main menu",
   "playlist.shortcutChannels": ({ count, total }) =>
     `${count} channel${Number(total) === 1 ? "" : "s"}`,
@@ -1021,6 +1030,16 @@ const PERSIAN: Partial<Record<MessageKey, Message>> = {
     "نمایش ساعت همراه با فهرست کانال‌ها، نوار اطلاعات پخش یا کنترل‌های پخش",
   "settings.hideEmptyCategories": "پنهان کردن دسته‌های خالی",
   "settings.playlistShortcut": "میانبر فهرست پخش",
+  "settings.startupPlaylist": "فهرست پخش هنگام شروع",
+  "settings.startupPlaylistHint":
+    "انتخاب کنید هنگام شروع برنامه چه چیزی باز شود. تغییرات از اجرای بعدی اعمال می‌شوند.",
+  "settings.startupLast": "آخرین فهرست فعال",
+  "settings.startupAsk": "همیشه بپرس",
+  "settings.startupSpecific": "فهرست مشخص",
+  "settings.startupSelection": "فهرستی که باز می‌شود",
+  "playlist.startupTitle": "یک فهرست پخش انتخاب کنید",
+  "playlist.startupHint": "برای شروع تماشا یک فهرست انتخاب کنید.",
+  "playlist.lastActive": "آخرین فهرست فعال",
   "settings.playlistShortcutHint": "نمایش فهرست پخش فعال در منوی اصلی برای جابه‌جایی سریع.",
   "settings.hideEmptyCategoriesHint":
     "دسته‌ها تنها پس از آنکه خالی بودن محتوایشان مشخص شود پنهان می‌شوند.",
@@ -1275,8 +1294,7 @@ const PERSIAN: Partial<Record<MessageKey, Message>> = {
   "playlist.addToStart": "برای شروع تماشا یک آدرس فهرست M3U اضافه کنید.",
   "playlist.storedLocally": "فهرست‌ها فقط روی همین دستگاه ذخیره می‌شوند.",
   "playlist.savedPlaylists": "فهرست‌های ذخیره شده",
-  "playlist.shortcutHint":
-    "یک فهرست انتخاب کنید، سپس از منوی اصلی محتوای آن را مرور کنید. فهرست‌ها را در تنظیمات مدیریت کنید.",
+  "playlist.shortcutHint": "یک فهرست انتخاب کنید، سپس از منوی اصلی محتوای آن را مرور کنید.",
   "playlist.mainMenu": "منوی اصلی",
   "playlist.shortcutChannels": ({ count }) => `${count} کانال`,
   "playlist.accountActive": "فعال",
