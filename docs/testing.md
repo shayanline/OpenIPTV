@@ -1,7 +1,6 @@
 # Testing and measurement
 
-Nobody here owns a 2020 Samsung television, and that is the problem every gate in this
-repository exists to work around.
+The Samsung gates work around limited access to target hardware by modelling its constraints and running the supported browser engines. Additional TV candidates have a separate artifact smoke gate. Neither form of browser testing establishes native playback or installation compatibility on another vendor's television.
 
 ## Choosing local checks
 
@@ -18,6 +17,7 @@ Run verification commands only after explicit final approval under the verificat
 | `wasm/`, `public/wasm/`, its worker, the checksums, or the repair integration | `npm run wasm:check`. It needs no application build unless runtime assets or wiring also require one. |
 | `public/config.xml` | `python3 -c "from xml.dom.minidom import parse; parse('public/config.xml')"`. No application build is needed unless something else justifies one. |
 | Test files only | Lint the changed test files and run the related tests. No production typecheck or build is needed unless shared types, configuration, fixtures or contracts require it. |
+| TV target identity, key adapters, native HLS selection or TV packaging | Run the affected tests from `tests/tvPlatform.test.ts`, `tests/tvPorts.test.ts`, `tests/player.test.ts`, `tests/tuner.test.tsx` and `tests/keyLaws.test.tsx`. When packaging, entry points or release integration change, build once, run `npm run ports:package`, then run `npm run ports:smoke`. Packaging requires the official webOS CLI with the TV profile and Chrome or Chromium. |
 | A broad change, an impact that cannot be mapped safely, or an explicit request for everything | Run `npm run check` when no build is needed. When a build is justified, run `npm run lint`, `npm test` and `npm run build` once each. Add only the TV gates justified by the rows above. |
 | Benchmark or test harness code | The check or checks that exercise the changed harness, not the whole suite by default. |
 
@@ -39,6 +39,14 @@ Reuse one `dist/` for every selected `tv:` gate and rebuild only when build inpu
 
 After a fix, rerun the checks that failed and the checks the fix could have invalidated, and do not restart the whole sequence. Routine remediation inside the approved scope does not need approval again, because the numbered approval steps in AGENTS.md already cover changes to scope or behavior. Record each check, its result and the input state it ran against briefly in the final handoff. No separate ledger or tooling is needed.
 
+### TV port evidence
+
+`npm run ports:package` creates separate LG, Titan, VIDAA, VIZIO and Vega candidate artifacts from the same `dist/`. It generates LG launcher icons and invokes the official LG packager without applying another minifier to Vite's output. The other targets are hosted web bundles or an SDK integration kit, as identified in [TV installation and publishing](tv-platforms.md).
+
+`npm run ports:smoke` checks the exact ZIP artifacts listed in the release manifest. It verifies identity, version, checksums, LG icon dimensions and the absence of Samsung sockets and bundled demo content. Each candidate then loads in a clean browser without Samsung shims or a development proxy, with runtime exceptions and failed resource requests treated as failures. The gate exercises the shared Back and OK navigation, including the exit confirmation. VIDAA and VIZIO use named Back events because their private numeric key maps remain a partner integration gate.
+
+This smoke gate does not measure native decoding, verify the LG installer on a television, compile the Vega wrapper, or establish support for every vendor browser engine. The [device acceptance checklist](tv-platforms.md#required-device-acceptance-evidence) is required before promoting a candidate to supported status. Keep the Samsung engine and hardware gates because the shared code still ships to Samsung.
+
 ### Selecting benchmarks
 
 `npm run tv:budget` already runs the floor profile benchmark and the launch timing, so `npm run tv:bench`, `npm run tv:bench:floor`, `npm run tv:quick` and any separate launch timing are not prerequisites for it. `npm run tv:quick` is an optional diagnostic that gives no budget verdict, and under the approval rule above it runs only after approval like every other check rather than being mandatory before the budget.
@@ -47,7 +55,7 @@ After a fix, rerun the checks that failed and the checks the fix could have inva
 
 ### What CI does
 
-CI runs the full set on code changes. One job installs dependencies and runs `npm run lint`, `npm test`, `npm run build`, the `public/config.xml` validation, the WebAssembly checks and `npm run tv:gap`. The build includes the typecheck. The engines and budget jobs each install and build independently. Documentation pushes skip CI. Every pull request reports a `changes` check, which skips application jobs when all current and previous file paths are Markdown, under `docs/`, or issue templates. `workflow_dispatch` still runs the jobs deliberately. The budget job is `continue-on-error` on the shared runners and stays informational, for the reason in the budget section.
+CI runs the full set on code changes. One job installs dependencies and runs `npm run lint`, `npm test`, `npm run build`, the `public/config.xml` validation, the WebAssembly checks and `npm run tv:gap`. It also installs the official webOS CLI, packages the TV candidates and runs `npm run ports:smoke`. The build includes the typecheck. The engines and budget jobs each install and build independently. Documentation pushes skip CI. Every pull request reports a `changes` check, which skips application jobs when all current and previous file paths are Markdown, under `docs/`, or issue templates. `workflow_dispatch` still runs the jobs deliberately. The budget job is `continue-on-error` on the shared runners and stays informational, for the reason in the budget section.
 
 Dependabot patch and minor updates use native GitHub auto merge. A grouped update qualifies only when every dependency has an eligible update type. Only a single verified Dependabot commit is eligible because the pinned metadata action reads the first commit. Major updates, manually changed pull requests, and unavailable metadata remain available for manual review. Before setting the repository variable `DEPENDABOT_AUTO_MERGE_ENABLED` to `true`, protect `master` with required GitHub Actions checks `changes`, `check`, `engines`, `dependencies`, and `dependabot-auto-merge`. Leave `budget` informational. The automation uses the built in token without approving pull requests or checking out their code.
 

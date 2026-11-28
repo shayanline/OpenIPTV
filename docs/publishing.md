@@ -3,7 +3,9 @@
 Two different things are called publishing here, and it is worth separating them before anything
 else.
 
-**A GitHub release** is fully automated. Tag a version, and `.github/workflows/release.yml` runs the checks, builds the unsigned widget and attaches it alongside a checksum. The workflow also deploys the browser demo to GitHub Pages. It needs no signing certificates or Tizen SDK.
+**A GitHub release** is fully automated. Tag a version, and `.github/workflows/release.yml` runs the checks, builds the unsigned widget and attaches it alongside a checksum. It also packages the [separate TV candidates](tv-platforms.md), exercises their release ZIPs and deploys the browser demo to GitHub Pages. LG packaging uses the official webOS CLI installed by the workflow. It needs no signing certificates or Tizen SDK.
+
+The new TV artifacts remain candidates until their device acceptance evidence exists. VIDAA and VIZIO require partner integration, while Vega requires an SDK project and a VPKG build. The [TV platform guide](tv-platforms.md#release-and-official-distribution) owns their installation, promotion, rollback and official submission process. The rest of this page covers Samsung.
 
 **A Samsung store release** is not, and cannot be. The TV Seller Office has no API, no CLI and no
 supported automation of any kind: Samsung publishes a real publishing API, but only for the Galaxy
@@ -65,7 +67,9 @@ versions before 2.0.73, so an old Tizen Studio may simply refuse.
 
 Keep the `release` environment for release approval rules. Enable GitHub Pages with GitHub Actions as its source and use the `github-pages` environment for deployments. The workflow uses the built in GitHub token and needs no additional secrets.
 
-Manual runs produce an `OpenIPTV` artifact containing the unsigned widget and checksum. They skip public deployment by default. Clear `dry-run` to redeploy the browser demo from the selected ref without creating a release.
+Manual runs produce an `OpenIPTV` artifact containing the unsigned Samsung widget and checksum, plus an `OpenIPTV-TV-ports` artifact containing the separate TV candidates, checksums and release index. Extract the outer Actions archive before choosing a platform file. These artifacts are available only after the corresponding packaging and smoke steps succeed.
+
+Manual runs skip public deployment by default. Clear `dry-run` to redeploy the browser demo from the selected ref without creating a release. The workflow does not deploy hosted TV candidates to production URLs or submit anything to a vendor store. Use the [candidate release rehearsal](tv-platforms.md#release-and-official-distribution) and obtain approval before changing a launch URL or submitting a listing.
 
 ## Signing a store submission
 

@@ -9,7 +9,9 @@
 
 OpenIPTV is a private, open source IPTV player for Samsung TVs. Add an [extended M3U playlist or Xtream login](#add-playlists), then browse and play your channels through an interface designed for the television.
 
-Your playlists, preferences, and favourites stay on your device. OpenIPTV has no accounts, analytics, advertising, or project operated service.
+For LG webOS, Titan OS, VIDAA, VIZIO or Amazon Vega, start with [Other TV platforms](#other-tv-platforms) to see the experimental installation routes and remaining requirements.
+
+Your playlists, preferences, and favourites stay on your device. OpenIPTV has no accounts, analytics or advertising, and it does not operate a playlist or streaming service.
 
 > [!TIP]
 > **[Try OpenIPTV in your browser](https://shayanline.github.io/OpenIPTV).** Use the arrow keys and Enter as the directional pad and OK button. If you need a sample, copy the address of the [demo playlist](https://shayanline.github.io/OpenIPTV/demo/nasa.m3u) into the playlist field.
@@ -41,6 +43,8 @@ Your playlists, preferences, and favourites stay on your device. OpenIPTV has no
 </details>
 
 ### Remote access on a phone
+
+The phone interface currently requires the Samsung TV build.
 
 |  |  |
 |:--:|:--:|
@@ -120,6 +124,22 @@ Run `npm run package` when you only need `build/OpenIPTV.wgt`.
 
 </details>
 
+## Other TV platforms
+
+These targets share the application source, but they remain experimental. They still require real TV validation, and their official store distribution has not been completed.
+
+| Your platform | Release artifact | Installation route and current limit |
+|:--|:--|:--|
+| LG webOS | `OpenIPTV-webos.ipk` | Use [LG Developer Mode](docs/tv-platforms.md#install-on-lg-webos). This development installation needs an active Developer Mode session. |
+| Titan OS | `OpenIPTV-titan.zip` | Host the extracted app and launch it through [Titan DevView](docs/tv-platforms.md#try-titan-os). Portal access and a paired TV are required. |
+| VIDAA | `OpenIPTV-vidaa-candidate.zip` | Complete the [VIDAA partner integration](docs/tv-platforms.md#vidaa-and-vizio-candidates) before claiming device compatibility. |
+| VIZIO | `OpenIPTV-vizio-candidate.zip` | Complete the [VIZIO partner integration](docs/tv-platforms.md#vidaa-and-vizio-candidates) before claiming device compatibility. |
+| Amazon Vega | `OpenIPTV-vega-kit.zip` | Use the [SDK integration kit](docs/tv-platforms.md#amazon-vega-integration-kit) to build a VPKG. The ZIP itself cannot be installed on Fire TV. |
+
+Use the [release assets](https://github.com/shayanline/OpenIPTV/releases) to check whether a version includes the artifact for your platform. The new files appear only in releases built with the TV port workflow. Samsung's `OpenIPTV.wgt` cannot be installed on the other platforms.
+
+The [TV installation guide](docs/tv-platforms.md) covers installation, updates, troubleshooting and the requirements for official distribution. The [browser demo](https://shayanline.github.io/OpenIPTV) remains the quickest way to explore the interface without installing a TV package.
+
 ## Add playlists
 
 | Source | What to enter |
@@ -129,9 +149,11 @@ Run `npm run package` when you only need `build/OpenIPTV.wgt`.
 
 Save several playlists and activate one at a time. Each playlist keeps its own category visibility, and password values stay concealed in the interface. For Xtream sources, choose Live, Movies, or Series from the content switcher. Movie and series summary indexes provide complete search and category counts without opening every category.
 
+Playback depends on the TV's codecs and networking rules. Candidate platforms can reject a provider because of codec, CORS or HTTP restrictions even when Samsung plays it. See the [playback limits](docs/tv-platforms.md#playback-and-feature-limits) before choosing a candidate for everyday viewing.
+
 ## Remote access
 
-Remote access is available from the first run screen or Settings, then Remote access. Keep OpenIPTV open and connect a phone or tablet to the same trusted local network, then scan the QR code or enter the displayed address and pairing code.
+Remote access and the phone's Smart Remote currently require Samsung Tizen. They are unavailable in the new TV candidates. On Samsung, open Remote access from the first run screen or Settings. Keep OpenIPTV open and connect a phone or tablet to the same trusted local network, then scan the QR code or enter the displayed address and pairing code.
 
 A paired device can manage playlists, ordinary settings, application data, authorised devices, and playback. [Smart Remote](#remote-button-reference) provides navigation, number, colour, channel, volume, and playback controls.
 
@@ -139,6 +161,8 @@ A paired device can manage playlists, ordinary settings, application data, autho
 
 <details>
 <summary>Show remote controls</summary>
+
+The table describes the shared navigation model. Candidate platforms need device validation for their actual remote keys, and some remotes have no channel or colour buttons. Use the TV's physical remote for candidates because phone pairing currently requires Samsung.
 
 | Key | Watching | Channel panel | Search |
 |:--|:--|:--|:--|
@@ -162,17 +186,18 @@ A paired device can manage playlists, ordinary settings, application data, autho
 ## Help
 
 > [!NOTE]
-> The hosted HTTPS demo can use only provider API, artwork, and stream addresses that support HTTPS and permit browser access through Cross Origin Resource Sharing. A provider that lacks either can still work in the packaged television app. Browser codec and container support can also be narrower than Samsung AVPlay support, especially for movie and episode files.
+> The hosted HTTPS demo needs provider addresses that support HTTPS and permit browser access through Cross Origin Resource Sharing. Samsung AVPlay may play streams that a browser cannot. Other TV candidates have their own restrictions, which are described in the [TV installation guide](docs/tv-platforms.md#playback-and-feature-limits).
 
 <details>
 <summary>Common issues</summary>
 
-- **An installer cannot connect to the television.** Repeat [Prepare the television](#prepare-the-television), including the restart, and avoid guest networks that isolate devices. Some televisions store the address in reverse, so enter your IP address backwards if the installer still cannot find the set.
-- **Installation reports certificate error 118 or -12.** The widget was not signed for your television. [Apps2Samsung](#install-with-apps2samsung) signs it for the connected set on any supported version, [TizenBrew](#install-with-tizenbrew) does so from Tizen 7 onwards, and otherwise follow [Build and sign manually](#build-and-sign-manually).
-- **Installation reports that the author certificate does not match.** An earlier copy was signed by a different computer or installer, so [update an installed copy](#update-an-installed-copy) explains what to remove first.
+- **Samsung installation.** If the installer cannot connect, repeat [Prepare the television](#prepare-the-television), including the restart, and avoid guest networks that isolate devices. Some televisions store the address in reverse, so enter your IP address backwards if the installer still cannot find the set.
+- **Samsung certificate errors.** Error 118 or -12 means the widget was not signed for your television. [Apps2Samsung](#install-with-apps2samsung) signs it for the connected set on any supported version, [TizenBrew](#install-with-tizenbrew) does so from Tizen 7 onwards, and otherwise follow [Build and sign manually](#build-and-sign-manually).
+- **Samsung author certificate mismatch.** An earlier copy was signed by a different computer or installer, so [update an installed copy](#update-an-installed-copy) explains what to remove first.
+- If an LG development installation expires or a candidate ZIP will not install, follow [candidate troubleshooting](docs/tv-platforms.md#troubleshooting-a-candidate) for the correct installation route.
 - **A playlist address is refused.** Review the supported details under [Add playlists](#add-playlists).
-- **An Xtream stream will not play.** Try the other live stream format under [Add playlists](#add-playlists). The packaged television app retries eligible HTTPS connection failures once over HTTP. Local development and the TV simulator route that retry through a same origin relay so Chromium cannot upgrade it through HSTS, while the hosted HTTPS demo cannot downgrade because browsers block mixed content.
-- **A channel shows one frame and stops.** Turn on Compatibility mode under Settings, then Playback.
+- **An Xtream stream will not play.** Try the other live stream format under [Add playlists](#add-playlists). The Samsung build can retry eligible HTTPS connection failures once over HTTP. The other TV candidates do not use that fallback, so check their [playback limits](docs/tv-platforms.md#playback-and-feature-limits).
+- **A Samsung channel shows one frame and stops.** Turn on Compatibility mode under Settings, then Playback. Other platforms have different native players, so use the [candidate troubleshooting guide](docs/tv-platforms.md#troubleshooting-a-candidate) for them.
 - **A remote key does nothing.** Open Settings, About, Support, Diagnostics, then Remote buttons, then compare it with the [remote button reference](#remote-button-reference).
 - **Logos are slow to appear.** Turn Show channel logos off under Settings, then Appearance.
 

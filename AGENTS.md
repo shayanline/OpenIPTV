@@ -1,12 +1,8 @@
 # Working on OpenIPTV
 
-An IPTV player for Samsung Tizen TVs, and the same build runs in a desktop browser. It ships
-with no channels: the viewer adds an extended M3U address and the app plays what that playlist
-contains, without interpreting or rewriting any name, group or country.
+An IPTV player for Samsung Tizen TVs, and the same build runs in a desktop browser. Additional TV targets share that application source and remain candidates until the device acceptance gates in [TV installation and publishing](docs/tv-platforms.md) are satisfied. It ships with no channels. The viewer adds an extended M3U address and the app plays what that playlist contains, without interpreting or rewriting any name, group or country.
 
-React 19, TypeScript, zustand, Vite, Biome, Vitest. hls.js only on the browser path. No other
-runtime dependencies, and adding one is a decision rather than a detail: it is compiled and run
-by a 2020 television every time somebody switches the set on.
+React 19, TypeScript, zustand, Vite, Biome, Vitest. hls.js is loaded only when the HTML video path needs it. Samsung AVPlay and native HLS on other TVs avoid it. A runtime dependency is a deliberate decision because a television compiles and runs it whenever the app needs it.
 
 Node 22.18 or newer, pinned in `.nvmrc`.
 
@@ -63,7 +59,9 @@ src/
   services/m3u.ts          playlist parser, tolerant of the ways M3U is abused
   services/lineup.ts       which lists exist, and where channel up and down land
   services/search.ts       ranked matching over the whole playlist, capped per rank
-  services/player.ts       one interface over AVPlay and hls.js
+  services/player.ts       one interface over AVPlay, native HLS and hls.js
+  services/tvTargets.ts    shared target identities for the app and release packaging
+  services/tvPlatform.ts  explicit package identity and platform lifecycle helpers
   services/errors.ts       engine error codes to something a viewer can act on
   services/playlistUrl.ts  what cannot possibly be a playlist address, checked offline
   services/deviceAccess.ts pairing sessions and authorised device credentials
@@ -96,6 +94,8 @@ public/remote/             the static remote access and management interface
   styles/                  the whole stylesheet, tokens then app, since no component has one
 scripts/
   package.sh               build and sign
+  tv-ports.mjs             package the shared build for the other TV candidates
+  webos-install.mjs        install and launch an IPK on an explicitly named TV
   deploy.sh                build, install over sdb and launch
   icon.mjs                 redraw public/icon.png from public/icon.svg
   wasm-check.mjs           the committed WebAssembly still holds together, without the toolchain
@@ -136,11 +136,12 @@ Break one of these and the app fails on hardware no test here owns. The reasonin
   before it retunes. Anything expensive added to a held key needs the same treatment.
 - **Cached playlists are keyed by address**, not by playlist id, or editing a URL serves the
   previous playlist from a cache that believes itself current.
-- **One artifact, no branching by model year.** The build targets es2019 and the stylesheet uses
+- **One artifact per platform, no branching by model year.** The build targets es2019 and the stylesheet uses
   nothing newer than Chromium 69, so every later set runs a strict superset. There is exactly
   one runtime capability branch, the flex gap probe, and `tv:gap` covers it. Every branch added
   costs an engine in the matrix, because the years in between stop being unreachable the moment
   code can tell them apart.
+- **TV candidates do not imply device support.** `services/tvTargets.ts` owns target identities. The packager adds explicit platform metadata while retaining the shared application bundle. Keep VIDAA and VIZIO private integration requirements and the Vega SDK build as documented gates. The artifact smoke test covers packaging and navigation without Samsung shims. It does not replace real TV playback and installation evidence.
 - **esbuild lowers syntax and not methods**, so `?.` is safe on an old engine and `Array.at`
   would ship and throw. `tv:engines` is what catches that.
 - **`scripts/tv/platforms.json` is the only place the engine matrix is written down.** Do not

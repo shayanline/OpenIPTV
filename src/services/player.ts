@@ -1,18 +1,12 @@
 import type HlsType from "hls.js";
 import { createRepairingPlaylistLoader } from "./browserRepair";
 import { DEFAULT_INITIAL_BUFFER_SECONDS } from "./manifest";
+import { prefersNativeHls } from "./tvPlatform";
 
 /**
- * hls.js is fetched only when something is actually going to use it.
- *
- * It is around half a megabyte and it is the *browser* engine. On a television the picture
- * comes from webapis.avplay driving the hardware decoder, and this library is never called
- * at all, so a static import spent the parse and the heap of a software player on a set that
- * has a hardware one and 120 MB to live in.
- *
- * Loading it lazily is safe precisely because of that split: the import only happens inside
- * playBrowser, which the TV path never reaches, so if a packaged widget could not fetch a
- * second chunk it would never be asked to.
+ * hls.js is fetched only when the HTML video path needs it. Samsung's AVPlay and
+ * native HLS on other TVs avoid its parse and heap cost. Platform packages retain the
+ * lazy chunk because MSE fallback and the opt in repairing loader can still need it.
  */
 let hlsModule: Promise<typeof HlsType> | null = null;
 const loadHls = () => {
@@ -23,13 +17,13 @@ const loadHls = () => {
 /**
  * One play/stop interface over two very different engines.
  *
- * On the TV, webapis.avplay drives the hardware decoder directly. That matters beyond
+ * On Samsung TVs, webapis.avplay drives the hardware decoder directly. That matters beyond
  * performance: it is markedly more tolerant of awkward manifests than the browser engine
  * in the same firmware, and live playlists in the wild are full of long sliding windows,
  * unusual sequence numbering and discontinuities that a software player gives up on.
  *
- * In a desktop browser there is no AVPlay, so hls.js drives a plain <video>. Safari plays
- * HLS natively and needs neither.
+ * Other platforms use a video element. TV profiles can prefer native HLS while desktop
+ * browsers prefer hls.js where MSE is available.
  */
 
 interface AVPlayListener {
@@ -271,6 +265,7 @@ const streamInfo = (value: string): Record<string, unknown> => {
 export class Player {
   private hls: InstanceType<typeof HlsType> | null = null;
   private video: HTMLVideoElement | null = null;
+  private generation = 0;
   private gesture: (() => void) | null = null;
   /** Whether this attempt has already reported why it failed. */
   private failed = false;
@@ -791,6 +786,7 @@ export class Player {
   private async playBrowser(url: string, browserRepair: boolean, startSeconds: number) {
     const video = this.video;
     if (!video) return;
+    const generation = this.generation;
     video.muted = this.muted;
     this.emit({ type: "buffering" });
 
@@ -802,10 +798,23 @@ export class Player {
       return;
     }
 
+    // TV native HLS keeps decoding and manifest loading in the platform media stack.
+    // Compatibility mode needs the repairing loader, so it deliberately uses hls.js.
+    if (
+      !browserRepair &&
+      prefersNativeHls() &&
+      video.canPlayType("application/vnd.apple.mpegurl")
+    ) {
+      video.src = url;
+      if (this.mode === "finite" && startSeconds > 0) video.currentTime = startSeconds;
+      this.tryPlay(video);
+      return;
+    }
+
     const Hls = await loadHls();
     // The viewer may have moved on while the engine was being fetched, and this attempt is
     // then for a channel nobody is watching.
-    if (this.video !== video || this.failed) return;
+    if (this.video !== video || this.failed || this.generation !== generation) return;
 
     // hls.js first, native second, and not the other way round. Chrome answers "maybe" to
     // canPlayType for HLS and then cannot play it, so asking the browser what it supports
@@ -815,6 +824,7 @@ export class Player {
     if (!Hls.isSupported()) {
       if (video.canPlayType("application/vnd.apple.mpegurl")) {
         video.src = url;
+        if (this.mode === "finite" && startSeconds > 0) video.currentTime = startSeconds;
         this.tryPlay(video);
       } else {
         this.fail("NOT_SUPPORTED");
@@ -1111,6 +1121,7 @@ export class Player {
    * only a real stop asks for it. Zapping stays one stop away from the next channel.
    */
   private teardown(release: boolean) {
+    this.generation += 1;
     window.clearTimeout(this.watchdog);
     this.watchdog = undefined;
     window.clearInterval(this.progress);

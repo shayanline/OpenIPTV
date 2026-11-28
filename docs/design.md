@@ -7,6 +7,8 @@ The interface follows Samsung's
 [Smart TV design guidelines](https://developer.samsung.com/smarttv/design/design-principles.html)
 and takes its look from [One UI](https://developer.samsung.com/one-ui/index.html).
 
+Experimental TV candidates reuse that interface through platform adapters and separate release artifacts. Their installation routes and support limits are owned by [TV installation and publishing](tv-platforms.md). Reusing the UI does not establish compliance with another vendor's certification requirements.
+
 ## The screen is a stack
 
 | Layer | What |
@@ -397,7 +399,13 @@ common in live playlists and all defeat a software player sooner or later.
 On a desktop there is no AVPlay, so hls.js drives a plain `<video>`. Same UI, same playlist,
 instant reload, real dev tools.
 
-## One artifact, built for the floor
+## Shared TV candidates
+
+The TV candidates reuse the same Vite build and select their platform through metadata added by `scripts/tv-ports.mjs`. `services/tvTargets.ts` owns their identities and delivery types. The platform helper handles lifecycle differences, while `useRemote` normalises documented remote keys before the existing screen stack sees them. The browser user agent cannot enable a privileged TV path.
+
+Samsung retains AVPlay. LG and the hosted TV profiles prefer native HLS when available, with hls.js retained for fallback and manifest repair. A generation token prevents an earlier lazy engine load from replacing a newer tune. The candidates omit Samsung socket modules and keep local remote access unavailable. Native decoding, networking restrictions and partner APIs require the separate device evidence described in [TV installation and publishing](tv-platforms.md).
+
+## One Samsung artifact, built for the floor
 
 The supported range is Tizen 5.5 and newer, which is seven browser engines.
 `scripts/tv/platforms.json` is the only place that table is written down, and prose restating it

@@ -1,4 +1,5 @@
 import { useLocale } from "../hooks/useLocale";
+import { closeTVApp } from "../services/tvPlatform";
 import { Confirm } from "./Confirm";
 
 /**
@@ -6,18 +7,7 @@ import { Confirm } from "./Confirm";
  * application, and recommends confirming first. Without this the app is a place a viewer
  * can enter and not leave with the button that everywhere else means "leave".
  */
-export function exitApp() {
-  const tizen = (
-    window as unknown as {
-      tizen?: { application?: { getCurrentApplication(): { exit(): void } } };
-    }
-  ).tizen;
-  try {
-    tizen?.application?.getCurrentApplication().exit();
-  } catch {
-    // Off the TV there is nothing to exit, so the dialog simply closes.
-  }
-}
+export const exitApp = closeTVApp;
 
 export function ExitDialog({
   watching,

@@ -11,6 +11,18 @@ const pkg = JSON.parse(readFileSync("./package.json", "utf8"));
 export default defineConfig({
   plugins: [
     react(),
+    {
+      name: "openiptv-build-identity",
+      transformIndexHtml() {
+        return [
+          {
+            tag: "meta",
+            attrs: { name: "openiptv-build-version", content: pkg.version },
+            injectTo: "head",
+          },
+        ];
+      },
+    },
     devRemoteBridge(),
     {
       name: "openiptv-http-relay",

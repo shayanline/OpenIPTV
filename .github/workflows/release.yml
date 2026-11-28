@@ -1,6 +1,6 @@
 name: Release
 
-# Tags publish an unsigned widget and the browser demo. Store signing stays local.
+# Tags publish the widget, TV candidates and browser demo. Store submission stays manual.
 on:
   push:
     tags: ["[0-9]*"]
@@ -73,6 +73,13 @@ jobs:
 
           The attached widget is unsigned. The README covers installation through Apps2Samsung,
           TizenBrew and local signing with the Tizen CLI.
+
+          The separate TV artifacts are experimental candidates. `OpenIPTV-webos.ipk` is the LG
+          Developer Mode package. The Titan ZIP is a hosted app candidate. VIDAA and VIZIO ZIPs
+          require partner integration, and the Vega ZIP is an SDK integration kit rather than a
+          VPKG. These artifacts do not establish real TV compatibility or store approval.
+          [Installation and publishing instructions](https://github.com/shayanline/OpenIPTV/blob/master/docs/tv-platforms.md)
+          explain each route. `OpenIPTV-ports.json` identifies the versions and checksums.
           MD
 
       - run: npm ci
@@ -80,6 +87,16 @@ jobs:
       - run: npm test
       - run: npm run build
       - run: npm run tv:gap
+
+      - name: Install the LG packaging tool
+        run: |
+          npm install --global @webos-tools/cli@3.2.6
+          ares-config --profile tv
+
+      - name: Package and exercise the TV release candidates
+        run: |
+          npm run ports:package
+          npm run ports:smoke
 
       - name: Check the committed WebAssembly
         run: |
@@ -107,6 +124,13 @@ jobs:
             build/OpenIPTV.wgt.sha256
           if-no-files-found: error
 
+      - name: Upload the separate TV candidates
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: OpenIPTV-TV-ports
+          path: build/ports/OpenIPTV-*
+          if-no-files-found: error
+
       - name: Attach it to the release
         if: github.event_name == 'push'
         uses: softprops/action-gh-release@8a0cd651e5b2365bd640854a3fa5dfc70e4875f3 # v3.0.4
@@ -114,6 +138,7 @@ jobs:
           files: |
             build/OpenIPTV.wgt
             build/OpenIPTV.wgt.sha256
+            build/ports/OpenIPTV-*
           fail_on_unmatched_files: true
           body_path: release-notes.md
 
