@@ -142,6 +142,9 @@ async function attempt(tv, binary, pinned, port) {
       "--headless=new",
       "--window-size=1920,1080",
       "--force-device-scale-factor=1",
+      // Legacy Linux headless font hinting rounds glyph widths unlike CoreText.
+      // Use consistent metrics so text sized guide items do not accumulate drift.
+      "--font-render-hinting=none",
       "--lang=en-US",
       "--no-first-run",
       "--no-default-browser-check",

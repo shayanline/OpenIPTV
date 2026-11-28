@@ -228,6 +228,8 @@ two things:
    which no CSS will reconcile, and the rest above thirty two, all of them a box in the wrong
    place.
 
+Both browsers use `--font-render-hinting=none` to keep Linux headless font metrics consistent across Skia versions. This prevents rounded glyph widths from accumulating across compact guide items without changing the layout tolerance or excluding any containers.
+
 It found a real fault on its first run. An absolutely positioned box with `left: 0; right: 0;
 width: auto` is supposed to stretch to its containing block, and does, unless it is also a flex
 container on Chromium 69, where it shrink wraps instead. Every channel row and every category row
