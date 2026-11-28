@@ -180,6 +180,53 @@ test("selecting the current order mode does not increment or write", async () =>
   assert.equal(disk.write.mock.calls.length, 0);
 });
 
+test("a provider number refresh preserves personal shortcuts and reset restores the new provider number", async () => {
+  const betaRef = channelRef(beta);
+  const store = await loaded({
+    version: 1,
+    revision: 4,
+    personalisation: {
+      channels: {
+        [betaRef.id]: { number: 801, sourceFingerprint: beta.sourceFingerprint },
+      },
+    },
+  });
+  const refreshedAlpha = { ...alpha, number: 801 };
+  const refreshedBeta = { ...beta, number: 88 };
+  await store.refreshCatalogue(playlist, {
+    channels: [refreshedAlpha, refreshedBeta],
+    categories: [
+      { key: "News", name: "News", kind: "live", channels: [refreshedAlpha, refreshedBeta] },
+    ],
+  });
+  const refreshed = store.useLineup.getState();
+  assert.equal(refreshed.numberIndex.get(801)?.id, beta.id);
+  assert.equal(
+    refreshed.managedChannels.find((channel) => channel.ref.id === betaRef.id)?.providerNumber,
+    88,
+  );
+  assert.deepEqual(
+    await store.applyLineupMutation(refreshed.revision, {
+      type: "channel.number",
+      channel: betaRef,
+      number: 801,
+    }),
+    { ok: true, revision: refreshed.revision, affectedIds: [] },
+  );
+  const reset = store.applyLineupMutation(refreshed.revision, {
+    type: "channel.number",
+    channel: betaRef,
+    number: null,
+  });
+  await vi.runAllTimersAsync();
+  assert.equal((await reset).ok, true);
+  const state = store.useLineup.getState();
+  assert.equal(state.numberIndex.get(88)?.id, beta.id);
+  assert.equal(state.numberIndex.get(801)?.id, alpha.id);
+  const saved = disk.write.mock.calls.at(-1)?.[1] as StoredLineupV1;
+  assert.equal(saved.personalisation.channels[betaRef.id], undefined);
+});
+
 test("restoring personal category order clears redundant placements but keeps Custom mode", async () => {
   const key = "personal:mine";
   const betaRef = channelRef(beta);

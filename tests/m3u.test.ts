@@ -62,6 +62,144 @@ http://example.com/a.m3u8`);
   assert.equal(c.number, 1);
 });
 
+test("reads the provider channel numbers from the issue 46 example", () => {
+  const channels = parseM3U(`#EXTM3U
+#EXTINF:-1 tvg-chno="1",Canal 1
+http://example.invalid/1
+#EXTINF:-1 tvg-chno="2",Canal 2 CDR
+http://example.invalid/2
+#EXTINF:-1 tvg-chno="4",Canal 4
+http://example.invalid/4
+#EXTINF:-1 tvg-chno="6",Canal 6
+http://example.invalid/6
+#EXTINF:-1 tvg-chno="8",Canal 8
+http://example.invalid/8
+#EXTINF:-1 tvg-chno="11",Canal 11
+http://example.invalid/11
+#EXTINF:-1 tvg-chno="88",88 Stereo
+http://example.invalid/88`);
+  assert.deepEqual(
+    channels.map((channel) => channel.number),
+    [1, 2, 4, 6, 8, 11, 88],
+  );
+});
+
+test("missing numbers follow the last emitted number, including after a lower provider number", () => {
+  const channels = parseM3U(`#EXTM3U
+#EXTINF:-1,First
+http://example.invalid/first
+#EXTINF:-1 TVG-CHNO=' 0042 ',Forty Two
+http://example.invalid/forty-two
+#EXTINF:-1,Next
+http://example.invalid/next
+#EXTINF:-1 tvg-chno="4",Four
+http://example.invalid/four
+#EXTINF:-1,Last
+http://example.invalid/last`);
+  assert.deepEqual(
+    channels.map((channel) => channel.number),
+    [1, 42, 43, 4, 5],
+  );
+});
+
+test.each([
+  "",
+  " ",
+  "0",
+  "-1",
+  "7.1",
+  "7.0",
+  "+7",
+  "1e3",
+  "0x10",
+  "NaN",
+  "Infinity",
+  "12text",
+  "9007199254740992",
+  "9007199254740993",
+])("invalid tvg-chno %j uses fallback numbering without poisoning later entries", (value) => {
+  const channels = parseM3U(`#EXTM3U
+#EXTINF:-1 tvg-chno="40",Forty
+http://example.invalid/forty
+#EXTINF:-1 tvg-chno="${value}",Fallback
+http://example.invalid/fallback
+#EXTINF:-1,Next
+http://example.invalid/next`);
+  assert.deepEqual(
+    channels.map((channel) => channel.number),
+    [40, 41, 42],
+  );
+});
+
+test("an overflowing increment falls back to the emitted channel's playlist position", () => {
+  const channels = parseM3U(`#EXTM3U
+#EXTINF:-1 tvg-chno="9007199254740991",Largest
+http://example.invalid/largest
+#EXTINF:-1,Fallback
+http://example.invalid/fallback
+#EXTINF:-1,Next
+http://example.invalid/next`);
+  assert.deepEqual(
+    channels.map((channel) => channel.number),
+    [9007199254740991, 2, 3],
+  );
+});
+
+test("entries without a playable URL do not advance fallback numbering", () => {
+  const channels = parseM3U(`#EXTM3U
+#EXTINF:-1 tvg-chno="500",Discarded
+not a URL
+#EXTINF:-1,First
+http://example.invalid/first
+#EXTINF:-1 tvg-chno="800",Also Discarded
+#EXTVLCOPT:network-caching=1000
+#EXTINF:-1,Second
+http://example.invalid/second
+#EXTINF:-1,Third
+http://example.invalid/third
+#EXTINF:-1 tvg-chno="900",No URL`);
+  assert.deepEqual(
+    channels.map((channel) => channel.number),
+    [1, 2, 3],
+  );
+});
+
+test("provider numbers and duplicates do not reorder or remove channels", () => {
+  const channels = parseM3U(`#EXTM3U
+#EXTINF:-1 tvg-chno="88",First
+http://example.invalid/first
+#EXTINF:-1 tvg-chno="2",Second
+http://example.invalid/second
+#EXTINF:-1 tvg-chno="2",Third
+http://example.invalid/third`);
+  assert.deepEqual(
+    channels.map((channel) => [channel.name, channel.number]),
+    [
+      ["First", 88],
+      ["Second", 2],
+      ["Third", 2],
+    ],
+  );
+});
+
+test("changing only provider numbers preserves channel IDs and source fingerprints", () => {
+  const original = `#EXTM3U
+#EXTINF:-1 tvg-id="same" group-title="News",One
+http://example.invalid/one
+#EXTINF:-1 tvg-id="same" group-title="News",Two
+http://example.invalid/two`;
+  const before = parseM3U(original);
+  const after = parseM3U(original.replace(/tvg-id="same"/g, 'tvg-id="same" tvg-chno="88"'));
+  assert.deepEqual(
+    after.map((channel) => channel.number),
+    [88, 88],
+  );
+  assert.deepEqual(
+    after.map((channel) => [channel.id, channel.sourceFingerprint]),
+    before.map((channel) => [channel.id, channel.sourceFingerprint]),
+  );
+});
+
 test("a title may contain commas, and only the first one separates", () => {
   const [c] = parseM3U(`#EXTINF:-1 tvg-id="x",News, Sport, and Weather
 http://example.com/x.m3u8`);

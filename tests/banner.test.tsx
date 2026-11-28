@@ -116,6 +116,26 @@ test("a raised banner counts itself down", () => {
   assert.equal(result.current.banner, false);
 });
 
+test.each([
+  ["precision", "900719925474099", "2", 900719925474099],
+  ["length", "9007199254740991", "0", 9007199254740991],
+  ["leading zero length", "0000000000000000", "0", 0],
+] as const)(
+  "the keypad rejects a digit beyond its %s limit without losing the accepted prefix",
+  (_limit, prefix, rejected, expected) => {
+    const { result } = renderHook(() => useChrome());
+    const settled = vi.fn();
+    act(() => {
+      for (const digit of prefix) result.current.dial(Number(digit), settled);
+      result.current.dial(Number(rejected), settled);
+    });
+    assert.equal(result.current.digits, prefix);
+    act(() => vi.advanceTimersByTime(2000));
+    assert.deepEqual(settled.mock.calls, [[expected]]);
+    assert.equal(result.current.digits, "");
+  },
+);
+
 // ---- and in the application, on a channel that takes a moment to arrive -----------------
 
 test("a Farsi category heading stays aligned with the LTR list", async () => {

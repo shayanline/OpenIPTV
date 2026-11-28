@@ -706,6 +706,31 @@ test("a dialled custom number uses the effective number index", async () => {
   assert.match(played[played.length - 1], /a\.m3u8$/);
 });
 
+test.each(["OK", "timeout"])(
+  "a provider number longer than four digits tunes in full with %s",
+  async (finish) => {
+    await mountApp(PLAYLIST.replace('tvg-id="b"', 'tvg-id="b" tvg-chno="10001"'));
+    for (const digit of "10001") press(48 + Number(digit));
+    assert.equal(document.querySelector(".digits")?.textContent, "10001");
+    if (finish === "OK") press(KEY.ENTER);
+    else await settle(2200);
+    assert.match(played[played.length - 1], /b\.m3u8$/);
+  },
+);
+
+test("dialling a saved personal number wins over an imported provider number", async () => {
+  await mountApp(PLAYLIST.replace('tvg-id="a"', 'tvg-id="a" tvg-chno="801"'), {
+    personalLineup: {
+      version: 1,
+      revision: 2,
+      personalisation: { channels: { b: { number: 801 } } },
+    },
+  });
+  for (const digit of "801") press(48 + Number(digit));
+  press(KEY.ENTER);
+  assert.match(played[played.length - 1], /b\.m3u8$/);
+});
+
 test("a dialled number cannot tune a hidden category", async () => {
   await mountApp(PLAYLIST, { hiddenCategories: ["News"] });
   press(51);

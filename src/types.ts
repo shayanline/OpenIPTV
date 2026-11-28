@@ -22,7 +22,7 @@ export interface Channel {
   group: string;
   url: string;
   quality: string;
-  /** Position in the playlist, used for the number key jump. */
+  /** Provider or fallback channel number, replaced by a personal number in effective views. */
   number: number;
   categoryKey?: string;
   sourceFingerprint?: string;

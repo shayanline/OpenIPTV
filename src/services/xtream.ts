@@ -730,6 +730,8 @@ export async function loadXtreamLive(
     seen.add(streamId);
     const categoryKey = `live:${text(stream.category_id)}`;
     const directSource = address(stream.direct_source, session.streamOrigin);
+    const numberText = text(stream.num).trim();
+    const providerNumber = Number(numberText);
     result.push({
       id: itemKey(playlistId, "live", streamId),
       name: text(stream.name),
@@ -737,7 +739,10 @@ export async function loadXtreamLive(
       group: categoryKey,
       url: directSource || buildXtreamLiveUrl(session, streamId),
       quality: "",
-      number: integer(stream.num) || result.length + 1,
+      number:
+        /^\d+$/.test(numberText) && Number.isSafeInteger(providerNumber) && providerNumber > 0
+          ? providerNumber
+          : result.length + 1,
       xtream: {
         playlistId,
         streamId,

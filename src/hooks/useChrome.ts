@@ -33,6 +33,7 @@ const NOTICE_MS = PLAYBACK_CHROME_TIMEOUT_MS;
  * nobody asked for. OK ends it early, RETURN abandons it.
  */
 const DIGIT_WAIT_MS = 2000;
+const MAX_CHANNEL_DIGITS = String(Number.MAX_SAFE_INTEGER).length;
 
 export interface Chrome {
   banner: boolean;
@@ -45,7 +46,7 @@ export interface Chrome {
   raiseBanner: () => void;
   lowerBanner: () => void;
   say: (message: string, warning?: boolean) => void;
-  /** Add a digit to the number being dialled, and return the number so far. */
+  /** Append a digit unless it would exceed the safe channel number range. */
   dial: (digit: number, onSettled: (channel: number) => void) => void;
   /** Finish dialling now, which is what OK means on a half typed number. */
   commitDigits: () => string;
@@ -97,7 +98,8 @@ export function useChrome(scope = "playback"): Chrome {
   );
 
   const dial = useCallback((digit: number, onSettled: (channel: number) => void) => {
-    const next = (dialled.current + String(digit)).slice(-4);
+    const next = dialled.current + String(digit);
+    if (next.length > MAX_CHANNEL_DIGITS || !Number.isSafeInteger(Number(next))) return;
     dialled.current = next;
     setDigits(next);
     window.clearTimeout(digitTimer.current);

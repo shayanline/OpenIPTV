@@ -1208,7 +1208,9 @@ export function createLineupController(options?: {
               channelRef(channel).id !== mutation.channel.id &&
               channel.number === mutation.number,
           );
-          if (collision) return invalid(state.revision, "duplicate-number");
+          if (collision && current.number !== mutation.number) {
+            return invalid(state.revision, "duplicate-number");
+          }
           current.number = mutation.number;
         } else delete current.number;
       } else {

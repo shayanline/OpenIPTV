@@ -9,7 +9,7 @@ Notable changes, newest first, in the format of [Keep a Changelog](https://keepa
 - Navigation and Settings have been redesigned.
 - Playlist management has been redesigned on the TV and remote dashboard.
 - Playlist Shortcut adds switching from the main menu.
-- Channels and categories can be renamed, hidden and reordered. Channel numbers can also be customised.
+- Channels and categories can be renamed, hidden and reordered. Channel numbers come from M3U playlists or Xtream providers and can be customised.
 - Playback has new controls and menus for audio, subtitles and the programme guide.
 - Pause handling, seeking and connection recovery have been improved.
 - Browsing now includes country flags and artwork previews.

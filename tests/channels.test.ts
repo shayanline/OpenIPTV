@@ -531,6 +531,44 @@ test("a cache younger than its life is not refreshed at all", async () => {
   assert.equal(s.useChannels.getState().channels.length, 2);
 });
 
+test("a cached M3U imports provider numbers with saved personal shortcuts before any network work", async () => {
+  const cached = `#EXTM3U
+#EXTINF:-1 group-title="News" tvg-chno="801",Alpha
+http://example.invalid/a.m3u8
+#EXTINF:-1 group-title="News" tvg-chno="88",Beta
+http://example.invalid/b.m3u8`;
+  const betaRef = channelRef(parseM3U(PLAYLIST)[1]);
+  readPersonal = async () => ({
+    version: 1,
+    revision: 4,
+    personalisation: {
+      channels: { [betaRef.id]: { number: 801, sourceFingerprint: betaRef.sourceFingerprint } },
+    },
+  });
+  const s = await load();
+  configure(s);
+  const url = seedCache(s, cached, HOUR);
+  const fetchMock = vi.fn();
+  vi.stubGlobal("fetch", fetchMock);
+
+  await s.useChannels.getState().load();
+
+  const lineup = s.useLineup.getState();
+  assert.deepEqual(
+    lineup.channels.map((channel) => channel.number),
+    [801, 801],
+  );
+  assert.deepEqual(
+    lineup.managedChannels.map((channel) => channel.providerNumber),
+    [801, 88],
+  );
+  assert.equal(lineup.numberIndex.get(801)?.name, "Beta");
+  assert.equal(lineup.numberIndex.has(88), false);
+  assert.equal(disk.get(`playlist:${url}`), cached);
+  await afterIdle();
+  assert.equal(fetchMock.mock.calls.length, 0);
+});
+
 test("startup activation trusts a fresh cache without refreshing it", async () => {
   const s = await load();
   configure(s);

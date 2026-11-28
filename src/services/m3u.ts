@@ -43,6 +43,7 @@ export function parseM3U(text: string): Channel[] {
   const lines = text.split(/\r?\n/);
   let pending: Partial<Channel> | null = null;
   let group = "";
+  let previousNumber = 0;
   /**
    * Every id handed out so far, because the whole application assumes they are unique.
    *
@@ -122,6 +123,11 @@ export function parseM3U(text: string): Channel[] {
          */
         quality: (attrs["tvg-quality"] || "").trim().slice(0, 6),
       };
+      const numberText = (attrs["tvg-chno"] || "").trim();
+      const number = Number(numberText);
+      if (/^\d+$/.test(numberText) && Number.isSafeInteger(number) && number > 0) {
+        pending.number = number;
+      }
       // Prefer the on screen title, since it is the bilingual one.
       if (title) pending.name = title;
       continue;
@@ -141,6 +147,9 @@ export function parseM3U(text: string): Channel[] {
       const baseFingerprint = sourceFingerprint(pending.id || "", name, categoryKey, line);
       const occurrence = (fingerprints.get(baseFingerprint) ?? 0) + 1;
       fingerprints.set(baseFingerprint, occurrence);
+      const nextNumber = previousNumber + 1;
+      const number =
+        pending.number ?? (Number.isSafeInteger(nextNumber) ? nextNumber : channels.length + 1);
       channels.push({
         id: unique(pending.id || `url:${line}`),
         name,
@@ -153,8 +162,9 @@ export function parseM3U(text: string): Channel[] {
             : `${baseFingerprint}${occurrence.toString(16).padStart(8, "0")}`,
         url: line,
         quality: pending.quality || "",
-        number: channels.length + 1,
+        number,
       });
+      previousNumber = number;
       pending = null;
     }
   }

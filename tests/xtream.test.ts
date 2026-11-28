@@ -291,6 +291,72 @@ describe("catalogue normalisation", () => {
     ]);
   });
 
+  test("preserves live provider numbers, duplicates and order with positional fallback", async () => {
+    payloadByAction({
+      authenticate: authentication(),
+      get_live_streams: [
+        { stream_id: 1, num: 88 },
+        { stream_id: 2, num: " 0002 " },
+        { stream_id: 2, num: 700 },
+        { num: 800 },
+        { stream_id: 3, num: "2" },
+        { stream_id: 4 },
+        { stream_id: 5, num: 10001 },
+        { stream_id: 6, num: "10002" },
+        { stream_id: 7, num: 9007199254740991 },
+        { stream_id: 8, num: "9007199254740991" },
+        { stream_id: 9 },
+      ],
+    });
+    const session = await authenticateXtream(source);
+
+    const channels = await loadXtreamLive(session, "playlist-1");
+
+    expect(channels.map((channel) => [channel.xtream?.streamId, channel.number])).toEqual([
+      ["1", 88],
+      ["2", 2],
+      ["3", 2],
+      ["4", 4],
+      ["5", 10001],
+      ["6", 10002],
+      ["7", 9007199254740991],
+      ["8", 9007199254740991],
+      ["9", 9],
+    ]);
+  });
+
+  test.each([
+    ["missing", undefined],
+    ["null", null],
+    ["blank", " "],
+    ["zero", 0],
+    ["zero string", "0"],
+    ["negative", -1],
+    ["fraction", 41.9],
+    ["fraction string", "41.9"],
+    ["exponent string", "1e3"],
+    ["hexadecimal string", "0x29"],
+    ["unsafe integer", 9007199254740992],
+    ["unsafe integer string", "9007199254740993"],
+    ["boolean", true],
+    ["array", [41]],
+    ["object", {}],
+    ["nonfinite string", "Infinity"],
+  ])(
+    "a %s live number falls back to position without affecting later entries",
+    async (_label, num) => {
+      payloadByAction({
+        authenticate: authentication(),
+        get_live_streams: [{ stream_id: 1, num: 88 }, { stream_id: 2, num }, { stream_id: 3 }],
+      });
+      const session = await authenticateXtream(source);
+
+      const channels = await loadXtreamLive(session, "playlist-1");
+
+      expect(channels.map((channel) => channel.number)).toEqual([88, 2, 3]);
+    },
+  );
+
   test("loads movie and series categories through their exact endpoint parameters", async () => {
     const fetch = payloadByAction({
       authenticate: authentication(),

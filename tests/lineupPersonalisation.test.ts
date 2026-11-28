@@ -296,6 +296,57 @@ test("number index excludes hidden content and keeps the first provider duplicat
   assert.equal(result.numberIndex.size, 2);
 });
 
+test("personal number shortcuts outrank provider duplicates before and after them in source order", () => {
+  const duplicate = { ...beta, number: 10 };
+  const catalogue: ProviderLineup = {
+    channels: [alpha, gamma, duplicate],
+    categories: provider().categories,
+  };
+  const result = materialiseLineup(
+    catalogue,
+    personalised({ channels: { [channelRef(gamma).id]: { number: 10 } } }),
+    "en",
+  );
+  assert.equal(result.numberIndex.get(10)?.id, "c");
+  assert.equal(result.numberIndex.has(3), false);
+  assert.deepEqual(
+    result.channels.map((item) => item.id),
+    ["a", "c", "b"],
+  );
+  assert.deepEqual(
+    result.channels.map((item) => item.number),
+    [10, 10, 10],
+  );
+  assert.equal(gamma.number, 3);
+});
+
+test.each(["channel", "category"])(
+  "a hidden personal number does not reserve a shortcut through its %s",
+  (hidden) => {
+    const result = materialiseLineup(
+      provider(),
+      personalised({
+        channels: {
+          [channelRef(gamma).id]: { number: 10, hidden: hidden === "channel" },
+        },
+        categories: hidden === "category" ? { Sport: { hidden: true } } : {},
+      }),
+      "en",
+    );
+    assert.equal(result.numberIndex.get(10)?.id, "a");
+  },
+);
+
+test("the next visible provider duplicate owns a shortcut when the first one is hidden", () => {
+  const duplicate = { ...gamma, number: 2 };
+  const result = materialiseLineup(
+    { channels: [alpha, beta, duplicate], categories: provider().categories },
+    personalised({ channels: { [channelRef(beta).id]: { hidden: true } } }),
+    "en",
+  );
+  assert.equal(result.numberIndex.get(2)?.id, "c");
+});
+
 test("full fingerprint matching precedes unique base fallback", () => {
   const exact = { ...alpha, id: "new-a", sourceFingerprint: "0123456789abcdef00000002" };
   const exactResult = reconcilePersonalisation(

@@ -896,7 +896,14 @@ export function materialiseLineup(
   const browsableIds = new Set(browsableChannels.map((channel) => channel.id));
   for (const provider of catalogue.channels) {
     const channel = effectiveById.get(provider.id);
-    if (channel && browsableIds.has(channel.id) && !numberIndex.has(channel.number)) {
+    if (!channel || !browsableIds.has(channel.id)) continue;
+    const existing = numberIndex.get(channel.number);
+    // A provider refresh must not take a saved personal shortcut from another channel.
+    if (
+      !existing ||
+      (personalisation.channels[channelRef(provider).id]?.number !== undefined &&
+        personalisation.channels[channelRef(existing).id]?.number === undefined)
+    ) {
       numberIndex.set(channel.number, channel);
     }
   }
