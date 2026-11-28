@@ -1,6 +1,6 @@
 {
   "name": "open-iptv",
-  "version": "1.10.0",
+  "version": "2.0.0",
   "description": "IPTV player for Samsung Tizen TVs",
   "scripts": {
     "test": "vitest run",
@@ -14,12 +14,10 @@
     "deploy": "./scripts/deploy.sh",
     "tv": "node scripts/tv/sim.mjs",
     "tv:bench": "node scripts/tv/sim.mjs --bench",
-    "tv:calibrate": "node scripts/tv/calibrate.mjs",
     "check": "npm run lint && npm run typecheck && npm test",
     "tv:video": "node scripts/tv/sim.mjs --video",
-    "tv:floor": "node scripts/tv/sim.mjs --floor",
-    "tv:bench:floor": "node scripts/tv/sim.mjs --floor --bench",
-    "tv:quick": "node scripts/tv/sim.mjs --floor --bench --quick",
+    "tv:quick": "node scripts/tv/sim.mjs --bench --quick",
+    "tv:profile:vod": "node scripts/tv/profile.mjs",
     "lint": "biome lint",
     "lint:fix": "biome lint --write",
     "format": "biome format --write",
@@ -27,7 +25,6 @@
     "test:watch": "vitest",
     "tv:gap": "node scripts/tv/gap-parity.mjs",
     "tv:engines": "node scripts/tv/engine-parity.mjs",
-    "tv:budget": "node scripts/tv/sim.mjs --floor --bench --budget",
     "tv:on-set": "node scripts/tv/on-set.mjs",
     "wasm:check": "node scripts/wasm-check.mjs",
     "wasm:sums": "node scripts/wasm-check.mjs --write",
@@ -68,7 +65,7 @@
     "vitest": "5.1.1"
   },
   "engines": {
-    "node": ">=22.18"
+    "node": "^22.22.2 || ^24.15.0 || >=26.0.0"
   },
   "repository": {
     "type": "git",

@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useLayoutEffect, useRef } from "react";
 
 /**
  * Samsung remote key codes. The arrows and Enter match a desktop keyboard, so the whole
@@ -21,8 +21,7 @@ export const KEY = {
   VOL_DOWN: 449,
   ESC: 27,
 
-  // Red, green and yellow are registered and acted on. Blue stays named because the debug
-  // remote offers it, so a deliberately ignored key can still be exercised.
+  // The four colour keys share shortcuts across the content browsers.
   RED: 403,
   GREEN: 404,
   YELLOW: 405,
@@ -70,6 +69,7 @@ const REGISTERED = [
   "ColorF0Red",
   "ColorF1Green",
   "ColorF2Yellow",
+  "ColorF3Blue",
 ];
 
 interface TizenInputDevice {
@@ -140,24 +140,36 @@ export function registerRemoteKeys() {
  * legacy accessor and the KeyboardEvent constructor ignores it, so setting it in the init
  * dictionary silently produces a zero. Defining it on the instance is what works.
  */
-function dispatchKey(type: "keydown" | "keyup", code: number) {
-  const event = new KeyboardEvent(type, { bubbles: true, cancelable: true });
+function dispatchKey(type: "keydown" | "keyup", code: number, repeat = false) {
+  const event = new KeyboardEvent(type, { bubbles: true, cancelable: true, repeat });
   Object.defineProperty(event, "keyCode", { get: () => code });
   Object.defineProperty(event, "which", { get: () => code });
   window.dispatchEvent(event);
 }
 
-export const sendKeyDown = (code: number) => dispatchKey("keydown", code);
+export const sendKeyDown = (code: number, repeat = false) =>
+  dispatchKey("keydown", code, repeat);
 export const sendKeyUp = (code: number) => dispatchKey("keyup", code);
 export function sendKey(code: number) {
   sendKeyDown(code);
   sendKeyUp(code);
 }
 
-export function useRemote(handler: (code: number, event: KeyboardEvent) => void) {
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => handler(e.keyCode, e);
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+export function useRemote(
+  handler: (code: number, event: KeyboardEvent) => void,
+  capture = false,
+) {
+  const current = useRef(handler);
+  useLayoutEffect(() => {
+    current.current = handler;
   }, [handler]);
+  // Keep long press listeners ahead of this stable listener when effects are installed.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      current.current(e.keyCode, e);
+    };
+    window.addEventListener("keydown", onKey, capture);
+    return () => window.removeEventListener("keydown", onKey, capture);
+  }, [capture]);
 }

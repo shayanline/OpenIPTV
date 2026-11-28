@@ -68,6 +68,21 @@ test("reading reports what the playlist says about itself", () => {
   assert.equal(read.variants, 0);
 });
 
+test("reading keeps the longest valid media segment duration", () => {
+  const text = [
+    "#EXTM3U",
+    "#EXTINF:2.5,",
+    "a.ts",
+    "#EXTINF:not-a-number,",
+    "b.ts",
+    "#EXTINF:7.25,",
+    "c.ts",
+    "",
+  ].join("\n");
+
+  assert.equal(readPlaylist(text).longest, 7.25);
+});
+
 test("repairing brings the sequence inside what the set can hold", () => {
   const fixed = repaired(playlist("1786136377905810"), "https://host.example/live/index.m3u8");
   const sequence = readPlaylist(fixed).sequence;
@@ -111,14 +126,44 @@ test("addresses that are already absolute, or on another host, are untouched", (
   assert.match(fixed, /https:\/\/elsewhere\.example\/a\.ts/);
 });
 
-test("the window is trimmed to its tail, keeping the newest segments", () => {
-  // 150 seconds of two second segments is 75, so a longer window is cut and the end is what stays:
-  // the end is where live television is.
-  const fixed = repaired(playlist("1786136377905810", 200), "https://h/x.m3u8");
+test("repair preserves the complete provider window for Live seeking", () => {
+  const fixed = repaired(playlist("1786136377905810", 600), "https://h/x.m3u8");
   const read = readPlaylist(fixed);
-  assert.equal(read.segments, 75);
-  assert.match(fixed, /segment-199\.ts/, "the newest segment was dropped");
-  assert.ok(!fixed.includes("segment-0.ts"), "the oldest segment was kept");
+  assert.equal(read.segments, 600);
+  assert.match(fixed, /segment-599\.ts/);
+  assert.match(fixed, /segment-0\.ts/);
+});
+
+test("repair retains track metadata, initialization, encryption and segment tags", () => {
+  const source = [
+    "#EXTM3U",
+    "#EXT-X-VERSION:7",
+    "#EXT-X-MEDIA-SEQUENCE:1786136377905810",
+    '#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="audio",NAME="English",URI="../audio/en.m3u8"',
+    '#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="subs",NAME="English",URI="../subs/en.m3u8"',
+    '#EXT-X-KEY:METHOD=AES-128,URI="../key",IV=0x00000000000000000000000000000001',
+    '#EXT-X-MAP:URI="init.mp4"',
+    "#EXT-X-DISCONTINUITY-SEQUENCE:2",
+    "#EXT-X-DISCONTINUITY",
+    "#EXT-X-PROGRAM-DATE-TIME:2026-11-27T12:00:00Z",
+    "#EXTINF:6,",
+    "#EXT-X-BYTERANGE:1000@0",
+    "media.mp4",
+    "#EXT-X-ENDLIST",
+  ].join("\n");
+  const window = windowOf(source, "https://host.example/live/index.m3u8");
+  const fixed = renderPlaylist(window, 10);
+  assert.equal(window.segments.length, 1);
+  assert.match(fixed, /#EXT-X-MEDIA-SEQUENCE:10\n/);
+  assert.match(fixed, /#EXT-X-VERSION:7/);
+  assert.match(fixed, /TYPE=AUDIO.*URI="https:\/\/host.example\/audio\/en.m3u8"/);
+  assert.match(fixed, /TYPE=SUBTITLES.*URI="https:\/\/host.example\/subs\/en.m3u8"/);
+  assert.match(fixed, /#EXT-X-KEY:METHOD=AES-128,URI="https:\/\/host.example\/key",IV=/);
+  assert.match(fixed, /#EXT-X-MAP:URI="https:\/\/host.example\/live\/init.mp4"/);
+  assert.match(fixed, /#EXT-X-DISCONTINUITY-SEQUENCE:2\n#EXT-X-DISCONTINUITY\n/);
+  assert.match(fixed, /#EXT-X-PROGRAM-DATE-TIME:2026-11-27T12:00:00Z/);
+  assert.match(fixed, /#EXT-X-BYTERANGE:1000@0\nhttps:\/\/host.example\/live\/media.mp4/);
+  assert.match(fixed, /#EXT-X-ENDLIST\n$/);
 });
 
 test("a short window is published whole rather than padded", () => {

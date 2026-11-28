@@ -10,7 +10,7 @@
  * imitated: AVPlay's state machine rejects calls made in the wrong state exactly as the
  * real one does, so an ordering mistake fails here instead of silently on the TV.
  *
- * Playback is real. AVPlay itself is Samsung firmware and cannot exist here, but nothing
+ * Interactive playback is real. AVPlay itself is Samsung firmware and cannot exist here, but nothing
  * says the imitation has to be hollow, so each call is carried out by hls.js against a
  * video element hidden behind the page, in the place the hardware plane would occupy. The
  * app cannot tell the difference: it calls open, prepareAsync and play, and a picture
@@ -19,6 +19,8 @@
  * What that does not reproduce is the hardware: a TV decodes in silicon on a plane below
  * the browser, and here a software decoder paints into the page. Timing and cost differ,
  * and the real AVPlay error names cannot be produced at all.
+ * Measurements use an explicit clock and state mode so browser demuxing does not contaminate
+ * the application's CPU timings. Fault journeys can hold preparation until completed manually.
  */
 (() => {
   const log = (...a) => console.log("[tv]", ...a);
@@ -129,6 +131,144 @@
   let source = "";
   let hls = null;
   let frameSample = null;
+  const originalHidden = Object.getOwnPropertyDescriptor(document, "hidden");
+  const originalVisibility = Object.getOwnPropertyDescriptor(document, "visibilityState");
+  const nativeTiming = window.__openiptvNativeTiming === true;
+  let controlled = nativeTiming;
+  let autoPrepare = nativeTiming;
+  let prepareTimer = 0;
+  let connections = 0;
+  let seeks = [];
+  let buffering = false;
+  let frozen = false;
+  let liveWindow = null;
+  let lastFault = "";
+  let hidden = false;
+  let controlledTime = 0;
+  let controlledAt = performance.now();
+  let pendingPrepare = null;
+  let seekOutcome = "complete";
+
+  const controlledFixtureSource = (value) => {
+    try {
+      const url = new URL(value, window.location.href);
+      const local = url.hostname === "127.0.0.1" || url.hostname === "localhost";
+      return (
+        /^\/fixture\/playback\/(finite|movie-|episode-)/.test(url.pathname) ||
+        (local && /^\/(movie|series|timeshift)\//.test(url.pathname))
+      );
+    } catch {
+      return false;
+    }
+  };
+
+  const updateControlledTime = () => {
+    const now = performance.now();
+    if (controlled && state === "PLAYING" && !frozen) controlledTime += now - controlledAt;
+    controlledAt = now;
+    return Math.round(controlledTime);
+  };
+
+  const setDocumentHidden = (value) => {
+    hidden = value;
+    Object.defineProperty(document, "hidden", { configurable: true, get: () => hidden });
+    Object.defineProperty(document, "visibilityState", {
+      configurable: true,
+      get: () => (hidden ? "hidden" : "visible"),
+    });
+    document.dispatchEvent(new Event("visibilitychange"));
+  };
+
+  window.__openiptvTvFaults = {
+    reset() {
+      const cancelledPrepare = pendingPrepare;
+      pendingPrepare = null;
+      if (cancelledPrepare) cancelledPrepare.fail?.("PLAYER_ERROR_OPERATION_ABORTED");
+      listener = {};
+      controlled = nativeTiming;
+      autoPrepare = nativeTiming;
+      connections = 0;
+      seeks = [];
+      buffering = false;
+      frozen = false;
+      liveWindow = null;
+      lastFault = "";
+      hidden = false;
+      controlledTime = 0;
+      controlledAt = performance.now();
+      seekOutcome = "complete";
+      state = "NONE";
+      source = "";
+      release();
+      if (originalHidden) Object.defineProperty(document, "hidden", originalHidden);
+      else delete document.hidden;
+      if (originalVisibility)
+        Object.defineProperty(document, "visibilityState", originalVisibility);
+      else delete document.visibilityState;
+    },
+    useControlledPlayback() {
+      controlled = true;
+      autoPrepare = false;
+      controlledTime = 0;
+      controlledAt = performance.now();
+    },
+    completePrepare() {
+      if (!pendingPrepare) return;
+      const complete = pendingPrepare;
+      pendingPrepare = null;
+      state = "READY";
+      buffering = false;
+      listener.onbufferingcomplete?.();
+      complete.ok?.();
+    },
+    startBuffering() {
+      buffering = true;
+      listener.onbufferingstart?.();
+    },
+    endBuffering() {
+      buffering = false;
+      listener.onbufferingcomplete?.();
+    },
+    freezePlayhead() {
+      updateControlledTime();
+      frozen = true;
+    },
+    resumePlayhead() {
+      frozen = false;
+      controlledAt = performance.now();
+    },
+    nextSeek(outcome) {
+      if (outcome === "complete" || outcome === "omit-callback" || outcome === "reject") {
+        seekOutcome = outcome;
+      }
+    },
+    emitNetworkFault() {
+      lastFault = "PLAYER_ERROR_CONNECTION_FAILED";
+      listener.onerror?.(lastFault);
+    },
+    emitMediaFault() {
+      lastFault = "PLAYER_ERROR_NOT_SUPPORTED_FILE";
+      listener.onerror?.(lastFault);
+    },
+    setLiveWindow(startMilliseconds, endMilliseconds) {
+      liveWindow = [startMilliseconds, endMilliseconds];
+    },
+    setHidden(value) {
+      setDocumentHidden(Boolean(value));
+    },
+    snapshot() {
+      return {
+        controlled,
+        connections,
+        seeks: seeks.slice(),
+        buffering,
+        frozen,
+        liveWindow: liveWindow ? liveWindow.slice() : null,
+        lastFault,
+        hidden,
+      };
+    },
+  };
 
   const isHlsSource = (address) => {
     try {
@@ -143,6 +283,11 @@
 
   /** Give back the decoder, whichever engine happens to be driving it. */
   const release = () => {
+    window.clearTimeout(prepareTimer);
+    prepareTimer = 0;
+    const cancelledPrepare = pendingPrepare;
+    pendingPrepare = null;
+    cancelledPrepare?.fail?.("PLAYER_ERROR_OPERATION_ABORTED");
     frameSample = null;
     if (hls) {
       try {
@@ -176,9 +321,15 @@
         guard("open");
         release();
         source = url;
+        if (controlledFixtureSource(url)) {
+          controlled = true;
+          controlledTime = 0;
+          controlledAt = performance.now();
+        }
+        if (controlled) connections += 1;
         state = "IDLE";
         hidePlugin(); // the surface is created just before this, on the first channel
-        log("open", url);
+        log("open", controlled ? "controlled target" : "media target");
       },
       close() {
         guard("close");
@@ -239,13 +390,23 @@
         log("restore");
       },
       /**
-       * Join the stream for real, and report it the way the set would.
-       *
-       * READY is reached when there is actually something to show rather than after a
-       * made up delay, so the app's loading states last as long as loading does.
+       * Measurement timing excludes media loading and decoding. Interactive playback waits
+       * for real metadata, while a controlled fault journey owns preparation completion.
        */
       prepareAsync(ok, fail) {
         guard("prepareAsync");
+        if (controlled) {
+          buffering = true;
+          pendingPrepare = { ok, fail };
+          listener.onbufferingstart?.();
+          if (autoPrepare) {
+            prepareTimer = window.setTimeout(() => {
+              prepareTimer = 0;
+              window.__openiptvTvFaults.completePrepare();
+            }, 100);
+          }
+          return;
+        }
         const v = video();
         if (!v) {
           fail?.("PLAYER_ERROR_INVALID_STATE");
@@ -308,24 +469,58 @@
       play() {
         guard("play");
         state = "PLAYING";
-        void video()
-          ?.play()
-          .catch((e) => log("play refused", e && e.name));
+        controlledAt = performance.now();
+        if (!controlled) {
+          void video()
+            ?.play()
+            .catch((e) => log("play refused", e?.name));
+        }
         log("play");
       },
       pause() {
         guard("pause");
-        video()?.pause();
+        if (controlled) updateControlledTime();
+        else video()?.pause();
         state = "PAUSED";
         log("pause");
       },
       getCurrentTime() {
-        return Math.round((video()?.currentTime ?? 0) * 1000);
+        return controlled
+          ? updateControlledTime()
+          : Math.round((video()?.currentTime ?? 0) * 1000);
       },
       getDuration() {
-        return Math.round((video()?.duration ?? 0) * 1000);
+        return controlled ? 300000 : Math.round((video()?.duration ?? 0) * 1000);
       },
+      getTotalTrackInfo() {
+        if (!controlled) return this.getCurrentStreamInfo();
+        return [
+          {
+            index: 0,
+            type: "VIDEO",
+            extra_info: JSON.stringify({ Width: 1920, Height: 1080, FourCC: "H264" }),
+          },
+          {
+            index: 1,
+            type: "AUDIO",
+            extra_info: JSON.stringify({ language: "en", track_lang: "English" }),
+          },
+          {
+            index: 2,
+            type: "AUDIO",
+            extra_info: JSON.stringify({ language: "fa", track_lang: "فارسی" }),
+          },
+          {
+            index: 3,
+            type: "TEXT",
+            extra_info: JSON.stringify({ language: "en", track_lang: "English" }),
+          },
+        ];
+      },
+      setSelectTrack() {},
+      setSilentSubtitle() {},
       getCurrentStreamInfo() {
+        if (controlled) return this.getTotalTrackInfo();
         const v = video();
         const levelIndex = hls ? Math.max(0, hls.currentLevel, hls.loadLevel) : -1;
         const level = levelIndex >= 0 ? hls?.levels[levelIndex] : null;
@@ -366,17 +561,38 @@
       getVideoSeamlessInfo() {
         return { scan_type: 1, rotation_degree: 0 };
       },
-      seekTo(ms) {
+      seekTo(ms, success, failure) {
+        if (controlled) {
+          seeks.push(ms);
+          const outcome = seekOutcome;
+          seekOutcome = "complete";
+          if (outcome === "omit-callback") return;
+          if (outcome === "reject") {
+            failure?.("PLAYER_ERROR_INVALID_OPERATION");
+            return;
+          }
+          controlledTime = ms;
+          controlledAt = performance.now();
+          success?.();
+          return;
+        }
         const v = video();
         if (v) v.currentTime = ms / 1000;
+        success?.();
       },
       jumpForward(ms) {
-        const v = video();
-        if (v) v.currentTime += ms / 1000;
+        if (controlled) controlledTime += ms;
+        else {
+          const v = video();
+          if (v) v.currentTime += ms / 1000;
+        }
       },
       jumpBackward(ms) {
-        const v = video();
-        if (v) v.currentTime -= ms / 1000;
+        if (controlled) controlledTime = Math.max(0, controlledTime - ms);
+        else {
+          const v = video();
+          if (v) v.currentTime -= ms / 1000;
+        }
       },
       setTimeoutForBuffering(s) {
         log("setTimeoutForBuffering", s);
@@ -384,9 +600,17 @@
       /** Enough of the read only properties for the app's live timeline to work. */
       getStreamingProperty(key) {
         const v = video();
-        const seekable = v && v.seekable.length ? v.seekable : null;
-        if (key === "IS_LIVE") return seekable && !Number.isFinite(v.duration) ? "1" : "0";
+        const seekable = v?.seekable.length ? v.seekable : null;
+        if (key === "IS_LIVE")
+          return controlled
+            ? liveWindow
+              ? "1"
+              : "0"
+            : seekable && !Number.isFinite(v.duration)
+              ? "1"
+              : "0";
         if (key === "GET_LIVE_DURATION") {
+          if (controlled) return liveWindow ? `${liveWindow[0]}|${liveWindow[1]}` : "";
           if (!seekable) return "";
           return `${Math.round(seekable.start(0) * 1000)}|${Math.round(seekable.end(seekable.length - 1) * 1000)}`;
         }

@@ -6,81 +6,116 @@ import {
   renamePairedDevice,
   revokePairedDevice,
   type PairedDevice,
+  type PairingSessionView,
 } from "../../services/deviceAccess";
+import type { SettingsDetailNavigation } from "../Settings";
 import { Confirm } from "../Confirm";
+import { Icon } from "../Icon";
 import { RemoteSetup } from "../RemoteSetup";
+import { TextInput } from "../TextInput";
+import { PageHeader, SettingsListHeader } from "./Field";
+import { SettingsDialog } from "./SettingsDialog";
 
 export function Devices({
   remoteAccess,
   onAsking,
+  navigation,
 }: {
   remoteAccess: RemoteAccessControl;
-  onAsking: (asking: boolean) => void;
+  onAsking: (asking: boolean, restoreFocus?: boolean) => void;
+  navigation: SettingsDetailNavigation;
 }) {
-  const { t, locale } = useLocale();
+  const { t, locale, number } = useLocale();
   const [, setRevision] = useState(0);
   const [editing, setEditing] = useState("");
   const [name, setName] = useState("");
   const [confirming, setConfirming] = useState("");
-  const [returning, setReturning] = useState("");
   const [showConnected, setShowConnected] = useState(false);
-  const pairingWasOpen = useRef(!!remoteAccess.pairing);
-  const renameInput = useRef<HTMLInputElement>(null);
-  const pairAction = useRef<HTMLButtonElement>(null);
+  const [pairingOpen, setPairingOpen] = useState(false);
+  const ownedPairing = useRef<PairingSessionView | null>(null);
+  const remoteAccessRef = useRef(remoteAccess);
+  remoteAccessRef.current = remoteAccess;
+  const cancelPairingRef = useRef(remoteAccess.cancelPairing);
+  cancelPairingRef.current = remoteAccess.cancelPairing;
   const devices: PairedDevice[] = listPairedDevices();
   const refresh = () => setRevision((value) => value + 1);
 
-  useEffect(() => {
-    if (editing) renameInput.current?.focus();
-  }, [editing]);
-
-  useEffect(() => {
-    if (!returning || editing) return;
-    document.querySelector<HTMLButtonElement>(`[data-device-edit="${returning}"]`)?.focus();
-    setReturning("");
-  }, [editing, returning]);
-
-  useEffect(() => {
-    if (remoteAccess.pairing) {
-      pairingWasOpen.current = true;
-      setShowConnected(false);
-      document.querySelector<HTMLButtonElement>("[data-cancel-pairing]")?.focus();
-      return;
+  const closePairing = () => {
+    const access = remoteAccessRef.current;
+    if (ownedPairing.current && access.pairing === ownedPairing.current) {
+      access.cancelPairing();
     }
-    if (!remoteAccess.connectedDevice || !pairingWasOpen.current) return;
-    pairingWasOpen.current = false;
-    setShowConnected(true);
-    pairAction.current?.focus();
+    ownedPairing.current = null;
+    setPairingOpen(false);
+    onAsking(false, true);
+  };
+
+  const startPairing = () => {
+    if (!navigation.inputEnabled || ownedPairing.current || pairingOpen) return;
+    const access = remoteAccessRef.current;
+    if (access.pairing) return;
+    const session = access.openPairing();
+    if (!session) return;
+    ownedPairing.current = session;
+    onAsking(true);
+    setPairingOpen(true);
+  };
+
+  const retryPairing = () => {
+    const session = remoteAccess.openPairing();
+    if (session) ownedPairing.current = session;
+    return session;
+  };
+
+  useEffect(() => {
+    const owned = ownedPairing.current;
+    if (!owned || remoteAccess.pairing === owned) return;
+    ownedPairing.current = null;
+    if (!remoteAccess.connectedDevice && !remoteAccess.pairing) return;
+    if (remoteAccess.connectedDevice) setShowConnected(true);
+    setPairingOpen(false);
+    onAsking(false, true);
+  }, [remoteAccess.pairing, remoteAccess.connectedDevice, onAsking]);
+
+  useEffect(() => {
+    if (!showConnected) return;
     const timer = window.setTimeout(() => setShowConnected(false), 5_000);
     return () => window.clearTimeout(timer);
-  }, [remoteAccess.connectedDevice, remoteAccess.pairing]);
+  }, [showConnected]);
+
+  useEffect(() => {
+    return () => {
+      const access = remoteAccessRef.current;
+      if (ownedPairing.current && access.pairing === ownedPairing.current) {
+        cancelPairingRef.current();
+      }
+      ownedPairing.current = null;
+    };
+  }, []);
 
   const ask = (id: string) => {
     setConfirming(id);
     onAsking(!!id);
   };
-  const finishEdit = (id: string) => {
-    setReturning(id);
+  const closeEdit = () => {
     setEditing("");
+    onAsking(false, true);
   };
+  const editingDevice = devices.find((device) => device.id === editing) || null;
+  useEffect(() => {
+    if (editing && !devices.some((device) => device.id === editing)) {
+      setEditing("");
+      onAsking(false);
+    }
+  }, [editing, devices, onAsking]);
 
   return (
     <div className="device-access">
-      <h3>{t("settings.remoteAccess")}</h3>
-      {!remoteAccess.pairing && (
-        <>
-          <p className="sheet-lead">{t("remote.pairedHint")}</p>
-          <p className="sheet-lead">{t("remote.trustedNetwork")}</p>
-        </>
-      )}
-      {(remoteAccess.pairing || showConnected) && (
-        <RemoteSetup
-          remoteAccess={remoteAccess}
-          headingLevel={4}
-          onCancelPairing={
-            remoteAccess.pairing ? () => remoteAccess.cancelPairing() : undefined
-          }
-        />
+      <PageHeader title={t("settings.remoteAccess")} description={t("remote.pairedHint")} />
+      {showConnected && remoteAccess.connectedDevice && (
+        <p className="settings-status" role="status">
+          {t("remote.connected", { name: remoteAccess.connectedDevice })}
+        </p>
       )}
       {remoteAccess.status === "starting" && (
         <p className="sheet-lead" role="status">
@@ -93,94 +128,93 @@ export function Devices({
         </p>
       )}
       {remoteAccess.status === "unavailable" && (
-        <>
-          <p className="field-problem" role="alert">
-            {t("remote.unavailable")}
-          </p>
+        <p className="field-problem" role="alert">
+          {t("remote.unavailable")}
+        </p>
+      )}
+      <SettingsListHeader
+        className="device-list-header"
+        title={t("remote.pairedDevices")}
+        count={number(devices.length)}
+      >
+        {(remoteAccess.status !== "listening" || !remoteAccess.pairing || pairingOpen) && (
           <div className="actions device-access-actions">
-            <button type="button" className="btn tonal" onClick={remoteAccess.retry}>
-              {t("remote.retry")}
+            <button
+              type="button"
+              className="btn tonal"
+              data-settings-focus="device-pair"
+              aria-disabled={
+                !navigation.inputEnabled ||
+                remoteAccess.status === "idle" ||
+                remoteAccess.status === "starting"
+              }
+              aria-busy={remoteAccess.status === "starting" || undefined}
+              onClick={() => {
+                if (!navigation.inputEnabled) return;
+                if (remoteAccess.status === "unavailable") remoteAccess.retry();
+                else if (remoteAccess.status === "listening") startPairing();
+              }}
+            >
+              <Icon name={remoteAccess.status === "listening" ? "plus" : "refresh"} />
+              <span>
+                {t(
+                  remoteAccess.status === "listening"
+                    ? "remote.add"
+                    : remoteAccess.status === "unavailable"
+                      ? "remote.retry"
+                      : "remote.starting",
+                )}
+              </span>
             </button>
           </div>
-        </>
-      )}
-      {remoteAccess.status === "listening" && !remoteAccess.pairing && (
-        <div className="actions device-access-actions">
-          <button
-            ref={pairAction}
-            type="button"
-            className="btn tonal"
-            onClick={remoteAccess.openPairing}
-          >
-            {t("remote.add")}
-          </button>
-        </div>
-      )}
+        )}
+      </SettingsListHeader>
       <div className="device-list">
         {devices.map((device) => (
-          <div className="device-row" key={device.id}>
-            {editing === device.id ? (
-              <form
-                className="form device-rename"
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  if (renamePairedDevice(device.id, name)) refresh();
-                  finishEdit(device.id);
-                }}
-              >
-                <label htmlFor={`device-${device.id}`}>{t("remote.deviceName")}</label>
-                <input
-                  id={`device-${device.id}`}
-                  value={name}
-                  dir="auto"
-                  ref={renameInput}
-                  onChange={(event) => setName(event.target.value)}
-                />
-                <div className="actions">
-                  <button type="submit" className="btn filled">
-                    {t("common.save")}
-                  </button>
-                  <button
-                    type="button"
-                    className="btn tonal"
-                    onClick={() => finishEdit(device.id)}
-                  >
-                    {t("common.cancel")}
-                  </button>
-                </div>
-              </form>
-            ) : (
-              <>
-                <div className="device-row-main">
-                  <strong dir="auto">{device.name}</strong>
-                  <span>
-                    {t("remote.lastUsed", {
-                      when: new Date(device.lastUsedAt).toLocaleDateString(locale),
-                    })}
-                  </span>
-                </div>
-                <button
-                  type="button"
-                  className="btn tonal"
-                  aria-label={t("remote.renameAria", { name: device.name })}
-                  data-device-edit={device.id}
-                  onClick={() => {
-                    setEditing(device.id);
-                    setName(device.name);
-                  }}
-                >
-                  {t("common.edit")}
-                </button>
-                <button
-                  type="button"
-                  className="btn tonal"
-                  aria-label={t("remote.revokeAria", { name: device.name })}
-                  onClick={() => ask(device.id)}
-                >
-                  {t("remote.revoke")}
-                </button>
-              </>
-            )}
+          <div className="device-row management-row" key={device.id}>
+            <button
+              type="button"
+              className="device-row-info management-row-primary"
+              data-device-rename={device.id}
+              data-settings-focus={`device-rename-${device.id}`}
+              data-ok-guide={t("common.rename")}
+              aria-label={`${t("common.rename")}, ${device.name}`}
+              title={t("common.rename")}
+              aria-haspopup="dialog"
+              onClick={(event) => {
+                if (!navigation.inputEnabled) return;
+                event.currentTarget.focus();
+                setEditing(device.id);
+                setName(device.name);
+                onAsking(true);
+              }}
+            >
+              <span className="device-row-main">
+                <strong>{device.name}</strong>
+                <span className="management-row-meta">
+                  {t("remote.lastUsed", {
+                    when: new Date(device.lastUsedAt).toLocaleDateString(locale),
+                  })}
+                </span>
+              </span>
+            </button>
+            <button
+              type="button"
+              className="management-row-actions danger"
+              data-device-revoke={device.id}
+              data-settings-focus={`device-revoke-${device.id}`}
+              data-ok-guide={t("remote.revoke")}
+              aria-label={`${t("remote.revoke")}, ${device.name}`}
+              title={t("remote.revoke")}
+              aria-haspopup="dialog"
+              onClick={(event) => {
+                if (!navigation.inputEnabled) return;
+                event.currentTarget.focus();
+                ask(device.id);
+              }}
+            >
+              <Icon name="remove" />
+            </button>
           </div>
         ))}
         {!devices.length && <p className="sheet-lead device-empty">{t("remote.noDevices")}</p>}
@@ -201,6 +235,49 @@ export function Devices({
             refresh();
           }}
         />
+      )}
+      {editingDevice && (
+        <SettingsDialog
+          title={t("common.rename")}
+          inputEnabled={navigation.surfaceInputEnabled}
+          onClose={closeEdit}
+          onSave={() => {
+            if (!name.trim()) return;
+            if (renamePairedDevice(editingDevice.id, name)) {
+              refresh();
+              closeEdit();
+            }
+          }}
+          saveDisabled={!name.trim()}
+        >
+          <div className="form">
+            <label htmlFor="device-edit-name">{t("remote.deviceName")}</label>
+            <TextInput
+              id="device-edit-name"
+              data-settings-detail-first
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+            />
+          </div>
+        </SettingsDialog>
+      )}
+      {pairingOpen && (
+        <SettingsDialog
+          title={t("remote.add")}
+          inputEnabled={navigation.surfaceInputEnabled}
+          onClose={closePairing}
+          closeLabel={t("common.cancel")}
+          className="device-pairing-dialog"
+        >
+          <p className="device-pairing-description">{t("remote.pairedHint")}</p>
+          <RemoteSetup
+            variant="settings"
+            embedded
+            autoStart={false}
+            remoteAccess={remoteAccess}
+            onOpenPairing={retryPairing}
+          />
+        </SettingsDialog>
       )}
     </div>
   );

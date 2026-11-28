@@ -6,11 +6,11 @@
 #
 # Both build recipes are in docs/testing.md.
 # Regenerate with: npm run wasm:sums
-414391b08a1684130c401e8d19f1f9fdd695095da7748c690336229ac2c53c16  wasm/manifest-socket.c
-2900f3b3cff651eda58ebdac80015ad395051eda28ff1137dd659c26c69e1ecf  public/wasm/manifest-socket.js
-e1e7362d9f439bccd0a1685835eb66a5080ab4452a383f50a73bd7795a6dc4cb  public/wasm/manifest-socket.wasm
+5c3af462e58bcd55e0eee992137507d6ed933f25293d313c285ce43c96f82b0b  wasm/manifest-socket.c
+a7c3d88aa578ae6d8bc4d5dd547f79a5509a23f60e28c8d59f863342a7b717c4  public/wasm/manifest-socket.js
+d1f1b3f6b23e73d3d9edbd16957b8d25285614cc1d832f3b248d304cd83b0186  public/wasm/manifest-socket.wasm
 291e22248b874afe8d6db8c93dfc2555e7735a85ebd2550926292d10117ae394  public/wasm/manifest-socket.worker.js
-061881165ae7f3ec9e359d912348fd163014c8aad0b4d7e2c952c2b9b0ab3dc5  wasm/management-socket.c
+82f0ce74e24fd64a85520fafc20f0f6503031170df65f3be10751956d8aacc9e  wasm/management-socket.c
 3c74dbf37ac21debe7dee70d570acede589a9c27b4ed46ff5468363c52700adb  public/wasm/management-socket.js
-44f8eb46d4be942fac0a6505bcd8aaa1f1a9651cc5ff35d722c3f26ec13d44f1  public/wasm/management-socket.wasm
+eace62b16c4c6f5ccd865ec3cc7f3d89f13223a2495a13b92f778d3c5f75c560  public/wasm/management-socket.wasm
 0b2551ea9ff719cd6f02df419ef3f22d6dc86c7423f3aca84ead1d6b78ed0e6b  public/wasm/management-socket.worker.js

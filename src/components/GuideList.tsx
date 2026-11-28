@@ -1,8 +1,10 @@
-import { memo, useRef } from "react";
+import { memo, useRef, useState } from "react";
+import { pointerOnly, usePointerInput } from "../hooks/usePointerAwake";
 import { useLocale } from "../hooks/useLocale";
 import { useViewport } from "../hooks/useViewport";
-import { useWindowed } from "../hooks/useWindowed";
+import { useNavigableWindow } from "../hooks/useWindowed";
 import type { ChannelGuide } from "../stores/library";
+import type { Channel } from "../types";
 import { ScrollIndicator } from "./ScrollIndicator";
 import { Text } from "./Text";
 
@@ -16,31 +18,40 @@ const programmeTime = (
     .map((value) => time(new Date(value * 1000)))
     .join(" to ");
 
+export interface GuideListProps {
+  channel: Channel;
+  guide: ChannelGuide;
+  index: number;
+  focused: boolean;
+  scale: number;
+  onMove(index: number): void;
+  onPlay(index: number): void;
+  onRetry(): void;
+  onWheel(direction: -1 | 1): void;
+}
+
+/*
+ * Drawer content and nothing more: the playback drawer owns the fixed header, the surface
+ * and Back. This is the windowed programme list itself, with current programme marking kept
+ * distinct from the white focus and the blue selection colours.
+ */
 export const GuideList = memo(function GuideList({
-  category,
+  channel,
   guide,
   index,
   focused,
   scale,
   onMove,
-  onSelect,
+  onPlay,
   onRetry,
   onWheel,
-}: {
-  category: string;
-  guide: ChannelGuide;
-  index: number;
-  focused: boolean;
-  scale: number;
-  onMove: (index: number) => void;
-  onSelect: (index: number) => void;
-  onRetry: () => void;
-  onWheel: (direction: -1 | 1) => void;
-}) {
+}: GuideListProps) {
   const { t, time } = useLocale();
+  const pointerMode = usePointerInput();
+  const [hovered, setHovered] = useState<number | null>(null);
   const viewport = useRef<HTMLDivElement>(null);
   const height = useViewport(viewport);
-  const win = useWindowed(guide.items.length, Math.max(0, index), height, scale);
+  const win = useNavigableWindow(guide.items.length, Math.max(0, index), height, scale);
   const now = Math.floor(Date.now() / 1000);
   const currentId =
     guide.items.find(
@@ -54,11 +65,21 @@ export const GuideList = memo(function GuideList({
   for (let i = win.start; i < win.end; i++) {
     const programme = guide.items[i];
     const current = programme.id === currentId;
+    const labelActive = pointerMode ? hovered === i % win.slots : focused && i === index;
     rows.push(
       <div
-        className={`row guide-row ${current ? "current" : ""} ${focused && i === index ? "cursor selected" : ""}`}
+        className={`row guide-row ${current ? "current" : ""} ${focused && i === index ? "cursor" : ""}`}
         style={{ top: i * win.row, height: win.row }}
         key={i % win.slots}
+        onPointerEnter={() =>
+          pointerOnly(() => {
+            setHovered(i % win.slots);
+            onMove(i);
+          })
+        }
+        onPointerLeave={() =>
+          setHovered((previous) => (previous === i % win.slots ? null : previous))
+        }
         onClick={() => onMove(i)}
       >
         <div className="guide-programme">
@@ -67,16 +88,26 @@ export const GuideList = memo(function GuideList({
           </span>
           <span className="guide-copy">
             <span className="guide-title-line">
-              <Text value={programme.title} className="row-label" marquee />
+              <Text
+                value={programme.title}
+                className="row-label"
+                marquee
+                active={labelActive}
+              />
               {current && <span className="guide-now">{t("channel.playingNow")}</span>}
             </span>
             {programme.description && (
-              <Text value={programme.description} className="guide-description" marquee />
+              <Text
+                value={programme.description}
+                className="guide-description"
+                marquee
+                active={labelActive}
+              />
             )}
           </span>
         </div>
         {programme.target && (
-          <button type="button" className="btn tonal guide-play" onClick={() => onSelect(i)}>
+          <button type="button" className="btn tonal guide-play" onClick={() => onPlay(i)}>
             {t("guide.playFromStart")}
           </button>
         )}
@@ -85,15 +116,20 @@ export const GuideList = memo(function GuideList({
   }
 
   return (
-    <div className={`list pane guide-list ${focused ? "focused" : ""}`}>
-      <div className="pane-head">
-        <Text value={t("guide.title", { category })} className="panel-title" />
-      </div>
+    <section
+      className={`list pane guide-list ${focused ? "focused" : ""}`}
+      aria-label={t("guide.title", { category: channel.name })}
+    >
       <div
         className="viewport"
         ref={viewport}
         onWheel={(event) => {
-          if (event.deltaY) onWheel(event.deltaY > 0 ? 1 : -1);
+          if (!event.deltaY) return;
+          if (win.onWheel(event.deltaY, event.deltaMode)) {
+            event.preventDefault();
+            return;
+          }
+          onWheel(event.deltaY > 0 ? 1 : -1);
         }}
       >
         {guide.state === "loading" && (
@@ -105,19 +141,23 @@ export const GuideList = memo(function GuideList({
         {guide.state === "failed" && (
           <div className="media-state">
             <p>{guide.error || t("guide.failed")}</p>
-            <button type="button" className="btn tonal selected" onClick={onRetry}>
+            <button type="button" className="btn tonal cursor" onClick={onRetry}>
               {t("library.retry")}
             </button>
           </div>
         )}
         {guide.state === "empty" && <p className="empty guide-empty">{t("guide.empty")}</p>}
         {guide.state === "loaded" && (
-          <div className="window" style={{ transform: `translateY(${-win.offset}px)` }}>
+          <div className="window" style={{ transform: `translateY(${-win.scrollOffset}px)` }}>
             {rows}
           </div>
         )}
-        <ScrollIndicator count={guide.items.length} first={win.first} visible={win.visible} />
+        <ScrollIndicator
+          count={guide.items.length}
+          first={win.indicatorFirst}
+          visible={win.visible}
+        />
       </div>
-    </div>
+    </section>
   );
 });

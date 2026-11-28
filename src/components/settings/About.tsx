@@ -27,7 +27,7 @@ export function About({
             <img className="about-app-icon" src="./icon.svg" alt="" />
             <div>
               <strong>OpenIPTV</strong>
-              <p dir="ltr">{t("about.version", { version: APP_VERSION })}</p>
+              <p>{t("about.version", { version: APP_VERSION })}</p>
             </div>
           </div>
           <a
@@ -48,16 +48,20 @@ export function About({
         <Row label={t("diagnostics.title")} hint={t("diagnostics.lead")}>
           <button
             type="button"
-            className="btn tonal"
+            className="btn tonal settings-about-action"
             data-settings-focus="about-diagnostics"
+            data-ok-guide={t("common.open")}
+            aria-label={`${t("common.open")}, ${t("diagnostics.title")}`}
             onClick={() => {
-              setShowDiagnostics(true);
-              navigation.open(
-                "about-diagnostics",
-                t("diagnostics.title"),
-                "about-diagnostics",
-                () => setShowDiagnostics(false),
-              );
+              navigation.transition(() => {
+                setShowDiagnostics(true);
+                navigation.open(
+                  "about-diagnostics",
+                  t("diagnostics.title"),
+                  "about-diagnostics",
+                  () => setShowDiagnostics(false),
+                );
+              });
             }}
           >
             <Icon name="diagnostics" />

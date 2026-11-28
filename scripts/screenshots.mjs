@@ -21,7 +21,7 @@
  * stream at all, so there is no picture to photograph behind the interface. Every shot is the
  * interface, which is the part that is worth showing anyway.
  */
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawn } from "node:child_process";
@@ -34,6 +34,9 @@ const PORT = 4600; // not store-assets' 4599, so both can run at once
 const CHROME_PORT = 9334;
 const WIDTH = 1920;
 const HEIGHT = 1080;
+const VERSION = JSON.parse(
+  readFileSync(new URL("../package.json", import.meta.url), "utf8"),
+).version;
 const TV_REMOTE_SHIM = `(() => {
   window.webapis = { avplay: {}, network: { getIp: () => "192.168.1.42" } };
   let random = 1;
@@ -148,18 +151,20 @@ const app = driver(cdp, PORT);
  *
  * The check is the point. A walk that misses a key press carries on and photographs whatever was
  * still open, and ten plausible pictures of the wrong screens are worse than a failure, because
- * nobody looks twice at a README image. `expect` is text that must be on screen.
+ * nobody looks twice at a README image. `expect` is text, or a list of texts, that must be on
+ * screen.
  */
 async function shoot(name, expect, width = WIDTH, height = HEIGHT) {
+  await app.evaluate("document.fonts ? document.fonts.ready.then(() => true) : true");
   await sleep(600);
-  const showing = await app.evaluate(
-    `document.body.innerText.includes(${JSON.stringify(expect)})`,
-  );
-  if (!showing) {
-    throw new Error(
-      `Expected "${expect}" on screen for ${name} and it is not there, so this ` +
-        "would have photographed whatever was open instead.",
+  const expected = Array.isArray(expect) ? expect : [expect];
+  for (const text of expected) {
+    const showing = await app.evaluate(
+      `document.body.innerText.includes(${JSON.stringify(text)})`,
     );
+    if (!showing) {
+      throw new Error(`Expected "${text}" on screen for ${name}.`);
+    }
   }
   const { data } = await cdp.send("Page.captureScreenshot", { format: "png" });
   const bytes = Buffer.from(data, "base64");
@@ -167,15 +172,37 @@ async function shoot(name, expect, width = WIDTH, height = HEIGHT) {
   console.log(`  ${name}.png  ${width}x${height}  ${Math.round(bytes.length / 1024)}KB`);
 }
 
-/** Press one of the panel's title bar keys by its accessible label, as the parity harness does. */
+/** Activate an application control by its accessible label. */
 const keyed = async (label) => {
+  const selector =
+    label === "Search" ? ".section-search" : `[aria-label=${JSON.stringify(label)}]`;
   const hit = await app.evaluate(`(() => {
-    const el = document.querySelector('[aria-label=${JSON.stringify(label)}]');
-    if (!el) return false;
+    const el = [...document.querySelectorAll(${JSON.stringify(selector)})]
+      .find(element => element.matches("button") && element.getClientRects().length);
+    if (!el || el.disabled) return false;
     el.click();
     return true;
   })()`);
-  if (!hit) throw new Error(`No key labelled "${label}" in the panel's title bar.`);
+  if (!hit) throw new Error(`No visible control labelled "${label}".`);
+};
+
+const clickControl = async (selector) => {
+  await app.waitFor(`(() => {
+    const control = document.querySelector(${JSON.stringify(selector)});
+    return !!control && !control.disabled;
+  })()`);
+  await app.evaluate(`(() => {
+    const control = document.querySelector(${JSON.stringify(selector)});
+    control.focus();
+    return true;
+  })()`);
+  await app.frame();
+  await app.evaluate(`(() => {
+    const control = document.querySelector(${JSON.stringify(selector)});
+    control.click();
+    return true;
+  })()`);
+  await app.frame();
 };
 
 console.log(`\nTen screenshots, from the built application on port ${PORT}:`);
@@ -207,6 +234,9 @@ try {
   await app.evaluate(SEED);
   await cdp.send("Page.reload");
   await sleep(5000);
+  await app.waitFor(
+    "document.querySelector('.panel:not(.away) .list .row-label')?.textContent === 'News One'",
+  );
 
   // 2. The channel list, which is the screen the application opens on and the one used most.
   await shoot("02-channels", "News One");
@@ -214,7 +244,7 @@ try {
   // 3. The categories the playlist declared, which is the rail rather than a claim in the README.
   await app.press("ArrowLeft", 37);
   await app.press("ArrowDown", 40);
-  await shoot("03-categories", "Sport");
+  await shoot("03-categories", "Sport One");
 
   /*
    * 4. Search, the feature least likely to be found on its own.
@@ -225,22 +255,31 @@ try {
    */
   await app.press("ArrowRight", 39);
   await keyed("Search");
+  await app.waitFor("!!document.querySelector('.search-field')");
   for (const character of "news") {
     await cdp.send("Input.dispatchKeyEvent", { type: "char", text: character });
   }
   await sleep(600);
-  await shoot("04-search", "News");
+  await shoot("04-search", ["Search", "News"]);
 
   // 5. Favourites, which only exists as a category once something is in it, so the green key has to
   //    be pressed on a channel before there is anything to photograph.
-  await app.press("Escape", 27);
-  await app.press("Escape", 27);
-  await sleep(400);
+  await app.evaluate(SEED);
+  await cdp.send("Page.reload");
+  await app.waitFor(
+    "document.querySelector('.panel:not(.away) .list .row-label')?.textContent === 'News One'",
+  );
   await app.press("Green", 404);
-  await sleep(400);
-  await app.press("ArrowLeft", 37);
-  await sleep(400);
-  await shoot("05-favourites", "Favourites");
+  await sleep(4200);
+  const openedFavourites = await app.evaluate(`(() => {
+    const row = [...document.querySelectorAll('.rail .row')]
+      .find((element) => element.textContent.includes('Favourites'));
+    if (!row) return false;
+    row.click();
+    return true;
+  })()`);
+  if (!openedFavourites) throw new Error("No Favourites category after saving News One.");
+  await shoot("05-favourites", ["Favourites", "News One"]);
 
   // 6. Settings, on the section carrying compatibility mode. Asserted on the label the interface
   //    actually shows, so the screenshot follows the same visible wording as the TV walk.
@@ -268,20 +307,15 @@ try {
     );
   }
   await sleep(400);
-  const openedCategories = await app.evaluate(`(() => {
-  const button = document.querySelector('[data-settings-focus^="playlist-categories-"]');
-  if (!button) return false;
-  button.click();
-  return true;
-})()`);
-  if (!openedCategories)
-    throw new Error("No category management action was available in Settings.");
-  await app.evaluate(`(() => {
-  const row = document.querySelector(".category-setting-row");
-  row?.focus();
-  row?.dispatchEvent(new FocusEvent("focusin", { bubbles: true }));
-})()`);
-  await shoot("07-category-management", "Categories");
+  await app.press("ArrowRight", 39);
+  await app.waitFor("!document.querySelector('.sheet-rail.focused')");
+  await clickControl('[data-settings-focus="playlist-open-pl-1"]');
+  await app.waitFor("!!document.querySelector('.lineup-manager')");
+  await clickControl('[data-settings-focus="lineup-preference-visibility"]');
+  await app.waitFor(
+    '!!document.querySelector(\'.lineup-manager[data-lineup-mode="visibility"][data-lineup-scope="categories"]\')',
+  );
+  await shoot("07-category-management", ["Manage category visibility", "News", "Sport"]);
   await cdp.send("Page.removeScriptToEvaluateOnNewDocument", { identifier: settingsShim });
 
   // 8. Playback information, enabled before the reload so it appears as soon as a channel is chosen.
@@ -295,13 +329,16 @@ try {
     source: PLAYBACK_SHIM,
   });
   await cdp.send("Page.reload");
-  await sleep(2600);
+  await app.waitFor(
+    "document.querySelector('.panel:not(.away) .list .row-label')?.textContent === 'News One'",
+  );
   const playbackReports = await app.evaluate(
     `window.webapis?.avplay?.getCurrentStreamInfo?.()[0]?.extra_info || ""`,
   );
   if (!playbackReports) throw new Error("The playback screenshot has no engine reports.");
   await app.press("Enter", 13);
-  await sleep(1800);
+  await app.waitFor("window.webapis?.avplay?.getState?.() === 'PLAYING'");
+  await sleep(1500);
   await shoot("08-playback-information", "1920 × 1080");
   await cdp.send("Page.removeScriptToEvaluateOnNewDocument", { identifier: playbackShim });
 
@@ -310,7 +347,7 @@ try {
     revision: 4,
     locale: "en",
     direction: "ltr",
-    labels: { aboutVersion: "Version 1.9.0" },
+    labels: {},
     localeOptions: [{ id: "en", label: "English" }],
     settings: {
       locale: "en",
@@ -343,7 +380,7 @@ try {
     devices: [
       { id: "readme-device", name: "Living room phone", createdAt: 1, lastUsedAt: Date.now() },
     ],
-    about: { version: "1.9.0", repository: "https://github.com/shayanline/OpenIPTV" },
+    about: { version: VERSION, repository: "https://github.com/shayanline/OpenIPTV" },
     operation: { loading: false, error: "", errorKey: "", errorDetail: "" },
   };
   cdp.on("Fetch.requestPaused", ({ requestId }) => {
@@ -368,15 +405,9 @@ try {
   );
   await cdp.send("Page.reload");
   await sleep(1200);
-  await app.evaluate(`(() => {
-  document.documentElement.style.scrollBehavior = "auto";
-  document.querySelector(".tabs").style.scrollBehavior = "auto";
-  document.querySelector("#appearance").hidden = true;
-  document.querySelector("#playback").hidden = true;
-  document.querySelector('.tabs a[href="#playlists"]').click();
-})()`);
-  await shoot("09-remote-access", "Family channels", 430, 900);
-  await app.evaluate(`document.querySelector(".remote-fab")?.click()`);
+  await app.waitFor("!!document.querySelector('.manage-page[data-page=\"playlists\"]')");
+  await shoot("09-remote-access", ["Playlists", "Family channels"], 430, 900);
+  await clickControl('[data-action="open-remote"]');
   await sleep(400);
   await cdp.send("Emulation.setDeviceMetricsOverride", {
     width: 820,

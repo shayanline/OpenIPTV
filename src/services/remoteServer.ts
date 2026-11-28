@@ -6,6 +6,7 @@ import {
   pairDevice,
   type PairingSessionView,
 } from "./deviceAccess";
+import { mutateRemoteLineup, queryRemoteLineup } from "./lineupProtocol";
 import { applyRemoteCommand, remoteSnapshot, type CommandRequest } from "./remoteProtocol";
 
 const PORT = 8976;
@@ -94,9 +95,9 @@ function bearer(headers: Record<string, string>): { id: string; credential: stri
   };
 }
 
-async function authorised(request: RemoteRequest): Promise<boolean> {
+async function authorised(request: RemoteRequest): Promise<string | null> {
   const token = bearer(request.headers);
-  return !!token && authenticateDevice(token.id, token.credential);
+  return token && (await authenticateDevice(token.id, token.credential)) ? token.id : null;
 }
 
 function validJsonPost(request: RemoteRequest): boolean {
@@ -220,6 +221,47 @@ export async function routeRemoteRequest(request: RemoteRequest): Promise<Remote
     if (request.method !== "GET") return json(405, { error: "methodNotAllowed" });
     if (!(await authorised(request))) return json(401, { error: "unauthorised" });
     return json(200, remoteSnapshot());
+  }
+  if (request.path === "/api/v1/lineup/query" || request.path === "/api/v1/lineup/mutation") {
+    if (!validJsonPost(request)) return json(415, { error: "jsonRequired" });
+    const deviceId = await authorised(request);
+    if (!deviceId) return json(401, { error: "unauthorised" });
+    const input = parseJson(request.body);
+    if (input === null) return json(400, { error: "invalidRequest" });
+    if (request.path === "/api/v1/lineup/query") {
+      const result = await queryRemoteLineup(input);
+      const status = result.ok
+        ? 200
+        : result.reason === "conflict"
+          ? 409
+          : result.reason === "notFound"
+            ? 404
+            : result.reason === "unavailable"
+              ? 503
+              : 400;
+      return json(
+        status,
+        !result.ok && result.reason === "conflict"
+          ? { ...result, snapshot: remoteSnapshot() }
+          : result,
+      );
+    }
+    const result = await mutateRemoteLineup(input, deviceId);
+    const status = result.ok
+      ? 200
+      : result.reason === "conflict"
+        ? 409
+        : result.reason === "unavailable"
+          ? 404
+          : result.reason === "persistence"
+            ? 500
+            : 400;
+    return json(
+      status,
+      !result.ok && result.reason === "conflict"
+        ? { ...result, snapshot: remoteSnapshot() }
+        : result,
+    );
   }
   if (request.path === "/api/v1/command") {
     if (!validJsonPost(request)) return json(415, { error: "jsonRequired" });
@@ -374,7 +416,21 @@ export function startRemoteAccess(): void {
     return;
   }
   if (worker) return;
-  const address = window.webapis?.network?.getIp?.() ?? "";
+  let address: string;
+  try {
+    const network = window.webapis?.network;
+    if (!network?.getIp) throw new Error("Samsung Network API is unavailable");
+    address = network.getIp();
+  } catch (error) {
+    publish({
+      status: "unavailable",
+      address: "",
+      port: 0,
+      remotePath: "",
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return;
+  }
   if (!isPrivateIPv4(address)) {
     publish({ status: "unavailable", address: "", port: 0, error: "no private TV address" });
     return;

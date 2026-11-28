@@ -1,3 +1,5 @@
+import { useLocale } from "../hooks/useLocale";
+
 /**
  * The line of "press this, get that" that appears on every screen.
  *
@@ -49,13 +51,63 @@ export function KeyGuide({
     <div className={`hints ${className}`}>
       {items.map((item) => (
         <span key={item.keys.join("|")}>
-          {item.beforeKeys && <span className="guide-prefix">{item.beforeKeys}</span>}
-          {item.keys.map((key) => (
-            <kbd key={key}>{key}</kbd>
+          {item.keys.map((key, keyIndex) => (
+            <kbd key={key} data-key={key}>
+              {keyIndex === 0 && item.beforeKeys ? (
+                <>
+                  {item.beforeKeys} {key}
+                </>
+              ) : (
+                key
+              )}
+            </kbd>
           ))}
-          {item.label}
+          <span
+            className="guide-label"
+            title={typeof item.label === "string" ? item.label : undefined}
+          >
+            {item.label}
+          </span>
         </span>
       ))}
     </div>
+  );
+}
+
+export function NavigationGuide({
+  className = "",
+  scroll = false,
+  shortcuts = [],
+  returnLabel,
+}: {
+  className?: string;
+  scroll?: boolean;
+  shortcuts?: Guide[];
+  returnLabel?: string;
+}) {
+  const { t } = useLocale();
+  return (
+    <KeyGuide
+      className={className}
+      items={[
+        ...(scroll ? [{ keys: ["\u2191", "\u2193"], label: t("common.scroll") }] : []),
+        { keys: ["OK"], label: t("common.select") },
+        { keys: ["Return"], label: returnLabel ?? t("common.back") },
+        ...shortcuts,
+      ]}
+    />
+  );
+}
+
+export function DialogGuide() {
+  const { t } = useLocale();
+  return (
+    <KeyGuide
+      className="page-key-guide dialog-key-guide"
+      items={[
+        { keys: ["OK"], label: t("common.select") },
+        { keys: ["Return"], label: t("common.back") },
+      ]}
+    />
   );
 }

@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import assert from "node:assert/strict";
 import { parseXtreamPlaylistUrl, type XtreamSource } from "../src/services/playlistUrl";
+import { channelRef } from "../src/services/lineup";
+import { parseM3U } from "../src/services/m3u";
 
 /**
  * Loading a playlist, which is the one thing here that talks to the network.
@@ -35,10 +37,21 @@ http://example.invalid/c.m3u8`;
  * would actually have the problem.
  */
 const disk = new Map<string, Blob | string>();
+let readPersonal: (playlistId: string) => Promise<unknown | null> = async () => null;
+let clearedLineups = 0;
 
 const load = async () => {
   vi.resetModules();
   disk.clear();
+  vi.doMock("../src/services/personalDisk", () => ({
+    readLineup: (playlistId: string) => readPersonal(playlistId),
+    writeLineup: async () => {},
+    removeLineup: async () => {},
+    clearLineups: async () => {
+      clearedLineups += 1;
+    },
+    writeLineupIfAbsent: async () => true,
+  }));
   vi.doMock("../src/services/disk", () => ({
     BUDGET_BYTES: 5 * 1024 * 1024,
     read: async (key: string) => disk.get(key) ?? null,
@@ -65,7 +78,8 @@ const load = async () => {
   const settings = await import("../src/stores/settings");
   const channels = await import("../src/stores/channels");
   const personal = await import("../src/stores/personal");
-  return { ...settings, ...channels, ...personal };
+  const lineup = await import("../src/stores/lineup");
+  return { ...settings, ...channels, ...personal, ...lineup };
 };
 
 const configure = (s: Awaited<ReturnType<typeof load>>, url = "http://list.invalid/a.m3u") => {
@@ -87,11 +101,11 @@ const configureXtream = (s: Awaited<ReturnType<typeof load>>, source = XTREAM_SO
   return s.useSettings.getState().playlists[0];
 };
 
-const xtreamResponse = (body: unknown, status = 200) => ({
-  ok: status >= 200 && status < 300,
-  status,
-  json: async () => body,
-});
+const xtreamResponse = (body: unknown, status = 200) =>
+  new Response(JSON.stringify(body), {
+    status,
+    headers: { "Content-Type": "application/json" },
+  });
 
 const xtreamFetch = (overrides: Record<string, unknown> = {}) =>
   vi.fn(async (input: string | URL) => {
@@ -184,6 +198,8 @@ const HOUR = 60 * 60 * 1000;
 
 beforeEach(() => {
   vi.useFakeTimers();
+  readPersonal = async () => null;
+  clearedLineups = 0;
   localStorage.clear();
   vi.unstubAllGlobals();
 });
@@ -323,6 +339,57 @@ test("a fresh cached VOD only account launches without network work", async () =
   expect(fetchMock).not.toHaveBeenCalled();
 });
 
+test("cached Xtream Live addresses use the configured path before any network refresh", async () => {
+  const s = await load();
+  const playlist = configureXtream(s, {
+    ...XTREAM_SOURCE,
+    server: "http://configured.example/portal",
+  });
+  seedXtreamCache(playlist, 0);
+  const fetchMock = vi.fn();
+  vi.stubGlobal("fetch", fetchMock);
+
+  const result = await s.useChannels.getState().load();
+  expect(result).toEqual({ count: 1, error: "" });
+  const expected = {
+    url: "http://configured.example/portal/live/viewer/secret/1.m3u8",
+    fallbackUrl: "http://provider.example/live/viewer/secret/1.m3u8",
+  };
+  expect(s.useChannels.getState().channels[0]).toMatchObject(expected);
+  const cached = s.readCachedProvider(playlist);
+  await afterIdle();
+  expect((await cached)?.channels[0]).toMatchObject(expected);
+  expect(fetchMock).not.toHaveBeenCalled();
+});
+
+test("refreshing an inactive playlist caches it without replacing active channels", async () => {
+  const s = await load();
+  configure(s, "http://list.invalid/active.m3u");
+  s.useSettings.getState().addPlaylist("Inactive", {
+    kind: "m3u",
+    url: "http://list.invalid/inactive.m3u",
+  });
+  const inactive = s.useSettings.getState().playlists[1];
+  const fetchMock = vi.fn(async (input: string | URL) => ({
+    ok: true,
+    text: async () => (String(input).includes("inactive") ? OTHER : PLAYLIST),
+  }));
+  vi.stubGlobal("fetch", fetchMock);
+  await s.useChannels.getState().load(true);
+
+  const refresh = s.useChannels.getState().refreshPlaylist;
+  await Promise.all([refresh(inactive), refresh(inactive)]);
+
+  expect(s.useChannels.getState().channels.map((channel) => channel.name)).toEqual([
+    "Alpha",
+    "Beta",
+  ]);
+  expect(disk.get("playlist:http://list.invalid/inactive.m3u")).toBe(OTHER);
+  expect(
+    fetchMock.mock.calls.filter(([input]) => String(input).includes("inactive")),
+  ).toHaveLength(1);
+});
+
 test("the same provider stream identifier remains scoped to its playlist", async () => {
   const first = await load();
   const firstPlaylist = configureXtream(first);
@@ -367,37 +434,47 @@ test("HTTPS browser transport applies to API requests and generated streams", as
 
 test("an HTTPS browser explains an HTTP Xtream transport failure", async () => {
   const s = await load();
-  vi.stubGlobal("window", { location: { protocol: "https:" } });
+  vi.stubGlobal("window", {
+    location: { protocol: "https:" },
+    setTimeout,
+    clearTimeout,
+  });
   vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("Failed to fetch")));
 
   const result = await s.useChannels.getState().validatePlaylist("Provider", XTREAM_SOURCE);
 
-  expect(result.errorDetail).toMatch(/HTTPS/i);
-  expect(result.errorDetail).toMatch(/CORS|Cross Origin/i);
-  expect(result.errorDetail).not.toContain("Failed to fetch");
+  expect(result.error).toMatch(/HTTPS/i);
+  expect(result.error).toMatch(/CORS|Cross Origin/i);
+  expect(result.error).not.toContain("Failed to fetch");
 });
 
 test("an HTTPS browser explains an HTTP M3U transport failure", async () => {
   const s = await load();
-  vi.stubGlobal("window", { location: { protocol: "https:" } });
+  vi.stubGlobal("window", {
+    location: { protocol: "https:" },
+    setTimeout,
+    clearTimeout,
+  });
   vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("Failed to fetch")));
 
   const result = await s.useChannels
     .getState()
     .validatePlaylist("Provider", { kind: "m3u", url: "http://provider.example/list.m3u" });
 
-  expect(result.errorDetail).toMatch(/HTTPS/i);
-  expect(result.errorDetail).toMatch(/CORS|Cross Origin/i);
-  expect(result.errorDetail).not.toContain("Failed to fetch");
+  expect(result.error).toMatch(/HTTPS/i);
+  expect(result.error).toMatch(/CORS|Cross Origin/i);
+  expect(result.error).not.toContain("Failed to fetch");
 });
 
-test("a missing Player API explains the M3U alternative", async () => {
+test("a missing Player API returns a safe entry failure", async () => {
   const s = await load();
   vi.stubGlobal("fetch", vi.fn().mockResolvedValue(xtreamResponse({}, 404)));
 
   const result = await s.useChannels.getState().validatePlaylist("Provider", XTREAM_SOURCE);
 
-  expect(result.error).toMatch(/get\.php.*M3U/i);
+  expect(result.errorKey).toBe("playlist.entryNetwork");
+  expect(result.error).toBeTruthy();
+  expect(result.error).not.toContain(XTREAM_SOURCE.server);
 });
 
 test("the saved copy is shown before the network answers", async () => {
@@ -436,6 +513,30 @@ test("a failed refresh keeps the saved copy rather than emptying the screen", as
   assert.equal(s.useChannels.getState().channels.length, 2, "the cached channels went away");
 });
 
+test("cached provider rows wait for personal state and publish one effective snapshot", async () => {
+  let resolvePersonal!: (value: unknown) => void;
+  readPersonal = () =>
+    new Promise((resolve) => {
+      resolvePersonal = resolve;
+    });
+  const s = await load();
+  configure(s);
+  seedCache(s, PLAYLIST, HOUR);
+  vi.stubGlobal("fetch", vi.fn());
+  const loading = s.useChannels.getState().load();
+  await vi.waitFor(() => assert.equal(typeof resolvePersonal, "function"));
+  assert.equal(s.useChannels.getState().channels.length, 0);
+  const firstChannelId = channelRef(parseM3U(PLAYLIST)[0]).id;
+  resolvePersonal({
+    version: 1,
+    revision: 2,
+    personalisation: { channels: { [firstChannelId]: { name: "Mine" } } },
+  });
+  await loading;
+  assert.equal(s.useChannels.getState().channels[0].name, "Mine");
+  assert.equal(s.useLineup.getState().channels[0].name, "Mine");
+});
+
 test("a cache younger than its life is not refreshed at all", async () => {
   const s = await load();
   configure(s);
@@ -451,6 +552,60 @@ test("a cache younger than its life is not refreshed at all", async () => {
   await afterIdle();
   assert.equal(fetchMock.mock.calls.length, 0, "went to the network for a fresh cache");
   assert.equal(s.useChannels.getState().channels.length, 2);
+});
+
+test("a cached M3U imports provider numbers with saved personal shortcuts before any network work", async () => {
+  const cached = `#EXTM3U
+#EXTINF:-1 group-title="News" tvg-chno="801",Alpha
+http://example.invalid/a.m3u8
+#EXTINF:-1 group-title="News" tvg-chno="88",Beta
+http://example.invalid/b.m3u8`;
+  const betaRef = channelRef(parseM3U(PLAYLIST)[1]);
+  readPersonal = async () => ({
+    version: 1,
+    revision: 4,
+    personalisation: {
+      channels: { [betaRef.id]: { number: 801, sourceFingerprint: betaRef.sourceFingerprint } },
+    },
+  });
+  const s = await load();
+  configure(s);
+  const url = seedCache(s, cached, HOUR);
+  const fetchMock = vi.fn();
+  vi.stubGlobal("fetch", fetchMock);
+
+  await s.useChannels.getState().load();
+
+  const lineup = s.useLineup.getState();
+  assert.deepEqual(
+    lineup.channels.map((channel) => channel.number),
+    [801, 801],
+  );
+  assert.deepEqual(
+    lineup.managedChannels.map((channel) => channel.providerNumber),
+    [801, 88],
+  );
+  assert.equal(lineup.numberIndex.get(801)?.name, "Beta");
+  assert.equal(lineup.numberIndex.has(88), false);
+  assert.equal(disk.get(`playlist:${url}`), cached);
+  await afterIdle();
+  assert.equal(fetchMock.mock.calls.length, 0);
+});
+
+test("startup activation trusts a fresh cache without refreshing it", async () => {
+  const s = await load();
+  configure(s);
+  seedCache(s, PLAYLIST, 1 * HOUR);
+  const fetchMock = vi.fn();
+  vi.stubGlobal("fetch", fetchMock);
+
+  const playlist = s.useSettings.getState().activePlaylist();
+  assert.ok(playlist);
+  const result = await s.useChannels.getState().activatePlaylist(playlist.id, false);
+
+  assert.equal(result.error, "");
+  assert.equal(result.count, 2);
+  expect(fetchMock).not.toHaveBeenCalled();
 });
 
 test("an old cache is refreshed, but behind the picture rather than in front of it", async () => {
@@ -484,6 +639,117 @@ test("a refresh that finds the same bytes does not parse or rewrite them", async
   assert.equal(s.useChannels.getState().channels, shown, "the playlist was parsed twice");
   // Stamped anyway, or the next launch would go back to the network immediately.
   assert.ok(Number(localStorage.getItem(`openiptv.at.${url}`)) > Date.now() - 5000);
+});
+
+test("a conditional M3U refresh accepts not modified without parsing", async () => {
+  const s = await load();
+  configure(s);
+  const url = seedCache(s, PLAYLIST, 12 * HOUR);
+  localStorage.setItem(
+    `openiptv.validator.${url}`,
+    JSON.stringify({ etag: '"playlist-v1"', lastModified: "yesterday" }),
+  );
+  const fetchMock = vi.fn().mockResolvedValue({
+    status: 304,
+    ok: false,
+    headers: { get: (name: string) => (name === "etag" ? '"playlist-v1"' : null) },
+  });
+  vi.stubGlobal("fetch", fetchMock);
+
+  await s.useChannels.getState().load();
+  await afterIdle();
+
+  expect(fetchMock).toHaveBeenCalledTimes(1);
+  expect(fetchMock.mock.calls[0][1].headers).toMatchObject({
+    "If-None-Match": '"playlist-v1"',
+    "If-Modified-Since": "yesterday",
+  });
+  expect(s.useChannels.getState().channels).toHaveLength(2);
+});
+
+test("activation publishes the requested cache then refreshes it once", async () => {
+  const s = await load();
+  configure(s, "http://list.invalid/first.m3u");
+  s.useSettings
+    .getState()
+    .addPlaylist("Second", { kind: "m3u", url: "http://list.invalid/second.m3u" });
+  const second = s.useSettings.getState().playlists[1];
+  disk.set("playlist:http://list.invalid/second.m3u", OTHER);
+  localStorage.setItem("openiptv.at.http://list.invalid/second.m3u", String(Date.now()));
+  let finish: ((value: { ok: boolean; text: () => Promise<string> }) => void) | undefined;
+  const fetchMock = vi.fn(
+    () =>
+      new Promise<{ ok: boolean; text: () => Promise<string> }>((resolve) => {
+        finish = resolve;
+      }),
+  );
+  vi.stubGlobal("fetch", fetchMock);
+
+  const activation = s.useChannels.getState().activatePlaylist(second.id);
+  await vi.waitFor(() =>
+    expect(s.useChannels.getState().channels.map((channel) => channel.name)).toEqual(["Gamma"]),
+  );
+  expect(s.useSettings.getState().activePlaylistId).toBe(second.id);
+  expect(fetchMock).toHaveBeenCalledTimes(1);
+
+  finish?.({ ok: true, text: async () => PLAYLIST });
+  await activation;
+  expect(s.useChannels.getState().channels.map((channel) => channel.name)).toEqual([
+    "Alpha",
+    "Beta",
+  ]);
+  expect(fetchMock).toHaveBeenCalledTimes(1);
+});
+
+test("invalid activation leaves the current owner and catalogue unchanged", async () => {
+  const s = await load();
+  configure(s);
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, text: async () => PLAYLIST }));
+  await s.useChannels.getState().load(true);
+  const active = s.useSettings.getState().activePlaylistId;
+
+  const result = await s.useChannels.getState().activatePlaylist("missing");
+
+  expect(result.activated).toBe(false);
+  expect(s.useSettings.getState().activePlaylistId).toBe(active);
+  expect(s.useChannels.getState().channels.map((channel) => channel.name)).toEqual([
+    "Alpha",
+    "Beta",
+  ]);
+});
+
+test("rapid activation ignores a stale completion from the replaced source", async () => {
+  const s = await load();
+  configure(s, "http://list.invalid/first.m3u");
+  s.useSettings
+    .getState()
+    .addPlaylist("Slow", { kind: "m3u", url: "http://list.invalid/slow.m3u" });
+  s.useSettings
+    .getState()
+    .addPlaylist("Latest", { kind: "m3u", url: "http://list.invalid/latest.m3u" });
+  const [, slow, latest] = s.useSettings.getState().playlists;
+  let finishSlow: ((value: { ok: boolean; text: () => Promise<string> }) => void) | undefined;
+  vi.stubGlobal(
+    "fetch",
+    vi.fn((input: string | URL) => {
+      if (String(input).includes("slow")) {
+        return new Promise((resolve) => {
+          finishSlow = resolve;
+        });
+      }
+      return Promise.resolve({ ok: true, text: async () => OTHER });
+    }),
+  );
+
+  const abandoned = s.useChannels.getState().activatePlaylist(slow.id);
+  await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
+  const accepted = s.useChannels.getState().activatePlaylist(latest.id);
+  await accepted;
+  finishSlow?.({ ok: true, text: async () => PLAYLIST });
+  await abandoned;
+
+  expect(s.useSettings.getState().activePlaylistId).toBe(latest.id);
+  expect(s.useChannels.getState().channels.map((channel) => channel.name)).toEqual(["Gamma"]);
 });
 
 test("switching playlist calls off a refresh queued for the old one", async () => {
@@ -549,14 +815,16 @@ test("an HTTP error is a failure, not an empty playlist", async () => {
   assert.match((await s.useChannels.getState().load()).error, /HTTP 404/);
 });
 
-test("a playlist that parses to nothing is reported rather than shown as empty", async () => {
+test("content that is not an extended M3U playlist is reported safely", async () => {
   const s = await load();
   configure(s);
   vi.stubGlobal(
     "fetch",
     vi.fn().mockResolvedValue({ ok: true, text: async () => "not a playlist" }),
   );
-  assert.match((await s.useChannels.getState().load()).error, /no channels/);
+  const result = await s.useChannels.getState().load();
+  assert.match(result.error, /extended M3U playlist/);
+  assert.equal(result.errorKey, "playlist.entryContent");
 });
 
 test("validating first setup does not change the channel store", async () => {
@@ -570,6 +838,59 @@ test("validating first setup does not change the channel store", async () => {
   assert.deepEqual(result, { count: 2, error: "" });
   assert.equal(s.useChannels.getState().channels.length, 0);
   assert.equal(s.useSettings.getState().playlists.length, 0);
+});
+
+test("M3U activation adopts the successful validation response without fetching twice", async () => {
+  const s = await load();
+  const fetchMock = vi.fn().mockResolvedValue({ ok: true, text: async () => PLAYLIST });
+  vi.stubGlobal("fetch", fetchMock);
+  const source = { kind: "m3u" as const, url: "http://list.invalid/adopt.m3u" };
+
+  const validation = await s.useChannels.getState().validatePlaylist("News", source);
+  expect(validation.error).toBe("");
+  s.useSettings.getState().addPlaylist("News", source);
+  const id = s.useSettings.getState().activePlaylistId;
+  const result = await s.useChannels.getState().activatePlaylist(id);
+
+  expect(result.error).toBe("");
+  expect(fetchMock).toHaveBeenCalledTimes(1);
+  expect(s.useChannels.getState().channels).toHaveLength(2);
+});
+
+test("Xtream activation reuses authentication without priming VOD indexes", async () => {
+  const s = await load();
+  const fetchMock = xtreamFetch({
+    get_vod_categories: [{ category_id: "10", category_name: "Movies" }],
+    get_series_categories: [{ category_id: "20", category_name: "Series" }],
+    get_vod_streams: [{ stream_id: "100", category_id: "10", name: "Movie" }],
+    get_series: [{ series_id: "200", category_id: "20", name: "Series" }],
+  });
+  vi.stubGlobal("fetch", fetchMock);
+
+  const validation = await s.useChannels.getState().validatePlaylist("Provider", XTREAM_SOURCE);
+  expect(validation.error).toBe("");
+  s.useSettings.getState().addPlaylist("Provider", XTREAM_SOURCE);
+  const playlist = s.useSettings.getState().activePlaylist()!;
+  await s.useChannels.getState().activatePlaylist(playlist.id);
+
+  const urls = fetchMock.mock.calls.map(([input]) => new URL(String(input)));
+  expect(urls.filter((url) => !url.searchParams.has("action"))).toHaveLength(1);
+  expect(
+    urls.some(
+      (url) =>
+        url.searchParams.get("action") === "get_vod_streams" &&
+        !url.searchParams.has("category_id"),
+    ),
+  ).toBe(false);
+  expect(
+    urls.some(
+      (url) =>
+        url.searchParams.get("action") === "get_series" && !url.searchParams.has("category_id"),
+    ),
+  ).toBe(false);
+  const prefix = `xtream:${playlist.id}:v${playlist.sourceVersion}`;
+  expect(disk.has(`${prefix}:movie-search`)).toBe(false);
+  expect(disk.has(`${prefix}:series-search`)).toBe(false);
 });
 
 test("the slower of two overlapping loads does not overwrite the newer one", async () => {
@@ -773,7 +1094,6 @@ test("favourites survive a reload and clear on request", async () => {
 test("sorting A to Z is applied to what was fetched", async () => {
   const s = await load();
   configure(s);
-  s.useSettings.getState().set("sortAlphabetically", true);
   vi.stubGlobal(
     "fetch",
     vi.fn().mockResolvedValue({
@@ -787,7 +1107,11 @@ http://example.invalid/a.m3u8`,
   );
 
   await s.useChannels.getState().load();
-  expect(s.useChannels.getState().channels.map((c) => c.name)).toEqual(["Alpha", "Zeta"]);
+  void s.applyLineupMutation(s.useLineup.getState().revision, {
+    type: "order.mode",
+    mode: "alphabetical",
+  });
+  expect(s.useLineup.getState().channels.map((c) => c.name)).toEqual(["Alpha", "Zeta"]);
 });
 
 /**
@@ -860,6 +1184,23 @@ test("clearing cache removes Xtream values and freshness stamps", async () => {
   expect(localStorage.getItem(`openiptv.at.${prefix}:series:200`)).toBeNull();
 });
 
+test("keeps every personal store on cache clear", async () => {
+  const s = await load();
+  s.usePersonal.getState().toggleFavourite({
+    itemKey: "alpha",
+    playlistId: "one",
+    kind: "live",
+    providerId: "alpha",
+    categoryKey: "News",
+    name: "Alpha",
+    logo: "",
+  });
+  const before = localStorage.getItem("openiptv.personal");
+  await s.clearCache();
+  expect(localStorage.getItem("openiptv.personal")).toBe(before);
+  expect(clearedLineups).toBe(0);
+});
+
 test("editing a playlist's address does not serve the old one from cache", async () => {
   const s = await load();
   configure(s, "http://list.invalid/before.m3u");
@@ -869,7 +1210,7 @@ test("editing a playlist's address does not serve the old one from cache", async
   // The id is unchanged, which is exactly the case that used to go wrong: the cache was
   // keyed on it, so a corrected address was answered with the previous playlist's channels
   // and a timestamp saying they were current.
-  s.useSettings
+  await s.useSettings
     .getState()
     .updatePlaylist(id, "After", { kind: "m3u", url: "http://list.invalid/after.m3u" });
   vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, text: async () => OTHER }));
@@ -881,7 +1222,6 @@ test("editing a playlist's address does not serve the old one from cache", async
 test("sorting A to Z counts numbers rather than spelling them", async () => {
   const s = await load();
   configure(s);
-  s.useSettings.getState().set("sortAlphabetically", true);
   vi.stubGlobal(
     "fetch",
     vi.fn().mockResolvedValue({
@@ -899,7 +1239,11 @@ http://example.invalid/1.m3u8`,
   // Plain string ordering puts "Sport 10" before "Sport 2", which is alphabetical at the
   // viewer rather than for them. These are channel names and they are full of numbers.
   await s.useChannels.getState().load();
-  expect(s.useChannels.getState().channels.map((c) => c.name)).toEqual([
+  void s.applyLineupMutation(s.useLineup.getState().revision, {
+    type: "order.mode",
+    mode: "alphabetical",
+  });
+  expect(s.useLineup.getState().channels.map((c) => c.name)).toEqual([
     "Sport 1",
     "Sport 2",
     "Sport 10",

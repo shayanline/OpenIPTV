@@ -1,6 +1,7 @@
-import { afterEach, beforeEach, test, vi } from "vitest";
 import assert from "node:assert/strict";
-import { cleanup } from "@testing-library/react";
+import { cleanup, fireEvent, screen } from "@testing-library/react";
+import { afterEach, beforeEach, test, vi } from "vitest";
+import { translate } from "../src/services/locale";
 import { mountApp, settle } from "./support/app";
 
 /**
@@ -26,9 +27,9 @@ const PLAYLIST = `#EXTM3U
 http://example.invalid/a.m3u8`;
 
 /** What the splash is saying, or that there is no splash, as a string either way. */
-const splash = () => document.querySelector(".splash p")?.textContent ?? "(no splash)";
+const splash = () => document.querySelector(".splash h1 + p")?.textContent ?? "(no splash)";
 
-const EMPTY = "That playlist has no channels in it.";
+const UNREADABLE = translate("en", "playlist.entryParsing");
 const LOADING = "Loading the playlist\u2026";
 
 beforeEach(() => {
@@ -43,8 +44,13 @@ afterEach(() => {
 
 test("a launch never claims the playlist is empty before it has looked", async () => {
   await mountApp(PLAYLIST, { awaitPlaylist: false });
-  assert.notEqual(splash(), EMPTY, "said the playlist was empty before it had looked");
+  assert.notEqual(splash(), UNREADABLE, "reported a failure before checking the playlist");
   assert.equal(splash(), LOADING);
+  assert.equal(document.querySelector(".app-navigation")?.classList.contains("visible"), true);
+  assert.equal(
+    document.querySelector(".app")?.classList.contains("app-navigation-visible"),
+    true,
+  );
 });
 
 test("the launch screen carries the app's own mark", async () => {
@@ -69,11 +75,57 @@ test("the splash goes once the channels are there", async () => {
   assert.equal(splash(), "(no splash)");
 });
 
-test("a playlist that really is empty is reported, once that is known", async () => {
+test("an unreadable playlist is reported once that is known", async () => {
   await mountApp("#EXTM3U\nnothing here", { awaitPlaylist: false });
   assert.equal(splash(), LOADING, "the verdict was reached before the playlist was read");
 
   await settle();
   // The message is right, it just has to wait its turn.
-  assert.equal(splash(), EMPTY);
+  assert.equal(splash(), UNREADABLE);
+});
+
+test("first setup completes and announces after the welcome form unmounts", async () => {
+  await mountApp(PLAYLIST, { emptyPlaylists: true });
+  fireEvent.change(screen.getByLabelText("Playlist address"), {
+    target: { value: "http://example.invalid/list.m3u" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Add a playlist" }));
+  await settle(1200);
+
+  const { useSettings } = await import("../src/stores/settings");
+  const { useChannels } = await import("../src/stores/channels");
+  assert.equal(useSettings.getState().playlists.length, 1);
+  assert.equal(useChannels.getState().channels.length > 0, true);
+  assert.equal(screen.queryByLabelText("Playlist address") === null, true);
+  assert.match(
+    document.querySelector(".toast-host [role='status']")?.textContent ?? "",
+    /loaded, 1 channel/,
+  );
+});
+
+test("a rejected first-playlist activation keeps persistent recovery instead of spinning", async () => {
+  await mountApp(PLAYLIST, { emptyPlaylists: true });
+  const { useChannels } = await import("../src/stores/channels");
+  useChannels.setState({
+    activatePlaylist: async () => {
+      throw new Error("activation exploded");
+    },
+  });
+  fireEvent.change(screen.getByLabelText("Playlist address"), {
+    target: { value: "http://example.invalid/list.m3u" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Add a playlist" }));
+  await settle(1200);
+
+  const { useSettings } = await import("../src/stores/settings");
+  assert.equal(useSettings.getState().playlists.length, 1);
+  assert.equal(screen.queryByLabelText("Playlist address") === null, true);
+  assert.equal(useChannels.getState().loading, false);
+  assert.equal(useChannels.getState().errorKey, "playlist.entryNetwork");
+  assert.notEqual(useChannels.getState().error, "");
+  assert.match(
+    document.querySelector(".toast-host [role='alert'] .toast")?.textContent ?? "",
+    /could not be reached/,
+  );
+  assert.notEqual(splash(), LOADING);
 });

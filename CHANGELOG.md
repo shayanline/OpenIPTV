@@ -2,6 +2,23 @@
 
 Notable changes, newest first, in the format of [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## 2.0.0
+
+- Movies and Series now have full VOD browsing, playback and search across large catalogues.
+- Continue watching and Favourites are available for Movies and Series.
+- Navigation and Settings have been redesigned.
+- Playlist management has been redesigned on the TV and remote dashboard.
+- Playlist Shortcut adds switching from the main menu.
+- Startup can open the last active playlist, ask which playlist to use or open a specific saved playlist.
+- Channels and categories can be renamed, hidden and reordered. Channel numbers come from M3U playlists or Xtream providers and can be customised.
+- Playback has new controls and menus for audio, subtitles and the programme guide.
+- Pause handling, seeking and connection recovery have been improved.
+- Browsing now includes country flags and artwork previews.
+- Artwork loading adapts to device capacity so stronger hardware can load more images concurrently.
+- Xtream address entry accepts more provider formats and preserves credentials when the server address changes.
+- Installed widgets start correctly on Tizen 5.5, and Xtream playback tries the configured server before its advertised fallback.
+- Focus, validation and error messages have been fixed.
+
 ## 1.10.0
 
 ### Added

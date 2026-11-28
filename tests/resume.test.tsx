@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, test, vi } from "vitest";
 import assert from "node:assert/strict";
-import { act, cleanup, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, screen } from "@testing-library/react";
 import { KEY } from "../src/hooks/useRemote";
 import { groupByCategory } from "../src/services/m3u";
 import {
@@ -40,12 +40,16 @@ const LONG_PLAYLIST = `#EXTM3U\n${Array.from(
     `#EXTINF:-1 tvg-id="long-${i}" group-title="News",Channel ${i}\nhttp://example.invalid/${i}.m3u8`,
 ).join("\n")}`;
 
-/** The rail row the cursor is on, so where the panel would open can be checked without opening it. */
-const cursorOn = () =>
-  document.querySelector(".rail .row.selected .row-label")?.textContent ?? "";
+/** The rail row whose channels are showing when the resumed channel list opens. */
+const displayedCategory = () =>
+  document.querySelector(".rail .row.showing .row-label")?.textContent ?? "";
 
 beforeEach(() => {
   localStorage.clear();
+  const clientHeight = Object.getOwnPropertyDescriptor(Element.prototype, "clientHeight")!.get!;
+  vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockImplementation(function () {
+    return this.matches(".list .viewport") ? 400 : clientHeight.call(this);
+  });
 });
 
 afterEach(() => {
@@ -73,6 +77,55 @@ test("the remembered channel plays and the panel never opens", async () => {
     categoryKey: "Sport",
   });
   assert.equal(localStorage.getItem("openiptv.last"), null);
+});
+
+test("restoring VOD mode cannot replace Movie playback with remembered Live", async () => {
+  localStorage.setItem("app:last-mode:pl-1", "movie");
+  await mountApp("", {
+    source: XTREAM_SOURCE,
+    resume: "xtream:pl-1:live:1",
+    playbackUrl: async () => "http://example.invalid/movie.mp4",
+    fetchImplementation: async (input) => {
+      const action = new URL(String(input)).searchParams.get("action") ?? "authenticate";
+      const bodies: Record<string, unknown> = {
+        authenticate: {
+          user_info: { auth: 1, status: "Active" },
+          server_info: { server_protocol: "http", url: "provider.example" },
+        },
+        get_live_categories: [{ category_id: "first", category_name: "First" }],
+        get_live_streams: [
+          { stream_id: 1, name: "First channel", category_id: "first", num: 1 },
+        ],
+        get_vod_categories: [{ category_id: "10", category_name: "Movies" }],
+        get_vod_streams: [
+          {
+            stream_id: "100",
+            category_id: "10",
+            name: "Restart film",
+            container_extension: "mp4",
+          },
+        ],
+        get_vod_info: {
+          info: { name: "Restart film" },
+          movie_data: { stream_id: "100", category_id: "10", container_extension: "mp4" },
+        },
+        get_series_categories: [],
+      };
+      return new Response(JSON.stringify(bodies[action] ?? []), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    },
+  });
+
+  assert.deepEqual(played, []);
+  await settle(300);
+  fireEvent.click(screen.getByRole("button", { name: /Restart film/ }));
+  await settle(0);
+  fireEvent.click(screen.getByRole("button", { name: "Play" }));
+  await settle(0);
+
+  assert.deepEqual(played, ["http://example.invalid/movie.mp4"]);
 });
 
 test("an Xtream channel outside the first provider category resumes", async () => {
@@ -124,14 +177,42 @@ test("the panel is closed from the very first render, not closed afterwards", as
   assert.ok(!panelOpen(), "and it must still be closed once the channel is playing");
 });
 
+test("resume keeps the rail and panel motion hidden while a playlist is loading", async () => {
+  let finish!: (response: Response) => void;
+  const response = new Promise<Response>((resolve) => {
+    finish = resolve;
+  });
+  await mountApp(PLAYLIST, {
+    resume: "a",
+    awaitPlaylist: false,
+    fetchImplementation: () => response,
+  });
+
+  const assertHidden = () => {
+    assert.equal(
+      document.querySelector(".app-navigation")?.getAttribute("aria-hidden"),
+      "true",
+    );
+    assert.ok(document.querySelector(".app")?.classList.contains("live-panel-motion"));
+    assert.ok(!panelOpen());
+  };
+  assert.ok(document.querySelector(".splash"));
+  assertHidden();
+
+  await act(async () => finish(new Response(PLAYLIST, { status: 200 })));
+  await settle();
+  assertHidden();
+  assert.deepEqual(played, ["http://example.invalid/a.m3u8"]);
+});
+
 test("the cursor is left on the resumed channel, so opening the list lands on it", async () => {
   await mountApp(PLAYLIST, { resume: "c" });
   // Gamma is the only channel in Sport, so the rail has to be on Sport rather than on the
   // first category. This was the useful half of what reopening the panel used to do.
   press(KEY.LEFT);
   assert.ok(panelOpen());
-  assert.equal(cursorOn(), "Sport");
-  assert.equal(screen.getByText("Gamma").closest(".row")?.classList.contains("selected"), true);
+  assert.equal(displayedCategory(), "Sport");
+  assert.equal(screen.getByText("Gamma").closest(".row")?.classList.contains("cursor"), true);
 });
 
 test("a resumed channel beyond the first screen is selected when the panel opens", async () => {
@@ -140,7 +221,7 @@ test("a resumed channel beyond the first screen is selected when the panel opens
   press(KEY.LEFT);
 
   assert.equal(
-    screen.getByText("Channel 31").closest(".row")?.classList.contains("selected"),
+    screen.getByText("Channel 31").closest(".row")?.classList.contains("cursor"),
     true,
   );
 });
@@ -160,7 +241,7 @@ test("a playlist refresh keeps the resumed channel selected", async () => {
   press(KEY.LEFT);
 
   assert.equal(
-    screen.getByText("Channel 31").closest(".row")?.classList.contains("selected"),
+    screen.getByText("Channel 31").closest(".row")?.classList.contains("cursor"),
     true,
   );
 });

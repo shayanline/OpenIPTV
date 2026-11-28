@@ -1,4 +1,5 @@
-import { useRef } from "react";
+import { useCallback, useRef, useState } from "react";
+import { activatePointerInput, pointerInputActive } from "./usePointerAwake";
 
 /**
  * Windowing for a long list: keep a handful of rows in the DOM instead of all of them.
@@ -39,6 +40,16 @@ export const ROW_BASE = 76;
  * cost three channels off the bottom of the list to solve a problem the list does not have.
  */
 export const RAIL_ROW_BASE = 84;
+export const POSTER_COLUMNS = 6;
+export const POSTER_OVERSCAN_ROWS = 1;
+export const POSTER_CARD_ROW_BASE = 376;
+
+export const posterColumnsForViewport = (width: number): number => {
+  if (width >= 1800) return POSTER_COLUMNS;
+  if (width >= 1600) return 5;
+  if (width >= 1440) return 4;
+  return 3;
+};
 
 /** Rows kept either side of the view, so a press never waits on a row being created. */
 const OVERSCAN = 3;
@@ -79,6 +90,7 @@ export function windowOf(
   scale: number,
   previousFirst = 0,
   rowBase = ROW_BASE,
+  overscan = OVERSCAN,
 ): Window {
   const row = rowBase * scale;
   const visible = Math.max(1, Math.floor(viewportHeight / row));
@@ -91,8 +103,8 @@ export function windowOf(
   else if (cursor > first + visible - 1) first = cursor - visible + 1;
   first = Math.max(0, Math.min(first, maxFirst));
 
-  const start = Math.max(0, first - OVERSCAN);
-  const end = Math.min(count, first + visible + OVERSCAN);
+  const start = Math.max(0, first - overscan);
+  const end = Math.min(count, first + visible + overscan);
 
   return {
     start,
@@ -101,8 +113,63 @@ export function windowOf(
     visible,
     first,
     row,
-    slots: visible + OVERSCAN * 2,
+    slots: visible + overscan * 2,
   };
+}
+
+export interface PosterWindow extends Window {
+  itemStart: number;
+  itemEnd: number;
+}
+
+export function posterWindowOf(
+  count: number,
+  cursor: number,
+  viewportHeight: number,
+  scale: number,
+  previousFirst = 0,
+  columns = POSTER_COLUMNS,
+): PosterWindow {
+  const rows = Math.ceil(count / columns);
+  const clamped = Math.max(0, Math.min(cursor, Math.max(0, count - 1)));
+  const window = windowOf(
+    rows,
+    Math.floor(clamped / columns),
+    viewportHeight,
+    scale,
+    previousFirst,
+    POSTER_CARD_ROW_BASE,
+    POSTER_OVERSCAN_ROWS,
+  );
+  return {
+    ...window,
+    itemStart: window.start * columns,
+    itemEnd: Math.min(count, window.end * columns),
+  };
+}
+
+export function normalizeWheelDelta(
+  delta: number,
+  deltaMode: number,
+  pageSize: number,
+): number {
+  if (deltaMode === 1) return delta * 40;
+  if (deltaMode === 2) return delta * pageSize;
+  return delta;
+}
+
+export function wheelStep(
+  cursor: number,
+  count: number,
+  deltaY: number,
+  now: number,
+  lastAcceptedAt: number,
+): { cursor: number; lastAcceptedAt: number; accepted: boolean } {
+  if (!deltaY || !count || now - lastAcceptedAt < 120) {
+    return { cursor, lastAcceptedAt, accepted: false };
+  }
+  const next = Math.max(0, Math.min(count - 1, cursor + (deltaY > 0 ? 1 : -1)));
+  return { cursor: next, lastAcceptedAt: now, accepted: next !== cursor };
 }
 
 export function useWindowed(
@@ -112,14 +179,133 @@ export function useWindowed(
   scale: number,
   rowBase?: number,
   followCursor = false,
+  initialFirst = 0,
+  overscan = OVERSCAN,
 ): Window {
   // Where the list sits is carried between renders rather than recomputed, because that
   // is the whole difference between the list holding still and the list chasing the
   // cursor. A ref rather than state: it is derived during render and never on its own
   // causes one.
-  const first = useRef(0);
+  const first = useRef(initialFirst);
+  const initial = useRef(initialFirst);
+  if (initial.current !== initialFirst) {
+    initial.current = initialFirst;
+    first.current = initialFirst;
+  }
   const previousFirst = followCursor ? cursor : first.current;
-  const win = windowOf(count, cursor, viewportHeight, scale, previousFirst, rowBase);
-  first.current = win.first;
+  // An unmeasured viewport must not move a saved window to the selected row.
+  const win = windowOf(
+    count,
+    viewportHeight > 0 ? cursor : previousFirst,
+    viewportHeight,
+    scale,
+    previousFirst,
+    rowBase,
+    overscan,
+  );
+  if (viewportHeight > 0) first.current = win.first;
   return win;
+}
+
+export interface NavigableWindow extends Window {
+  pointerMode: boolean;
+  scrollOffset: number;
+  indicatorFirst: number;
+  onWheel: (deltaY: number, deltaMode?: number) => boolean;
+}
+
+export function useNavigableWindow(
+  count: number,
+  cursor: number,
+  viewportHeight: number,
+  scale: number,
+  rowBase = ROW_BASE,
+  overscan = OVERSCAN,
+  initialFirst = 0,
+  windowKey?: string,
+  initialScrollOffset?: number,
+): NavigableWindow {
+  const remoteWindow = useWindowed(
+    count,
+    cursor,
+    viewportHeight,
+    scale,
+    rowBase,
+    false,
+    initialFirst,
+    overscan,
+  );
+  const pointerOffset = useRef(initialScrollOffset ?? remoteWindow.offset);
+  const storedFirst = useRef(initialFirst);
+  const storedWindowKey = useRef(windowKey);
+  const storedScrollOffset = useRef(initialScrollOffset);
+  const lastPointerFirst = useRef(initialFirst);
+  const [, redraw] = useState(0);
+  const pointerMode = pointerInputActive();
+  const row = rowBase * scale;
+  const maxOffset = Math.max(0, count * row - viewportHeight);
+  if (storedWindowKey.current !== windowKey) {
+    storedWindowKey.current = windowKey;
+    pointerOffset.current = initialScrollOffset ?? Math.max(0, initialFirst) * row;
+    storedFirst.current = initialFirst;
+  }
+  if (storedFirst.current !== initialFirst) {
+    storedFirst.current = initialFirst;
+    if (pointerMode && lastPointerFirst.current !== initialFirst) {
+      pointerOffset.current = remoteWindow.offset;
+    }
+  }
+  if (storedScrollOffset.current !== initialScrollOffset) {
+    storedScrollOffset.current = initialScrollOffset;
+    if (pointerMode && initialScrollOffset !== undefined) {
+      pointerOffset.current = initialScrollOffset;
+    }
+  }
+  if (!pointerMode) pointerOffset.current = remoteWindow.offset;
+  else pointerOffset.current = Math.max(0, Math.min(pointerOffset.current, maxOffset));
+  const pointerFirst = Math.floor(pointerOffset.current / Math.max(1, row));
+  const pointerWindow = windowOf(
+    count,
+    pointerFirst,
+    viewportHeight,
+    scale,
+    pointerFirst,
+    rowBase,
+    overscan,
+  );
+  lastPointerFirst.current = pointerWindow.first;
+  const onWheel = useCallback(
+    (deltaY: number, deltaMode = 0) => {
+      if (!deltaY) return false;
+      activatePointerInput();
+      const pixels = normalizeWheelDelta(deltaY, deltaMode, viewportHeight);
+      const next = Math.max(0, Math.min(pointerOffset.current + pixels, maxOffset));
+      if (next === pointerOffset.current) return true;
+      pointerOffset.current = next;
+      redraw((revision) => revision + 1);
+      return true;
+    },
+    [maxOffset, viewportHeight],
+  );
+  if (!pointerMode) {
+    return {
+      ...remoteWindow,
+      pointerMode: false,
+      scrollOffset: remoteWindow.offset,
+      indicatorFirst: remoteWindow.first,
+      onWheel,
+    };
+  }
+  return {
+    ...pointerWindow,
+    end: Math.min(count, Math.ceil((pointerOffset.current + viewportHeight) / row) + overscan),
+    slots: Math.max(pointerWindow.slots, Math.ceil(viewportHeight / row) + overscan * 2 + 1),
+    pointerMode: true,
+    scrollOffset: pointerOffset.current,
+    indicatorFirst:
+      maxOffset > 0
+        ? (pointerOffset.current / maxOffset) * Math.max(0, count - pointerWindow.visible)
+        : 0,
+    onWheel,
+  };
 }

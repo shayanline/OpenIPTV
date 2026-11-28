@@ -7,7 +7,7 @@ import type { Channel } from "../types";
  * tolerant of the ways real playlists bend it:
  *
  *  - the title runs to end of line and may itself contain commas, so only the first comma
- *    after #EXTINF separates attributes from the title
+ *    outside quoted attribute values separates attributes from the title
  *  - attribute values may be single or double quoted
  *  - #EXTGRP and player directives such as #EXTVLCOPT sit between the #EXTINF and the url
  *  - a tag written without its leading '#' should be ignored rather than read as a url
@@ -19,11 +19,31 @@ const ATTRS = /([a-zA-Z0-9-]+)=("([^"]*)"|'([^']*)')/g;
 const KNOWN_TAG = /^(EXT|#)/i;
 export const UNCATEGORISED = "Uncategorised";
 
+function fnv1a(bytes: Uint8Array, seed: number) {
+  let hash = seed >>> 0;
+  for (const byte of bytes) {
+    hash ^= byte;
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  return hash.toString(16).padStart(8, "0");
+}
+
+export function sourceFingerprint(
+  tvgId: string,
+  name: string,
+  group: string,
+  url: string,
+): string {
+  const bytes = new TextEncoder().encode(`${tvgId}\0${name}\0${group}\0${url}`);
+  return `${fnv1a(bytes, 0x811c9dc5)}${fnv1a(bytes, 0x9e3779b9)}`;
+}
+
 export function parseM3U(text: string): Channel[] {
   const channels: Channel[] = [];
   const lines = text.split(/\r?\n/);
   let pending: Partial<Channel> | null = null;
   let group = "";
+  let previousNumber = 0;
   /**
    * Every id handed out so far, because the whole application assumes they are unique.
    *
@@ -42,13 +62,16 @@ export function parseM3U(text: string): Channel[] {
    * it meant before this was fixed.
    */
   const taken = new Set<string>();
+  const nextSuffix = new Map<string, number>();
+  const fingerprints = new Map<string, number>();
   const unique = (id: string) => {
     if (!taken.has(id)) {
       taken.add(id);
       return id;
     }
-    let n = 2;
+    let n = nextSuffix.get(id) ?? 2;
     while (taken.has(`${id}#${n}`)) n += 1;
+    nextSuffix.set(id, n + 1);
     const fresh = `${id}#${n}`;
     taken.add(fresh);
     return fresh;
@@ -59,7 +82,19 @@ export function parseM3U(text: string): Channel[] {
     if (!line) continue;
 
     if (line.startsWith("#EXTINF:")) {
-      const comma = line.indexOf(",");
+      let comma = -1;
+      let quote = "";
+      for (let i = 8; i < line.length; i += 1) {
+        const ch = line[i];
+        if (quote) {
+          if (ch === quote) quote = "";
+        } else if ((ch === '"' || ch === "'") && line[i - 1] === "=") {
+          quote = ch;
+        } else if (ch === ",") {
+          comma = i;
+          break;
+        }
+      }
       const attrText = comma === -1 ? line : line.slice(0, comma);
       const title = comma === -1 ? "" : line.slice(comma + 1).trim();
 
@@ -88,6 +123,11 @@ export function parseM3U(text: string): Channel[] {
          */
         quality: (attrs["tvg-quality"] || "").trim().slice(0, 6),
       };
+      const numberText = (attrs["tvg-chno"] || "").trim();
+      const number = Number(numberText);
+      if (/^\d+$/.test(numberText) && Number.isSafeInteger(number) && number > 0) {
+        pending.number = number;
+      }
       // Prefer the on screen title, since it is the bilingual one.
       if (title) pending.name = title;
       continue;
@@ -102,15 +142,29 @@ export function parseM3U(text: string): Channel[] {
     if (!/^[a-z][a-z0-9+.-]*:\/\//i.test(line)) continue;
 
     if (pending) {
+      const name = pending.name || "Unnamed";
+      const categoryKey = pending.group || group || UNCATEGORISED;
+      const baseFingerprint = sourceFingerprint(pending.id || "", name, categoryKey, line);
+      const occurrence = (fingerprints.get(baseFingerprint) ?? 0) + 1;
+      fingerprints.set(baseFingerprint, occurrence);
+      const nextNumber = previousNumber + 1;
+      const number =
+        pending.number ?? (Number.isSafeInteger(nextNumber) ? nextNumber : channels.length + 1);
       channels.push({
         id: unique(pending.id || `url:${line}`),
-        name: pending.name || "Unnamed",
+        name,
         logo: pending.logo || "",
-        group: pending.group || group || UNCATEGORISED,
+        group: categoryKey,
+        categoryKey,
+        sourceFingerprint:
+          occurrence === 1
+            ? baseFingerprint
+            : `${baseFingerprint}${occurrence.toString(16).padStart(8, "0")}`,
         url: line,
         quality: pending.quality || "",
-        number: channels.length + 1,
+        number,
       });
+      previousNumber = number;
       pending = null;
     }
   }

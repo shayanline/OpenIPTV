@@ -10,8 +10,34 @@ import assert from "node:assert/strict";
  * active playlist is removed.
  */
 
+const personalDisk = vi.hoisted(() => ({
+  lineups: new Map<string, unknown>(),
+  remove: vi.fn<(playlistId: string) => Promise<void>>(),
+  clear: vi.fn<() => Promise<void>>(),
+}));
+
+vi.mock("../src/services/personalDisk", () => ({
+  readLineup: vi.fn().mockResolvedValue(null),
+  writeLineup: vi.fn().mockResolvedValue(undefined),
+  removeLineup: personalDisk.remove,
+  clearLineups: personalDisk.clear,
+  writeLineupIfAbsent: vi.fn().mockResolvedValue(true),
+}));
+
 const KEY = "openiptv.settings";
 const m3u = (url: string) => ({ kind: "m3u" as const, url });
+const xtreamPlaylist = {
+  id: "pl-x",
+  name: "Provider",
+  source: {
+    kind: "xtream" as const,
+    server: "https://provider.example",
+    username: "viewer",
+    password: "secret",
+    output: "m3u8" as const,
+  },
+  sourceVersion: 1,
+};
 
 const load = () => {
   vi.resetModules();
@@ -20,6 +46,11 @@ const load = () => {
 
 beforeEach(() => {
   localStorage.clear();
+  personalDisk.lineups.clear();
+  personalDisk.remove.mockReset().mockImplementation(async (playlistId) => {
+    personalDisk.lineups.delete(playlistId);
+  });
+  personalDisk.clear.mockReset().mockResolvedValue();
 });
 
 test("a file written by an older version keeps working, and gains the new defaults", async () => {
@@ -30,9 +61,239 @@ test("a file written by an older version keeps working, and gains the new defaul
 
   assert.equal(s.showClock, false, "what was saved is kept");
   assert.equal(s.resumeLast, false);
-  assert.equal(s.aspectId, "fill", "what is new arrives at its default");
-  assert.equal(s.showPlaybackStats, false, "playback information stays opt in");
+  assert.equal(s.aspectId, "fit", "new preferences preserve the whole picture");
+  assert.equal(s.continuousReconnect, false, "continuous reconnect stays opt in");
+  assert.equal(s.showPlaybackStats, false, "the restored setting arrives at its default");
+  assert.equal(s.hideEmptyCategories, true, "empty categories stay hidden by default");
+  assert.equal(s.playlistShortcut, true, "playlist switching is available by default");
+  expect(s.startupPlaylist).toEqual({ mode: "last" });
+  assert.equal(s.showLive, true, "every section starts on");
+  assert.equal(s.showMovies, true);
+  assert.equal(s.showSeries, true);
   assert.equal("panelTimeout" in s, false, "the removed setting does not return");
+});
+
+test("appearance preferences hydrate booleans and keep saved values", async () => {
+  localStorage.setItem(
+    KEY,
+    JSON.stringify({
+      playlists: [xtreamPlaylist],
+      activePlaylistId: "pl-x",
+      hideEmptyCategories: "yes",
+      playlistShortcut: "yes",
+      showLive: "no",
+      showMovies: false,
+      showSeries: 0,
+    }),
+  );
+  const { useSettings } = await load();
+  const s = useSettings.getState();
+
+  assert.equal(s.hideEmptyCategories, true, "malformed falls back to the default");
+  assert.equal(s.playlistShortcut, true, "malformed falls back to the default");
+  assert.equal(s.showLive, true, "malformed falls back to the default");
+  assert.equal(s.showMovies, false, "a saved false survives");
+  assert.equal(s.showSeries, true, "malformed falls back to the default");
+  const written = JSON.parse(localStorage.getItem(KEY) as string);
+  assert.equal(written.hideEmptyCategories, true);
+  assert.equal(written.playlistShortcut, true);
+  assert.equal(written.showLive, true);
+  assert.equal(written.showMovies, false);
+  assert.equal(written.showSeries, true);
+});
+
+test("the playlist shortcut remains disabled after settings are reloaded", async () => {
+  const first = await load();
+  first.useSettings.getState().set("playlistShortcut", false);
+  const second = await load();
+  assert.equal(second.useSettings.getState().playlistShortcut, false);
+});
+
+test.each([
+  null,
+  "ask",
+  { mode: "other" },
+  { mode: "specific" },
+  { mode: "specific", playlistId: "missing" },
+  { mode: "ask", playlistId: "pl-x" },
+])(
+  "invalid startup preference %j falls back to the last active playlist",
+  async (preference) => {
+    localStorage.setItem(
+      KEY,
+      JSON.stringify({ playlists: [xtreamPlaylist], startupPlaylist: preference }),
+    );
+    const { useSettings } = await load();
+    expect(useSettings.getState().startupPlaylist).toEqual({ mode: "last" });
+    expect(JSON.parse(localStorage.getItem(KEY)!).startupPlaylist).toEqual({ mode: "last" });
+  },
+);
+
+test("a fixed startup playlist survives reload and resets only when that playlist is deleted", async () => {
+  localStorage.setItem(KEY, JSON.stringify({ playlists: [xtreamPlaylist] }));
+  const first = await load();
+  first.useSettings.getState().addPlaylist("Other", m3u("http://other.invalid/list.m3u"));
+  first.useSettings.getState().set("startupPlaylist", { mode: "specific", playlistId: "pl-x" });
+  const { useSettings } = await load();
+  expect(useSettings.getState().startupPlaylist).toEqual({
+    mode: "specific",
+    playlistId: "pl-x",
+  });
+  const other = useSettings.getState().playlists.find((playlist) => playlist.id !== "pl-x")!;
+  await useSettings.getState().removePlaylist(other.id);
+  expect(useSettings.getState().startupPlaylist.mode).toBe("specific");
+  useSettings.getState().addPlaylist("Replacement", m3u("http://new.invalid/list.m3u"));
+  const replacement = useSettings
+    .getState()
+    .playlists.find((playlist) => playlist.id !== "pl-x")!;
+  useSettings.getState().set("activePlaylistId", replacement.id);
+  await useSettings.getState().removePlaylist("pl-x");
+  expect(useSettings.getState().startupPlaylist).toEqual({ mode: "last" });
+  expect(useSettings.getState().activePlaylistId).toBe(replacement.id);
+  expect(JSON.parse(localStorage.getItem(KEY)!).startupPlaylist).toEqual({ mode: "last" });
+});
+
+test("a failed playlist deletion preserves its fixed startup preference", async () => {
+  localStorage.setItem(
+    KEY,
+    JSON.stringify({
+      playlists: [xtreamPlaylist],
+      startupPlaylist: { mode: "specific", playlistId: "pl-x" },
+    }),
+  );
+  const { useSettings } = await load();
+  personalDisk.remove.mockRejectedValueOnce(new Error("disk unavailable"));
+  expect(await useSettings.getState().removePlaylist("pl-x")).toBe(false);
+  expect(useSettings.getState().startupPlaylist).toEqual({
+    mode: "specific",
+    playlistId: "pl-x",
+  });
+});
+
+test("a saved state with every section disabled normalizes to one supported section before persisting", async () => {
+  localStorage.setItem(
+    KEY,
+    JSON.stringify({
+      playlists: [xtreamPlaylist],
+      activePlaylistId: "pl-x",
+      showLive: false,
+      showMovies: false,
+      showSeries: false,
+    }),
+  );
+  const { useSettings } = await load();
+  const s = useSettings.getState();
+
+  assert.equal(s.showLive, true, "at least one supported section must stay on");
+  assert.equal(s.showMovies, false);
+  assert.equal(s.showSeries, false);
+  const written = JSON.parse(localStorage.getItem(KEY) as string);
+  assert.equal(written.showLive, true);
+  assert.equal(written.showMovies, false);
+  assert.equal(written.showSeries, false);
+});
+
+test("an M3U state with Live disabled normalizes Live back on", async () => {
+  localStorage.setItem(
+    KEY,
+    JSON.stringify({
+      playlists: [{ id: "pl-m", name: "M3U", url: "http://a.invalid/x.m3u" }],
+      activePlaylistId: "pl-m",
+      showLive: false,
+      showMovies: true,
+      showSeries: true,
+    }),
+  );
+  const { useSettings } = await load();
+  const s = useSettings.getState();
+
+  assert.equal(s.showLive, true, "M3U only supports Live, so it cannot stay off");
+  assert.equal(s.showMovies, true, "the stored movie preference is preserved");
+  assert.equal(s.showSeries, true);
+  const written = JSON.parse(localStorage.getItem(KEY) as string);
+  assert.equal(written.showLive, true);
+  assert.equal(written.showMovies, true);
+});
+
+test("the last supported section cannot be switched off, and Live returns with an M3U source", async () => {
+  localStorage.setItem(
+    KEY,
+    JSON.stringify({ playlists: [xtreamPlaylist], activePlaylistId: "pl-x" }),
+  );
+  const { useSettings } = await load();
+  const s = () => useSettings.getState();
+
+  s().set("showLive", false);
+  s().set("showSeries", false);
+  assert.deepEqual([s().showLive, s().showMovies, s().showSeries], [false, true, false]);
+
+  s().set("showMovies", false);
+  assert.equal(s().showMovies, true, "the final supported section stays on");
+  assert.equal(JSON.parse(localStorage.getItem(KEY) as string).showMovies, true);
+
+  s().replacePlaylists(
+    [{ id: "pl-m", name: "M3U", source: m3u("http://a.invalid/x.m3u"), sourceVersion: 1 }],
+    "pl-m",
+  );
+  assert.equal(s().showLive, true, "Live returns when the source can no longer hide it");
+  assert.equal(s().showMovies, true, "the movie preference itself is preserved");
+  const written = JSON.parse(localStorage.getItem(KEY) as string);
+  assert.equal(written.showLive, true);
+  assert.equal(written.showMovies, true);
+  assert.equal(written.playlists[0].source.kind, "m3u");
+});
+
+test("keeps legacy order until every playlist record commits in settings", async () => {
+  localStorage.setItem(
+    KEY,
+    JSON.stringify({
+      sortAlphabetically: true,
+      playlists: [
+        { id: "one", name: "One", url: "http://one.invalid/list.m3u" },
+        { id: "two", name: "Two", url: "http://two.invalid/list.m3u" },
+      ],
+      activePlaylistId: "one",
+    }),
+  );
+  const { completeOrderModeMigration, useSettings } = await load();
+  completeOrderModeMigration("one");
+  useSettings.getState().set("showClock", false);
+  assert.equal(JSON.parse(localStorage.getItem(KEY) ?? "{}").sortAlphabetically, true);
+  completeOrderModeMigration("one");
+  assert.equal(JSON.parse(localStorage.getItem(KEY) ?? "{}").sortAlphabetically, true);
+  completeOrderModeMigration("two");
+  assert.equal("sortAlphabetically" in JSON.parse(localStorage.getItem(KEY) ?? "{}"), false);
+});
+
+test("full reset clears pending legacy order migration state", async () => {
+  localStorage.setItem(KEY, JSON.stringify({ sortAlphabetically: true, playlists: [] }));
+  const { legacyLineupOrderMode, useSettings } = await load();
+  assert.equal(legacyLineupOrderMode(), "alphabetical");
+  assert.equal(await useSettings.getState().reset(), true);
+  assert.equal(legacyLineupOrderMode(), null);
+  useSettings.getState().addPlaylist("Fresh", m3u("http://fresh.invalid/list.m3u"));
+  assert.equal("sortAlphabetically" in JSON.parse(localStorage.getItem(KEY) ?? "{}"), false);
+});
+
+test("continuous reconnect is false for new, old, malformed, and partial settings", async () => {
+  for (const saved of [{}, { showClock: false }, { continuousReconnect: "yes" }]) {
+    localStorage.setItem(KEY, JSON.stringify(saved));
+    const { useSettings } = await load();
+    assert.equal(useSettings.getState().continuousReconnect, false);
+  }
+
+  localStorage.setItem(KEY, JSON.stringify({ continuousReconnect: true }));
+  const { useSettings } = await load();
+  assert.equal(useSettings.getState().continuousReconnect, true);
+});
+
+test("the restored playback information setting survives the canonical write", async () => {
+  localStorage.setItem(KEY, JSON.stringify({ showPlaybackStats: true, showClock: false }));
+  const { useSettings } = await load();
+
+  assert.equal(useSettings.getState().showPlaybackStats, true);
+  const written = JSON.parse(localStorage.getItem(KEY) ?? "{}");
+  assert.equal(written.showPlaybackStats, true);
 });
 
 test("a setting that no longer exists is dropped rather than carried for ever", async () => {
@@ -93,7 +354,6 @@ test("malformed playlist visibility falls back without breaking settings", async
           name: "One",
           url: "http://a.invalid/x.m3u",
           hiddenCategories: ["News", 4],
-          hiddenCategoryMode: "unexpected",
         },
       ],
       activePlaylistId: "pl-1",
@@ -103,7 +363,6 @@ test("malformed playlist visibility falls back without breaking settings", async
   const { useSettings } = await load();
   assert.equal(useSettings.getState().playlists.length, 1);
   assert.deepEqual(useSettings.getState().playlists[0].hiddenCategories, ["News"]);
-  assert.equal(useSettings.getState().playlists[0].hiddenCategoryMode, "exclude");
 });
 
 test("what is written back is data, never the actions", async () => {
@@ -117,7 +376,6 @@ test("what is written back is data, never the actions", async () => {
     "addPlaylist",
     "removePlaylist",
     "updatePlaylist",
-    "setHiddenCategories",
     "reset",
     "font",
     "scale",
@@ -153,63 +411,31 @@ test("new and existing playlists gain private category visibility defaults", asy
   );
   const { useSettings } = await load();
 
-  assert.deepEqual(useSettings.getState().playlists[0].hiddenCategories, []);
-  assert.equal(useSettings.getState().playlists[0].hiddenCategoryMode, "exclude");
+  assert.equal(useSettings.getState().playlists[0].hiddenCategories, undefined);
 
   useSettings.getState().addPlaylist("New", m3u("http://new.invalid/list.m3u"));
-  assert.deepEqual(useSettings.getState().playlists[1].hiddenCategories, []);
-  assert.equal(useSettings.getState().playlists[1].hiddenCategoryMode, "exclude");
+  assert.equal(useSettings.getState().playlists[1].hiddenCategories, undefined);
 });
 
-test("category visibility stays with its playlist and survives a reload", async () => {
-  const { useSettings } = await load();
-  const settings = useSettings.getState();
-  settings.addPlaylist("First", m3u("http://a.invalid/x.m3u"));
-  settings.addPlaylist("Second", m3u("http://b.invalid/y.m3u"));
-  const [first, second] = useSettings.getState().playlists;
-
-  useSettings.getState().setCategoryHidden(first.id, "News", true);
-  useSettings.getState().setHiddenCategoryMode(first.id, "search");
-
-  assert.deepEqual(useSettings.getState().playlists[0].hiddenCategories, ["News"]);
-  assert.equal(useSettings.getState().playlists[0].hiddenCategoryMode, "search");
-  assert.deepEqual(useSettings.getState().playlists[1].hiddenCategories, []);
-  assert.equal(useSettings.getState().playlists[1].hiddenCategoryMode, "exclude");
-
-  const reloaded = await load();
-  assert.deepEqual(reloaded.useSettings.getState().playlists[0].hiddenCategories, ["News"]);
-  assert.equal(reloaded.useSettings.getState().playlists[0].hiddenCategoryMode, "search");
-  assert.deepEqual(reloaded.useSettings.getState().playlists[1].hiddenCategories, []);
-  assert.equal(second.name, "Second");
-});
-
-test("a playlist can replace its hidden category set in one write", async () => {
-  const { useSettings } = await load();
-  useSettings.getState().addPlaylist("First", m3u("http://a.invalid/x.m3u"));
-  useSettings.getState().addPlaylist("Second", m3u("http://b.invalid/y.m3u"));
-  const [first] = useSettings.getState().playlists;
-
-  useSettings.getState().setHiddenCategories(first.id, ["News", "Sport"]);
-
+test("keeps hidden categories until their playlist record commits in settings", async () => {
+  localStorage.setItem(
+    KEY,
+    JSON.stringify({
+      playlists: [
+        {
+          id: "first",
+          name: "First",
+          url: "http://a.invalid/x.m3u",
+          hiddenCategories: ["News", "Sport"],
+        },
+      ],
+      activePlaylistId: "first",
+    }),
+  );
+  const { completeHiddenCategoryMigration, useSettings } = await load();
   assert.deepEqual(useSettings.getState().playlists[0].hiddenCategories, ["News", "Sport"]);
-  assert.deepEqual(useSettings.getState().playlists[1].hiddenCategories, []);
-  const reloaded = await load();
-  assert.deepEqual(reloaded.useSettings.getState().playlists[0].hiddenCategories, [
-    "News",
-    "Sport",
-  ]);
-});
-
-test("showing a category removes only that exact playlist category", async () => {
-  const { useSettings } = await load();
-  useSettings.getState().addPlaylist("First", m3u("http://a.invalid/x.m3u"));
-  const id = useSettings.getState().playlists[0].id;
-
-  useSettings.getState().setCategoryHidden(id, "News", true);
-  useSettings.getState().setCategoryHidden(id, "NEWS", true);
-  useSettings.getState().setCategoryHidden(id, "News", false);
-
-  assert.deepEqual(useSettings.getState().playlists[0].hiddenCategories, ["NEWS"]);
+  completeHiddenCategoryMigration("first");
+  assert.equal(useSettings.getState().playlists[0].hiddenCategories, undefined);
 });
 
 test("removing the active playlist promotes another rather than leaving nothing active", async () => {
@@ -219,7 +445,7 @@ test("removing the active playlist promotes another rather than leaving nothing 
   s().addPlaylist("Second", m3u("http://b.invalid/y.m3u"));
   const [first, second] = s().playlists;
 
-  s().removePlaylist(first.id);
+  await s().removePlaylist(first.id);
   assert.equal(s().activePlaylistId, second.id);
 });
 
@@ -227,7 +453,7 @@ test("removing the last playlist leaves the app in its first run state", async (
   const { useSettings } = await load();
   const s = () => useSettings.getState();
   s().addPlaylist("Only", m3u("http://a.invalid/x.m3u"));
-  s().removePlaylist(s().playlists[0].id);
+  await s().removePlaylist(s().playlists[0].id);
   assert.equal(s().playlists.length, 0);
   assert.equal(s().activePlaylistId, "");
   assert.equal(s().activePlaylist(), undefined);
@@ -253,10 +479,38 @@ test("a playlist whose name is blank is still saved with its url trimmed", async
   assert.equal(p.sourceVersion, 1);
 });
 
+test("failed durable cleanup leaves playlist settings and compact personal state intact", async () => {
+  const { useSettings } = await load();
+  const { usePersonal } = await import("../src/stores/personal");
+  useSettings.getState().addPlaylist("One", m3u("http://a.invalid/x.m3u"));
+  const original = useSettings.getState().playlists[0];
+  usePersonal.getState().toggleFavourite({
+    itemKey: "alpha",
+    playlistId: original.id,
+    kind: "live",
+    providerId: "alpha",
+    categoryKey: "News",
+    name: "Alpha",
+    logo: "",
+  });
+  const compactBefore = localStorage.getItem("openiptv.personal");
+  const lineupRecord = { version: 1, revision: 3, personalisation: { orderMode: "custom" } };
+  personalDisk.lineups.set(original.id, lineupRecord);
+  personalDisk.remove.mockRejectedValueOnce(new Error("blocked"));
+  assert.equal(await useSettings.getState().removePlaylist(original.id), false);
+  assert.equal(useSettings.getState().playlists[0].id, original.id);
+  assert.equal(localStorage.getItem("openiptv.personal"), compactBefore);
+  assert.equal(personalDisk.lineups.get(original.id), lineupRecord);
+  assert.deepEqual(
+    usePersonal.getState().favourites.map((item) => item.itemKey),
+    ["alpha"],
+  );
+});
+
 test("reset clears the playlists and writes the cleared state out", async () => {
   const { useSettings } = await load();
   useSettings.getState().addPlaylist("One", m3u("http://a.invalid/x.m3u"));
-  useSettings.getState().reset();
+  await useSettings.getState().reset();
 
   assert.equal(useSettings.getState().playlists.length, 0);
   assert.equal(JSON.parse(localStorage.getItem(KEY) as string).playlists.length, 0);
@@ -300,7 +554,7 @@ test("removing one of two playlists added together leaves exactly the other", as
   const s = () => useSettings.getState();
   s().addPlaylist("One", m3u("http://a.invalid/x.m3u"));
   s().addPlaylist("Two", m3u("http://b.invalid/y.m3u"));
-  s().removePlaylist(s().playlists[0].id);
+  await s().removePlaylist(s().playlists[0].id);
   assert.equal(s().playlists.length, 1);
   assert.equal(s().playlists[0].name, "Two");
 });
@@ -313,7 +567,6 @@ test("replacing playlists persists one complete first setup state", async () => 
     source: m3u("http://a.invalid/news.m3u"),
     sourceVersion: 1,
     hiddenCategories: [],
-    hiddenCategoryMode: "exclude" as const,
   };
 
   useSettings.getState().replacePlaylists([playlist], playlist.id, "fr");
@@ -405,7 +658,6 @@ test("a malformed legacy address remains editable after migration", async () => 
           name: "Needs fixing",
           url: malformed,
           hiddenCategories: ["News"],
-          hiddenCategoryMode: "search",
           categoryCount: 7,
         },
       ],
@@ -421,7 +673,6 @@ test("a malformed legacy address remains editable after migration", async () => 
       source: { kind: "m3u", url: malformed },
       sourceVersion: 1,
       hiddenCategories: ["News"],
-      hiddenCategoryMode: "search",
       categoryCount: 7,
     },
   ]);
@@ -449,12 +700,12 @@ test("every source change increments its version and clears the category count",
   const original = useSettings.getState().playlists[0];
   useSettings.getState().setPlaylistCategoryCount(original.id, 12);
 
-  useSettings.getState().updatePlaylist(original.id, "Renamed", { ...original.source });
+  await useSettings.getState().updatePlaylist(original.id, "Renamed", { ...original.source });
   let playlist = useSettings.getState().playlists[0];
   assert.equal(playlist.sourceVersion, 1);
   assert.equal(playlist.categoryCount, 12);
 
-  useSettings
+  await useSettings
     .getState()
     .updatePlaylist(original.id, "Renamed", { ...original.source, password: "replacement" });
   playlist = useSettings.getState().playlists[0];
@@ -472,14 +723,16 @@ test("account replacement clears hidden categories after the source version chan
     output: "ts",
   });
   const original = useSettings.getState().playlists[0];
-  useSettings.getState().setHiddenCategories(original.id, ["live:1", "movie:2"]);
+  useSettings.setState({
+    playlists: [{ ...original, hiddenCategories: ["live:1", "movie:2"] }],
+  });
 
-  useSettings.getState().updatePlaylist(original.id, "Provider", {
+  await useSettings.getState().updatePlaylist(original.id, "Provider", {
     ...original.source,
     username: "replacement",
   });
 
   const replaced = useSettings.getState().playlists[0];
   expect(replaced.sourceVersion).toBe(2);
-  expect(replaced.hiddenCategories).toEqual([]);
+  expect(replaced.hiddenCategories).toBeUndefined();
 });

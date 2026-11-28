@@ -1,4 +1,5 @@
 import { memo, useEffect, useRef, useState } from "react";
+import { pointerOnly, usePointerInput } from "../hooks/usePointerAwake";
 import { useLocale } from "../hooks/useLocale";
 import type { Channel } from "../types";
 import { Text } from "./Text";
@@ -7,11 +8,11 @@ import { Logo } from "./Logo";
 import { dropQueuedWarming, LOGO_BOX, warmChain } from "../services/logos";
 import { ScrollIndicator } from "./ScrollIndicator";
 import { SearchField } from "./SearchField";
-import { useWindowed } from "../hooks/useWindowed";
+import { useNavigableWindow } from "../hooks/useWindowed";
 import { useViewport } from "../hooks/useViewport";
 
 interface Props {
-  channels: Channel[];
+  channels: readonly Channel[];
   /** The category these channels came from, so this column can say where the viewer is. */
   category: string;
   index: number;
@@ -26,6 +27,7 @@ interface Props {
    * screen of their own.
    */
   search?: {
+    externalField?: boolean;
     query: string;
     /** How many matched altogether, so the header can own up to a capped list. */
     total: number;
@@ -58,6 +60,7 @@ interface Props {
    */
   numberDigits: number;
   /** Must be stable, or every row rebuilds on every press. */
+  onFocus: (index: number) => void;
   onSelect: (index: number) => void;
   onWheel: (direction: -1 | 1) => void;
 }
@@ -76,7 +79,8 @@ interface Props {
 const Row = memo(function Row({
   channel,
   index,
-  selected,
+  cursor,
+  pointerMode,
   playing,
   live,
   favourite,
@@ -85,11 +89,13 @@ const Row = memo(function Row({
   settled,
   top,
   height,
+  onFocus,
   onPick,
 }: {
   channel: Channel;
   index: number;
-  selected: boolean;
+  cursor: boolean;
+  pointerMode: boolean;
   playing: boolean;
   /**
    * Whether this row's channel is actually running, as opposed to paused or frozen.
@@ -105,32 +111,42 @@ const Row = memo(function Row({
   settled: boolean;
   top: number;
   height: number;
+  onFocus: (index: number) => void;
   onPick: (index: number) => void;
 }) {
   const { t } = useLocale();
+  const [hovered, setHovered] = useState(false);
   const displayName = channel.name || t("channel.unnamed");
   return (
     <button
       type="button"
-      className={`row ${selected ? "selected" : ""}`}
+      className={`row ${cursor ? "cursor" : ""}`}
       style={{ top, height }}
+      onPointerEnter={() =>
+        pointerOnly(() => {
+          setHovered(true);
+          onFocus(index);
+        })
+      }
+      onPointerLeave={() => setHovered(false)}
       onClick={() => onPick(index)}
     >
       {showNumbers && <span className="ch-number">{String(channel.number)}</span>}
       {showLogos && (
-        // Where there is no number column, a channel with no artwork shows its number. Where
-        // there is one, it shows a quiet television instead: with both, the row read "1 1
-        // Channel Alpha".
         <Logo
           src={channel.logo}
           alt={displayName}
           fetchable={settled}
-          label={showNumbers ? undefined : String(channel.number)}
           width={LOGO_BOX.width}
           height={LOGO_BOX.height}
         />
       )}
-      <Text value={displayName} className="row-label" marquee />
+      <Text
+        value={displayName}
+        className="row-label"
+        marquee
+        active={pointerMode ? hovered : cursor}
+      />
       {favourite && (
         <span className="ch-star">
           <Icon name="star" />
@@ -169,10 +185,12 @@ export const ChannelList = memo(function ChannelList({
   scale,
   search,
   numberDigits,
+  onFocus,
   onSelect,
   onWheel,
 }: Props) {
-  const { t } = useLocale();
+  const { t, number } = useLocale();
+  const pointerMode = usePointerInput();
   const viewport = useRef<HTMLDivElement>(null);
   const height = useViewport(viewport);
   /*
@@ -186,7 +204,7 @@ export const ChannelList = memo(function ChannelList({
    * The rail has always done this for the same reason, since its own position zero is the title
    * bar rather than a category.
    */
-  const win = useWindowed(channels.length, Math.max(0, index), height, scale);
+  const win = useNavigableWindow(channels.length, Math.max(0, index), height, scale);
 
   /**
    * Whether the list has stopped moving.
@@ -202,12 +220,12 @@ export const ChannelList = memo(function ChannelList({
    * it was, since the two delays are now paid one after the other and the second no longer
    * has eighteen rebuilds to absorb.
    */
-  const [settled, setSettled] = useState(true);
+  const [settledState, setSettledState] = useState({ channels, index });
+  const settled = settledState.channels === channels && settledState.index === index;
   useEffect(() => {
-    setSettled(false);
-    const t = window.setTimeout(() => setSettled(true), 120);
+    const t = window.setTimeout(() => setSettledState({ channels, index }), 120);
     return () => window.clearTimeout(t);
-  }, [channels]);
+  }, [channels, index]);
 
   /**
    * Shrink the logos just beyond the view before they are needed.
@@ -227,14 +245,18 @@ export const ChannelList = memo(function ChannelList({
     const margin = win.slots;
     // Whatever was queued for the rows we have just left is no longer worth waiting for.
     dropQueuedWarming();
-    return warmChain(
-      [
-        ...channels.slice(win.end, win.end + margin),
-        ...channels.slice(Math.max(0, win.start - margin), win.start),
-      ]
-        .map((c) => c.logo)
-        .filter((src): src is string => !!src),
-    );
+    const sources: string[] = [];
+    const after = Math.min(channels.length, win.end + margin);
+    // Preserve forward warming priority without copying both channel ranges first.
+    for (let i = win.end; i < after; i++) {
+      const src = channels[i].logo;
+      if (src) sources.push(src);
+    }
+    for (let i = Math.max(0, win.start - margin); i < win.start; i++) {
+      const src = channels[i].logo;
+      if (src) sources.push(src);
+    }
+    return warmChain(sources);
   }, [channels, win.start, win.end, win.slots, showLogos, settled]);
 
   /*
@@ -262,15 +284,18 @@ export const ChannelList = memo(function ChannelList({
         key={i % win.slots}
         channel={c}
         index={i}
-        selected={i === index}
+        cursor={focused && i === index}
+        pointerMode={pointerMode}
         playing={playing}
         live={playing && live}
         favourite={favourites.has(c.id)}
         showNumbers={showNumbers}
         showLogos={showLogos}
-        settled={settled}
+        // Rows without a logo column do not draw or act on the settling state.
+        settled={showLogos && settled}
         top={i * win.row}
         height={win.row}
+        onFocus={onFocus}
         onPick={onSelect}
       />,
     );
@@ -295,7 +320,7 @@ export const ChannelList = memo(function ChannelList({
        * this one describes the list actually on screen.
        */}
       <div className="pane-head">
-        {search ? (
+        {search && !search.externalField ? (
           <SearchField
             value={search.query}
             focused={search.onField}
@@ -307,14 +332,26 @@ export const ChannelList = memo(function ChannelList({
             onExitStart={search.onExitStart}
           />
         ) : (
-          <Text value={category || t("channel.channels")} className="panel-title" />
+          <>
+            <Text value={category || t("channel.channels")} className="panel-title" />
+            <span className="count">
+              {search && channels.length < search.total
+                ? `${number(channels.length)} / ${number(search.total)}`
+                : number(channels.length)}
+            </span>
+          </>
         )}
       </div>
       <div
         className="viewport"
         ref={viewport}
         onWheel={(event) => {
-          if (event.deltaY) onWheel(event.deltaY > 0 ? 1 : -1);
+          if (!event.deltaY) return;
+          if (win.onWheel(event.deltaY, event.deltaMode)) {
+            event.preventDefault();
+            return;
+          }
+          onWheel(event.deltaY > 0 ? 1 : -1);
         }}
       >
         {loading && !channels.length ? (
@@ -329,7 +366,7 @@ export const ChannelList = memo(function ChannelList({
             </div>
           ))
         ) : (
-          <div className="window" style={{ transform: `translateY(${-win.offset}px)` }}>
+          <div className="window" style={{ transform: `translateY(${-win.scrollOffset}px)` }}>
             {rows}
           </div>
         )}
@@ -354,7 +391,11 @@ export const ChannelList = memo(function ChannelList({
                 : t("channel.typeName")}
           </p>
         )}
-        <ScrollIndicator count={channels.length} first={win.first} visible={win.visible} />
+        <ScrollIndicator
+          count={channels.length}
+          first={win.indicatorFirst}
+          visible={win.visible}
+        />
       </div>
     </div>
   );

@@ -14,6 +14,12 @@ const paths: Record<string, React.ReactNode> = {
   star: (
     <path d="M11.525 2.295a.53.53 0 0 1 .95 0l2.31 4.679a2.123 2.123 0 0 0 1.595 1.16l5.166.756a.53.53 0 0 1 .294.904l-3.736 3.638a2.123 2.123 0 0 0-.611 1.878l.882 5.14a.53.53 0 0 1-.771.56l-4.618-2.428a2.122 2.122 0 0 0-1.973 0L6.396 21.01a.53.53 0 0 1-.77-.56l.881-5.139a2.122 2.122 0 0 0-.611-1.879L2.16 9.795a.53.53 0 0 1 .294-.906l5.165-.755a2.122 2.122 0 0 0 1.597-1.16z" />
   ),
+  time: (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 7v5l3 2" />
+    </>
+  ),
   rewind: (
     <>
       <path d="M12 6a2 2 0 0 0-3.414-1.414l-6 6a2 2 0 0 0 0 2.828l6 6A2 2 0 0 0 12 18z" />
@@ -63,12 +69,49 @@ const paths: Record<string, React.ReactNode> = {
       <path d="m6.18 5.276 3.1 3.899" />
     </>
   ),
+  cast: (
+    <>
+      <circle cx="9" cy="7" r="3" />
+      <path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6" />
+      <circle cx="17.5" cy="8.5" r="2.5" />
+      <path d="M16.8 14.2c2.9.6 5.2 3 5.2 5.8" />
+    </>
+  ),
   series: (
     <>
       <path d="m16 6 4 14" />
       <path d="M12 6v14" />
       <path d="M8 8v12" />
       <path d="M4 4v16" />
+    </>
+  ),
+  episode: (
+    <>
+      <rect x="3" y="5" width="18" height="14" rx="2" />
+      <path d="m10 9 5 3-5 3z" />
+    </>
+  ),
+  audio: (
+    <>
+      <path d="M9 18V5l12-2v13" />
+      <circle cx="6" cy="18" r="3" />
+      <circle cx="18" cy="16" r="3" />
+    </>
+  ),
+  subtitles: (
+    <>
+      <rect x="2" y="4" width="20" height="16" rx="2" />
+      <path d="M10.5 10.5a2.5 2.5 0 0 0-4.5 1.5 2.5 2.5 0 0 0 4.5 1.5" />
+      <path d="M18.5 10.5a2.5 2.5 0 0 0-4.5 1.5 2.5 2.5 0 0 0 4.5 1.5" />
+    </>
+  ),
+  live: (
+    <>
+      <circle cx="12" cy="12" r="2" />
+      <path d="M4.93 19.07a10 10 0 0 1 0-14.14" />
+      <path d="M7.76 16.24a6 6 0 0 1 0-8.49" />
+      <path d="M16.24 7.76a6 6 0 0 1 0 8.49" />
+      <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />
     </>
   ),
   guide: (
@@ -118,6 +161,14 @@ const paths: Record<string, React.ReactNode> = {
       <path d="M8 16H3v5" />
     </>
   ),
+  sort: (
+    <>
+      <path d="M8 5v14" />
+      <path d="m4 9 4-4 4 4" />
+      <path d="M16 19V5" />
+      <path d="m12 15 4 4 4-4" />
+    </>
+  ),
   edit: (
     <>
       <path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z" />
@@ -151,6 +202,12 @@ const paths: Record<string, React.ReactNode> = {
       <path d="M14.084 14.158a3 3 0 0 1-4.242-4.242" />
       <path d="M17.479 17.499a10.75 10.75 0 0 1-15.417-5.151 1 1 0 0 1 0-.696 10.75 10.75 0 0 1 4.446-5.143" />
       <path d="m2 2 20 20" />
+    </>
+  ),
+  check: (
+    <>
+      <path d="m9 12 2 2 4-4" />
+      <circle cx="12" cy="12" r="10" />
     </>
   ),
   tv: (
@@ -207,6 +264,12 @@ const paths: Record<string, React.ReactNode> = {
       <rect x="9" y="2" width="6" height="13" rx="3" />
     </>
   ),
+  close: (
+    <>
+      <path d="M18 6 6 18" />
+      <path d="m6 6 12 12" />
+    </>
+  ),
   return: (
     <>
       <path d="M9 14 4 9l5-5" />
@@ -230,10 +293,16 @@ const paths: Record<string, React.ReactNode> = {
 
 export type IconName = keyof typeof paths;
 
-export function Icon({ name }: { name: IconName }) {
+export function Icon({
+  name,
+  logicalDirection = false,
+}: {
+  name: IconName;
+  logicalDirection?: boolean;
+}) {
   return (
     <svg
-      className={`icon icon-${name}`}
+      className={`icon icon-${name} ${logicalDirection ? "icon-logical-direction" : ""}`.trim()}
       viewBox="0 0 24 24"
       aria-hidden="true"
       focusable="false"

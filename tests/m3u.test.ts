@@ -1,11 +1,52 @@
 import { test } from "vitest";
 import assert from "node:assert/strict";
-import { UNCATEGORISED, groupByCategory, parseM3U } from "../src/services/m3u";
+import {
+  UNCATEGORISED,
+  groupByCategory,
+  parseM3U,
+  sourceFingerprint,
+} from "../src/services/m3u";
 
 /**
  * The parser is the one part of the app fed by strangers, so it is the part worth pinning
  * down. Every case here is a way a real playlist bends the format, not a hypothetical.
  */
+
+test("source fingerprints are stable lowercase hexadecimal values", () => {
+  const fingerprint = sourceFingerprint(
+    "a.tv",
+    "Channel A",
+    "News",
+    "http://example.com/a.m3u8",
+  );
+  assert.equal(
+    fingerprint,
+    sourceFingerprint("a.tv", "Channel A", "News", "http://example.com/a.m3u8"),
+  );
+  assert.match(fingerprint, /^[0-9a-f]{16}$/);
+  assert.notEqual(
+    fingerprint,
+    sourceFingerprint("a.tv", "شبکه یک", "News", "http://example.com/a.m3u8"),
+  );
+  assert.equal(fingerprint.includes("example"), false);
+});
+
+test("duplicate source fingerprints receive deterministic occurrence suffixes", () => {
+  const channels = parseM3U(`#EXTM3U
+#EXTINF:-1 tvg-id="same" group-title="News",Same
+http://user:secret@example.com/live
+#EXTINF:-1 tvg-id="same" group-title="News",Same
+http://user:secret@example.com/live`);
+  assert.match(channels[0].sourceFingerprint ?? "", /^[0-9a-f]{16}$/);
+  assert.equal(channels[1].sourceFingerprint, `${channels[0].sourceFingerprint}00000002`);
+  assert.equal(channels[1].sourceFingerprint?.includes("secret"), false);
+  const reordered = parseM3U(`#EXTM3U
+#EXTINF:-1 tvg-id="other",Other
+http://example.com/other
+#EXTINF:-1 tvg-id="same" group-title="News",Same
+http://user:secret@example.com/live`);
+  assert.equal(reordered[1].sourceFingerprint, channels[0].sourceFingerprint);
+});
 
 test("reads the attributes and the title", () => {
   const [c] = parseM3U(`#EXTM3U
@@ -19,6 +60,144 @@ http://example.com/a.m3u8`);
   assert.equal(c.quality, "FHD");
   assert.equal(c.url, "http://example.com/a.m3u8");
   assert.equal(c.number, 1);
+});
+
+test("reads the provider channel numbers from the issue 46 example", () => {
+  const channels = parseM3U(`#EXTM3U
+#EXTINF:-1 tvg-chno="1",Canal 1
+http://example.invalid/1
+#EXTINF:-1 tvg-chno="2",Canal 2 CDR
+http://example.invalid/2
+#EXTINF:-1 tvg-chno="4",Canal 4
+http://example.invalid/4
+#EXTINF:-1 tvg-chno="6",Canal 6
+http://example.invalid/6
+#EXTINF:-1 tvg-chno="8",Canal 8
+http://example.invalid/8
+#EXTINF:-1 tvg-chno="11",Canal 11
+http://example.invalid/11
+#EXTINF:-1 tvg-chno="88",88 Stereo
+http://example.invalid/88`);
+  assert.deepEqual(
+    channels.map((channel) => channel.number),
+    [1, 2, 4, 6, 8, 11, 88],
+  );
+});
+
+test("missing numbers follow the last emitted number, including after a lower provider number", () => {
+  const channels = parseM3U(`#EXTM3U
+#EXTINF:-1,First
+http://example.invalid/first
+#EXTINF:-1 TVG-CHNO=' 0042 ',Forty Two
+http://example.invalid/forty-two
+#EXTINF:-1,Next
+http://example.invalid/next
+#EXTINF:-1 tvg-chno="4",Four
+http://example.invalid/four
+#EXTINF:-1,Last
+http://example.invalid/last`);
+  assert.deepEqual(
+    channels.map((channel) => channel.number),
+    [1, 42, 43, 4, 5],
+  );
+});
+
+test.each([
+  "",
+  " ",
+  "0",
+  "-1",
+  "7.1",
+  "7.0",
+  "+7",
+  "1e3",
+  "0x10",
+  "NaN",
+  "Infinity",
+  "12text",
+  "9007199254740992",
+  "9007199254740993",
+])("invalid tvg-chno %j uses fallback numbering without poisoning later entries", (value) => {
+  const channels = parseM3U(`#EXTM3U
+#EXTINF:-1 tvg-chno="40",Forty
+http://example.invalid/forty
+#EXTINF:-1 tvg-chno="${value}",Fallback
+http://example.invalid/fallback
+#EXTINF:-1,Next
+http://example.invalid/next`);
+  assert.deepEqual(
+    channels.map((channel) => channel.number),
+    [40, 41, 42],
+  );
+});
+
+test("an overflowing increment falls back to the emitted channel's playlist position", () => {
+  const channels = parseM3U(`#EXTM3U
+#EXTINF:-1 tvg-chno="9007199254740991",Largest
+http://example.invalid/largest
+#EXTINF:-1,Fallback
+http://example.invalid/fallback
+#EXTINF:-1,Next
+http://example.invalid/next`);
+  assert.deepEqual(
+    channels.map((channel) => channel.number),
+    [9007199254740991, 2, 3],
+  );
+});
+
+test("entries without a playable URL do not advance fallback numbering", () => {
+  const channels = parseM3U(`#EXTM3U
+#EXTINF:-1 tvg-chno="500",Discarded
+not a URL
+#EXTINF:-1,First
+http://example.invalid/first
+#EXTINF:-1 tvg-chno="800",Also Discarded
+#EXTVLCOPT:network-caching=1000
+#EXTINF:-1,Second
+http://example.invalid/second
+#EXTINF:-1,Third
+http://example.invalid/third
+#EXTINF:-1 tvg-chno="900",No URL`);
+  assert.deepEqual(
+    channels.map((channel) => channel.number),
+    [1, 2, 3],
+  );
+});
+
+test("provider numbers and duplicates do not reorder or remove channels", () => {
+  const channels = parseM3U(`#EXTM3U
+#EXTINF:-1 tvg-chno="88",First
+http://example.invalid/first
+#EXTINF:-1 tvg-chno="2",Second
+http://example.invalid/second
+#EXTINF:-1 tvg-chno="2",Third
+http://example.invalid/third`);
+  assert.deepEqual(
+    channels.map((channel) => [channel.name, channel.number]),
+    [
+      ["First", 88],
+      ["Second", 2],
+      ["Third", 2],
+    ],
+  );
+});
+
+test("changing only provider numbers preserves channel IDs and source fingerprints", () => {
+  const original = `#EXTM3U
+#EXTINF:-1 tvg-id="same" group-title="News",One
+http://example.invalid/one
+#EXTINF:-1 tvg-id="same" group-title="News",Two
+http://example.invalid/two`;
+  const before = parseM3U(original);
+  const after = parseM3U(original.replace(/tvg-id="same"/g, 'tvg-id="same" tvg-chno="88"'));
+  assert.deepEqual(
+    after.map((channel) => channel.number),
+    [88, 88],
+  );
+  assert.deepEqual(
+    after.map((channel) => [channel.id, channel.sourceFingerprint]),
+    before.map((channel) => [channel.id, channel.sourceFingerprint]),
+  );
 });
 
 test("a title may contain commas, and only the first one separates", () => {
@@ -192,4 +371,49 @@ http://example.com/b.m3u8
 http://example.com/c.m3u8`);
   const at = channels.findIndex((c) => c.id === channels[1].id);
   assert.equal(at, 1);
+});
+
+test("a quoted attribute value may contain commas without ending the attributes", () => {
+  const [c] = parseM3U(`#EXTM3U
+#EXTINF:-1 tvg-id="101tvAntequera.es@SD" tvg-logo="http://example.com/antequera.png" http-user-agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" group-title="General",101tv Antequera (720p) [Geo-blocked]
+http://example.com/antequera.m3u8`);
+  assert.equal(c.id, "101tvAntequera.es@SD");
+  assert.equal(c.name, "101tv Antequera (720p) [Geo-blocked]");
+  assert.equal(c.group, "General");
+  assert.equal(c.categoryKey, "General");
+  assert.equal(c.logo, "http://example.com/antequera.png");
+});
+
+test("single quoted attribute values may contain commas and double quotes", () => {
+  const [c] = parseM3U(`#EXTM3U
+#EXTINF:-1 tvg-id='quoted.tv' http-user-agent='Agent "quoted", Next' group-title='News, "World"',Kid's News, Sport
+http://example.com/quoted.m3u8`);
+  assert.equal(c.id, "quoted.tv");
+  assert.equal(c.group, 'News, "World"');
+  assert.equal(c.name, "Kid's News, Sport");
+});
+
+test("an apostrophe inside a double quoted value does not close it", () => {
+  const [c] = parseM3U(`#EXTM3U
+#EXTINF:-1 group-title="Children's, Family",Kid's News, Sport
+http://example.com/kids.m3u8`);
+  assert.equal(c.group, "Children's, Family");
+  assert.equal(c.name, "Kid's News, Sport");
+});
+
+test("a line with no title comma still reads quoted commas as values", () => {
+  const [c] = parseM3U(`#EXTM3U
+#EXTINF:-1 tvg-name="News, Sport" group-title="General"
+http://example.com/news.m3u8`);
+  assert.equal(c.name, "News, Sport");
+  assert.equal(c.group, "General");
+  assert.equal(c.categoryKey, "General");
+});
+
+test("an apostrophe in unquoted metadata does not open a quoted value", () => {
+  const [c] = parseM3U(`#EXTM3U
+#EXTINF:-1 http-user-agent=Kid'sBrowser group-title="General",A
+http://example.com/a.m3u8`);
+  assert.equal(c.name, "A");
+  assert.equal(c.group, "General");
 });

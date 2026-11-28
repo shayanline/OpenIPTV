@@ -3,7 +3,7 @@ import { afterEach, beforeEach, expect, test } from "vitest";
 import { cleanup, screen } from "@testing-library/react";
 import { KEY } from "../src/hooks/useRemote";
 import { applyDocumentLocale, type Locale, LOCALES } from "../src/services/locale";
-import { mountApp, panelOpen, press } from "./support/app";
+import { finishPageEntry, mountApp, panelOpen, press } from "./support/app";
 import "../src/styles/app.css";
 
 const fontsPath = "public/fonts/fonts.css";
@@ -89,6 +89,7 @@ test("the Persian system language applies RTL and opens the panel with Right", a
   expect(panelOpen()).toBe(true);
 
   press(KEY.YELLOW);
+  await finishPageEntry();
 
   expect(screen.getByRole("heading", { name: "ظاهر" })).toBeTruthy();
   expect(screen.getByRole("button", { name: "زبان, فارسی" })).toBeTruthy();

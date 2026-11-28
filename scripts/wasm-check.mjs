@@ -162,6 +162,53 @@ for (const name of managementAsked) {
   }
 }
 
+if (compiledManagement) {
+  // socket_host.h defines the firmware ABI, which is not always the POSIX C signature.
+  const signatures = [
+    ["__wasm_socket", 3],
+    ["__wasm_setsockopt", 5],
+    ["__wasm_bind", 3],
+    ["__wasm_listen", 2],
+    ["__wasm_close", 1],
+    ["__wasm_poll", 3],
+    ["__wasm_accept", 5],
+    ["__wasm_recv", 4],
+    ["__wasm_send", 4],
+  ];
+  const leb = (value) => {
+    const bytes = [];
+    do {
+      const next = value & 127;
+      value >>>= 7;
+      bytes.push(next | (value ? 128 : 0));
+    } while (value);
+    return bytes;
+  };
+  const section = (id, bytes) => [id, ...leb(bytes.length), ...bytes];
+  const count = signatures.length;
+  // Typed Wasm exports enforce link signatures. Plain JavaScript mocks cannot do that.
+  const types = signatures.flatMap(([, arity]) => [96, arity, ...Array(arity).fill(127), 1, 127]);
+  const exports = signatures.flatMap(([name], index) => [
+    ...leb(name.length),
+    ...new TextEncoder().encode(name),
+    0,
+    index,
+  ]);
+  const fixture = new Uint8Array([
+    0, 97, 115, 109, 1, 0, 0, 0,
+    ...section(1, [count, ...types]),
+    ...section(3, [count, ...signatures.map((_, index) => index)]),
+    ...section(7, [count, ...exports]),
+    ...section(10, [count, ...signatures.flatMap(() => [4, 0, 65, 0, 11])]),
+  ]);
+  const env = new WebAssembly.Instance(new WebAssembly.Module(fixture)).exports;
+  try {
+    new WebAssembly.Instance(compiledManagement, { env });
+  } catch (error) {
+    complaints.push(`${MANAGEMENT_MODULE} does not link against Samsung's socket ABI: ${error.message}`);
+  }
+}
+
 if (complaints.length) {
   console.error("The committed WebAssembly does not hold together:\n");
   for (const complaint of complaints) console.error(`  ${complaint}`);

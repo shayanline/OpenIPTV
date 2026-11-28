@@ -18,9 +18,7 @@ let decodeCalls = 0;
 beforeEach(() => {
   releaseDecode = [];
   decodeCalls = 0;
-  vi.stubGlobal("fetch", () =>
-    Promise.resolve({ ok: true, blob: () => Promise.resolve(new Blob()) }),
-  );
+  vi.stubGlobal("fetch", () => Promise.resolve(new Response(new Blob(["logo"]))));
   vi.stubGlobal("createImageBitmap", () => {
     decodeCalls += 1;
     return new Promise((resolve) => {
@@ -41,6 +39,13 @@ afterEach(() => {
  */
 const load = () => {
   vi.resetModules();
+  vi.doMock("../src/services/workload", () => ({
+    artworkWorkload: () => ({ loads: 18, decodes: 2, prefetch: 2 }),
+    observeArtworkWorkload: () => () => {},
+    recordArtworkDecode: () => {},
+    recordArtworkLoad: () => {},
+    trackArtworkWork: () => () => {},
+  }));
   return import("../src/services/logos");
 };
 

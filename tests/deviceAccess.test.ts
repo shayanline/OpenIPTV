@@ -158,6 +158,44 @@ describe("device pairing", () => {
     expect(counts).toEqual([1, 1, 0]);
   });
 
+  test("paired presence is a memory snapshot between device mutations", async () => {
+    const session = createPairingSession(NOW);
+    const paired = await pairDevice({ secret: session.secret, name: "Device" }, NOW + 1);
+    if (!paired.ok) throw new Error("pairing failed");
+    const reads = vi.spyOn(Storage.prototype, "getItem");
+    reads.mockClear();
+
+    expect(hasPairedDevices()).toBe(true);
+    expect(hasPairedDevices()).toBe(true);
+    expect(reads).not.toHaveBeenCalled();
+
+    revokePairedDevice(paired.deviceId);
+    reads.mockClear();
+    expect(hasPairedDevices()).toBe(false);
+    expect(reads).not.toHaveBeenCalled();
+  });
+
+  test("migrates the previous authorised phone key once", () => {
+    localStorage.setItem(
+      "openiptv.phones",
+      JSON.stringify([
+        {
+          id: "phone-one",
+          name: "Phone",
+          credentialHash: "hash",
+          createdAt: 1,
+          lastUsedAt: 2,
+        },
+      ]),
+    );
+    expect(listPairedDevices()).toEqual([
+      { id: "phone-one", name: "Phone", createdAt: 1, lastUsedAt: 2 },
+    ]);
+    expect(localStorage.getItem("openiptv.phones")).toBeNull();
+    expect(JSON.parse(localStorage.getItem("openiptv.devices") ?? "[]")).toHaveLength(1);
+    expect(listPairedDevices()).toHaveLength(1);
+  });
+
   test("ignores malformed persisted records", () => {
     localStorage.setItem("openiptv.devices", JSON.stringify([{ id: 3, credentialHash: null }]));
 

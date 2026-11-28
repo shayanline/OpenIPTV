@@ -1,12 +1,21 @@
 import assert from "node:assert/strict";
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { GuideList } from "../src/components/GuideList";
 import { KEY } from "../src/hooks/useRemote";
-import { formatTime } from "../src/services/locale";
+import { formatTime, translate } from "../src/services/locale";
 import type { ChannelGuide } from "../src/stores/library";
-import type { PlaybackTarget } from "../src/types";
+import type { Channel, PlaybackTarget } from "../src/types";
 import { finishPlayback, mountApp, played, press, settle, XTREAM_SOURCE } from "./support/app";
+
+const GUIDE_CHANNEL: Channel = {
+  id: "xtream:pl-1:live:1",
+  name: "Provider One",
+  group: "News",
+  url: "http://provider.example/live/viewer/secret/1.m3u8",
+  quality: "",
+  number: 1,
+};
 
 const target: PlaybackTarget = {
   id: "xtream:pl-1:catchup:1:past",
@@ -61,7 +70,7 @@ test("GuideList formats programme timestamps in the viewer locale and timezone",
   const stopTimestamp = 3600;
   render(
     <GuideList
-      channel="Provider One"
+      channel={GUIDE_CHANNEL}
       guide={{
         state: "loaded",
         items: [
@@ -81,8 +90,9 @@ test("GuideList formats programme timestamps in the viewer locale and timezone",
       focused
       scale={1}
       onMove={() => {}}
-      onSelect={() => {}}
+      onPlay={() => {}}
       onRetry={() => {}}
+      onWheel={() => {}}
     />,
   );
 
@@ -95,17 +105,18 @@ test("GuideList formats programme timestamps in the viewer locale and timezone",
 });
 
 test("GuideList keeps every programme readable and only offers valid catchup", () => {
-  const onSelect = vi.fn();
+  const onPlay = vi.fn();
   render(
     <GuideList
-      channel="Provider One"
+      channel={GUIDE_CHANNEL}
       guide={loadedGuide}
       index={0}
       focused
       scale={1}
       onMove={() => {}}
-      onSelect={onSelect}
+      onPlay={onPlay}
       onRetry={() => {}}
+      onWheel={() => {}}
     />,
   );
 
@@ -116,24 +127,25 @@ test("GuideList keeps every programme readable and only offers valid catchup", (
   const playButtons = screen.getAllByRole("button", { name: "Play from start" });
   expect(playButtons).toHaveLength(1);
   fireEvent.click(playButtons[0]);
-  expect(onSelect).toHaveBeenCalledWith(0);
+  expect(onPlay).toHaveBeenCalledWith(0);
 });
 
 test("GuideList visibly selects programmes without catchup", () => {
   render(
     <GuideList
-      channel="Provider One"
+      channel={GUIDE_CHANNEL}
       guide={loadedGuide}
       index={1}
       focused
       scale={1}
       onMove={() => {}}
-      onSelect={() => {}}
+      onPlay={() => {}}
       onRetry={() => {}}
+      onWheel={() => {}}
     />,
   );
 
-  expect(document.querySelector(".guide-row.selected .row-label")?.textContent).toBe(
+  expect(document.querySelector(".guide-row.cursor .row-label")?.textContent).toBe(
     "Evening News",
   );
 });
@@ -152,13 +164,14 @@ test("GuideList moves focus to the viewport edge before scrolling", () => {
     })),
   };
   const props = {
-    channel: "Provider One",
+    channel: GUIDE_CHANNEL,
     guide,
     focused: true,
     scale: 1,
     onMove: () => {},
-    onSelect: () => {},
+    onPlay: () => {},
     onRetry: () => {},
+    onWheel: () => {},
   };
 
   try {
@@ -189,13 +202,13 @@ test.each([
   const retry = vi.fn();
   render(
     <GuideList
-      channel="Provider One"
+      channel={GUIDE_CHANNEL}
       guide={{ state, items: [], ...(state === "failed" ? { error: "Guide failed" } : {}) }}
       index={0}
       focused
       scale={1}
       onMove={() => {}}
-      onSelect={() => {}}
+      onPlay={() => {}}
       onRetry={retry}
     />,
   );
@@ -261,8 +274,129 @@ const xtreamFetch = async (input: string | URL) => {
       ],
     },
   };
-  return { ok: true, status: 200, json: async () => body[action] } as Response;
+  return new Response(JSON.stringify(body[action]), {
+    status: 200,
+    headers: { "Content-Type": "application/json" },
+  });
 };
+
+/* Right opens the deck, then moves to Guide in the trailing programme card. */
+async function openGuideViaDeck() {
+  press(KEY.RIGHT);
+  press(KEY.RIGHT);
+  press(KEY.ENTER);
+  await settle(0);
+}
+
+test("the live Guide shows its channel header and truthful hints for the selected programme", async () => {
+  await mountApp("", { source: XTREAM_SOURCE, fetchImplementation: xtreamFetch });
+  press(KEY.ENTER);
+  await settle(0);
+  await openGuideViaDeck();
+
+  const drawer = screen.getByRole("complementary", {
+    name: "Programme guide: Provider One",
+  });
+  expect(screen.getByRole("heading", { level: 2, name: "Provider One" })).toBeTruthy();
+  expect(screen.getByText("Programme Guide")).toBeTruthy();
+  expect(drawer.querySelector(".playback-drawer-head .icon-guide")).toBeTruthy();
+  expect(screen.getByRole("region", { name: "Programme guide: Provider One" })).toBeTruthy();
+  const hints = () => drawer.querySelector(".guide-drawer-hints")?.textContent;
+  expect(hints()).toBe("\u2190RETURNClose");
+  expect(drawer.querySelector(".playback-drawer-body")?.nextElementSibling).toBe(
+    drawer.querySelector(".playback-drawer-footer"),
+  );
+
+  press(KEY.UP);
+  expect(hints()).toBe("OKSelect\u2190RETURNClose");
+  press(KEY.DOWN);
+  press(KEY.DOWN);
+  expect(hints()).toBe("\u2190RETURNClose");
+  const before = played.length;
+  press(KEY.ENTER);
+  expect(played).toHaveLength(before);
+  expect(drawer.querySelector(".guide-drawer-hints button")).toBeNull();
+
+  press(KEY.BACK);
+  await settle(180);
+  expect(document.querySelector(".guide-drawer")).toBeNull();
+  expect(document.querySelector(".deck-programme-panel")?.hasAttribute("data-selected")).toBe(
+    true,
+  );
+});
+
+test("the live Guide translates its RTL header while preserving the provider channel name", async () => {
+  await mountApp("", { source: XTREAM_SOURCE, fetchImplementation: xtreamFetch });
+  press(KEY.ENTER);
+  await settle(0);
+  await openGuideViaDeck();
+  const { useSettings } = await import("../src/stores/settings");
+  const locale = useSettings.getState().locale;
+  try {
+    act(() => useSettings.setState({ locale: "fa" }));
+    const drawer = screen.getByRole("complementary", {
+      name: translate("fa", "guide.title", { category: "Provider One" }),
+    });
+    expect(screen.getByRole("heading", { level: 2, name: "Provider One" })).toBeTruthy();
+    expect(screen.getByText(translate("fa", "guide.subtitle"))).toBeTruthy();
+    expect(document.documentElement.dir).toBe("rtl");
+    expect(drawer.querySelector(".guide-drawer-hints")?.textContent).toContain(
+      translate("fa", "common.close"),
+    );
+    expect(drawer.querySelector(".playback-drawer-body")?.nextElementSibling).toBe(
+      drawer.querySelector(".playback-drawer-footer"),
+    );
+  } finally {
+    act(() => useSettings.setState({ locale }));
+  }
+});
+
+test.each(["loading", "empty", "failed"] as const)(
+  "the live Guide keeps its header and only actionable hints while %s",
+  async (state) => {
+    await mountApp("", { source: XTREAM_SOURCE, fetchImplementation: xtreamFetch });
+    press(KEY.ENTER);
+    await settle(0);
+    await openGuideViaDeck();
+    const { useLibrary } = await import("../src/stores/library");
+    const channelId = "xtream:pl-1:live:1";
+    act(() => {
+      useLibrary.setState({
+        guides: {
+          ...useLibrary.getState().guides,
+          [channelId]: {
+            state,
+            items: [],
+            ...(state === "failed" ? { error: "Guide failed" } : {}),
+          },
+        },
+      });
+    });
+    const drawer = screen.getByRole("complementary", {
+      name: "Programme guide: Provider One",
+    });
+    expect(screen.getByRole("heading", { level: 2, name: "Provider One" })).toBeTruthy();
+    expect(screen.getByText("Programme Guide")).toBeTruthy();
+    expect(drawer.querySelector(".guide-drawer-hints")?.textContent).toBe(
+      state === "failed" ? "OKSelect\u2190RETURNClose" : "\u2190RETURNClose",
+    );
+    if (state === "loading") expect(within(drawer).getByRole("status")).toBeTruthy();
+    if (state === "empty") {
+      expect(screen.getByText("No programme information is available.")).toBeTruthy();
+    }
+    if (state === "failed") {
+      const retry = vi.spyOn(useLibrary.getState(), "loadGuide").mockResolvedValue();
+      try {
+        press(KEY.ENTER);
+        expect(retry).toHaveBeenCalledExactlyOnceWith(
+          expect.objectContaining({ id: channelId }),
+        );
+      } finally {
+        retry.mockRestore();
+      }
+    }
+  },
+);
 
 test("Guide opens from live playback and starts archived playback", async () => {
   await mountApp("", { source: XTREAM_SOURCE, fetchImplementation: xtreamFetch });
@@ -270,14 +404,13 @@ test("Guide opens from live playback and starts archived playback", async () => 
 
   press(KEY.ENTER);
   await settle(0);
-  press(KEY.RIGHT);
-  await settle(0);
+  await openGuideViaDeck();
   expect(document.querySelector(".guide-drawer")).toBeTruthy();
   expect(document.querySelector(".guide-row.current .row-label")?.textContent).toBe(
     "News at Noon",
   );
   press(KEY.UP);
-  expect(document.querySelector(".guide-row.selected .row-label")?.textContent).toBe(
+  expect(document.querySelector(".guide-row.cursor .row-label")?.textContent).toBe(
     "Morning News",
   );
   press(KEY.DOWN);
@@ -293,7 +426,7 @@ test("Guide opens from live playback and starts archived playback", async () => 
   fireEvent.mouseEnter(document.querySelectorAll(".guide-row")[0]);
   expect(document.querySelector(".guide-row.cursor .row-label")?.textContent).toBe("Weather");
   fireEvent.click(document.querySelectorAll(".guide-row")[0]);
-  expect(document.querySelector(".guide-row.selected .row-label")?.textContent).toBe(
+  expect(document.querySelector(".guide-row.cursor .row-label")?.textContent).toBe(
     "Morning News",
   );
 
@@ -310,30 +443,28 @@ test("Guide opens from live playback and starts archived playback", async () => 
   expect(screen.getByText("Morning News")).toBeTruthy();
 });
 
-test("mouse wheel moves the programme guide selection in both directions", async () => {
+test("mouse wheel scrolls the programme guide without moving remote selection", async () => {
   await mountApp("", { source: XTREAM_SOURCE, fetchImplementation: xtreamFetch });
   press(KEY.ENTER);
   await settle(0);
-  press(KEY.RIGHT);
-  await settle(0);
+  await openGuideViaDeck();
   const viewport = document.querySelector(".guide-list .viewport");
   assert.ok(viewport);
 
+  const selected = document.querySelector(".guide-row.cursor .row-label")?.textContent;
   fireEvent.wheel(viewport, { deltaY: 100 });
-  expect(document.querySelector(".guide-row.selected .row-label")?.textContent).toBe("Weather");
+  expect(document.querySelector(".guide-row.cursor .row-label")?.textContent).toBe(selected);
 
+  await settle(120);
   fireEvent.wheel(viewport, { deltaY: -100 });
-  expect(document.querySelector(".guide-row.selected .row-label")?.textContent).toBe(
-    "News at Noon",
-  );
+  expect(document.querySelector(".guide-row.cursor .row-label")?.textContent).toBe(selected);
 });
 
 test("Guide clamps its cursor when refreshed programmes become shorter", async () => {
   await mountApp("", { source: XTREAM_SOURCE, fetchImplementation: xtreamFetch });
   press(KEY.ENTER);
   await settle(0);
-  press(KEY.RIGHT);
-  await settle(0);
+  await openGuideViaDeck();
   press(KEY.DOWN);
   expect(document.querySelector(".guide-row.cursor .row-label")?.textContent).toBe("Weather");
 
@@ -352,7 +483,7 @@ test("Guide clamps its cursor when refreshed programmes become shorter", async (
   });
   await settle(0);
 
-  expect(document.querySelector(".guide-row.selected .row-label")?.textContent).toBe(
+  expect(document.querySelector(".guide-row.cursor .row-label")?.textContent).toBe(
     "Morning News",
   );
 });
@@ -375,14 +506,16 @@ test("GREEN in Guide favourites its guide channel instead of the programme row i
       ],
       get_short_epg: { epg_listings: [] },
     };
-    return { ok: true, status: 200, json: async () => body[action] } as Response;
+    return new Response(JSON.stringify(body[action]), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
   };
   await mountApp("", { source: XTREAM_SOURCE, fetchImplementation });
   press(KEY.DOWN);
   press(KEY.ENTER);
   await settle(0);
-  press(KEY.RIGHT);
-  await settle(0);
+  await openGuideViaDeck();
 
   press(KEY.GREEN);
 
@@ -399,7 +532,10 @@ test("focused live guide loading waits for the row to settle", async () => {
     const action = url.searchParams.get("action") ?? "authenticate";
     if (action === "get_short_epg") {
       requested.push(url.searchParams.get("stream_id") ?? "");
-      return { ok: true, status: 200, json: async () => ({ epg_listings: [] }) } as Response;
+      return new Response(JSON.stringify({ epg_listings: [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
     }
     const body: Record<string, unknown> = {
       authenticate: {
@@ -414,7 +550,10 @@ test("focused live guide loading waits for the row to settle", async () => {
         { stream_id: "2", name: "Two", category_id: "10" },
       ],
     };
-    return { ok: true, status: 200, json: async () => body[action] } as Response;
+    return new Response(JSON.stringify(body[action]), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
   };
   await mountApp("", { source: XTREAM_SOURCE, fetchImplementation });
 
@@ -425,13 +564,21 @@ test("focused live guide loading waits for the row to settle", async () => {
   expect(requested).toEqual(["2"]);
 });
 
-test("playing an Xtream live channel loads now and next into the banner", async () => {
+test("playing an Xtream live channel loads now into the banner and now and next into the deck", async () => {
   await mountApp("", { source: XTREAM_SOURCE, fetchImplementation: xtreamFetch });
   press(KEY.ENTER);
   await settle(0);
 
   expect(screen.getByText("Now: News at Noon")).toBeTruthy();
-  expect(screen.getByText("Next: Weather")).toBeTruthy();
+  expect(screen.queryByText("Next: Weather")).toBeNull();
+
+  press(KEY.RIGHT);
+  await settle(0);
+  const panel = document.querySelector(".deck-programme-panel");
+  expect(panel?.textContent).toContain("News at Noon");
+  expect(panel?.textContent).toContain("Weather");
+  expect(panel?.textContent).not.toContain("Now:");
+  expect(panel?.textContent).not.toContain("Next:");
 });
 
 test("Guide disappears outside Xtream live", async () => {
@@ -442,16 +589,74 @@ test("Guide disappears outside Xtream live", async () => {
 
 test("opening and returning from Guide preserves the live row", async () => {
   await mountApp("", { source: XTREAM_SOURCE, fetchImplementation: xtreamFetch });
-  const selected = () => document.querySelector(".list .row.selected .row-label")?.textContent;
+  const selected = () => document.querySelector(".list .row.cursor .row-label")?.textContent;
   assert.equal(selected(), "Provider One");
 
   press(KEY.ENTER);
   await settle(0);
-  press(KEY.RIGHT);
-  await settle(0);
+  await openGuideViaDeck();
   expect(document.querySelector(".guide-drawer")).toBeTruthy();
   press(KEY.BACK);
   await settle(180);
 
   assert.equal(selected(), "Provider One");
 });
+
+/*
+ * Catchup started from the Guide has no finite return route, so leaving it must still
+ * release the playback drawer it was reading through: the information dialog goes, the
+ * Guide it came from takes the screen back, and no stale Details owner is left holding
+ * the keys afterwards.
+ */
+test.each(["stop", "ended"] as const)(
+  "details over Guide catchup releases its owner on %s",
+  async (exit) => {
+    await mountApp("", { source: XTREAM_SOURCE, fetchImplementation: xtreamFetch });
+    press(KEY.ENTER);
+    await settle(0);
+    await openGuideViaDeck();
+
+    /* Into the archived programme, then back out to the deck the Guide was opened from. */
+    press(KEY.UP);
+    press(KEY.ENTER);
+    await settle(0);
+    expect(played[played.length - 1]).toContain("/timeshift/");
+    press(KEY.BACK);
+    await settle(180);
+    expect(document.querySelector(".playback-deck")).toBeTruthy();
+
+    /* Deck to Details over the finite catchup picture. */
+    press(KEY.LEFT);
+    await settle(0);
+    press(KEY.ENTER);
+    await settle(0);
+    const details = document.querySelector(".playback-details");
+    expect(details).toBeTruthy();
+    expect(details?.textContent).toContain("Morning News");
+
+    if (exit === "stop") press(KEY.STOP);
+    else finishPlayback();
+    await settle(0);
+
+    /* The reading surface is gone and the Guide it was started from takes the screen
+       back, still answering the keys. */
+    expect(document.querySelector(".playback-details")).toBeNull();
+    const drawer = document.querySelector(".guide-drawer");
+    expect(drawer?.textContent).toContain("Morning News");
+    const cursor = () => drawer?.querySelector(".guide-row.cursor .row-label")?.textContent;
+    expect(cursor()).toBe("News at Noon");
+    press(KEY.UP);
+    expect(cursor()).toBe("Morning News");
+
+    /* Closing the Guide lands on the browser, whose Enter reaches a channel rather than
+       a stale Details surface that no longer has a target. */
+    press(KEY.BACK);
+    await settle(180);
+    expect(document.querySelector(".guide-drawer")).toBeNull();
+    const plays = played.length;
+    press(KEY.ENTER);
+    await settle(0);
+    expect(played).toHaveLength(plays + 1);
+    expect(played[played.length - 1]).not.toContain("/timeshift/");
+  },
+);

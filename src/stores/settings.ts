@@ -1,4 +1,8 @@
 import { create } from "zustand";
+import {
+  availableContentModes,
+  type ContentSectionVisibility,
+} from "../services/contentSections";
 import { isLocalePreference, type LocalePreference } from "../services/locale";
 import {
   m3uSource,
@@ -8,6 +12,8 @@ import {
 } from "../services/playlistUrl";
 import { readJSON, write } from "../services/store";
 import { usePersonal } from "./personal";
+import { removePlaylistLineup, resetLineups } from "./lineup";
+import type { LineupOrderMode } from "../services/lineup";
 
 /**
  * Everything the viewer can change, persisted to localStorage.
@@ -28,12 +34,12 @@ import { usePersonal } from "./personal";
  * rather than the platform's, and each maps onto a display mode the TV already has.
  */
 export const ASPECTS = [
-  { id: "fill", label: "Fill", note: "Fills the screen, cropping the edges of the picture" },
   {
     id: "fit",
     label: "Fit",
     note: "The whole picture, with bars if it does not fill the screen",
   },
+  { id: "fill", label: "Fill", note: "Fills the screen, cropping the edges of the picture" },
   { id: "stretch", label: "Stretch", note: "Fills the screen by distorting the picture" },
 ] as const;
 
@@ -46,19 +52,43 @@ export const FONT_SIZES = [
   { id: "xl", label: "Extra large", scale: 1.3 },
 ];
 
-export type HiddenCategoryMode = "exclude" | "search";
-
 export interface Playlist {
   id: string;
   name: string;
   source: PlaylistSource;
   sourceVersion: number;
-  hiddenCategories: string[];
-  hiddenCategoryMode: HiddenCategoryMode;
+  hiddenCategories?: string[];
   categoryCount?: number;
+  channelCount?: number;
 }
 
-interface Settings {
+export type StartupPlaylist =
+  | { mode: "last" }
+  | { mode: "ask" }
+  | { mode: "specific"; playlistId: string };
+
+export function isStartupPlaylist(value: unknown): value is StartupPlaylist {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const preference = value as Record<string, unknown>;
+  return preference.mode === "specific"
+    ? Object.keys(preference).length === 2 &&
+        typeof preference.playlistId === "string" &&
+        preference.playlistId.length > 0
+    : Object.keys(preference).length === 1 &&
+        (preference.mode === "last" || preference.mode === "ask");
+}
+
+function startupPlaylistFor(value: unknown, playlists: readonly Playlist[]): StartupPlaylist {
+  if (!isStartupPlaylist(value)) return { mode: "last" };
+  if (value.mode === "specific") {
+    return playlists.some((playlist) => playlist.id === value.playlistId)
+      ? { mode: "specific", playlistId: value.playlistId }
+      : { mode: "last" };
+  }
+  return { mode: value.mode };
+}
+
+interface Settings extends ContentSectionVisibility {
   locale: LocalePreference;
   fontSizeId: string;
   playlists: Playlist[];
@@ -69,8 +99,12 @@ interface Settings {
   aspectId: AspectId;
   showClock: boolean;
   showPlaybackStats: boolean;
+  hideEmptyCategories: boolean;
+  playlistShortcut: boolean;
+  startupPlaylist: StartupPlaylist;
+  // Live recovery keeps reopening forever instead of stopping after the bounded retries.
+  continuousReconnect: boolean;
   resumeLast: boolean;
-  sortAlphabetically: boolean;
   /**
    * Whether to repair playlists this television cannot read, on the television.
    *
@@ -85,18 +119,16 @@ interface Settings {
 
   set: <K extends keyof Settings>(key: K, value: Settings[K]) => void;
   addPlaylist: (name: string, source: PlaylistSource) => void;
-  removePlaylist: (id: string) => void;
-  updatePlaylist: (id: string, name: string, source: PlaylistSource) => void;
-  setHiddenCategories: (playlistId: string, categories: string[]) => void;
-  setCategoryHidden: (playlistId: string, category: string, hidden: boolean) => void;
-  setHiddenCategoryMode: (playlistId: string, mode: HiddenCategoryMode) => void;
+  removePlaylist: (id: string) => Promise<boolean>;
+  updatePlaylist: (id: string, name: string, source: PlaylistSource) => Promise<boolean>;
   setPlaylistCategoryCount: (playlistId: string, count: number) => void;
+  setPlaylistChannelCount: (playlistId: string, count: number) => void;
   replacePlaylists: (
     playlists: Playlist[],
     activePlaylistId: string,
     locale?: LocalePreference,
   ) => void;
-  reset: () => void;
+  reset: () => Promise<boolean>;
   scale: () => number;
   activePlaylist: () => Playlist | undefined;
 }
@@ -113,15 +145,17 @@ const DEFAULTS = {
   activePlaylistId: "",
   showNumbers: true,
   showLogos: true,
-  /* Fill, and it leads the list because it is the default. Almost everything in these
-     playlists is sixteen by nine, and a television that leaves bars around a picture which
-     would have fitted reads as a fault rather than as a choice. Fit is one press away for
-     the feeds that get cropped badly, which are the standard definition ones. */
-  aspectId: "fill" as AspectId,
+  aspectId: "fit" as AspectId,
   showClock: true,
   showPlaybackStats: false,
+  hideEmptyCategories: true,
+  playlistShortcut: true,
+  startupPlaylist: { mode: "last" } as StartupPlaylist,
+  showLive: true,
+  showMovies: true,
+  showSeries: true,
+  continuousReconnect: false,
   resumeLast: true,
-  sortAlphabetically: false,
   /* Off. Nothing that only some channels need should cost the others anything. */
   compatibility: false,
 };
@@ -190,6 +224,19 @@ function replacesAccount(left: PlaylistSource, right: PlaylistSource): boolean {
   );
 }
 
+function contentSourceKind(
+  settings: Pick<Settings, "playlists" | "activePlaylistId">,
+): "m3u" | "xtream" {
+  const playlist =
+    settings.playlists.find((item) => item.id === settings.activePlaylistId) ??
+    settings.playlists[0];
+  return playlist?.source.kind ?? "m3u";
+}
+
+let legacyOrderMode: LineupOrderMode | null = null;
+const migratedOrderPlaylists = new Set<string>();
+let legacyOrderPlaylistIds = new Set<string>();
+
 function load(): typeof DEFAULTS {
   // Merged rather than replaced, so a settings file written by an older version keeps working
   // when new keys appear.
@@ -198,6 +245,12 @@ function load(): typeof DEFAULTS {
     raw && typeof raw === "object" && !Array.isArray(raw)
       ? (raw as Record<string, unknown>)
       : {};
+  migratedOrderPlaylists.clear();
+  legacyOrderMode = Object.prototype.hasOwnProperty.call(saved, "sortAlphabetically")
+    ? saved.sortAlphabetically === true
+      ? "alphabetical"
+      : "provider"
+    : null;
   const merged = { ...DEFAULTS } as Record<string, unknown>;
   /*
    * And only keys this version knows, so a setting that has been removed does not live on in the
@@ -209,6 +262,18 @@ function load(): typeof DEFAULTS {
     if (key in saved) merged[key] = saved[key];
   }
   if (!isLocalePreference(merged.locale)) merged.locale = DEFAULTS.locale;
+  if (typeof merged.continuousReconnect !== "boolean") {
+    merged.continuousReconnect = DEFAULTS.continuousReconnect;
+  }
+  for (const key of [
+    "hideEmptyCategories",
+    "playlistShortcut",
+    "showLive",
+    "showMovies",
+    "showSeries",
+  ] as const) {
+    if (typeof merged[key] !== "boolean") merged[key] = DEFAULTS[key];
+  }
   merged.playlists = Array.isArray(merged.playlists)
     ? merged.playlists.reduce<Playlist[]>((playlists, value) => {
         if (!value || typeof value !== "object" || Array.isArray(value)) return playlists;
@@ -223,22 +288,40 @@ function load(): typeof DEFAULTS {
             typeof savedPlaylist.sourceVersion === "number" && savedPlaylist.sourceVersion >= 1
               ? Math.floor(savedPlaylist.sourceVersion)
               : 1,
-          hiddenCategories: Array.isArray(savedPlaylist.hiddenCategories)
-            ? savedPlaylist.hiddenCategories.filter(
-                (category): category is string => typeof category === "string",
-              )
-            : [],
-          hiddenCategoryMode:
-            savedPlaylist.hiddenCategoryMode === "search" ? "search" : "exclude",
+          ...(Array.isArray(savedPlaylist.hiddenCategories)
+            ? {
+                hiddenCategories: savedPlaylist.hiddenCategories.filter(
+                  (category): category is string => typeof category === "string",
+                ),
+              }
+            : {}),
           ...(typeof savedPlaylist.categoryCount === "number" &&
           savedPlaylist.categoryCount >= 0
             ? { categoryCount: Math.floor(savedPlaylist.categoryCount) }
+            : {}),
+          ...(typeof savedPlaylist.channelCount === "number" && savedPlaylist.channelCount >= 0
+            ? { channelCount: Math.floor(savedPlaylist.channelCount) }
             : {}),
         });
         return playlists;
       }, [])
     : [];
-  const canonical = JSON.stringify(merged);
+  legacyOrderPlaylistIds = new Set(
+    legacyOrderMode ? (merged.playlists as Playlist[]).map((playlist) => playlist.id) : [],
+  );
+  merged.startupPlaylist = startupPlaylistFor(
+    merged.startupPlaylist,
+    merged.playlists as Playlist[],
+  );
+  const appearance = merged as typeof DEFAULTS;
+  if (!availableContentModes(contentSourceKind(appearance), appearance).length) {
+    appearance.showLive = true;
+  }
+  const canonical = JSON.stringify(
+    legacyOrderMode
+      ? { ...merged, sortAlphabetically: saved.sortAlphabetically === true }
+      : merged,
+  );
   if (JSON.stringify(saved) !== canonical) write(KEY, canonical);
   return merged as typeof DEFAULTS;
 }
@@ -249,127 +332,201 @@ function persist(state: Settings) {
     addPlaylist: _a,
     removePlaylist: _r,
     updatePlaylist: _u,
-    setHiddenCategories: _hc,
-    setCategoryHidden: _ch,
-    setHiddenCategoryMode: _cm,
     setPlaylistCategoryCount: _cc,
+    setPlaylistChannelCount: _ccn,
     replacePlaylists: _rp,
     reset: _re,
     scale: _sc,
     activePlaylist: _ap,
     ...data
   } = state;
-  write(KEY, JSON.stringify(data));
+  write(
+    KEY,
+    JSON.stringify(
+      legacyOrderMode
+        ? { ...data, sortAlphabetically: legacyOrderMode === "alphabetical" }
+        : data,
+    ),
+  );
 }
 
-export const useSettings = create<Settings>((set, get) => ({
-  ...load(),
+export const useSettings = create<Settings>((update, get) => {
+  const set = (patch: Partial<Settings>) => {
+    const next = { ...get(), ...patch };
+    if ("playlists" in patch || "startupPlaylist" in patch) {
+      patch.startupPlaylist = startupPlaylistFor(next.startupPlaylist, next.playlists);
+    }
+    update(
+      availableContentModes(contentSourceKind(next), next).length
+        ? patch
+        : { ...patch, showLive: true },
+    );
+  };
+  return {
+    ...load(),
 
-  set(key, value) {
-    set({ [key]: value } as Pick<Settings, typeof key>);
-    persist(get());
-  },
+    set(key, value) {
+      const patch = { [key]: value } as Pick<Settings, typeof key>;
+      const next = { ...get(), ...patch };
+      if (
+        (key === "showLive" || key === "showMovies" || key === "showSeries") &&
+        value === false &&
+        !availableContentModes(contentSourceKind(next), next).length
+      ) {
+        return;
+      }
+      set(patch);
+      persist(get());
+    },
 
-  addPlaylist(name, source) {
-    const playlist = {
-      id: freshId(get().playlists),
-      name: name.trim(),
-      source,
-      sourceVersion: 1,
-      hiddenCategories: [],
-      hiddenCategoryMode: "exclude" as HiddenCategoryMode,
-    };
-    const first = !get().playlists.length;
-    set({
-      playlists: [...get().playlists, playlist],
-      // The first one added becomes the active one, so adding a playlist is the whole of
-      // first run rather than adding then choosing.
-      activePlaylistId: first ? playlist.id : get().activePlaylistId,
-    });
-    persist(get());
-  },
+    addPlaylist(name, source) {
+      const playlist = {
+        id: freshId(get().playlists),
+        name: name.trim(),
+        source,
+        sourceVersion: 1,
+      };
+      const first = !get().playlists.length;
+      set({
+        playlists: [...get().playlists, playlist],
+        // The first one added becomes the active one, so adding a playlist is the whole of
+        // first run rather than adding then choosing.
+        activePlaylistId: first ? playlist.id : get().activePlaylistId,
+      });
+      persist(get());
+    },
 
-  removePlaylist(id) {
-    const remaining = get().playlists.filter((p) => p.id !== id);
-    set({
-      playlists: remaining,
-      activePlaylistId:
-        get().activePlaylistId === id ? (remaining[0]?.id ?? "") : get().activePlaylistId,
-    });
-    usePersonal.getState().clearPlaylistPersonal(id);
-    persist(get());
-  },
+    async removePlaylist(id) {
+      const existing = get().playlists.find((playlist) => playlist.id === id);
+      if (!existing) return false;
+      try {
+        await removePlaylistLineup(existing);
+      } catch {
+        return false;
+      }
+      const remaining = get().playlists.filter((p) => p.id !== id);
+      set({
+        playlists: remaining,
+        activePlaylistId:
+          get().activePlaylistId === id ? (remaining[0]?.id ?? "") : get().activePlaylistId,
+      });
+      usePersonal.getState().clearPlaylistPersonal(id);
+      persist(get());
+      return true;
+    },
 
-  updatePlaylist(id, name, source) {
-    const existing = get().playlists.find((playlist) => playlist.id === id);
-    const replaceAccount = existing ? replacesAccount(existing.source, source) : false;
-    set({
-      playlists: get().playlists.map((p) => {
-        if (p.id !== id) return p;
-        const changed = !sameSource(p.source, source);
-        return {
-          ...p,
-          name: name.trim(),
-          source,
-          sourceVersion: changed ? p.sourceVersion + 1 : p.sourceVersion,
-          hiddenCategories: replaceAccount ? [] : p.hiddenCategories,
-          categoryCount: changed ? undefined : p.categoryCount,
-        };
-      }),
-    });
-    if (replaceAccount) usePersonal.getState().clearPlaylistPersonal(id);
-    persist(get());
-  },
+    async updatePlaylist(id, name, source) {
+      const existing = get().playlists.find((playlist) => playlist.id === id);
+      const replaceAccount = existing ? replacesAccount(existing.source, source) : false;
+      if (replaceAccount && existing) {
+        try {
+          await removePlaylistLineup(existing);
+        } catch {
+          return false;
+        }
+      }
+      set({
+        playlists: get().playlists.map((p) => {
+          if (p.id !== id) return p;
+          const changed = !sameSource(p.source, source);
+          const { hiddenCategories: _hiddenCategories, ...withoutLegacyHidden } = p;
+          return {
+            ...(replaceAccount ? withoutLegacyHidden : p),
+            name: name.trim(),
+            source,
+            sourceVersion: changed ? p.sourceVersion + 1 : p.sourceVersion,
+            categoryCount: changed ? undefined : p.categoryCount,
+            channelCount: changed ? undefined : p.channelCount,
+          };
+        }),
+      });
+      if (replaceAccount) usePersonal.getState().clearPlaylistPersonal(id);
+      persist(get());
+      return true;
+    },
 
-  setHiddenCategories(playlistId, categories) {
-    set({
-      playlists: get().playlists.map((playlist) =>
-        playlist.id === playlistId ? { ...playlist, hiddenCategories: categories } : playlist,
-      ),
-    });
-    persist(get());
-  },
+    setPlaylistCategoryCount(playlistId, count) {
+      const playlist = get().playlists.find((item) => item.id === playlistId);
+      const next = Math.max(0, Math.floor(count));
+      if (!playlist || playlist.categoryCount === next) return;
+      set({
+        playlists: get().playlists.map((item) =>
+          item.id === playlistId ? { ...item, categoryCount: next } : item,
+        ),
+      });
+      persist(get());
+    },
 
-  setCategoryHidden(playlistId, category, hidden) {
-    const playlist = get().playlists.find((item) => item.id === playlistId);
-    if (!playlist) return;
-    const without = playlist.hiddenCategories.filter((name) => name !== category);
-    get().setHiddenCategories(playlistId, hidden ? [...without, category] : without);
-  },
+    setPlaylistChannelCount(playlistId, count) {
+      const playlist = get().playlists.find((item) => item.id === playlistId);
+      const next = Math.max(0, Math.floor(count));
+      if (!playlist || playlist.channelCount === next) return;
+      set({
+        playlists: get().playlists.map((item) =>
+          item.id === playlistId ? { ...item, channelCount: next } : item,
+        ),
+      });
+      persist(get());
+    },
 
-  setHiddenCategoryMode(playlistId, mode) {
-    set({
-      playlists: get().playlists.map((playlist) =>
-        playlist.id === playlistId ? { ...playlist, hiddenCategoryMode: mode } : playlist,
-      ),
-    });
-    persist(get());
-  },
+    replacePlaylists(playlists, activePlaylistId, locale) {
+      set({ playlists, activePlaylistId, ...(locale ? { locale } : {}) });
+      persist(get());
+    },
 
-  setPlaylistCategoryCount(playlistId, count) {
-    const playlist = get().playlists.find((item) => item.id === playlistId);
-    const next = Math.max(0, Math.floor(count));
-    if (!playlist || playlist.categoryCount === next) return;
-    set({
-      playlists: get().playlists.map((item) =>
-        item.id === playlistId ? { ...item, categoryCount: next } : item,
-      ),
-    });
-    persist(get());
-  },
+    async reset() {
+      try {
+        await resetLineups(get().playlists);
+      } catch {
+        return false;
+      }
+      legacyOrderMode = null;
+      legacyOrderPlaylistIds = new Set();
+      migratedOrderPlaylists.clear();
+      set({ ...DEFAULTS });
+      usePersonal.getState().clearPersonal();
+      persist(get());
+      return true;
+    },
 
-  replacePlaylists(playlists, activePlaylistId, locale) {
-    set({ playlists, activePlaylistId, ...(locale ? { locale } : {}) });
-    persist(get());
-  },
+    scale: () => FONT_SIZES.find((s) => s.id === get().fontSizeId)?.scale ?? 1,
+    activePlaylist: () =>
+      get().playlists.find((p) => p.id === get().activePlaylistId) ?? get().playlists[0],
+  };
+});
 
-  reset() {
-    set({ ...DEFAULTS });
-    usePersonal.getState().clearPersonal();
-    persist(get());
-  },
+export function completeHiddenCategoryMigration(playlistId: string): void {
+  const state = useSettings.getState();
+  if (
+    !state.playlists.some((playlist) => playlist.id === playlistId && playlist.hiddenCategories)
+  ) {
+    return;
+  }
+  useSettings.setState({
+    playlists: state.playlists.map((playlist) => {
+      if (playlist.id !== playlistId) return playlist;
+      const { hiddenCategories: _hiddenCategories, ...remaining } = playlist;
+      return remaining;
+    }),
+  });
+  persist(useSettings.getState());
+}
 
-  scale: () => FONT_SIZES.find((s) => s.id === get().fontSizeId)?.scale ?? 1,
-  activePlaylist: () =>
-    get().playlists.find((p) => p.id === get().activePlaylistId) ?? get().playlists[0],
-}));
+export function legacyLineupOrderMode(): LineupOrderMode | null {
+  return legacyOrderMode;
+}
+
+export function completeOrderModeMigration(playlistId: string): void {
+  if (!legacyOrderMode || !legacyOrderPlaylistIds.has(playlistId)) return;
+  migratedOrderPlaylists.add(playlistId);
+  const state = useSettings.getState();
+  const remaining = Array.from(legacyOrderPlaylistIds).filter(
+    (id) =>
+      state.playlists.some((playlist) => playlist.id === id) && !migratedOrderPlaylists.has(id),
+  );
+  if (remaining.length) return;
+  legacyOrderMode = null;
+  legacyOrderPlaylistIds = new Set();
+  migratedOrderPlaylists.clear();
+  persist(state);
+}

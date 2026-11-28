@@ -5,6 +5,8 @@ const API_PATHS = new Set([
   "/api/v1/pair",
   "/api/v1/state",
   "/api/v1/command",
+  "/api/v1/lineup/query",
+  "/api/v1/lineup/mutation",
 ]);
 const BODY_MAX = 64 * 1024;
 

@@ -1,6 +1,6 @@
 import { memo } from "react";
 import { useLocale } from "../hooks/useLocale";
-import type { XtreamContentKind } from "../services/xtream";
+import type { AppMode } from "../services/surfaceStack";
 import { Icon, type IconName } from "./Icon";
 
 const LABELS = {
@@ -9,8 +9,8 @@ const LABELS = {
   series: "content.series",
 } as const;
 
-const ICONS: Record<XtreamContentKind, IconName> = {
-  live: "tv",
+const ICONS: Record<AppMode, IconName> = {
+  live: "live",
   movie: "movie",
   series: "series",
 };
@@ -22,11 +22,11 @@ export const ContentSelector = memo(function ContentSelector({
   focused,
   onChange,
 }: {
-  value: XtreamContentKind;
-  focus: XtreamContentKind;
-  available: readonly XtreamContentKind[];
+  value: AppMode;
+  focus: AppMode;
+  available: readonly AppMode[];
   focused: boolean;
-  onChange: (value: XtreamContentKind) => void;
+  onChange: (value: AppMode) => void;
 }) {
   const { t } = useLocale();
 
@@ -36,7 +36,8 @@ export const ContentSelector = memo(function ContentSelector({
         <button
           key={kind}
           type="button"
-          className={`content-option ${kind === value ? "selected" : ""} ${focused && kind === focus ? "focused" : ""}`}
+          className={`content-option ${kind === value ? "selected" : ""} ${focused && kind === focus ? "cursor" : ""}`}
+          aria-label={t(LABELS[kind])}
           aria-pressed={kind === value}
           onClick={() => onChange(kind)}
         >

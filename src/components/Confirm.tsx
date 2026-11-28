@@ -1,7 +1,9 @@
 import { useEffect, useRef } from "react";
+import { pointerOnly } from "../hooks/usePointerAwake";
 import { KEY, useRemote } from "../hooks/useRemote";
 import { useSpatialNav } from "../hooks/useSpatialNav";
-import { Icon } from "./Icon";
+import { Icon, type IconName } from "./Icon";
+import { DialogGuide } from "./KeyGuide";
 
 /**
  * Asking before doing something that cannot be undone.
@@ -21,6 +23,9 @@ export function Confirm({
   confirmLabel,
   cancelLabel,
   destructive,
+  confirmIcon,
+  cancelIcon = "close",
+  busy = false,
   onConfirm,
   onCancel,
 }: {
@@ -30,6 +35,11 @@ export function Confirm({
   cancelLabel: string;
   /** Colours the confirming button as a warning rather than as the ordinary next step. */
   destructive?: boolean;
+  confirmIcon?: IconName;
+  /** Use null for a text only cancel action. */
+  cancelIcon?: IconName | null;
+  /** The answer is already on its way: the question cannot be dismissed or re-answered. */
+  busy?: boolean;
   onConfirm: () => void;
   onCancel: () => void;
 }) {
@@ -49,6 +59,16 @@ export function Confirm({
   }, []);
 
   /*
+   * While the answer is in flight the dialog itself holds focus, because neither button
+   * can take it. When the wait ends, focus still sitting on the box goes back to the safe
+   * answer rather than being left on an element that cannot be pressed.
+   */
+  useEffect(() => {
+    if (busy) box.current?.focus();
+    else if (document.activeElement === box.current) cancelRef.current?.focus();
+  }, [busy]);
+
+  /*
    * Sixty seconds of silence is taken as no, per the popup duration table.
    *
    * The callback is held in a ref and the effect depends on nothing, because every caller
@@ -58,55 +78,116 @@ export function Confirm({
    * and the timeout this documents simply did not exist.
    */
   const dismiss = useRef(onCancel);
-  dismiss.current = onCancel;
+  dismiss.current = () => {
+    if (!busy) onCancel();
+  };
   useEffect(() => {
     const t = window.setTimeout(() => dismiss.current(), 60000);
     return () => window.clearTimeout(t);
   }, []);
 
+  /* A confirmation can sit above a form dialog, so Tab must not leak through to the
+     controls underneath it. */
+  const trapTab = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== "Tab" || !box.current) return;
+    if (busy) {
+      event.preventDefault();
+      return;
+    }
+    const focusable = Array.from(
+      box.current.querySelectorAll<HTMLButtonElement>("button"),
+    ).filter((element) => !element.disabled);
+    if (!focusable.length) {
+      event.preventDefault();
+      return;
+    }
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    const active = document.activeElement;
+    if (event.shiftKey) {
+      if (active === first || !box.current.contains(active)) {
+        event.preventDefault();
+        last.focus();
+      }
+    } else if (active === last || !box.current.contains(active)) {
+      event.preventDefault();
+      first.focus();
+    }
+  };
+
   useRemote((code, event) => {
     if (code === KEY.BACK || code === KEY.ESC) {
       event.preventDefault();
-      onCancel();
+      dismiss.current();
       return;
     }
     if ([KEY.LEFT, KEY.RIGHT, KEY.UP, KEY.DOWN].includes(code as never)) {
       event.preventDefault();
-      move(code);
+      if (!busy) move(code);
+      return;
+    }
+    // Same boundary as Settings: a virtual Enter arrives as a key, not a click, so
+    // the focused answer is clicked here. A prevented Enter belongs to whoever
+    // already claimed it.
+    if (code === KEY.ENTER) {
+      if (event.defaultPrevented) return;
+      if (busy) {
+        event.preventDefault();
+        return;
+      }
+      const active = document.activeElement;
+      if (active instanceof HTMLButtonElement && box.current?.contains(active)) {
+        event.preventDefault();
+        active.click();
+      }
+      return;
     }
   });
 
   return (
-    <div className="dialog-scrim" onClick={onCancel}>
+    <div className="dialog-scrim" onClick={() => dismiss.current()}>
       <div
-        className="dialog"
+        className="dialog confirm-dialog"
         ref={box}
         role="dialog"
         aria-modal="true"
         aria-label={title}
+        aria-busy={busy || undefined}
+        tabIndex={-1}
         onClick={(e) => e.stopPropagation()}
+        onKeyDown={trapTab}
       >
         <h2>{title}</h2>
         {body && <p>{body}</p>}
-        {/*
-         * Both buttons are tonal, and only the focus is loud.
-         *
-         * Filling the confirming button would give the dialog two things shouting at once:
-         * the focus ring on the safe answer and a solid fill beside it, which reads as the
-         * one that is chosen. Checklist 4.2 allows one focused object and 4.3 wants it
-         * clearly recognisable against the others, so nothing else may compete with it. A
-         * destructive action still says so in its text colour.
-         */}
         <div className="dialog-actions">
-          <button type="button" ref={cancelRef} className="btn tonal" onClick={onCancel}>
+          <DialogGuide />
+          <button
+            type="button"
+            ref={cancelRef}
+            className="btn tonal"
+            disabled={busy}
+            onPointerEnter={(event) => pointerOnly(() => event.currentTarget.focus())}
+            onClick={() => dismiss.current()}
+          >
+            {cancelIcon && <Icon name={cancelIcon} />}
             <span>{cancelLabel}</span>
           </button>
           <button
             type="button"
-            className={`btn tonal ${destructive ? "danger" : ""}`}
+            className={`btn tonal ${destructive ? "danger" : confirmIcon ? "confirm-emphasis" : ""}`}
+            disabled={busy}
+            onPointerEnter={(event) => pointerOnly(() => event.currentTarget.focus())}
             onClick={onConfirm}
           >
-            {destructive && <Icon name="remove" />}
+            {(confirmIcon || destructive || busy) && (
+              <span className="confirm-action-icon" aria-hidden="true">
+                {busy ? (
+                  <span className="spinner small" />
+                ) : (
+                  <Icon name={confirmIcon ?? "remove"} />
+                )}
+              </span>
+            )}
             <span>{confirmLabel}</span>
           </button>
         </div>

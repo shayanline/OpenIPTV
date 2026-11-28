@@ -6,14 +6,14 @@
  *   npm run tv:on-set -- --stream=https://example.com/channel.m3u8
  *   npm run tv:on-set -- --tv=192.168.1.100 --seconds=20
  *
- * Everything else in scripts/tv/ measures a laptop pretending to be a set. This attaches to
+ * Desktop diagnostics in scripts/tv/ cannot establish hardware performance. This attaches to
  * the real one over sdb, drives it through the web inspector, and reports what the app costs
  * there: the launch marks, the interface at rest, and, if given a stream, what the player
  * costs while a picture is on screen.
  *
- * It exists because the simulator cannot answer three questions and never will. Its picture is
- * always hls.js, so every playback number it prints is from the wrong engine. Its CPU is a
- * clock divider on one thread, not silicon. And its AVPlay is a shim that agrees with whatever
+ * The desktop simulator cannot measure native decoder cost. Its diagnostic playback is a
+ * clock and state shim, while interactive playback uses hls.js or browser video. Optional CPU
+ * throttling affects one host thread without reproducing TV silicon. Its AVPlay agrees with whatever
  * the app asks of it, where the real one has opinions: it refuses blob: and data: URLs, it
  * cannot read a local playlist, and it keeps EXT-X-MEDIA-SEQUENCE in a signed 32 bit integer,
  * which is a firmware bug this harness found in an evening after months of not looking.

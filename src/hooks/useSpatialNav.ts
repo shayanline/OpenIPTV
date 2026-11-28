@@ -49,9 +49,11 @@ interface Box {
 function boxes(root: HTMLElement): Box[] {
   return Array.from(root.querySelectorAll<HTMLElement>(FOCUSABLE))
     .filter((el) => {
-      // A control that is off screen or hidden is not reachable. Note that `disabled` is
-      // not filtered: the guidelines say an unavailable function should still take focus,
-      // appearing translucent, so the viewer can find it and learn why it is unavailable.
+      // A control that is off screen, hidden or natively disabled is not reachable: a
+      // disabled control cannot take focus, so offering it as a move target would report
+      // a successful move that lands nowhere. aria-disabled stays reachable on purpose,
+      // since those controls remain focusable and explain themselves.
+      if (el.matches(":disabled")) return false;
       const r = el.getBoundingClientRect();
       return r.width > 0 && r.height > 0;
     })
@@ -112,6 +114,14 @@ function pick(from: Box, all: Box[], code: number): HTMLElement | null {
   return best?.el ?? null;
 }
 
+export function containsOwnedFocus(container: HTMLElement, active: Element | null): boolean {
+  if (!active) return false;
+  if (container.contains(active)) return true;
+  const ownerId = active.closest<HTMLElement>("[data-focus-owner]")?.dataset.focusOwner;
+  const owner = ownerId ? document.getElementById(ownerId) : null;
+  return !!owner && container.contains(owner);
+}
+
 export function useSpatialNav(root: React.RefObject<HTMLElement | null>, enabled: boolean) {
   const rootRef = root;
 
@@ -147,7 +157,7 @@ export function useSpatialNav(root: React.RefObject<HTMLElement | null>, enabled
     const container = rootRef.current;
     if (!container) return;
     const all = boxes(container);
-    if (all.length && !container.contains(document.activeElement)) all[0].el.focus();
+    if (all.length && !containsOwnedFocus(container, document.activeElement)) all[0].el.focus();
   }, [rootRef]);
 
   useLayoutEffect(() => {

@@ -129,17 +129,21 @@ await app.evaluate(SEED);
 await cdp.send("Page.reload");
 await sleep(2400);
 
-/** Press one of the panel's title bar keys by its accessible label, as the parity harness does. */
+/** Activate an application control by its accessible label. */
 const keyed = async (label) => {
+  const selector =
+    label === "Search"
+      ? ".panel:not(.away) .section-search"
+      : `[aria-label=${JSON.stringify(label)}]`;
   const hit = await app.evaluate(`(() => {
-    const el = document.querySelector('[aria-label=${JSON.stringify(label)}]');
+    const el = document.querySelector(${JSON.stringify(selector)});
     if (!el) return false;
     el.click();
     return true;
   })()`);
   if (!hit)
     throw new Error(
-      `No key labelled "${label}" in the panel's title bar, so screen ${label} ` +
+      `No visible control labelled "${label}", so screen ${label} ` +
         "cannot be reached and a screenshot of whatever was still open would be worse than none.",
     );
 };

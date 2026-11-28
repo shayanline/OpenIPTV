@@ -34,6 +34,7 @@
   --surface-2: rgba(40, 40, 46, 0.94);
   --surface-3: rgba(56, 56, 62, 0.94);
   --over-video: rgba(13, 13, 15, 0.92);
+  --app-navigation-surface: #18181c;
   /* Full screen, with nothing behind worth keeping, so it stays opaque. */
   --sheet: #0a0a0b;
 
@@ -54,6 +55,8 @@
    *   notice   the playback banner and the key guides, transient
    *   panel    the channel panel
    *   sheet    settings and first run, which are pages rather than popups
+   *   page-transition  the shade between destinations, under the rail it leaves visible
+   *   navigation  the application rail, raised above Settings while its sheet opens
    *   pointer  the on-screen navigation pad, for a mouse
    *   popup    a question that must be answered
    *   above    a dialled number or a toast, which answer to nothing below them
@@ -67,9 +70,12 @@
   --z-notice: 10;
   --z-panel: 20;
   --z-sheet: 30;
-  --z-pointer: 34;
-  --z-popup: 40;
-  --z-above: 50;
+  --z-page-transition: 34;
+  --z-navigation: 35;
+  --z-playback: 40;
+  --z-pointer: 44;
+  --z-popup: 50;
+  --z-above: 60;
 
   /*
    * Text. Opacity rather than separate greys, so it sits correctly on any surface.
@@ -86,6 +92,11 @@
   --text-3: rgba(255, 255, 255, 0.46);
   --on-focus: #101013;
   --on-accent: #ffffff;
+  --target-bg: var(--focus);
+  --target-text: var(--on-focus);
+  --target-muted: rgba(16, 16, 19, 0.62);
+  --target-subtle: rgba(16, 16, 19, 0.46);
+  --target-badge: rgba(16, 16, 19, 0.12);
 
   /* The One UI blue, in the three roles the colour guidance names. Primary dark is the
      only one that shifts by theme, and this app is dark, so it takes the dark value.
@@ -96,10 +107,12 @@
   --accent-dim: rgba(62, 145, 255, 0.18);
   --focus: #ffffff;
   --danger: #ff6b6b;
-  /* A channel that will not play is a disappointment rather than a danger, and One UI reserves
-     red for rejecting something. Amber says "not right" without saying "stop". */
+  /* Warnings use amber, while terminal failures use the danger colour. */
   --warn: #ffc453;
   --warn-dim: rgba(255, 196, 83, 0.16);
+  /* A finished action is good news rather than an alarm, so it takes a quiet green that
+     still reads on the dark surfaces. */
+  --success: #7bdda2;
 
   /* Dividers and the grey contained button. One UI has no outlined button, so a middle
      emphasis control is grey filled rather than bordered. */
@@ -120,11 +133,13 @@
   --s4: 32px;
   --s5: 48px;
   --s6: 64px;
+  --scroll-gutter: 0px;
+  --content-gutter: var(--s4);
 
-  /* TV safe area. Sets overscan, and content at the very edge can be clipped on some
-     panels, so nothing important goes within 48px of the border. */
   --safe-x: 48px;
-  --safe-y: 40px;
+  --safe-y: var(--safe-x);
+  /* The Return rail includes its divider after one safe margin beyond the button. */
+  --page-back-w: calc(var(--s6) + var(--safe-x) + 1px);
 
   /* Fixed, because the lists render a window of rows rather than all of them and the
      arithmetic needs an exact height. ROW_BASE and RAIL_ROW_BASE in useWindowed.ts are the
@@ -148,23 +163,21 @@
    * channel name on one. 1064 of 1920 leaves 856 of picture, where the previous 1224 left
    * 696. Checklist 1.7 asks for the total information on screen to be reduced.
    */
-  /*
-   * The third term used to be --s6 and belonged to nothing.
-   *
-   * 424 and 576 make 1000, the panel was 1064, and the 64 pixels between them were a strip of
-   * panel background with no content in it: visible on screen as dead space down the right hand
-   * side, and measurable as the channel column ending at 1000 while its own surface carried on to
-   * 1064. Nothing referred to it, so nothing was using it.
-   *
-   * The width is now the two columns plus a stated margin, and the columns have the difference.
-   * 32 here plus the window's own 16 pixel inset puts the last pixel of a row 48 from the panel's
-   * edge, which is --safe-x: the trailing margin is the same overscan allowance as the leading one
-   * rather than a number that happened to be left over. The panel is still 1064 of 1920, and the
-   * channel names have 32 more pixels before they have to truncate.
-   */
+  /* The panel width is exactly its category and channel columns. The channel rows reach the
+     trailing edge without reserving room for a scrollbar or an unused margin. */
   --rail-w: 424px;
   --list-w: 608px;
-  --panel-w: calc(var(--rail-w) + var(--list-w) + var(--s4));
+  --panel-w: calc(var(--rail-w) + var(--list-w));
+  /* The application rail shares the TV's horizontal safe edge, so its content stays inside --safe-x on both sides. */
+  --app-nav-gutter: var(--safe-x);
+  --app-nav-content-w: 304px;
+  --app-nav-collapsed-w: calc(var(--app-nav-gutter) * 2 + var(--s6));
+  --app-nav-expanded-w: calc(var(--app-nav-gutter) * 2 + var(--app-nav-content-w));
+  --vod-rail-w: 424px;
+  --poster-w: 192px;
+  --poster-h: 288px;
+  --poster-columns: 6;
+  --poster-row-h: 376px;
 
   /* Type scale. The TV guidelines set a floor for legibility at distance and ask for line
      spacing of 1.2 to 1.4. --scale is the viewer's text size preference. */
@@ -176,6 +189,8 @@
   --t-label: calc(22px * var(--scale));
   --t-caption: calc(20px * var(--scale));
   --lh: 1.35;
+  /* Google Sans capitals paint slightly above the centered line box. */
+  --icon-optical-offset: calc(-1px * var(--scale));
 
   /*
    * Motion, from the One UI motion guidance.
@@ -192,7 +207,7 @@
   --ease-enter: cubic-bezier(0, 0, 0.2, 1);
   --ease-exit: cubic-bezier(0.4, 0, 1, 1);
   --t-fast: 150ms;
-  --t-med: 250ms;
+  --t-med: var(--t-navigation);
   /*
    * For the panels sliding in and out, which is the one movement a viewer waits on rather
    * than watches. 250ms is well inside the 100 to 500ms the motion guidance allows, but the
@@ -201,6 +216,13 @@
    * 180ms is still unhurried and takes 70ms out of the wait.
    */
   --t-panel: 180ms;
+  --t-navigation: 180ms;
+  /*
+   * The banner to deck expansion is the one motion a viewer watches rather than waits on:
+   * the surface takes 420ms and the shared words travel with it over about 380ms, still
+   * inside the 500ms the motion guidance allows.
+   */
+  --t-playback-expand: 420ms;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -208,6 +230,8 @@
     --t-fast: 0ms;
     --t-med: 0ms;
     --t-panel: 0ms;
+    --t-navigation: 0ms;
+    --t-playback-expand: 0ms;
   }
   /* Durations only cover transitions. The two things that animate on their own have to be
      stopped by name, and the pulse settles to the plain dot it decorates. */

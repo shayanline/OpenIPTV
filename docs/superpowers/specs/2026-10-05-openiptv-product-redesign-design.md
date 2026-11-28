@@ -106,9 +106,13 @@ Guide, Audio, Subtitles and More drawers keep all direction input inside the dra
 
 ### VOD browsing
 
-The VOD header, category rail and poster grid each own one cursor. Left from the first poster enters the category rail. Right from the category rail enters the remembered grid position. Up from the first grid row enters the shared header. Down returns from the header to the selected category.
+The VOD header, category rail and poster grid each own one cursor. Category selection follows the rail cursor, so each Up or Down movement updates the selected category immediately without requiring OK. The category highlight moves on the key press, while catalogue loading and grid replacement follow after the existing 150 millisecond settle interval. Holding a direction therefore selects only the category where movement stops.
 
-OK on a category selects it and enters its grid when that category contains posters. An empty category keeps focus on its rail row and presents a nonfocus empty message in the catalogue region. A failed category keeps focus on the rail and exposes Retry as the only focusable item in the failed region. OK on a poster opens details. Back from details restores the exact poster. Back from search restores the previous category and poster. Back from the VOD root returns to the Live picture.
+Inline start from the first poster enters the selected category row. Inline end or OK from the category rail enters the remembered grid position when that category contains posters. Physical directions mirror in right to left layouts. Up from the first grid row enters the shared header. Down returns from the header to the selected category.
+
+An empty category keeps focus on its rail row and presents a nonfocus empty message in the catalogue region. A failed category keeps focus on the rail and exposes Retry as the only focusable item in the failed region. OK on a poster opens details. Back from details restores the exact origin surface and item, including search results. Back from search restores the previous category and poster. Back from the VOD root returns to the Live picture.
+
+Every VOD action is also available through pointer click. Pointer movement does not steal remote focus until a control is clicked. Each accepted vertical wheel gesture moves one movie, series or episode through linear catalogue order. Passing the final poster in a row reaches the first poster in the next row. A 120 millisecond guard prevents one physical gesture from skipping several items. Wheel movement uses the same cursor state and cannot bypass windowing.
 
 ### Live browsing
 
@@ -136,7 +140,7 @@ The core roles remain:
 --line: rgba(255, 255, 255, 0.09);
 ```
 
-Focus uses a solid white surface or white outline and a visible halo appropriate to the control. Selected state never substitutes for focus. A selected category uses accent tint and a blue marker while the focused poster uses a white outline.
+Focus uses a solid white surface or white outline and a visible halo appropriate to the control. Selected state never substitutes for focus. A selected VOD category uses accent tint without a second leading marker, while the focused poster uses a white outline.
 
 No text appears below the existing twenty pixel television caption floor at 1920 by 1080. The implementation uses the existing font scale and available 400 and 600 weights. Text line spacing stays between 1.2 and 1.4 times the font size.
 
@@ -211,7 +215,7 @@ Previous and Next retain their positions in the centred finite transport group. 
 
 The leading context action is Details for finite content and Guide for Live content. Audio, Subtitles and More retain stable trailing positions across content kinds. Controls that have no supported action are omitted rather than displayed as inactive decoration, except Previous and Next whose disabled position preserves transport geometry.
 
-A subtle `--line` hairline spans the full inner width of the playback surface and separates metadata from every displayed seek bar. The seek bar has no enclosing border. Focus increases track thickness, enlarges the white thumb, adds a restrained halo and displays a floating target time. Blue remains the playback state rather than the focus colour.
+A subtle `--line` hairline spans the full inner width of the playback surface and separates metadata from the interactive region. It sits above the seek bar when one exists and above the controls when no seek bar exists. The seek bar has no enclosing border. Focus increases track thickness, enlarges the white thumb, adds a restrained halo and displays a floating target time. Blue remains the playback state rather than the focus colour.
 
 ## Audio and Subtitle Tracks
 
@@ -295,6 +299,7 @@ type VodMetadata = {
   releaseDate: string;
   country: string;
   ageRating: string;
+  episodeRuntimeSeconds?: number;
 };
 
 type EpisodeMetadata = {
@@ -311,6 +316,38 @@ Movie details read `backdrop_path`, `movie_image`, `cover_big`, `cast` or `actor
 A detail screen uses the first valid provider backdrop as a full width background and keeps the poster as a separate portrait image. The active backdrop decodes to at most 1280 by 720, is released when details close and is not added to the multi item poster memory cache. When no backdrop exists or loading fails, the screen uses a restrained tonal fallback derived from the poster colours without making another network request.
 
 Cast, director, country, age rating and episode metadata appear only when nonempty. The layout removes absent rows rather than showing Unknown labels. OpenIPTV does not call TMDB, YouTube or another metadata service to fill provider gaps.
+
+## Provider Data Resilience
+
+Every provider string is trimmed and rendered as text through `Text` or an equivalent element with `dir="auto"`. Empty titles use a translated Untitled label. Empty category names use the translated Uncategorised label. Provider strings are never cut in JavaScript because code unit slicing can split emoji, combining marks and joined glyphs on Chromium 69. CSS performs visual truncation.
+
+VOD poster titles, Movie and Series detail titles and episode titles use one fixed line with the existing `Text` teleprompter measurement. A focused poster or episode starts the horizontal animation after the existing 1.2 second delay. An overflowing detail title animates while its detail page is active. Each pass scrolls to the measured logical end, pauses and returns to the start. Right to left movement follows the measured text direction. Reduced motion keeps the first portion stationary and clipped. Long category names keep a fixed count pill and wrap to two lines without moving neighbouring rows.
+
+Ratings accept `rating` only when the numeric value is greater than zero and no greater than ten. When `rating` is absent, zero, malformed or out of range, `rating_5based` is accepted only when greater than zero and no greater than five, then converts to the ten point scale. Every displayed value has one decimal place. Invalid values, placeholders and out of range values produce no rating pill. Rating controls and poster labels receive a translated accessible label such as Rating 8.4 out of 10.
+
+`backdrop_path` accepts an array of strings, one URL string or a JSON encoded array string that begins with `[`. Valid HTTP or HTTPS addresses retain provider order and the normalized list is capped at three. Invalid schemes, credential bearing URLs, empty values and malformed encoded strings are discarded.
+
+Movie poster precedence is `movie_image`, `cover_big`, then summary `stream_icon`. Series poster precedence is detail `cover`, then summary `cover`. Episode artwork uses `info.movie_image`. A missing or failed image renders a stable tonal placeholder with the translated content type icon and preserves card geometry.
+
+Cast prefers `cast`, then `actors`. A string splits on commas and an array keeps string members. Values are trimmed and at most ten people persist. Storage bounds count Unicode code points rather than UTF-16 code units. A cast member over 120 code points and a plot over 2,000 code points trim at the nearest preceding whitespace, while a value with no safe boundary is omitted instead of splitting a joined glyph. Director accepts a string or string array and joins nonempty values. Plot uses a fixed visible line count with a More information drawer when overflow exists.
+
+Movie, series and episode name, plot, cast and genre pass through the existing base64 heuristic only when the supplied value has valid padding, round trips through base64 and decodes as valid UTF-8 without replacement characters. A failed check preserves the original text. React still renders the result as text.
+
+Release date checks `releasedate`, `releaseDate`, then `release_date`. It accepts a four digit year or a year with numeric month and optional day separated by `-` or `/`. A year badge appears only from 1888 through the current year plus three. Invalid dates and placeholder zero values disappear.
+
+Duration checks `duration_secs` first, then accepts `H:MM:SS`, `MM:SS` or a digits only seconds value from `duration`. Series `episode_run_time` is interpreted as minutes and shown only as a typical episode length. Zero, negative and malformed values produce no duration.
+
+A valid provider `direct_source` remains the first playback address. A container extension accepts only one through eight lowercase letters or digits after normalization. Generated movie and episode paths add `.` plus the extension when it exists and omit the dot entirely when it does not. OpenIPTV never invents `mp4` for an unknown container.
+
+Series seasons are the union of valid `seasons` records and numeric keys in the `episodes` object. Season zero remains Specials. Seasons sort numerically. Episode identity prefers `episode.id`, then `episode.info.id`, then a valid direct source fingerprint, then a deterministic composite of season, episode number, exact title and provider array position. Episodes deduplicate by season and this identity, then sort by known episode number and preserve provider order among missing or equal numbers. A missing episode number renders no `E0` label. A series with no playable episodes shows a dedicated No episodes available state and no Play action.
+
+Provider category order is preserved until personalisation changes it. A category count uses the provider value before content loads and the normalized fetched item count afterwards. Duplicate movie and series identifiers keep the first valid item. Duplicate names remain distinct. A category with no items remains a successful empty category and can refresh after its cache becomes stale.
+
+Category lists, category contents, complete search indexes and details share the six hour cache policy. A stale cache answers immediately and revalidates once in idle time. An empty result follows the same freshness policy rather than becoming permanent for the session. Provider category changes therefore appear without editing credentials.
+
+Every Xtream API request has a thirty second timeout and an abort owner. Category and detail responses have bounded byte limits appropriate to their cache class. A complete Movies or Series index loads only after explicit Search or All selection, has a twelve megabyte response limit and reports Catalogue too large, browse categories instead when the provider exceeds it.
+
+Artwork requests have a fifteen second timeout and an eight megabyte compressed byte limit enforced while reading when `Content-Length` is absent. Oversized, timed out and undecodable images use the same placeholder and never block focus movement.
 
 The category rail contains Continue watching when nonempty, Favourites when nonempty, All, then provider categories in provider order. Empty personal categories do not create apology rows.
 
@@ -334,23 +371,35 @@ No result state names the query and leaves the search field focused. Loading and
 
 ## Movie Details
 
-Movie details use a full screen hero with provider backdrop, separate poster art, rating, metadata, synopsis, cast, director, watched progress and a vertical action stack. Rating sits with year, duration and genre. Cast and director use quiet single line rows beneath the synopsis and truncate after the available width.
+Movie details use a full screen hero with provider backdrop, separate poster art, rating, metadata, synopsis, cast, director, watched progress and a vertical action stack. A shared title row contains Back, the provider title and the same compact Favourite toggle used by Series. The active Movies or Series mode already supplies content type context, so details do not repeat a Movie or Series label beneath the title. Rating sits with year, duration and genre. Cast and director use quiet single line rows beneath the synopsis and truncate after the available width.
 
-A movie with progress shows Resume from the saved time first, Start from beginning second and Add to Favourites or Remove from Favourites third. A new movie shows Play first and the favourite action second.
+A movie with progress shows Resume from the saved time followed by Start from beginning. A new movie shows one Play action. Favourite is not duplicated in the action stack. Up from the top action enters the title row at Back, Left and Right move between Back and Favourite, and Down returns to the top action.
 
 Selecting Resume passes the saved position. Selecting Start from beginning passes zero and replaces saved progress once playback advances. Returning from playback restores the details action and poster origin.
 
-Adding a favourite updates the details action, poster badge, Favourites count and category visibility immediately. The green key may remain an optional shortcut but is never the only path.
+Toggling Favourite updates the title toggle, poster badge, Favourites count and category visibility immediately. The fixed size star shows a short state label beneath it while focused, and the green key may remain an optional shortcut but is never the only path.
 
 ## Series Details
 
-Series details keep the hero, metadata, synopsis and favourite action on one screen. A season selector and episode list occupy the same screen instead of creating one screen per season.
+Series details remains one spatially stable page. A shared title row contains Back at inline start, the large provider title and a compact star Favourite toggle at the trailing edge. The hero contains metadata, synopsis, cast, director, watched progress and three text actions: Continue or Play, Start the current Continue episode from beginning when progress exists, and Episodes.
 
-The season selector is an ordered horizontal row reached from the episode list. The episode list is windowed vertically and shows episode number, title, duration, progress and provider episode rating when present. Episode plot, release date and image appear in the focused episode detail region when supplied. Changing season restores the remembered episode for that season where it remains valid.
+The Continue action is the only episode resume path. It resolves the latest resumable episode and labels it explicitly, such as Continue S1:E3, 24 min left. When the last watched episode is complete it resolves the next episode. When no progress exists it becomes Play S1:E1 or the first playable provider episode. When the complete series is watched it falls back to the first playable episode. The adjacent restart label uses the same episode reference, such as Start S1:E3 from beginning.
 
-A series with resumable progress shows Resume next episode or Resume episode as the primary action. Episode selection opens actions for Resume or Play and Start from beginning where progress exists. Favouriting applies to the parent series rather than an individual episode.
+Selecting Episodes replaces the poster region with a season selector and windowed episode list. The hero column and title row never move. The panel enters from inline end with an opacity and position transition no longer than 180 milliseconds. Reduced motion removes translation and uses an immediate state change. Focus moves to the Continue target immediately rather than waiting for animation completion.
 
-Back from an episode action returns to the episode. Back from series details returns to the exact series poster.
+While the panel is open, inline end from the hero enters the remembered episode and inline start from the list returns to the remembered hero action without closing the panel. The Episodes action changes to Hide episodes and explicitly toggles the panel. Remote Back and the title row Back button always leave Series details for the exact poster or search result, whether the panel is open or closed. Up from the top hero action enters the title row at Back. Left and Right move between Back and Favourite, and Down returns to the top hero action.
+
+Favourite is an icon toggle rather than a text action. An outline star means not saved and an accent state means saved. The fixed size toggle stays immediately beside the title. When it receives focus, a short Add to Favourites or In Favourites label appears beneath it without shifting the row. Its accessible name uses Add or Remove wording. Toggling never closes or reflows the episode panel.
+
+Season focus is a preview cursor. Left and Right move white focus without reloading episodes. OK commits the blue selected season and restores that season's remembered episode. A single unnumbered season hides the season row. Up from the first episode then remains at the list boundary, while the title row remains reachable from the hero actions.
+
+Episode selection follows focus. The current Continue target carries a compact persistent blue Up next marker and watched progress, which remain distinct from white focus. Episode rows show number, title, duration, progress and provider rating when present. Episode plot, release date and image appear in the focused episode detail region when supplied.
+
+OK or pointer click on an episode always starts that manually selected episode from the beginning, even when saved episode progress exists. Manual episode selection never resumes. The Series Continue action remains the only resume path. The episode reference uses `S{season}:E{episode}` when both values exist, Episode 3 with only episode number, Season 1 selected episode with only season and selected episode with neither. Missing display numbers never produce `S0:E0` and do not prevent playback when the episode has a playable provider id or valid direct source.
+
+A season with no episodes keeps focus on its season pill and shows a nonfocus No episodes available message. A failed season exposes Retry in the episode region while the season row and title row Back remain reachable.
+
+Hero actions use rounded tonal buttons without decorative outlines. White fill and the shared halo identify the one focused action. Buttons use the existing 8 pixel rhythm, a restrained pressed scale and no ambient animation. The episode panel uses `--over-video`, a soft surface radius, one hairline and the existing elevation rather than blur or stacked shadows. Reduced motion removes transforms.
 
 ## VOD Loading and Performance
 
@@ -373,7 +422,9 @@ type ResolvedPlaybackProgress = {
   itemKey: string;
   playlistId: string;
   kind: "movie" | "episode" | "catchup";
-  providerId: string;
+  providerId?: string;
+  episodeIdentity?: string;
+  directSourceFingerprint?: string;
   categoryKey: string;
   extension?: string;
   seconds: number;
@@ -398,7 +449,9 @@ type LegacyPlaybackProgress = {
 type PlaybackProgress = ResolvedPlaybackProgress | LegacyPlaybackProgress;
 ```
 
-Progress remains bounded to 100 finite items. Continue watching renders only resolved movie or episode records. A movie or episode is resolved only when provider id, category key and container extension are available. Episode records present the parent series once and carry the provider id and extension needed to resume the latest episode directly. Catchup progress remains available from Guide while the archive target is valid and does not appear in Continue watching.
+Progress remains bounded to 100 finite items. Continue watching renders only resolved movie or episode records. A movie is resolved when provider id and category key are available. An episode is resolved when category key and either provider id or a stable direct source fingerprint are available. Container extension is optional because generated playback paths omit the dot when it is absent.
+
+Episode records present the parent series once and persist the same `episodeIdentity` fallback chain used during parsing. A record with provider id may resume directly. A record using direct source fingerprint first loads its series detail, matches the fingerprint and retrieves the current raw address before playback. An idless episode without provider id or valid direct source remains readable in the current detail session but exposes no Play action and never creates persistent progress. Catchup progress remains available from Guide while the archive target is valid and does not appear in Continue watching.
 
 Existing records become legacy entries with their persisted index as `legacyOrder`. Migration captures one base time and a resolved legacy entry receives `updatedAt = baseTime - (legacyCount - legacyOrder) * 1000`, which preserves prior order without making an old item newer than subsequent activity. Movie entries resolve when the whole movie index loads. Episode entries resolve when a loaded series detail contains the episode because the provider has no episode lookup endpoint. Unresolved entries do not render, remain bounded and are removed when their playlist is deleted, their account is replaced, application data is reset or a loaded authoritative catalogue proves the item absent.
 
@@ -565,11 +618,13 @@ An old asynchronous result never replaces state belonging to a newer mode, categ
 
 ## Accessibility and Internationalisation
 
-Every focusable control has an accessible name that matches its visible action. Focus remains visible at three metres through shape and contrast rather than colour alone. Disabled state differs from focused and selected state.
+Every focusable control has an accessible name that matches its visible action. Poster buttons compose name, metadata, rating and favourite state into that name and expose known `aria-posinset` and `aria-setsize` values from the windowed index. Focus remains visible at three metres through shape and contrast rather than colour alone. Disabled state differs from focused and selected state.
 
-Motion is short, functional and disabled by the existing reduced motion rule. No information relies on motion.
+Motion is short, functional and disabled by the existing reduced motion rule. The rule stops spinners, playing indicators, poster skeleton pulse and every title marquee. No information relies on motion.
 
-Provider text preserves its language and direction. Application labels are translated through the existing locale service. Poster titles, track languages, categories, programme data, management forms and subtitle text receive right to left review.
+Every provider string renders with `dir="auto"`. Application labels are translated through the existing locale service. Episode prefixes and numbers use translated messages and locale number formatting rather than a hardcoded Latin `E`. Breadcrumb chevrons use mirrored icons rather than text glyphs. Poster titles, track languages, categories, programme data, management forms and subtitle text receive right to left review.
+
+Provider strings are never truncated in JavaScript. Single line teleprompter regions for content titles and two line CSS regions for categories preserve emoji, flag pairs, joined emoji and combining marks on Chromium 69 without relying on unavailable grapheme segmentation APIs.
 
 Subtitle placement avoids controls and television safe areas. Text size, edge treatment and line count remain readable over bright and dark pictures.
 
@@ -611,6 +666,11 @@ The television harness gains journeys for:
 - Live DVR seeking, Go live and Live badge transitions.
 - Rebuffering, warm recovery, full recovery and continuous reconnect cancellation.
 - Channel and category sorting, naming, hiding and personal category assignment.
+- Pointer click and wheel parity across VOD grid, details, seasons and episodes.
+- Right to left movement between header, rail, grid, details, season and episode zones.
+- Missing artwork and metadata, long bidirectional names, emoji names, empty categories and malformed ratings.
+
+Xtream normalization tests cover rating scales, backdrop shapes, artwork precedence, cast and director shapes, release date variants, duration formats, missing episode numbers, season union, episode sorting, duplicate identifiers and size limits. Cache tests prove category revalidation, stale empty refresh and catalogue response bounds. Component tests assert `dir="auto"`, translated episode labels, rating semantics, measured single line teleprompters and reduced motion behavior.
 
 Migration tests seed every previous local storage shape, malformed partial values and interrupted migrations. Reconciliation tests cover moved M3U duplicates, unavailable references, category rename and explicit removal. Protocol tests apply each management mutation through television state and phone commands, then compare durable personalisation and the affected paged query.
 

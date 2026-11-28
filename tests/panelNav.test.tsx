@@ -1,11 +1,11 @@
 import { afterEach, expect, test, vi } from "vitest";
 import assert from "node:assert/strict";
-import { act, cleanup, renderHook, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, screen } from "@testing-library/react";
 import { KEY } from "../src/hooks/useRemote";
-import { useBrowseStack, type BrowseFrame } from "../src/hooks/useBrowseStack";
-import { availableHeaderControls } from "../src/components/PanelHeader";
 import {
   mountApp,
+  panelOpen,
+  played,
   press,
   pressDown,
   release,
@@ -13,17 +13,6 @@ import {
   XTREAM_SOURCE,
   xtreamFetch,
 } from "./support/app";
-
-/**
- * Up and down cycle through the title bar and whichever column the cursor is in.
- *
- * The categories always had this: Search and Settings are row zero of the rail, so walking up off
- * the first category reaches them and walking down comes back. The channel column had no route at
- * all, and getting to two keys visible directly above a channel took three presses through the rail.
- *
- * The rule these tests hold to is that the bar sits above both columns, and leaving it downward
- * lands where the cursor came from rather than always in the categories.
- */
 
 const PLAYLIST = `#EXTM3U
 #EXTINF:-1 group-title="News",First Channel
@@ -34,247 +23,198 @@ http://example.invalid/2.m3u8
 http://example.invalid/3.m3u8
 `;
 
-/** The cursor is in the title bar when one of its two keys is the selected thing. */
-const inTitleBar = () => !!document.querySelector(".panel-key.selected");
-
-/** Which title bar key the cursor is on, or nothing. */
-const barKey = () =>
-  document.querySelector(".panel-key.selected")?.getAttribute("aria-label") ?? "";
-
 /**
  * The channel the cursor is on, by name, and the category likewise.
  *
- * Both columns render `.row.selected` with the text in `.row-label`, which is what makes them one
+ * Both columns render `.row.cursor` with the text in `.row-label`, which is what makes them one
  * pattern rather than two: `.list` is the channels and `.rail` is the categories.
  */
 const channelUnderCursor = () =>
-  document.querySelector(".list .row.selected .row-label")?.textContent ?? "";
+  document.querySelector(".list .row.cursor .row-label")?.textContent ?? "";
 
 const categoryUnderCursor = () =>
-  document.querySelector(".rail .row.selected .row-label")?.textContent ?? "";
+  document.querySelector(".rail .row.cursor .row-label")?.textContent ?? "";
 
 afterEach(() => {
   cleanup();
   localStorage.clear();
+  document.documentElement.style.removeProperty("--t-navigation");
   vi.useRealTimers();
 });
 
-const XTREAM_CATEGORIES = [{ category_id: "10", category_name: "News" }];
-const XTREAM_STREAMS = [
-  {
-    stream_id: "1",
-    name: "Provider One",
-    category_id: "10",
-    stream_icon: "",
-    stream_type: "live",
-  },
-];
-
-const frame = (key: string, cursor = 0): BrowseFrame<string> => ({
-  key,
-  title: key,
-  items: [`${key} item`],
-  cursor,
-  state: "loaded",
-});
-
-test("the browse stack restores its parent cursor after one frame is removed", () => {
-  const { result } = renderHook(() => useBrowseStack(frame("root", 1)));
-
-  act(() => {
-    result.current.setCursor(4);
-    result.current.push(frame("detail", 2));
-  });
-  expect(result.current.current).toMatchObject({ key: "detail", cursor: 2 });
-
-  act(() => result.current.setCursor(6));
-  expect(result.current.current.cursor).toBe(6);
-
-  act(() => result.current.pop());
-  expect(result.current.current).toMatchObject({ key: "root", cursor: 4 });
-
-  act(() => result.current.pop());
-  expect(result.current.current.key).toBe("root");
-});
-
-test("the ordered header model keeps Guide outside the global title bar", () => {
-  expect(availableHeaderControls(false, false)).toEqual(["search", "settings"]);
-  expect(availableHeaderControls(true, false)).toEqual(["content", "search", "settings"]);
-  expect(availableHeaderControls(true, true)).toEqual(["content", "search", "settings"]);
-});
-
-test("the M3U header remains Search followed by Settings", async () => {
+test("the panel owns directions while it is open", async () => {
   await mountApp(PLAYLIST);
+  const started = played.length;
 
-  expect(document.querySelector(".content-selector")).toBeNull();
-  expect(
-    [...document.querySelectorAll(".panel-bar button")].map((button) =>
-      button.getAttribute("aria-label"),
-    ),
-  ).toEqual(["Search", "Settings"]);
+  press(KEY.DOWN);
+  await settle();
+
+  expect(played).toHaveLength(started);
+  expect(channelUnderCursor()).toBe("Second Channel");
 });
 
-test("an Xtream header starts on Live and separates selection from remote focus", async () => {
-  await mountApp("", {
-    source: XTREAM_SOURCE,
-    fetchImplementation: xtreamFetch(XTREAM_CATEGORIES, XTREAM_STREAMS),
-  });
+test("the clock follows the enabled setting across the Live list and playback overlays", async () => {
+  await mountApp(PLAYLIST);
+  const { useSettings } = await import("../src/stores/settings");
+  const clock = () => document.querySelector(".top-strip .clock");
+  expect(panelOpen()).toBe(true);
+  expect(clock()).toBeTruthy();
 
-  const live = screen.getByRole("button", { name: "Live" });
-  expect(live.getAttribute("aria-pressed")).toBe("true");
-  expect(live.classList.contains("selected")).toBe(true);
-  expect(document.querySelector(".content-selector.focused")).toBeNull();
-  expect(screen.queryByRole("button", { name: "Guide" })).toBeNull();
-  expect(
-    [...document.querySelectorAll(".panel-bar button")].map((button) => button.textContent),
-  ).toEqual(["Search", "Settings"]);
+  act(() => useSettings.getState().set("showClock", false));
+  expect(clock()).toBeNull();
+  act(() => useSettings.getState().set("showClock", true));
+  expect(clock()).toBeTruthy();
 
-  press(KEY.LEFT);
-  await settle();
-  press(KEY.UP);
-  await settle();
-  expect(document.querySelector(".content-selector.focused")).toBeTruthy();
-  expect(document.querySelector(".content-option.focused")?.textContent).toBe("Live");
-
-  press(KEY.RIGHT);
-  expect(document.querySelector(".content-option.focused")?.textContent).toBe("Movies");
-  expect(screen.getByRole("button", { name: "Live" }).getAttribute("aria-pressed")).toBe(
-    "true",
-  );
-
-  press(KEY.RIGHT);
-  expect(document.querySelector(".content-option.focused")?.textContent).toBe("Series");
-  press(KEY.RIGHT);
-  expect(barKey()).toBe("Search");
-  expect(screen.getByRole("button", { name: "Live" }).getAttribute("aria-pressed")).toBe(
-    "true",
-  );
-
-  press(KEY.LEFT);
-  expect(document.querySelector(".content-option.focused")?.textContent).toBe("Series");
-  press(KEY.LEFT);
-  expect(document.querySelector(".content-option.focused")?.textContent).toBe("Movies");
   press(KEY.ENTER);
-  await settle();
-  expect(screen.getByRole("button", { name: "Movies" }).getAttribute("aria-pressed")).toBe(
-    "true",
-  );
-  expect(document.querySelector(".content-selector.focused .content-option.selected")).toBe(
-    screen.getByRole("button", { name: "Movies" }),
-  );
-});
-
-test("right to left header navigation follows the visible control order", async () => {
-  await mountApp("", {
-    source: XTREAM_SOURCE,
-    locale: "ar",
-    fetchImplementation: xtreamFetch(XTREAM_CATEGORIES, XTREAM_STREAMS),
-  });
-
+  expect(panelOpen()).toBe(false);
+  expect(clock()).toBeTruthy();
   press(KEY.RIGHT);
-  await settle();
+  expect(document.querySelector(".playback-deck")).toBeTruthy();
+  expect(clock()).toBeTruthy();
+  act(() => useSettings.getState().set("showClock", false));
+  expect(clock()).toBeNull();
+  act(() => useSettings.getState().set("showClock", true));
+  expect(clock()).toBeTruthy();
+  press(KEY.BACK);
+  expect(clock()).toBeNull();
+
+  press(KEY.LEFT);
+  expect(panelOpen()).toBe(true);
+  expect(clock()).toBeTruthy();
+  press(KEY.YELLOW);
+  expect(document.querySelector(".sheet")).toBeTruthy();
+  expect(clock()).toBeNull();
+  press(KEY.BACK);
+  expect(clock()).toBeTruthy();
+
+  act(() => useSettings.getState().set("showClock", false));
+  press(KEY.BACK);
+  press(KEY.LEFT);
+  expect(panelOpen()).toBe(true);
+  expect(clock()).toBeNull();
+});
+
+test("pointer hover becomes the Live arrow origin without activating", async () => {
+  await mountApp(PLAYLIST);
+  const second = screen.getByRole("button", { name: /Second Channel/ });
+  fireEvent.pointerMove(second);
+  fireEvent.pointerEnter(second);
+
+  expect(channelUnderCursor()).toBe("Second Channel");
+  expect(played).toHaveLength(0);
+  expect(panelOpen()).toBe(true);
+
   press(KEY.UP);
-  await settle();
-  expect(document.querySelector(".content-selector.focused")).toBeTruthy();
+  expect(channelUnderCursor()).toBe("First Channel");
+  expect(played).toHaveLength(0);
 
-  press(KEY.LEFT);
-  await settle();
-  expect(document.querySelector(".content-option.focused")?.textContent).toBe("أفلام");
-
-  press(KEY.LEFT);
-  await settle();
-  expect(document.querySelector(".content-option.focused")?.textContent).toBe("مسلسلات");
-
-  press(KEY.LEFT);
-  await settle();
-  expect(barKey()).toBe("بحث");
-
-  press(KEY.LEFT);
-  await settle();
-  expect(barKey()).toBe("الإعدادات");
+  fireEvent.click(second);
+  expect(played).toEqual(["http://example.invalid/2.m3u8"]);
+  expect(panelOpen()).toBe(false);
 });
 
-test("up from the top of the channel list reaches Search, and down comes back to it", async () => {
+test("Enter selects a different highlighted channel and closes the panel", async () => {
   await mountApp(PLAYLIST);
-  const wasOn = channelUnderCursor();
-  assert.notEqual(wasOn, "", "the cursor was not in the channel column to begin with");
-
-  press(KEY.UP);
-  await settle();
-  assert.equal(inTitleBar(), true, "up from the first channel did not reach the title bar");
-
   press(KEY.DOWN);
-  await settle();
-  assert.equal(inTitleBar(), false, "down did not leave the title bar");
-  assert.equal(channelUnderCursor(), wasOn, "it came back to a different place than it left");
+
+  press(KEY.ENTER);
+
+  expect(played).toEqual(["http://example.invalid/2.m3u8"]);
+  expect(panelOpen()).toBe(false);
 });
 
-test("down from the bottom of the channel list also reaches the bar, so the column cycles", async () => {
+test("Enter closes the panel without restarting the channel already playing", async () => {
   await mountApp(PLAYLIST);
-  // To the last channel of this category, wherever that is, then one more.
-  press(KEY.UP); // into the bar
-  await settle();
-  press(KEY.UP); // and round to the bottom of the column
-  await settle();
-  assert.equal(inTitleBar(), false, "up from the bar should have gone back into the column");
+  fireEvent.click(screen.getByRole("button", { name: /First Channel/ }));
+  expect(played).toHaveLength(1);
+  press(KEY.LEFT);
 
-  press(KEY.DOWN);
-  await settle();
-  assert.equal(inTitleBar(), true, "down off the bottom of the column did not reach the bar");
+  press(KEY.ENTER);
+
+  expect(played).toHaveLength(1);
+  expect(panelOpen()).toBe(false);
 });
 
-test("down from Search reached at the bottom returns to the top of the channel list", async () => {
+test("Enter selects the highlighted Live search result", async () => {
   await mountApp(PLAYLIST);
-  press(KEY.UP); // Search from the first channel
+  fireEvent.click(screen.getByRole("button", { name: /^Search/ }));
+  const field = screen.getByRole("textbox", { name: /Search channels/ });
+  fireEvent.change(field, { target: { value: "Third" } });
   await settle();
-  press(KEY.UP); // wrap to the last channel
-  await settle();
-  press(KEY.DOWN); // Search from the bottom
-  await settle();
-  assert.equal(inTitleBar(), true);
+  fireEvent.keyDown(field, { keyCode: KEY.DOWN });
 
-  press(KEY.DOWN);
-  await settle();
-  assert.equal(
-    channelUnderCursor(),
-    "First Channel",
-    "down from Search did not return to the top",
-  );
+  press(KEY.ENTER);
+
+  expect(played).toEqual(["http://example.invalid/3.m3u8"]);
+  expect(panelOpen()).toBe(false);
 });
 
-test("category focus does not move the displayed category until the rail is committed", async () => {
+test("category keydown changes the channel list before release without starting playback", async () => {
   await mountApp(PLAYLIST);
+  const started = played.length;
   press(KEY.LEFT);
   await settle();
   expect(document.querySelector(".rail .row.showing .row-label")?.textContent).toBe("News");
 
-  press(KEY.DOWN);
-  await settle();
+  pressDown(KEY.DOWN);
   expect(categoryUnderCursor()).toBe("Sport");
+  expect(document.querySelector(".rail .row.showing .row-label")?.textContent).toBe("Sport");
+  expect(document.querySelector(".list .row-label")?.textContent).toBe("Third Channel");
+  expect(played).toHaveLength(started);
+  release(KEY.DOWN);
+  pressDown(KEY.UP);
   expect(document.querySelector(".rail .row.showing .row-label")?.textContent).toBe("News");
+  expect(document.querySelector(".list .row-label")?.textContent).toBe("First Channel");
+  release(KEY.UP);
+  pressDown(KEY.DOWN);
+  expect(document.querySelector(".rail .row.showing .row-label")?.textContent).toBe("Sport");
+  release(KEY.DOWN);
 
   press(KEY.RIGHT);
   await settle();
   expect(document.querySelector(".rail .row.showing .row-label")?.textContent).toBe("Sport");
   expect(channelUnderCursor()).toBe("Third Channel");
+  expect(played).toHaveLength(started);
 });
 
-test("the categories keep their own way in and out of the bar", async () => {
-  await mountApp(PLAYLIST);
-  press(KEY.LEFT); // out of the channel column, into the rail
+test("held category commands refresh the channel list before release without rebuilding every repeat", async () => {
+  await mountApp(`${PLAYLIST}
+#EXTINF:-1 group-title="Culture",Culture Channel
+http://example.invalid/4.m3u8
+#EXTINF:-1 group-title="Music",Music Channel
+http://example.invalid/5.m3u8
+`);
+  press(KEY.LEFT);
   await settle();
-  const wasOn = categoryUnderCursor();
-  assert.notEqual(wasOn, "", "left did not put the cursor on a category");
+  const started = played.length;
+  const showing = () => document.querySelector(".rail .row.showing .row-label")?.textContent;
 
-  press(KEY.UP);
-  await settle();
-  assert.equal(inTitleBar(), true, "up from the first category did not reach the title bar");
+  pressDown(KEY.DOWN);
+  expect(showing()).toBe("Sport");
+  await settle(40);
+  pressDown(KEY.DOWN, true);
+  await settle(40);
+  pressDown(KEY.DOWN, true);
+  await settle(40);
+  pressDown(KEY.DOWN, true);
+  expect(categoryUnderCursor()).toBe("Culture");
+  await settle(29);
+  expect(showing()).toBe("Sport");
+  await settle(1);
+  expect(showing()).toBe("Culture");
+  expect(document.querySelector(".list .row-label")?.textContent).toBe("Culture Channel");
 
-  press(KEY.DOWN);
+  await settle(10);
+  pressDown(KEY.DOWN, true);
+  await settle(40);
+  pressDown(KEY.DOWN, true);
+  await settle(100);
+  expect(showing()).toBe("Music");
+  expect(document.querySelector(".list .row-label")?.textContent).toBe("Music Channel");
+  release(KEY.DOWN);
   await settle();
-  // The point of remembering: arriving from the rail must go back to the rail, not to a channel.
-  assert.equal(inTitleBar(), false);
-  assert.equal(categoryUnderCursor(), wasOn, "down from the bar left the categories");
+  expect(showing()).toBe("Music");
+  expect(played).toHaveLength(started);
 });
 
 test("left and right switch between lists without losing either cursor", async () => {
@@ -306,16 +246,21 @@ test("selecting the displayed category restores its channel cursor", async () =>
   expect(channelUnderCursor()).toBe("Second Channel");
 });
 
-test("left on the category list keeps the category list selected", async () => {
+test("left on categories enters application navigation and restores the category cursor", async () => {
   await mountApp(PLAYLIST);
   press(KEY.LEFT);
   await settle();
   const wasOn = categoryUnderCursor();
 
   press(KEY.LEFT);
-  await settle();
-  assert.equal(categoryUnderCursor(), wasOn, "left moved away from the selected category");
-  assert.ok(document.querySelector(".rail.focused"), "left moved out of the category list");
+  await settle(0);
+  expect(document.querySelector(".app-navigation.expanded")).toBeTruthy();
+  expect(document.querySelector(".panel .row.cursor")).toBeNull();
+
+  press(KEY.RIGHT);
+  await settle(0);
+  assert.equal(categoryUnderCursor(), wasOn, "the category cursor was not restored");
+  assert.ok(document.querySelector(".rail.focused"), "focus did not return to categories");
 });
 
 test("switching back to categories restores the latest category row", async () => {
@@ -334,86 +279,164 @@ test("switching back to categories restores the latest category row", async () =
   assert.equal(categoryUnderCursor(), "Sport", "left reset the category cursor");
 });
 
-test("the header moves directionally and stops at each edge", async () => {
+test("Live channel and category lists cycle at their vertical boundaries", async () => {
   await mountApp(PLAYLIST);
+
   press(KEY.UP);
   await settle();
-  assert.equal(barKey(), "Search");
+  expect(document.querySelector(".section-search.cursor")).toBeTruthy();
+  press(KEY.UP);
+  await settle();
+  expect(channelUnderCursor()).toBe("Second Channel");
+  press(KEY.DOWN);
+  await settle();
+  expect(channelUnderCursor()).toBe("First Channel");
 
   press(KEY.LEFT);
   await settle();
-  assert.equal(barKey(), "Search", "left moved past the first header control");
-
-  press(KEY.RIGHT);
-  press(KEY.RIGHT);
+  press(KEY.UP);
   await settle();
-  assert.equal(barKey(), "Settings", "right moved past the last header control");
+  expect(document.querySelector(".section-search.cursor")).toBeTruthy();
+  press(KEY.UP);
+  await settle();
+  expect(categoryUnderCursor()).toBe("Sport");
+  press(KEY.DOWN);
+  await settle();
+  expect(document.querySelector(".section-search.cursor")).toBeTruthy();
+  press(KEY.DOWN);
+  await settle();
+  expect(categoryUnderCursor()).toBe("News");
+});
 
+test("a picked search result keeps its presentation through the panel exit", async () => {
+  await mountApp(PLAYLIST);
+  fireEvent.click(screen.getByRole("button", { name: /First Channel/ }));
+  expect(played).toHaveLength(1);
   press(KEY.LEFT);
   await settle();
-  assert.equal(barKey(), "Search");
-});
 
-test("Red on the title bar does not disturb horizontal header focus", async () => {
-  await mountApp(PLAYLIST, { hiddenCategories: ["News"] });
-  press(KEY.UP);
+  fireEvent.click(screen.getByRole("button", { name: /^Search/ }));
+  const field = screen.getByRole("textbox", { name: /Search channels/ });
+  fireEvent.change(field, { target: { value: "First" } });
   await settle();
-  assert.equal(barKey(), "Search");
+  expect(document.querySelector(".list")?.textContent).toContain("First Channel");
 
-  press(KEY.RED);
-  pressDown(KEY.RIGHT);
-  pressDown(KEY.RIGHT, true);
-  release(KEY.RIGHT);
-  await settle();
-
-  assert.equal(barKey(), "Settings");
-});
-
-test("vertical movement from Settings returns to the matching channel-list edge", async () => {
-  await mountApp(PLAYLIST);
-  press(KEY.UP);
-  await settle();
-  press(KEY.RIGHT);
-  await settle();
-  assert.equal(barKey(), "Settings");
-
-  press(KEY.DOWN);
-  await settle();
-  assert.equal(channelUnderCursor(), "First Channel");
-
-  press(KEY.UP);
-  await settle();
-  press(KEY.UP);
-  await settle();
-  assert.equal(channelUnderCursor(), "Second Channel");
-});
-
-test("arriving from the channel list does not return the cursor to the categories", async () => {
-  /*
-   * The mistake this remembers to avoid. Before the bar sat above both columns, the only way out of
-   * it downward was into the categories, so a viewer who reached Search from a channel and changed
-   * their mind was moved to a list they had not been in.
-   */
-  await mountApp(PLAYLIST);
-  press(KEY.UP); // into the bar from the channel column
-  await settle();
-  press(KEY.DOWN);
-  await settle();
-
-  assert.notEqual(
-    channelUnderCursor(),
-    "",
-    "down from the bar landed somewhere other than a channel",
+  document.documentElement.style.setProperty("--t-navigation", "180ms");
+  const result = [...document.querySelectorAll(".list .row")].find((row) =>
+    row.querySelector(".playing-dot"),
   );
+  assert.ok(result);
+  fireEvent.click(result);
+
+  expect(panelOpen()).toBe(false);
+  expect(played).toHaveLength(1);
+  expect(document.querySelector(".panel-cols.searching")).toBeTruthy();
+  expect((document.querySelector(".search-field") as HTMLInputElement).value).toBe("First");
+  expect(document.querySelector(".list")?.textContent).toContain("First Channel");
+  expect(document.querySelector(".list")?.textContent).not.toContain("Second Channel");
+  expect(document.querySelector(".panel .rail.search-categories")).toBeTruthy();
+
+  await settle(179);
+  expect(document.querySelector(".panel-cols.searching")).toBeTruthy();
+  expect(document.querySelector(".search-field")).toBeTruthy();
+  expect(document.querySelector(".list")?.textContent).toContain("First Channel");
+  expect(document.querySelector(".panel .rail.search-categories")).toBeTruthy();
+
+  await settle(1);
+  expect(document.querySelector(".search-field")).toBeNull();
+  expect(document.querySelector(".panel-cols.searching")).toBeNull();
+  expect(document.querySelector(".panel .rail")).toBeTruthy();
+  expect(document.querySelector(".list")?.textContent).toContain("Second Channel");
 });
 
-test("left and right still move within the bar before leaving it", async () => {
+test("a fresh search survives the deadline of the exit it interrupted", async () => {
   await mountApp(PLAYLIST);
-  press(KEY.UP);
+  fireEvent.click(screen.getByRole("button", { name: /First Channel/ }));
+  press(KEY.LEFT);
   await settle();
-  assert.equal(barKey(), "Search", "the bar is entered on its first key");
 
-  press(KEY.RIGHT);
+  fireEvent.click(screen.getByRole("button", { name: /^Search/ }));
+  const field = screen.getByRole("textbox", { name: /Search channels/ });
+  fireEvent.change(field, { target: { value: "First" } });
   await settle();
-  assert.equal(barKey(), "Settings", "right did not move along the bar");
+
+  document.documentElement.style.setProperty("--t-navigation", "180ms");
+  const result = [...document.querySelectorAll(".list .row")].find((row) =>
+    row.querySelector(".playing-dot"),
+  );
+  assert.ok(result);
+  fireEvent.click(result);
+  expect(panelOpen()).toBe(false);
+
+  await settle(50);
+  press(KEY.LEFT);
+  await settle(0);
+  expect(panelOpen()).toBe(true);
+
+  fireEvent.click(screen.getByRole("button", { name: "Live" }));
+  await settle(0);
+  fireEvent.click(screen.getByRole("button", { name: /^Search/ }));
+  await settle(300);
+  const nextField = screen.getByRole("textbox", { name: /Search channels/ });
+  fireEvent.change(nextField, { target: { value: "Second" } });
+  await settle(200);
+
+  expect(panelOpen()).toBe(true);
+  expect((document.querySelector(".search-field") as HTMLInputElement).value).toBe("Second");
+  expect(document.querySelector(".panel-cols.searching")).toBeTruthy();
+  expect(document.querySelector(".panel .rail.search-categories")).toBeTruthy();
+  expect(document.querySelector(".list")?.textContent).toContain("Second Channel");
+  expect(document.querySelector(".list")?.textContent).not.toContain("First Channel");
+
+  await settle(200);
+  press(KEY.BACK);
+  await settle(0);
+  press(KEY.BACK);
+  await settle(0);
+  press(KEY.BACK);
+  await settle(0);
+  expect(panelOpen()).toBe(false);
+  await settle(180);
+  expect(document.querySelector(".search-field")).toBeNull();
+  expect(document.querySelector(".panel .rail")).toBeTruthy();
+});
+
+test("dialling after a genuine Live reentry does not replay the entry", async () => {
+  localStorage.removeItem("app:last-mode:pl-1");
+  await mountApp("", {
+    source: XTREAM_SOURCE,
+    fetchImplementation: xtreamFetch(
+      [
+        { category_id: "10", category_name: "News" },
+        { category_id: "20", category_name: "Sport" },
+      ],
+      [
+        { stream_id: "1", name: "Alpha One", category_id: "10", stream_type: "live" },
+        { stream_id: "2", name: "Beta Two", category_id: "20", stream_type: "live" },
+      ],
+    ),
+  });
+
+  fireEvent.click(screen.getByRole("button", { name: "Movies" }));
+  await settle(400);
+  fireEvent.click(screen.getByRole("button", { name: "Live" }));
+  await settle(400);
+  expect(panelOpen()).toBe(true);
+
+  for (let attempt = 0; attempt < 3 && panelOpen(); attempt += 1) {
+    press(KEY.BACK);
+    await settle(0);
+  }
+  expect(panelOpen()).toBe(false);
+
+  const before = played.length;
+  press(50);
+  press(KEY.ENTER);
+  await settle(0);
+
+  expect(played.length).toBe(before + 1);
+  expect(played[played.length - 1]).toContain("/2.m3u8");
+  expect(panelOpen()).toBe(false);
+  expect(document.querySelector(".panel:not(.away)")).toBeNull();
+  expect(document.querySelector(".search-field")).toBeNull();
 });

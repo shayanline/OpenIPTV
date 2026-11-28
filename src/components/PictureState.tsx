@@ -10,7 +10,7 @@ import { explain } from "../services/errors";
  *
  * One rule divides this from the banner along the bottom, and it is worth stating because the
  * two used to overlap: this reports on the picture, the banner reports on the channel.
- * Connecting, waiting, paused and failed are all things happening to the picture, so they are
+ * Connecting, waiting and failed are all things happening to the picture, so they are
  * said here, once, where the picture is missing.
  *
  * One surface for all four, and that is the point rather than a tidy-up.
@@ -42,30 +42,23 @@ const FAULT_SETTLE_MS = 500;
 export function PictureState({
   channel,
   busy,
-  paused,
   filling,
   waited,
   fault,
-  retryIn,
-  attempt,
-  attempts,
   finite,
+  paused = false,
 }: {
   /** The channel this is about, named only when something has gone wrong with it. */
   channel: string;
   busy: boolean;
-  paused: boolean;
   /** How full the buffer is, where the engine says, and null where it does not. */
   filling: number | null;
   /** Seconds spent waiting for this channel to start. */
   waited: number;
-  /** The engine's name for the fault, or empty when there is none. */
+  /** The engine's name for the fault, or empty when there is none. Only terminal faults reach here. */
   fault: string;
-  /** Seconds until the next automatic attempt. */
-  retryIn: number;
-  attempt: number;
-  attempts: number;
   finite: boolean;
+  paused?: boolean;
 }) {
   const { t, number } = useLocale();
   /*
@@ -87,32 +80,24 @@ export function PictureState({
 
   if (settled) {
     const reason = explain(settled);
-    const trying = !finite && attempt < attempts;
     return (
       <div className="plate picture-state failed" role="alert">
-        <span className="picture-state-mark warn">
-          <Icon name="warn" />
-        </span>
-        <Text value={channel || t("channel.unnamed")} className="picture-state-channel" />
-        <p className="picture-state-word">{t(reason.whyKey)}</p>
-        <p className="picture-state-note">{t(reason.fixKey)}</p>
-
-        {!finite && (
-          <p className="picture-state-doing">
-            {trying ? (
-              <>
-                <span className="spinner small" aria-hidden="true" />
-                {t("picture.tryingAgain", {
-                  seconds: retryIn,
-                  attempt,
-                  attempts,
-                })}
-              </>
-            ) : (
-              t("picture.failedAfterRetries")
-            )}
-          </p>
-        )}
+        <section
+          className="picture-state-content"
+          aria-label={t(reason.whyKey)}
+          // biome-ignore lint/a11y/noNoninteractiveTabindex: A scrollable reading region needs keyboard focus.
+          tabIndex={0}
+        >
+          <div className="picture-state-heading">
+            <span className="picture-state-mark error">
+              <Icon name="warn" />
+            </span>
+            <div className="picture-state-heading-copy">
+              <h2 className="picture-state-word">{t(reason.whyKey)}</h2>
+              <p className="picture-state-channel">{channel || t("channel.unnamed")}</p>
+            </div>
+          </div>
+        </section>
 
         {/* The banner is hidden while this is up, so this is the only guide on screen and it
             has to be complete, including the way out. */}
@@ -120,30 +105,30 @@ export function PictureState({
           className="picture-state-keys ruled"
           items={
             finite
-              ? [
-                  { keys: ["OK"], label: t("common.back") },
-                  { keys: ["Return"], label: t("common.closeApp") },
-                ]
+              ? [{ keys: ["OK", "Return"], label: t("common.back") }]
               : [
                   { keys: ["\u2191", "\u2193"], label: t("common.anotherChannel") },
-                  { keys: ["OK"], label: t("common.allChannels") },
+                  { keys: ["OK"], label: t("common.select") },
                   { keys: ["Return"], label: t("common.closeApp") },
                 ]
           }
         />
-        {!finite && <p className="picture-state-code">{settled}</p>}
       </div>
     );
   }
 
-  if (paused) {
+  if (paused && !busy && !fault) {
     return (
-      <div className="plate picture-state" role="status">
+      <div
+        className="plate picture-state paused"
+        role="status"
+        aria-label={t("common.playPause")}
+      >
         <span className="picture-state-mark">
           <Icon name="pause" />
         </span>
-        <p className="picture-state-word">{t("picture.paused")}</p>
-        <p className="picture-state-note">{t("picture.pressPlay")}</p>
+        <Text value={channel} className="picture-state-channel" />
+        <p className="picture-state-word">{t("common.play")}</p>
       </div>
     );
   }

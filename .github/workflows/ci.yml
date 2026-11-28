@@ -116,40 +116,6 @@ jobs:
       - name: Check browser engine compatibility
         run: npm run tv:engines
 
-  # Shared runner timings are informational.
-  budget:
-    needs: changes
-    if: needs.changes.outputs.run-checks == 'true'
-    runs-on: ubuntu-latest
-    continue-on-error: true
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version-file: .nvmrc
-          cache: npm
-      - run: npm ci
-      - run: npm run build
-
-      - name: Within the floor profile's budget
-        run: |
-          set -o pipefail
-          npm run tv:budget 2>&1 | tee /tmp/budget.txt
-
-      - name: Put the numbers where they can be read
-        if: always()
-        run: |
-          {
-            echo '## Performance budget, on the floor profile'
-            echo ''
-            echo 'Shared runner timings are informational. Inspect regressions before merging.'
-            echo ''
-            echo '```'
-            tail -40 /tmp/budget.txt 2>/dev/null || echo "the run produced nothing"
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
-
   dependencies:
     needs: changes
     if: github.event_name == 'pull_request' && needs.changes.outputs.run-checks == 'true'

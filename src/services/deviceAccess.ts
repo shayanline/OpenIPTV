@@ -38,6 +38,7 @@ export type PairResult =
 
 let session: PairingSession | null = null;
 let sessionVersion = 0;
+let pairedPresence: boolean | undefined;
 const deviceListeners = new Set<() => void>();
 
 const notifyDevices = () => {
@@ -77,6 +78,7 @@ function storedDevices(): StoredDevice[] {
   const current = readJSON<unknown>(KEY, null);
   const value = current ?? readJSON<unknown>(LEGACY_KEY, []);
   const devices = Array.isArray(value) ? value.filter(validDevice) : [];
+  pairedPresence = devices.length > 0;
   if (current === null && devices.length) {
     persist(devices);
     remove(LEGACY_KEY);
@@ -86,6 +88,7 @@ function storedDevices(): StoredDevice[] {
 
 function persist(devices: StoredDevice[]): void {
   write(KEY, JSON.stringify(devices));
+  pairedPresence = devices.length > 0;
 }
 
 function publicDevice({ id, name, createdAt, lastUsedAt }: StoredDevice): PairedDevice {
@@ -198,12 +201,14 @@ export function revokePairedDevice(id: string): boolean {
 }
 
 export function hasPairedDevices(): boolean {
-  return storedDevices().length > 0;
+  if (pairedPresence === undefined) storedDevices();
+  return pairedPresence === true;
 }
 
 export function clearDeviceAccess(): void {
   clearPairingSession();
   remove(KEY);
   remove(LEGACY_KEY);
+  pairedPresence = undefined;
   notifyDevices();
 }

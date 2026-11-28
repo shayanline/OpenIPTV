@@ -7,6 +7,11 @@ import { markCapabilities } from "./services/capabilities";
 import { applyMetrics } from "./services/metrics";
 import "./styles/app.css";
 
+window.addEventListener("vite:preloadError", (event) => {
+  event.preventDefault();
+  window.location.reload();
+});
+
 /**
  * Mark the document before anything paints.
  *

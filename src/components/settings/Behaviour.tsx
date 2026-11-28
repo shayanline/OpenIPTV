@@ -64,6 +64,16 @@ export function Playback() {
           onChange={(value) => s.set("showPlaybackStats", value)}
         />
       </Row>
+      <Row
+        label={t("settings.continuousReconnect")}
+        hint={t("settings.continuousReconnectHint")}
+      >
+        <Toggle
+          label={t("settings.continuousReconnect")}
+          value={s.continuousReconnect}
+          onChange={(value) => s.set("continuousReconnect", value)}
+        />
+      </Row>
     </>
   );
 }

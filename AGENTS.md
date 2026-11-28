@@ -8,7 +8,7 @@ React 19, TypeScript, zustand, Vite, Biome, Vitest. hls.js only on the browser p
 runtime dependencies, and adding one is a decision rather than a detail: it is compiled and run
 by a 2020 television every time somebody switches the set on.
 
-Node 22.18 or newer, pinned in `.nvmrc`.
+Use the Node.js version pinned in `.nvmrc`. Supported versions are declared in `package.json`.
 
 ## README audience
 
@@ -16,9 +16,17 @@ Node 22.18 or newer, pinned in `.nvmrc`.
 
 Keep implementation decisions, internal architecture, cache and retry timing, socket lifecycle, and engineering rationale in [the design notes](docs/design.md), [the testing notes](docs/testing.md), source code, or contributor documentation. Include technical detail in the README only when a user needs it to try, install, configure, or recover the application. Use GitHub links, alerts, tables, keycaps, and collapsed details when they make the user path faster to scan.
 
+## Changelog
+
+Keep each release entry as a short, flat list of the major user facing changes. Use complete sentences, and omit minor interface details and implementation mechanics.
+
+Cover the full change since the previous released version by checking its release reference, subsequent commits and pending work. Preserve existing release history.
+
 ## Verification
 
-Verification is a separate final phase that starts only after the task author approves the finished implementation. Do not run verification commands during implementation, including lint, type checks, tests, builds, TV gates, WebAssembly checks, XML validation, or `git diff --check`. Reading files and reviewing the diff while editing do not replace final verification.
+Builds and packaging do not require approval and may run whenever needed, including when preparing a TV installation for manual testing. This includes native compilation, generated build artifacts and type checks invoked by a build.
+
+Verification is a separate final phase that starts only after the task author approves the finished implementation. Other verification commands must wait for that approval, including lint, standalone type checks, tests, TV gates, WebAssembly checks, XML validation and `git diff --check`. Reading files and reviewing the diff while editing do not replace final verification.
 
 1. When implementation is ready, describe the changes as unverified and awaiting approval. Ask the task author, "Is the task finished and approved for final verification?", then wait for explicit confirmation before running checks. Do not infer approval from the original task request or your own assessment that implementation is complete.
 2. After approval, select and run the final checks justified by the changed files and behavior, using the rules below.
@@ -27,11 +35,11 @@ Verification is a separate final phase that starts only after the task author ap
 
 ### Final Check Selection
 
-Choose checks from the changed files and behavior. Start with the smallest check that can detect a regression, then widen only when the impact cannot be mapped safely or a relevant failure indicates a broader problem. Do not run a check only because it exists. Select the checks and apply the deduplication rules from the selection table in [testing and measurement](docs/testing.md), which is the single source for what each kind of change requires. All checks in that table belong to the approved final verification phase.
+Choose checks from the changed files and behavior. Start with the smallest check that can detect a regression, then widen only when the impact cannot be mapped safely or a relevant failure indicates a broader problem. Do not run a check only because it exists. Select the checks and apply the deduplication rules from the selection table in [testing and measurement](docs/testing.md), which is the single source for what each kind of change requires. Except for builds, the checks in that table belong to the approved final verification phase.
 
 Do not repeat a passing check unless later edits could invalidate it. Do not expand the task to fix an unrelated existing failure. Confirm the failure against the unchanged baseline when practical, then report it as a blocker rather than claiming verification passed. Inspect the complete diff and run `git diff --check` during final verification. Before reporting verified completion, state which checks ran and which checks were skipped, with a short reason.
 
-The three `tv:` gates are the checks that speak for hardware nobody here has. Details of what each measures and how to read it are in [testing and measurement](docs/testing.md).
+The `tv:gap` and `tv:engines` gates check layout and browser compatibility. Desktop diagnostics cannot establish TV performance. Details of each tool's scope are in [testing and measurement](docs/testing.md).
 
 ## Running it
 
@@ -41,11 +49,9 @@ floating Smart Remote with the D-pad, the transport keys, the coloured keys and 
 dispatches the same key events the TV sends rather than calling handlers directly, and the bundler
 drops it from a production build, so it cannot be conjured onto a television.
 
-`npm run tv` runs the built app under the reference set's measured constraints, with `webapis.avplay`
-and `tizen` shimmed so the Tizen paths actually run, and `npm run tv:floor` does it on the weakest
-supported set. Judge speed there and nowhere else.
+`npm run tv` runs the built app in a desktop browser with Tizen APIs shimmed and the application viewport fixed. It does not emulate TV hardware. `npm run tv:engines` verifies browser compatibility independently.
 
-`npm run tv:quick` gives a shorter sample of every benchmark journey without a budget verdict. It is an optional diagnostic rather than an automatic step while working, it runs only inside the approved final verification phase like every other check, and `npm run tv:budget` remains the final measurement.
+`npm run tv:bench` runs desktop diagnostic and functional journeys. `npm run tv:quick` gives a smaller sample of Live navigation, VOD grid and cached startup. Both require final verification approval. Their exit status checks recording integrity and functional coverage, without a TV performance verdict. The estimated performance budget, floor and reference commands have been retired.
 
 `npm run tv:on-set` measures the app on a real television over sdb: the launch marks, the CPU at
 rest, and, given `--stream=<url>`, what a picture costs and whether the playhead actually moves.
@@ -57,11 +63,15 @@ it is not a gate and never runs in CI.
 
 ```
 src/
-  App.tsx                  the screen stack and the key routing, and nothing else
+  App.tsx                  the surface stack, tuner and application mode ownership
+  screens/LiveScreen.tsx   the Live picture, Guide and current panel ownership
+  screens/VodScreen.tsx    the opaque Movies and Series shell, search and details ownership
+  components/vod/          category rail, poster grid, title row, details and episode panel
   types.ts                 Channel, and the shapes the parser produces
   meta.ts                  the repository URL, and the version Vite injects from package.json
   services/m3u.ts          playlist parser, tolerant of the ways M3U is abused
   services/lineup.ts       which lists exist, and where channel up and down land
+  services/lineupProtocol.ts strict revision bound phone lineup queries and mutations
   services/search.ts       ranked matching over the whole playlist, capped per rank
   services/player.ts       one interface over AVPlay and hls.js
   services/errors.ts       engine error codes to something a viewer can act on
@@ -71,19 +81,25 @@ src/
   services/remoteServer.ts the private network server lifecycle and API boundary
   services/manifest.ts     reading and repairing a playlist, as pure functions
   services/repair.ts       serving a repaired playlist to AVPlay over a loopback socket
-  services/logos.ts        decode logos once, at the size they are drawn, and queue the work
+  services/artwork.ts      bounded poster and logo queues, bitmap limits and backdrop leases
+  services/workload.ts     device hints, adaptive artwork limits and owned frame sampling
+  services/logos.ts        the channel logo adapter over the shared artwork service
   services/capabilities.ts what the engine can actually do, measured rather than assumed
   services/metrics.ts      the measurements the stylesheet shares with the code
   services/store.ts        localStorage, for the short strings needed before first paint
   services/disk.ts         IndexedDB, for playlists, Xtream catalogues and logos, on a 24 MB budget
+  services/personalDisk.ts durable personal lineup records without cache eviction
   services/idle.ts         work that must never be why a key press waits
-  stores/channels.ts       channels, categories, favourites, last watched
+  stores/channels.ts       provider loading, cache and account ownership
+  stores/lineup.ts         overlays, reconciliation, effective views, revisions and rollback
+  stores/library.ts        VOD resources, synthetic categories, stale refresh and progress resolution
   stores/settings.ts       everything the viewer can change, persisted
-  hooks/useTuner.ts        the player's life, channel changing, pausing, automatic retry
+  hooks/usePlaybackController.ts the player's life, channel changing, seeking, automatic retry
   hooks/useChrome.ts       the banner, messages and dialled digits, and their timers
   hooks/useRemote.ts       remote key codes, and registering them with Tizen
   hooks/useSpatialNav.ts   four directional focus movement over arbitrary controls
-  hooks/useWindowed.ts     renders a slice of a long list instead of all of it
+  hooks/useWindowed.ts     renders list rows and complete six column poster row windows
+  hooks/useVodNavigation.ts VOD cursors, origins, settle timers and wheel input guard
   hooks/useViewport.ts     the measured height a windowed list is laid out against
   hooks/usePointerAwake.ts whether a pointer is in use, for the on screen pad
   hooks/useRemoteAccess.ts the local remote access server state for React
@@ -103,10 +119,9 @@ scripts/
   store-assets.mjs         the six pictures Samsung's store form asks for, from the real build
   screenshots.mjs          the six pictures in the README, from the real build
   stamp-version.mjs        write package.json's version into config.xml at package time
-  tv/                      run the app under the TV's measured constraints
+  tv/                      compatibility checks, desktop diagnostics and real TV tools
   tv/platforms.json        Samsung's engine matrix, the only copy of it
-  tv/floor.json            the weakest supported set, with a source for every figure
-  tv/profile.json          what the reference set reports about itself, rewritten by calibrate
+  tv/profile.json          the viewport and user agent for the desktop API fixture
   tv/harness.mjs           serve the build, walk every screen, measure the boxes
   tv/gap-parity.mjs        spacing is the same with and without flex gap
   tv/engine-parity.mjs     behaviour is the same on Chromium 69 and 120
@@ -115,32 +130,25 @@ public/config.xml          the Tizen widget manifest, privileges and CSP
 
 ## Invariants
 
+The app language owns text and layout direction across the television and remote interface. Provider names, categories, descriptions, subtitles and viewer entered names inherit that direction without `dir="auto"` or content based direction detection. Preserve their spelling. Fixed protocol values such as URLs and pairing codes may retain an explicit LTR direction, but they must never set the direction of a surrounding layout.
+
 Break one of these and the app fails on hardware no test here owns. The reasoning is in
 [the design notes](docs/design.md) and at length in the source.
 
-- **The screen is a stack and a layer only shows when nothing above it is open.** `App.tsx`
-  names the five layers. A new overlay belongs in that stack or nowhere.
-- **The four laws of the key model.** At the picture, up and down always change channel. OK does
-  the obvious thing where it is pressed. Left and right move within whatever is showing. RETURN
-  always goes back, and closes the app only when there is nothing left to close.
-  `tests/keyLaws.test.tsx` enforces them.
-- **`services/store` is localStorage, `services/disk` is IndexedDB.** Settings, favourites and
-  the last channel are short strings needed before the first paint, so they need a synchronous
-  API. Playlist text, Xtream catalogues and logos are megabytes and Blobs, which localStorage caps at 5MB
-  and cannot hold. The disk cache keeps its own 24 MB budget deliberately.
-- **No IndexedDB work on an interaction path.** Writing each logo as it was decoded cost a
-  measurable regression, and reading the whole metadata store on every write cost an 840ms frame
-  while the interface was idle. Both are queued through `services/idle`.
-- **The cursor answers the press, the expensive work follows.** The rail waits 150ms before the
-  channel column rebuilds, the search waits 150ms before it queries, the tuner waits 450ms
-  before it retunes. Anything expensive added to a held key needs the same treatment.
+- **The screen is a stack and a surface only shows when nothing above it is open.** `App.tsx` names the five levels and resolves the active surface. A new focus owning surface belongs in that stack or nowhere. The highest open focus owning surface receives input, and `LiveScreen.tsx` delegates Live keys to exactly one of Guide, panel or picture.
+- **The key model is mode specific.** At the uncovered Live picture, up and down always change channel, Left and OK open the Live browser, and Right opens the playback deck. At the uncovered finite picture, Left and Right quick seek, OK opens the deck, and up and down deliberately do nothing. Physical transport keys keep their semantic meaning on every surface. RETURN always goes back, and closes the app only when there is nothing left to close. `tests/keyLaws.test.tsx` enforces the Live contract.
+- **The three storage roles are distinct.** `services/store` keeps short launch values in synchronous localStorage. `services/disk` keeps refetchable catalogues and artwork in the budgeted `openiptv` IndexedDB cache. `services/personalDisk` keeps durable lineup overlays in `openiptv-personal`, which has no cache eviction and is never cleared by cache clearing.
+- **Provider catalogues remain immutable.** `stores/lineup` reconciles sparse personal overlays, then publishes the only Live category, channel, search, channel change and number index views that presentation may consume. Launch reads the cached catalogue and personal record together, so provider order never appears before personal order. Television management and paired phone management both call `applyLineupMutation`, while the effective number index owns dialling.
+- **No IndexedDB work occurs on a direction input path.** Interaction handlers read materialised arrays, sets and maps. Committed personal writes and cache work use `services/idle`, while a failed personal transaction restores the latest durable lineup revision and retains a recoverable management error. Playlist owner changes, removal and reset invalidate queued work, drain its promises and wait for an active write before destructive cleanup. Legacy settings disappear only after the replacement personal record commits.
+- **The cursor answers the press, the expensive work follows.** A fresh Live category press updates its channel column immediately, while held category repeats refresh it at most once every 150ms. Live search waits 150ms before it queries, while Movie and Series search runs only when Search is activated or Enter is pressed in its input. An ordinary channel press commits after feedback can paint without waiting for release. Held channel repeats coalesce until release, with a 450ms fallback when no release arrives. Anything expensive added to a held key needs the same treatment.
+- **VOD category focus is immediate.** Catalogue replacement settles after 150ms, while normal poster requests wait for the usual 120ms poster permission. Only bounded preparation of the first 18 nearby posters in the committed grid window can begin before that permission. Each accepted vertical wheel gesture moves one item in linear order before the 120ms wheel guard begins.
+- **VOD never keeps a hidden provider connection.** Entering Movies or Series stops playback and releases the decoder, while returning to Live retunes the remembered channel through the playback controller.
+- **The 24 MiB disk cache has isolated classes.** Playlist and catalogue data use 12 MiB, poster derivatives use 8 MiB, and logo derivatives use 4 MiB. One class cannot evict another. Cache clearing never clears `openiptv-personal`.
+- **Phone lineup state stays bounded and revision bound.** Ordinary remote snapshots contain only active lineup readiness and revision. Queries default to 50 items and reject limits above 100. Every cursor binds playlist, revision, scope, category, search and hidden inclusion. A stale page or mutation returns the current revision and a fresh bounded snapshot, while repeated mutation request identifiers return their first result.
+- **Television fault controls exist only in the simulator shim.** `window.__openiptvTvFaults` can control prepare completion, buffering, playhead progress, seeks, faults, Live windows and visibility after a harness opts in. Production code does not create this interface.
 - **Cached playlists are keyed by address**, not by playlist id, or editing a URL serves the
   previous playlist from a cache that believes itself current.
-- **One artifact, no branching by model year.** The build targets es2019 and the stylesheet uses
-  nothing newer than Chromium 69, so every later set runs a strict superset. There is exactly
-  one runtime capability branch, the flex gap probe, and `tv:gap` covers it. Every branch added
-  costs an engine in the matrix, because the years in between stop being unreachable the moment
-  code can tell them apart.
+- **One artifact, no branching by model year.** The build targets es2019 and the stylesheet uses nothing newer than Chromium 69, so every later set runs a strict superset. The flex gap probe remains the layout compatibility branch covered by `tv:gap`. Artwork workload limits adapt through one shared scheduler using available hardware hints and observed responsiveness, while retaining the same hard resource ceilings. Additional engine specific behavior needs coverage in the engine matrix.
 - **esbuild lowers syntax and not methods**, so `?.` is safe on an old engine and `Array.at`
   would ship and throw. `tv:engines` is what catches that.
 - **`scripts/tv/platforms.json` is the only place the engine matrix is written down.** Do not
@@ -190,5 +198,4 @@ Break one of these and the app fails on hardware no test here owns. The reasonin
   No frames looks the same either way.
 - **Piping a long run through `grep` into a file block buffers it**, so a hanging run looks the
   same as a quiet one. Write the full output per run and extract afterwards.
-- **A quarter of the machine being busy moves the benchmark numbers by a third.** If a run
-  fails, read the load in the header before reading the failure.
+- Desktop timings have no TV acceptance thresholds. Investigate suspected regressions with a controlled baseline comparison, then validate the affected behavior on a real set. Load average alone does not establish a cause.

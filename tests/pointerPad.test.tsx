@@ -1,6 +1,9 @@
+import { readFileSync } from "node:fs";
 import { afterEach, beforeEach, expect, test } from "vitest";
-import { cleanup, fireEvent, render } from "@testing-library/react";
+import { cleanup, fireEvent, render, renderHook } from "@testing-library/react";
 import { PointerPad } from "../src/components/PointerPad";
+import { usePointerAwake } from "../src/hooks/usePointerAwake";
+import { KEY } from "../src/hooks/useRemote";
 
 /**
  * The pad remembers where it was dragged through localStorage rather than settings,
@@ -10,6 +13,37 @@ import { PointerPad } from "../src/components/PointerPad";
 
 beforeEach(() => localStorage.clear());
 afterEach(() => cleanup());
+
+test("repeated input in the current mode does not invalidate root observers", () => {
+  const hook = renderHook(() => usePointerAwake());
+  const root = document.documentElement;
+  const observer = new MutationObserver(() => {});
+  observer.observe(root, { attributes: true, attributeFilter: ["data-input-mode"] });
+  try {
+    fireEvent.keyDown(window, { keyCode: KEY.DOWN });
+    fireEvent.keyDown(window, { keyCode: KEY.DOWN });
+    expect(root.dataset.inputMode).toBe("remote");
+    expect(observer.takeRecords()).toHaveLength(0);
+
+    fireEvent.pointerMove(window);
+    fireEvent.pointerMove(window);
+    fireEvent.pointerDown(window);
+    expect(root.dataset.inputMode).toBe("pointer");
+    expect(observer.takeRecords()).toHaveLength(1);
+
+    fireEvent.keyDown(window, { keyCode: 65 });
+    expect(root.dataset.inputMode).toBe("pointer");
+    expect(observer.takeRecords()).toHaveLength(0);
+
+    fireEvent.keyDown(window, { keyCode: KEY.DOWN });
+    fireEvent.keyDown(window, { keyCode: KEY.UP });
+    expect(root.dataset.inputMode).toBe("remote");
+    expect(observer.takeRecords()).toHaveLength(1);
+  } finally {
+    observer.disconnect();
+    hook.unmount();
+  }
+});
 
 test("a dragged position is written on pointerup and restored on remount", () => {
   const first = render(<PointerPad shown />);
@@ -53,4 +87,13 @@ test("a pointerup that was not a drag writes nothing", () => {
   fireEvent.pointerUp(pad, { pointerId: 1 });
 
   expect(localStorage.getItem("openiptv.pad")).toBeNull();
+});
+
+test("the pointer pad sits above playback chrome and below modal popups", () => {
+  const tokens = readFileSync("src/styles/tokens.css", "utf8");
+  const value = (name: string) =>
+    Number(tokens.match(new RegExp(`--${name}:\\s*(\\d+);`))?.[1]);
+
+  expect(value("z-playback")).toBeLessThan(value("z-pointer"));
+  expect(value("z-pointer")).toBeLessThan(value("z-popup"));
 });

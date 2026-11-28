@@ -90,17 +90,32 @@ export function SmartRemote() {
     };
   }, []);
 
-  const releaseKey = useCallback((code?: number) => {
+  const releaseKey = useCallback(() => {
     window.clearTimeout(repeatDelay.current);
     window.clearInterval(repeatTimer.current);
     repeatDelay.current = undefined;
     repeatTimer.current = undefined;
-    const releasing = code ?? activeKey.current;
-    if (releasing !== null) sendKeyUp(releasing);
+    const releasing = activeKey.current;
     activeKey.current = null;
+    if (releasing !== null) sendKeyUp(releasing);
   }, []);
 
-  useEffect(() => () => releaseKey(), [releaseKey]);
+  useEffect(() => {
+    const onVisibility = () => {
+      if (document.hidden) releaseKey();
+    };
+    window.addEventListener("pointerup", releaseKey);
+    window.addEventListener("pointercancel", releaseKey);
+    window.addEventListener("blur", releaseKey);
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      releaseKey();
+      window.removeEventListener("pointerup", releaseKey);
+      window.removeEventListener("pointercancel", releaseKey);
+      window.removeEventListener("blur", releaseKey);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [releaseKey]);
 
   // A press must not move the browser's focus, or the app loses the element the remote is
   // meant to be steering. Pointer capture keeps a held key alive when the pointer drifts.
@@ -113,11 +128,12 @@ export function SmartRemote() {
       activeKey.current = code;
       sendKeyDown(code);
       repeatDelay.current = window.setTimeout(() => {
-        repeatTimer.current = window.setInterval(() => sendKeyDown(code), 120);
+        repeatTimer.current = window.setInterval(() => sendKeyDown(code, true), 120);
       }, 400);
     },
-    onPointerUp: () => releaseKey(code),
-    onPointerCancel: () => releaseKey(code),
+    onPointerUp: releaseKey,
+    onPointerCancel: releaseKey,
+    onLostPointerCapture: releaseKey,
     onClick: (event: React.MouseEvent) => {
       if (event.detail === 0) send(code, label);
     },
@@ -135,6 +151,8 @@ export function SmartRemote() {
       <button
         type="button"
         className="remote-open"
+        data-virtual-remote
+        onDoubleClick={(event) => event.stopPropagation()}
         onMouseDown={(e) => e.preventDefault()}
         onClick={() => setOpen(true)}
         aria-label="Show Smart Remote"
@@ -145,14 +163,22 @@ export function SmartRemote() {
   }
 
   return (
-    <div className="remote-stage" style={{ transform: `translate(${pos.x}px, ${pos.y}px)` }}>
+    <div
+      className="remote-stage"
+      data-virtual-remote
+      style={{ transform: `translate(${pos.x}px, ${pos.y}px)` }}
+      onDoubleClick={(event) => event.stopPropagation()}
+    >
       <div className="remote-hud">
         <span className="remote-last">{last || "No key yet"}</span>
         <button
           type="button"
           className="remote-hide"
           onMouseDown={(e) => e.preventDefault()}
-          onClick={() => setOpen(false)}
+          onClick={() => {
+            releaseKey();
+            setOpen(false);
+          }}
           aria-label="Hide the remote"
         >
           &times;
@@ -228,7 +254,10 @@ export function SmartRemote() {
             type="button"
             className="rk-123"
             onMouseDown={(e) => e.preventDefault()}
-            onClick={() => setKeypad((k) => !k)}
+            onClick={() => {
+              releaseKey();
+              setKeypad((k) => !k);
+            }}
             aria-pressed={keypad}
             title="Raise the on-screen keypad"
           >

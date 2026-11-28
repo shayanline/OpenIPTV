@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useToast } from "./useToast";
+import { PLAYBACK_CHROME_TIMEOUT_MS } from "../services/playbackChrome";
 
 /*
  * Everything transient on the picture, and the timers that take it away again.
@@ -16,17 +18,12 @@ import { useCallback, useEffect, useRef, useState } from "react";
  * once, so the timeout only decides when it goes if nobody asks.
  */
 
-/** A message with no question in it. The guidance says three seconds. */
-const TOAST_MS = 4000;
-
 /**
- * How long the banner stays up announcing a channel with nothing pressed.
- *
- * The media player guidance fixes five seconds for on-screen *controls*. There are none:
- * this is a caption naming the channel, which is read rather than operated, and five seconds
- * is not long for somebody who has just changed channel and looked up.
+ * How long the banner stays up announcing a channel with nothing pressed. It shares the
+ * playback chrome timeout with the deck, so the banner and the controls agree on when
+ * chrome over the picture should withdraw.
  */
-const NOTICE_MS = 8000;
+const NOTICE_MS = PLAYBACK_CHROME_TIMEOUT_MS;
 
 /**
  * How long a dialled number waits for another digit.
@@ -36,25 +33,24 @@ const NOTICE_MS = 8000;
  * nobody asked for. OK ends it early, RETURN abandons it.
  */
 const DIGIT_WAIT_MS = 2000;
+const MAX_CHANNEL_DIGITS = String(Number.MAX_SAFE_INTEGER).length;
 
 export interface Chrome {
   banner: boolean;
   toast: string;
+  toastWarning: boolean;
   digits: string;
   /** Whether anything transient is on screen, which is what decides what RETURN means. */
   showing: boolean;
   /** Raise the banner, and start its welcome over. */
   raiseBanner: () => void;
-  /** Hold the banner up with no countdown, for as long as something is still happening. */
-  holdBanner: () => void;
   lowerBanner: () => void;
-  /** Give a banner that is already up its countdown, and leave one that is down alone. */
-  settleBanner: () => void;
-  say: (message: string) => void;
-  /** Add a digit to the number being dialled, and return the number so far. */
+  say: (message: string, warning?: boolean) => void;
+  /** Append a digit unless it would exceed the safe channel number range. */
   dial: (digit: number, onSettled: (channel: number) => void) => void;
   /** Finish dialling now, which is what OK means on a half typed number. */
   commitDigits: () => string;
+  cancelDigits: () => void;
   /**
    * Clear everything transient, in one press, now.
    *
@@ -65,13 +61,12 @@ export interface Chrome {
   clear: () => void;
 }
 
-export function useChrome(): Chrome {
+export function useChrome(scope = "playback"): Chrome {
+  const notifications = useToast(scope);
   const [banner, setBanner] = useState(false);
-  const [toast, setToast] = useState("");
   const [digits, setDigits] = useState("");
 
   const noticeTimer = useRef<number | undefined>(undefined);
-  const toastTimer = useRef<number | undefined>(undefined);
   const digitTimer = useRef<number | undefined>(undefined);
   /** The digits as they are now, for presses arriving faster than React re-renders. */
   const dialled = useRef("");
@@ -79,70 +74,32 @@ export function useChrome(): Chrome {
   useEffect(
     () => () => {
       window.clearTimeout(noticeTimer.current);
-      window.clearTimeout(toastTimer.current);
       window.clearTimeout(digitTimer.current);
     },
     [],
   );
 
-  /**
-   * Whether the banner is up, readable between renders.
-   *
-   * settleBanner has to know without being told, and it can be called from an effect that runs
-   * before React has re-rendered whatever raised it.
-   */
-  const up = useRef(false);
-  const show = useCallback((visible: boolean) => {
-    up.current = visible;
-    setBanner(visible);
-  }, []);
-
   const raiseBanner = useCallback(() => {
-    show(true);
+    setBanner(true);
     window.clearTimeout(noticeTimer.current);
-    noticeTimer.current = window.setTimeout(() => show(false), NOTICE_MS);
-  }, [show]);
-
-  const holdBanner = useCallback(() => {
-    window.clearTimeout(noticeTimer.current);
-    show(true);
-  }, [show]);
+    noticeTimer.current = window.setTimeout(() => setBanner(false), NOTICE_MS);
+  }, []);
 
   const lowerBanner = useCallback(() => {
     window.clearTimeout(noticeTimer.current);
-    show(false);
-  }, [show]);
-
-  /**
-   * Start the countdown on a banner that is already up, and do nothing to one that is not.
-   *
-   * The banner used to be able to stay up for ever, and this is what closes that. holdBanner
-   * deliberately cancels the countdown, because a channel that takes fifteen seconds to join should
-   * keep saying which channel it is, and the countdown was then restarted by the arrival of a
-   * picture. But an arrival is announced once per channel, quite rightly, so anything that made the
-   * app busy again on a channel it had already announced left a held banner with nothing to take it
-   * down: pausing and playing was the reliable way in, and pressing right or back cleared it only
-   * because those clear everything.
-   *
-   * So the countdown now begins whenever the waiting ends, whatever ended it. It refuses to raise a
-   * banner that is down, which is the other half of the same problem: a stall recovering used to
-   * treat itself as an arrival, and since OK dismisses an arrival, OK could not get past the banner
-   * to open the channel list.
-   */
-  const settleBanner = useCallback(() => {
-    if (!up.current) return;
-    window.clearTimeout(noticeTimer.current);
-    noticeTimer.current = window.setTimeout(() => show(false), NOTICE_MS);
-  }, [show]);
-
-  const say = useCallback((message: string) => {
-    setToast(message);
-    window.clearTimeout(toastTimer.current);
-    toastTimer.current = window.setTimeout(() => setToast(""), TOAST_MS);
+    setBanner(false);
   }, []);
 
+  const say = useCallback(
+    (message: string, warning = false) => {
+      notifications.show(message, warning ? "warning" : "neutral");
+    },
+    [notifications.show],
+  );
+
   const dial = useCallback((digit: number, onSettled: (channel: number) => void) => {
-    const next = (dialled.current + String(digit)).slice(-4);
+    const next = dialled.current + String(digit);
+    if (next.length > MAX_CHANNEL_DIGITS || !Number.isSafeInteger(Number(next))) return;
     dialled.current = next;
     setDigits(next);
     window.clearTimeout(digitTimer.current);
@@ -161,28 +118,37 @@ export function useChrome(): Chrome {
     return typed;
   }, []);
 
-  const clear = useCallback(() => {
-    window.clearTimeout(noticeTimer.current);
-    window.clearTimeout(toastTimer.current);
+  const cancelDigits = useCallback(() => {
     window.clearTimeout(digitTimer.current);
     dialled.current = "";
-    show(false); // through show, so settleBanner cannot believe it is up
-    setToast("");
     setDigits("");
-  }, [show]);
+  }, []);
+
+  const clear = useCallback(() => {
+    window.clearTimeout(noticeTimer.current);
+    window.clearTimeout(digitTimer.current);
+    dialled.current = "";
+    setBanner(false);
+    notifications.clear();
+    setDigits("");
+  }, [notifications.clear]);
+
+  const toast = notifications.notice?.message ?? "";
+  const toastWarning =
+    notifications.notice?.kind === "error" || notifications.notice?.kind === "warning";
 
   return {
     banner,
     toast,
+    toastWarning,
     digits,
     showing: banner || !!toast || !!digits,
     raiseBanner,
-    holdBanner,
     lowerBanner,
-    settleBanner,
     say,
     dial,
     commitDigits,
+    cancelDigits,
     clear,
   };
 }

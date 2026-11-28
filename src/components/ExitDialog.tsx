@@ -20,11 +20,11 @@ export function exitApp() {
 }
 
 export function ExitDialog({
-  watching,
+  onConfirm,
   onCancel,
 }: {
-  /** Whether a channel is actually playing, which decides what staying is called. */
-  watching: boolean;
+  /** Runs before the application exits, so playback is released first. */
+  onConfirm?: () => void;
   onCancel: () => void;
 }) {
   const { t } = useLocale();
@@ -32,12 +32,15 @@ export function ExitDialog({
     <Confirm
       title={t("exit.question")}
       body={t("exit.body")}
-      confirmLabel={t("common.close")}
-      /* "Keep watching" is only true if they are. This dialog is also reachable from the channel
-         list with nothing playing and from a playlist that loaded nothing, where it told the
-         viewer they were watching something they were not. */
-      cancelLabel={watching ? t("common.keepWatching") : t("common.stayHere")}
-      onConfirm={exitApp}
+      confirmLabel={t("exit.confirm")}
+      cancelLabel={t("exit.stay")}
+      destructive
+      confirmIcon="power"
+      cancelIcon={null}
+      onConfirm={() => {
+        onConfirm?.();
+        exitApp();
+      }}
       onCancel={onCancel}
     />
   );

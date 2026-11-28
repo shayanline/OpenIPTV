@@ -1,6 +1,8 @@
 import { useEffect, useRef } from "react";
+import { KEY } from "../hooks/useRemote";
 import { useLocale } from "../hooks/useLocale";
 import { Icon } from "./Icon";
+import { TextInput } from "./TextInput";
 
 /**
  * The query, in the channel column's header, where that column's heading otherwise goes.
@@ -18,18 +20,25 @@ import { Icon } from "./Icon";
 export function SearchField({
   value,
   focused,
+  keyboardOpen = true,
   shown,
   total,
   placeholder,
   ariaLabel,
   onChange,
+  onFocus,
+  onSubmit,
   onExitUp,
   onExitDown,
   onExitStart,
+  onExitEnd,
+  onDismissKeyboard,
+  showCount = true,
 }: {
   value: string;
   /** Whether the cursor is on the field, as opposed to down among the results. */
   focused: boolean;
+  keyboardOpen?: boolean;
   /** How many results the column is holding. */
   shown: number;
   /** How many matched altogether, which is the larger number when the list has been capped. */
@@ -37,11 +46,16 @@ export function SearchField({
   placeholder?: string;
   ariaLabel?: string;
   onChange: (value: string) => void;
+  onFocus?: () => void;
+  onSubmit?: () => void;
   onExitUp?: () => void;
   onExitDown?: () => void;
   onExitStart?: () => void;
+  onExitEnd?: () => void;
+  onDismissKeyboard?: () => void;
+  showCount?: boolean;
 }) {
-  const { t, number, direction } = useLocale();
+  const { t, number } = useLocale();
   const field = useRef<HTMLInputElement>(null);
 
   /*
@@ -55,41 +69,45 @@ export function SearchField({
   useEffect(() => {
     const el = field.current;
     if (!el) return;
-    if (focused) el.focus();
+    if (focused && keyboardOpen) el.focus();
     else if (document.activeElement === el) el.blur();
-  }, [focused]);
+  }, [focused, keyboardOpen]);
 
   return (
     <div className={`search ${focused ? "focused" : ""}`}>
       <span className="search-icon">
         <Icon name="search" />
       </span>
-      <input
+      <TextInput
         ref={field}
+        variant="embedded"
         className="search-field"
         value={value}
         onChange={(e) => onChange(e.target.value)}
+        onFocus={onFocus}
+        onExitStart={onExitStart}
+        onExitEnd={onExitEnd}
+        onExitUp={onExitUp}
+        onExitDown={onExitDown}
         onKeyDown={(event) => {
-          const start = direction === "rtl" ? 39 : 37;
-          if (
-            event.keyCode === start &&
-            event.currentTarget.selectionStart === 0 &&
-            event.currentTarget.selectionEnd === 0
-          ) {
+          if (event.defaultPrevented) return;
+          if (event.keyCode === KEY.ENTER) {
+            if (event.nativeEvent.isComposing) return;
             event.preventDefault();
             event.stopPropagation();
-            onExitStart?.();
+            onSubmit?.();
             return;
           }
-          if (event.keyCode !== 38 && event.keyCode !== 40) return;
-          event.preventDefault();
-          event.stopPropagation();
-          if (event.keyCode === 38) onExitUp?.();
-          else onExitDown?.();
+          if ((event.keyCode === 10009 || event.keyCode === 27) && onDismissKeyboard) {
+            event.preventDefault();
+            event.stopPropagation();
+            event.currentTarget.blur();
+            onDismissKeyboard();
+            return;
+          }
         }}
-        placeholder={placeholder ?? t("search.channelName")}
+        placeholder={placeholder ?? t("common.search")}
         aria-label={ariaLabel ?? t("search.ariaLabel")}
-        dir="auto"
         spellCheck={false}
         autoComplete="off"
         /* An unrestricted keyboard rather than a search one. `enterkeyhint` would relabel the
@@ -107,7 +125,7 @@ export function SearchField({
        * known and printing it would be worse: a chip reading 4,211 above a list holding three
        * hundred invites somebody to scroll to the end looking for the rest.
        */}
-      {!!value.trim() && (
+      {showCount && !!value.trim() && (
         <span className="count">{total > shown ? `${number(shown)}+` : number(total)}</span>
       )}
     </div>

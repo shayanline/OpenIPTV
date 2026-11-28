@@ -85,6 +85,7 @@ const categories = {
     { category_id: "movie-duplicate-a", category_name: "Duplicate" },
     { category_id: "movie-duplicate-b", category_name: "Duplicate" },
     { category_id: "movie-empty", category_name: "Empty" },
+    { category_id: "movie-failed", category_name: "Failed" },
     { category_id: "movie-blank", category_name: "" },
   ],
   series: [
@@ -117,12 +118,22 @@ const fixtureItems = (kind, count, categoryId) => {
   for (let index = 0; index < count; index++) {
     const category = categoryFor(kind, index);
     if (categoryId && category !== categoryId) continue;
-    const id = `${kind}-${index + 1}`;
+    const id = index === 1 ? `${kind}-1` : `${kind}-${index + 1}`;
+    const title =
+      index === 3
+        ? ""
+        : index === 2
+          ? `${kind === "movie" ? "Movie" : kind === "series" ? "Series" : "Live Channel"} 0001`
+          : index === 5
+            ? Buffer.from(`${kind} encoded title`).toString("base64")
+            : index === 6
+              ? `${kind} 👨‍👩‍👧‍👦 é عنوان`
+              : `${kind === "movie" ? "Movie" : kind === "series" ? "Series" : "Live Channel"} ${String(index + 1).padStart(4, "0")}`;
     if (kind === "live") {
       items.push({
         stream_id: id,
         num: index + 1,
-        name: `Live Channel ${String(index + 1).padStart(4, "0")}`,
+        name: title,
         category_id: category,
         stream_icon: "/icon.png",
         stream_type: "live",
@@ -132,48 +143,64 @@ const fixtureItems = (kind, count, categoryId) => {
     } else if (kind === "movie") {
       items.push({
         stream_id: id,
-        name: `Movie ${String(index + 1).padStart(4, "0")}`,
+        name: title,
         category_id: category,
-        stream_icon: "/icon.png",
-        container_extension: "mp4",
+        stream_icon: index === 7 ? "" : `/fixture/poster/${index}.jpg`,
+        container_extension: index === 8 ? "" : "mp4",
         year: "2026",
-        rating: "8.0",
+        rating: index === 4 ? "invalid" : "8.0",
+        ...(index === 4 ? { rating_5based: "4.2" } : {}),
       });
     } else {
       items.push({
         series_id: id,
-        name: `Series ${String(index + 1).padStart(4, "0")}`,
+        name: title,
         category_id: category,
-        cover: "/icon.png",
+        cover: index === 7 ? "" : `/fixture/poster/${index}.jpg`,
         releaseDate: "2026-01-01",
-        rating: "8.0",
+        rating: index === 4 ? "invalid" : "8.0",
+        ...(index === 4 ? { rating_5based: "4.2" } : {}),
       });
     }
   }
   return items;
 };
 
-const episodes = Object.fromEntries(
-  Array.from({ length: 3 }, (_, seasonIndex) => {
-    const season = seasonIndex + 1;
-    return [
-      String(season),
-      Array.from({ length: 12 }, (_, episodeIndex) => ({
-        id: `episode-${season}-${episodeIndex + 1}`,
-        episode_num: episodeIndex + 1,
-        title: `Episode ${season}.${episodeIndex + 1}`,
-        container_extension: episodeIndex % 2 ? "mkv" : "mp4",
-        info: { duration_secs: 2700 },
-      })),
-    ];
-  }),
-);
+const episodes = {
+  0: [{ id: "special-1", episode_num: 1, title: "Special", container_extension: "mp4" }],
+  ...Object.fromEntries(
+    Array.from({ length: 3 }, (_, seasonIndex) => {
+      const season = seasonIndex + 1;
+      return [
+        String(season),
+        Array.from({ length: 12 }, (_, episodeIndex) => ({
+          ...(episodeIndex === 1 ? {} : { id: `episode-${season}-${episodeIndex + 1}` }),
+          ...(episodeIndex === 2 ? {} : { episode_num: episodeIndex + 1 }),
+          title: episodeIndex === 3 ? "" : `Episode ${season}.${episodeIndex + 1}`,
+          container_extension: episodeIndex % 2 ? "mkv" : "mp4",
+          direct_source: `/fixture/playback/episode-${season}-${episodeIndex + 1}.${episodeIndex % 2 ? "mkv" : "mp4"}`,
+          info: {
+            duration_secs: 2700,
+            movie_image: `/fixture/episode/${season}-${episodeIndex}.jpg`,
+            plot: episodeIndex === 4 ? "" : `Episode plot ${season}.${episodeIndex + 1}`,
+          },
+        })),
+      ];
+    }),
+  ),
+  4: [],
+};
 
 const fixtureJson = (body, status = 200) => ({
   status,
   type: "application/json",
   body: JSON.stringify(body),
 });
+
+const FIXTURE_JPEG = Buffer.from(
+  "/9j/4AAQSkZJRgABAQAAAQABAAD/4gHYSUNDX1BST0ZJTEUAAQEAAAHIAAAAAAQwAABtbnRyUkdCIFhZWiAH4AABAAEAAAAAAABhY3NwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAA9tYAAQAAAADTLQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAlkZXNjAAAA8AAAACRyWFlaAAABFAAAABRnWFlaAAABKAAAABRiWFlaAAABPAAAABR3dHB0AAABUAAAABRyVFJDAAABZAAAAChnVFJDAAABZAAAAChiVFJDAAABZAAAAChjcHJ0AAABjAAAADxtbHVjAAAAAAAAAAEAAAAMZW5VUwAAAAgAAAAcAHMAUgBHAEJYWVogAAAAAAAAb6IAADj1AAADkFhZWiAAAAAAAABimQAAt4UAABjaWFlaIAAAAAAAACSgAAAPhAAAts9YWVogAAAAAAAA9tYAAQAAAADTLXBhcmEAAAAAAAQAAAACZmYAAPKnAAANWQAAE9AAAApbAAAAAAAAAABtbHVjAAAAAAAAAAEAAAAMZW5VUwAAACAAAAAcAEcAbwBvAGcAbABlACAASQBuAGMALgAgADIAMAAxADb/2wBDAAYEBQYFBAYGBQYHBwYIChAKCgkJChQODwwQFxQYGBcUFhYaHSUfGhsjHBYWICwgIyYnKSopGR8tMC0oMCUoKSj/2wBDAQcHBwoIChMKChMoGhYaKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCj/wAARCAAYABADASIAAhEBAxEB/8QAFgABAQEAAAAAAAAAAAAAAAAAAAYH/8QAGBABAAMBAAAAAAAAAAAAAAAAABZko+H/xAAVAQEBAAAAAAAAAAAAAAAAAAAEA//EABgRAQADAQAAAAAAAAAAAAAAAAABAhIT/9oADAMBAAIRAxEAPwDGhSxa5l0i1zLp2ZC6VUoCoz//2Q==",
+  "base64",
+);
 
 export function xtreamFixtureResponse(requestUrl) {
   const url = new URL(requestUrl, "http://fixture.invalid");
@@ -183,6 +210,12 @@ export function xtreamFixtureResponse(requestUrl) {
       url.searchParams.get("password") === XTREAM_FIXTURE.password;
     if (!authenticated) return fixtureJson({ user_info: { auth: 0, status: "Disabled" } });
     const action = url.searchParams.get("action");
+    const mode = url.searchParams.get("fixture");
+    if (mode === "failed") return fixtureJson({ error: "fixture failure" }, 503);
+    if (mode === "malformed") return { status: 200, type: "application/json", body: "{" };
+    if (mode === "oversized")
+      return { status: 200, type: "application/json", body: "x".repeat(12 * 1024 * 1024 + 1) };
+    if (mode === "slow") return { ...fixtureJson([]), delay: 250 };
     if (!action)
       return fixtureJson({
         user_info: {
@@ -201,27 +234,44 @@ export function xtreamFixtureResponse(requestUrl) {
     const categoryId = url.searchParams.get("category_id") ?? "";
     if (action === "get_live_streams")
       return fixtureJson(fixtureItems("live", XTREAM_FIXTURE.liveCount, categoryId));
-    if (action === "get_vod_streams")
+    if (action === "get_vod_streams") {
+      if (categoryId === "movie-failed") return fixtureJson({ error: "fixture failure" }, 503);
       return fixtureJson(fixtureItems("movie", XTREAM_FIXTURE.movieCount, categoryId));
+    }
     if (action === "get_series")
       return fixtureJson(fixtureItems("series", XTREAM_FIXTURE.seriesCount, categoryId));
     if (action === "get_vod_info") {
       const id = url.searchParams.get("vod_id") ?? "";
       return fixtureJson({
-        info: {
-          name: `Movie details for ${id}`,
-          movie_image: "/icon.png",
-          plot: "A deterministic movie detail used by the television harness.",
-          cast: "Fixture Performer",
-          director: "Fixture Director",
-          genre: "Drama",
-          rating: "8.0",
-          duration_secs: 5400,
-        },
+        info:
+          id === "movie-8"
+            ? { name: "Movie 0008" }
+            : {
+                name: `Movie details for ${id}`,
+                movie_image: `/fixture/poster/${id}.jpg`,
+                backdrop_path: id.endsWith("1")
+                  ? [`/fixture/backdrop/${id}.jpg`, "javascript:invalid"]
+                  : id.endsWith("2")
+                    ? `/fixture/backdrop/${id}.jpg`
+                    : JSON.stringify([`/fixture/backdrop/${id}.jpg`]),
+                plot: id.endsWith("3")
+                  ? "Long provider plot ".repeat(180)
+                  : "A deterministic movie detail used by the television harness.",
+                cast: id.endsWith("4")
+                  ? Array.from({ length: 14 }, (_, index) => `Fixture Performer ${index}`)
+                  : "Fixture Performer",
+                director: "Fixture Director",
+                genre: id.endsWith("5")
+                  ? Buffer.from("Encoded drama").toString("base64")
+                  : "Drama",
+                rating: id.endsWith("6") ? "bad" : "8.0",
+                duration_secs: 5400,
+              },
         movie_data: {
           stream_id: id,
           category_id: "movie-large",
           container_extension: "mp4",
+          direct_source: `/fixture/playback/movie-${id}.mp4`,
         },
       });
     }
@@ -231,8 +281,10 @@ export function xtreamFixtureResponse(requestUrl) {
         info: {
           name: `Series details for ${id}`,
           category_id: "series-large",
-          cover: "/icon.png",
+          cover: `/fixture/poster/${id}.jpg`,
+          backdrop_path: [`/fixture/backdrop/${id}.jpg`],
           plot: "A deterministic series detail used by the television harness.",
+          cast: "Fixture Performer One, Fixture Performer Two",
           genre: "Drama",
           rating: "8.0",
         },
@@ -267,6 +319,68 @@ export function xtreamFixtureResponse(requestUrl) {
     return fixtureJson([]);
   }
 
+  if (/^\/fixture\/(poster|backdrop|episode)\/.+\.jpg$/.test(url.pathname)) {
+    return { status: 200, type: "image/jpeg", body: FIXTURE_JPEG };
+  }
+  if (url.pathname === "/fixture/missing.jpg") {
+    return { status: 404, type: "text/plain", body: "missing" };
+  }
+  if (url.pathname === "/fixture/undecodable.jpg") {
+    return { status: 200, type: "image/jpeg", body: "not an image" };
+  }
+  if (url.pathname === "/fixture/oversized.jpg") {
+    return { status: 200, type: "image/jpeg", body: Buffer.alloc(8 * 1024 * 1024 + 1) };
+  }
+
+  if (url.pathname === "/fixture/playback/network-failure") {
+    return { status: 503, type: "text/plain", body: "deterministic network failure" };
+  }
+  if (url.pathname === "/fixture/playback/live-dvr.m3u8") {
+    return {
+      status: 200,
+      type: "application/vnd.apple.mpegurl",
+      body: "#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:10\n#EXT-X-MEDIA-SEQUENCE:10\n#EXT-X-PROGRAM-DATE-TIME:2026-01-02T10:00:00Z\n#EXTINF:10,\n/fixture-segment.ts\n#EXTINF:10,\n/fixture-segment.ts\n",
+    };
+  }
+  if (url.pathname === "/fixture/playback/live.m3u8") {
+    return {
+      status: 200,
+      type: "application/vnd.apple.mpegurl",
+      body: "#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:10\n#EXT-X-MEDIA-SEQUENCE:1\n#EXTINF:10,\n/fixture-segment.ts\n",
+    };
+  }
+  if (url.pathname === "/fixture/playback/tracks.m3u8") {
+    return {
+      status: 200,
+      type: "application/vnd.apple.mpegurl",
+      body: '#EXTM3U\n#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="audio",NAME="English",LANGUAGE="en",DEFAULT=YES,URI="/fixture/playback/live.m3u8"\n#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="audio",NAME="فارسی",LANGUAGE="fa",URI="/fixture/playback/live.m3u8"\n#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="subs",NAME="English",LANGUAGE="en",URI="/fixture/playback/subtitles.m3u8"\n#EXT-X-STREAM-INF:BANDWIDTH=800000,AUDIO="audio",SUBTITLES="subs"\n/fixture/playback/live.m3u8\n',
+    };
+  }
+  if (url.pathname === "/fixture/playback/subtitles.m3u8") {
+    return {
+      status: 200,
+      type: "application/vnd.apple.mpegurl",
+      body: "#EXTM3U\n#EXT-X-TARGETDURATION:10\n#EXTINF:10,\n/fixture/playback/subtitles.vtt\n#EXT-X-ENDLIST\n",
+    };
+  }
+  if (url.pathname === "/fixture/playback/subtitles.vtt") {
+    return {
+      status: 200,
+      type: "text/vtt",
+      body: "WEBVTT\n\n00:00:00.000 --> 00:00:05.000\nFixture subtitle\n",
+    };
+  }
+  if (
+    url.pathname === "/fixture/playback/finite.mp4" ||
+    /^\/fixture\/playback\/(movie|episode)-[^/]+\.(mp4|mkv)$/.test(url.pathname)
+  ) {
+    return {
+      status: 200,
+      type: url.pathname.endsWith(".mkv") ? "video/x-matroska" : "video/mp4",
+      body: "fixture finite media",
+    };
+  }
+
   const media = /^\/(live|movie|series|timeshift)\//.test(url.pathname);
   if (media && url.pathname.endsWith(".m3u8")) {
     return {
@@ -288,6 +402,7 @@ export const host = (dist, port) =>
       if (handleHttpRelay(request, response)) return;
       const fixture = xtreamFixtureResponse(request.url ?? "/");
       if (fixture) {
+        if (fixture.delay) await new Promise((settle) => setTimeout(settle, fixture.delay));
         response.writeHead(fixture.status, {
           "content-type": fixture.type,
           "access-control-allow-origin": "*",

@@ -67,10 +67,19 @@ const META = "meta";
  * recognition that "refetchable" is not free when the thing being refetched is the first thing
  * the viewer waits for.
  */
+export type CacheClass = "catalogue" | "poster" | "logo";
+
+export const CACHE_BUDGET_BYTES: Readonly<Record<CacheClass, number>> = {
+  catalogue: 12 * 1024 * 1024,
+  poster: 8 * 1024 * 1024,
+  logo: 4 * 1024 * 1024,
+};
+
 export const BUDGET_BYTES = 24 * 1024 * 1024;
 
 export interface Entry {
   key: string;
+  class: CacheClass;
   bytes: number;
   /** When it was last read or written, so the least useful thing goes first. */
   at: number;
@@ -94,14 +103,16 @@ export interface Entry {
  */
 export function evictionPlan(
   entries: Entry[],
-  incoming: { key: string; bytes: number },
-  budget = BUDGET_BYTES,
+  incoming: Omit<Entry, "at">,
+  budget = CACHE_BUDGET_BYTES[incoming.class],
 ): { evict: string[]; refused: boolean } {
   // Bigger than the whole budget on its own. Nothing to evict that would help, so it is not
   // cached at all rather than emptying the cache in a doomed attempt to fit it.
   if (incoming.bytes > budget) return { evict: [], refused: true };
 
-  const others = entries.filter((e) => e.key !== incoming.key);
+  const others = entries.filter(
+    (entry) => entry.class === incoming.class && entry.key !== incoming.key,
+  );
   let used = others.reduce((sum, e) => sum + e.bytes, 0) + incoming.bytes;
   if (used <= budget) return { evict: [], refused: false };
 
@@ -220,6 +231,14 @@ function commit(
  * one of them can be silently dropped when a later one replaces it.
  */
 let indexing: Promise<Map<string, Omit<Entry, "key">>> | null = null;
+let indexedUsage: Record<CacheClass, number> = {
+  catalogue: 0,
+  poster: 0,
+  logo: 0,
+};
+
+const classForKey = (key: string): CacheClass =>
+  key.startsWith("poster:") ? "poster" : key.startsWith("logo:") ? "logo" : "catalogue";
 
 function loadIndex(): Promise<Map<string, Omit<Entry, "key">>> {
   indexing ??= (async () => {
@@ -231,8 +250,14 @@ function loadIndex(): Promise<Map<string, Omit<Entry, "key">>> {
     if (keys && values) {
       // A loop rather than forEach, because Map.set returns the map and a forEach callback
       // that returns something reads as a map() somebody forgot to collect.
-      for (let i = 0; i < keys.length; i++) fresh.set(String(keys[i]), values[i]);
+      for (let i = 0; i < keys.length; i++) {
+        const key = String(keys[i]);
+        const value = values[i];
+        fresh.set(key, { ...value, class: value.class ?? classForKey(key) });
+      }
     }
+    indexedUsage = { catalogue: 0, poster: 0, logo: 0 };
+    for (const value of fresh.values()) indexedUsage[value.class] += value.bytes;
     return fresh;
   })();
   return indexing;
@@ -248,6 +273,21 @@ export async function usage(): Promise<{ bytes: number; count: number }> {
   return { bytes: all.reduce((sum, e) => sum + e.bytes, 0), count: all.length };
 }
 
+export async function usageByClass(): Promise<
+  Record<CacheClass, { bytes: number; count: number }>
+> {
+  const result = {
+    catalogue: { bytes: 0, count: 0 },
+    poster: { bytes: 0, count: 0 },
+    logo: { bytes: 0, count: 0 },
+  };
+  for (const entry of await entries()) {
+    result[entry.class].bytes += entry.bytes;
+    result[entry.class].count += 1;
+  }
+  return result;
+}
+
 /**
  * Timestamps that have moved in memory and not yet on disk.
  *
@@ -258,6 +298,33 @@ export async function usage(): Promise<{ bytes: number; count: number }> {
  */
 const unflushed = new Map<string, number>();
 let flushing: (() => void) | null = null;
+const WARM_METADATA_BYTES = 4 * 1024 * 1024;
+const WARM_METADATA_ENTRIES = 64;
+const warmMetadata = new Map<
+  string,
+  { value: string | Blob; bytes: number; persisted: boolean }
+>();
+let warmBytes = 0;
+let warmRevision = 0;
+
+function rememberMetadata(key: string, value: Blob | string, persisted: boolean): void {
+  const previous = warmMetadata.get(key);
+  if (previous) {
+    warmBytes -= previous.bytes;
+    warmMetadata.delete(key);
+  }
+  if (typeof value !== "string" && value.type !== "application/json") return;
+  const bytes = typeof value === "string" ? value.length * 2 : value.size;
+  if (bytes > WARM_METADATA_BYTES) return;
+  warmMetadata.set(key, { value, bytes, persisted });
+  warmBytes += bytes;
+  while (warmBytes > WARM_METADATA_BYTES || warmMetadata.size > WARM_METADATA_ENTRIES) {
+    const oldest = warmMetadata.entries().next();
+    if (oldest.done) break;
+    warmMetadata.delete(oldest.value[0]);
+    warmBytes -= oldest.value[1].bytes;
+  }
+}
 
 function flushSoon(): void {
   if (flushing) return;
@@ -309,10 +376,22 @@ async function flushTouches(): Promise<void> {
  * wait on a write to bookkeeping.
  */
 export async function read(key: string): Promise<Blob | string | null> {
+  const warm = warmMetadata.get(key);
+  if (warm) {
+    warmMetadata.delete(key);
+    warmMetadata.set(key, warm);
+    if (warm.persisted) {
+      unflushed.set(key, Date.now());
+      flushSoon();
+    }
+    return warm.value;
+  }
+  const revision = warmRevision;
   const db = await open();
   if (!db) return null;
   const value = await get<Blob | string>(db, VALUES, (s) => s.get(key));
   if (value == null) return null;
+  if (revision === warmRevision) rememberMetadata(key, value, true);
 
   // One transaction, and nothing else waited on. When it was read is noted and applied later;
   // see flushTouches for why the index is deliberately not loaded here.
@@ -331,17 +410,34 @@ const sizeOf = (value: Blob | string) =>
  * throws: a cache that could not be written is a cache that will be read from the network
  * instead, and that is not a fault worth putting on a television screen.
  */
-export async function write(key: string, value: Blob | string): Promise<boolean> {
+export async function write(
+  key: string,
+  value: Blob | string,
+  cacheClass: CacheClass,
+): Promise<boolean> {
+  warmRevision += 1;
+  rememberMetadata(key, value, false);
   const db = await open();
   if (!db) return false;
 
   const bytes = sizeOf(value);
-  // From the mirror, so this costs no transaction. It used to read the whole store, twice.
-  const { evict, refused } = evictionPlan(await entries(), { key, bytes });
-  if (refused) return false;
-  if (evict.length) await forget((k) => evict.includes(k));
+  if (bytes > CACHE_BUDGET_BYTES[cacheClass]) return false;
+  const index = await loadIndex();
+  const previous = index.get(key);
+  const current =
+    indexedUsage[cacheClass] - (previous?.class === cacheClass ? previous.bytes : 0);
+  let evict: string[] = [];
+  if (current + bytes > CACHE_BUDGET_BYTES[cacheClass]) {
+    const candidates = [...index]
+      .filter(([candidate, meta]) => meta.class === cacheClass && candidate !== key)
+      .map(([candidate, meta]) => ({ key: candidate, ...meta }));
+    const plan = evictionPlan(candidates, { key, class: cacheClass, bytes });
+    if (plan.refused) return false;
+    evict = plan.evict;
+  }
+  if (evict.length) await forget((candidate) => evict.includes(candidate));
 
-  const meta = { bytes, at: Date.now() };
+  const meta = { class: cacheClass, bytes, at: Date.now() };
   const ok = await commit(db, [VALUES, META], (tx) => {
     tx.objectStore(VALUES).put(value, key);
     tx.objectStore(META).put(meta, key);
@@ -349,8 +445,14 @@ export async function write(key: string, value: Blob | string): Promise<boolean>
   // Only recorded if it actually landed. Recording it either way is how the mirror comes to
   // claim the cache holds something it does not, and a quota failure is the likeliest way in.
   if (!ok) return false;
-  (await loadIndex()).set(key, meta);
+  const held = await loadIndex();
+  const old = held.get(key);
+  if (old) indexedUsage[old.class] -= old.bytes;
+  indexedUsage[cacheClass] += bytes;
+  held.set(key, meta);
   unflushed.delete(key); // just written through, so nothing outstanding for it
+  const warm = warmMetadata.get(key);
+  if (warm?.value === value) warm.persisted = true;
   return true;
 }
 
@@ -362,9 +464,17 @@ export async function write(key: string, value: Blob | string): Promise<boolean>
  * configured, and a prefix match cannot express the second.
  */
 export async function forget(doomed: (key: string) => boolean): Promise<number> {
+  warmRevision += 1;
+  for (const [key, entry] of warmMetadata) {
+    if (doomed(key)) {
+      warmMetadata.delete(key);
+      warmBytes -= entry.bytes;
+    }
+  }
   const db = await open();
   if (!db) return 0;
-  const going = (await entries()).filter((e) => doomed(e.key)).map((e) => e.key);
+  const held = await loadIndex();
+  const going = [...held].filter(([key]) => doomed(key)).map(([key]) => key);
   if (!going.length) return 0;
   const ok = await commit(db, [VALUES, META], (tx) => {
     for (const key of going) {
@@ -376,8 +486,9 @@ export async function forget(doomed: (key: string) => boolean): Promise<number> 
   // cache holding entries nothing knows the size of, so they could never be evicted and the
   // budget would drift permanently out of true.
   if (!ok) return 0;
-  const held = await loadIndex();
   for (const key of going) {
+    const meta = held.get(key);
+    if (meta) indexedUsage[meta.class] -= meta.bytes;
     held.delete(key);
     unflushed.delete(key);
   }

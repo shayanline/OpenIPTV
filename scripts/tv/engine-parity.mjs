@@ -33,11 +33,12 @@
 import { existsSync } from "node:fs";
 import { release } from "node:os";
 import { join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import { findChrome } from "./cdp.mjs";
 import { withBrowser } from "./browser.mjs";
 import { ensureEngine } from "./engines.mjs";
 import { supported, floorPlatform, ceilingPlatform, source } from "./platforms.mjs";
-import { serve, walk, compare } from "./harness.mjs";
+import { serve, walk, compare, driver } from "./harness.mjs";
 
 const ROOT = resolve(import.meta.dirname, "../..");
 const DIST = join(ROOT, "dist");
@@ -52,6 +53,12 @@ const DIST = join(ROOT, "dist");
  */
 const LAYOUT = [
   ".app",
+  ".app-navigation",
+  ".app-navigation-brand",
+  ".app-navigation-action",
+  ".app-navigation-search-content",
+  ".app-navigation-icon",
+  ".app-navigation-label",
   ".panel",
   ".panel-cols",
   ".rail",
@@ -67,10 +74,28 @@ const LAYOUT = [
   ".splash",
   ".hints",
   ".actions",
+  ".pb-stack",
+  ".playback-deck",
+  ".playback-identity",
+  ".scrollbar",
+  ".scrollbar-thumb",
   ".field",
   ".pl",
   ".pad",
   ".panel-hints",
+  ".vod-screen",
+  ".vod-header",
+  ".vod-rail",
+  ".poster-grid",
+  ".poster-card",
+  ".vod-title-row",
+  ".vod-hero",
+  ".series-actions",
+  ".episode-panel",
+  ".season-row",
+  ".episode-list",
+  ".episode-row",
+  ".episode-row-content",
 ];
 
 /**
@@ -118,6 +143,9 @@ async function attempt(tv, binary, pinned, port) {
       "--headless=new",
       "--window-size=1920,1080",
       "--force-device-scale-factor=1",
+      // Legacy Linux headless font hinting rounds glyph widths unlike CoreText.
+      // Use consistent metrics so text sized guide items do not accumulate drift.
+      "--font-render-hinting=none",
       "--lang=en-US",
       "--no-first-run",
       "--no-default-browser-check",
@@ -204,7 +232,23 @@ async function attempt(tv, binary, pinned, port) {
         }
       });
 
-      const shots = await walk(cdp, port, LAYOUT);
+      let shots;
+      try {
+        // HTTP masks the widget's filesystem MIME handling, so exercise both entry paths.
+        await cdp.send("Page.navigate", {
+          url: pathToFileURL(join(DIST, "index.html")).href,
+        });
+        await driver(cdp, port).waitFor(`location.protocol === "file:"
+          && document.readyState === "complete"
+          && !!document.querySelector(".onboard input")
+          && !document.querySelector('script[type="module"]')`);
+        shots = await walk(cdp, port, LAYOUT);
+      } catch (error) {
+        if (!complaints.length) throw error;
+        throw new Error(`${error.message}\nBrowser complaints:\n${complaints.join("\n")}`, {
+          cause: error,
+        });
+      }
       // The app has to have actually got somewhere. Every box agreeing because both engines
       // rendered nothing is the failure mode this gate would otherwise be blind to.
       const rows = await cdp

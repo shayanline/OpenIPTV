@@ -1,25 +1,32 @@
-import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+} from "react";
 import { useLocale } from "../hooks/useLocale";
 import { useSettings } from "../stores/settings";
 import { useSetup } from "../stores/setup";
 import { KEY, useRemote } from "../hooks/useRemote";
 import { useSpatialNav } from "../hooks/useSpatialNav";
 import {
-  checkPlaylistUrl,
-  m3uSource,
   nameFromUrl,
   parseXtreamTemplateUrl,
   type PlaylistSource,
+  type PlaylistSourceField,
+  type PlaylistSourceProblems,
   sourceDisplay,
+  validatePlaylistSource,
   xtreamFromServerField,
-  xtreamSource,
 } from "../services/playlistUrl";
-import type { MessageKey } from "../services/locale";
+import { PlaylistEntryFeedbackError } from "../services/playlistEntry";
 import { Icon } from "./Icon";
 import { LanguagePicker } from "./LanguagePicker";
 import { OptionPicker } from "./OptionPicker";
 import { KeyGuide } from "./KeyGuide";
 import { RemoteSetup } from "./RemoteSetup";
+import { TextInput, textInputExit } from "./TextInput";
 import type { PairingSessionView } from "../services/deviceAccess";
 import type { RemoteAccessState } from "../services/remoteServer";
 
@@ -44,12 +51,21 @@ const NO_REMOTE_ACCESS: RemoteAccessState = {
 
 export function Onboarding({
   onAdd,
+  onError,
+  onClearFeedback,
   onExit,
   remoteAccess = NO_REMOTE_ACCESS,
   onOpenPairing,
   showRemoteSetup = false,
 }: {
-  onAdd: (name: string, source: PlaylistSource) => void;
+  onAdd: (
+    name: string,
+    source: PlaylistSource,
+    onState?: (state: "saving") => void,
+    signal?: AbortSignal,
+  ) => void | Promise<void>;
+  onError: (message: string) => void;
+  onClearFeedback?: () => void;
   /** RETURN here closes the application, because this screen is the application's home. */
   onExit: () => void;
   remoteAccess?: RemoteAccessState;
@@ -64,8 +80,13 @@ export function Onboarding({
   const m3uButton = useRef<HTMLButtonElement>(null);
   const xtreamButton = useRef<HTMLButtonElement>(null);
   const { move } = useSpatialNav(box, true);
+  const showPairing = showRemoteSetup && remoteAccess.status !== "unavailable";
   const { name, source, set: setSetup } = useSetup();
-  const [problem, setProblem] = useState<MessageKey | "">("");
+  const [problems, setProblems] = useState<PlaylistSourceProblems>({});
+  const [operation, setOperation] = useState<"idle" | "validating" | "saving">("idle");
+  const submitting = operation === "validating" || operation === "saving";
+  const submission = useRef({ token: 0, busy: false });
+  const submissionRun = useRef<AbortController | null>(null);
   const [dismissedXtreamUrl, setDismissedXtreamUrl] = useState("");
   const url = source.kind === "m3u" ? source.url : "";
   const suggestedXtream =
@@ -76,10 +97,33 @@ export function Onboarding({
   const username = source.kind === "xtream" ? source.username : "";
   const password = source.kind === "xtream" ? source.password : "";
   const output = source.kind === "xtream" ? source.output : "m3u8";
+  const clearProblems = (field?: PlaylistSourceField) => {
+    setProblems((current) => {
+      if (!field) return {};
+      const next = { ...current };
+      delete next[field];
+      return next;
+    });
+    onClearFeedback?.();
+  };
+
+  useLayoutEffect(() => {
+    first.current?.focus();
+    return () => {
+      submission.current.token += 1;
+      submission.current.busy = false;
+      submissionRun.current?.abort();
+      submissionRun.current = null;
+    };
+  }, []);
 
   useEffect(() => {
-    first.current?.focus();
-  }, []);
+    submission.current.token += 1;
+    submission.current.busy = false;
+    submissionRun.current?.abort();
+    submissionRun.current = null;
+    setOperation("idle");
+  }, [source]);
 
   const moveWelcomeVertical = (code: number) => {
     const container = manual.current;
@@ -131,30 +175,53 @@ export function Onboarding({
 
   const applyXtream = (next: NonNullable<typeof suggestedXtream>) => {
     setSetup({ name, source: next });
-    setProblem("");
+    clearProblems();
+    xtreamButton.current?.focus();
   };
 
-  const submit = () => {
-    if (source.kind === "m3u") {
-      const verdict = checkPlaylistUrl(source.url);
-      if (!verdict.ok) {
-        setProblem(verdict.problemKey ?? "validation.completeAddress");
-        return;
+  const submit = async () => {
+    if (submission.current.busy) return;
+    onClearFeedback?.();
+    const validation = validatePlaylistSource(source);
+    setProblems(validation.problems);
+    const valid = validation.source;
+    if (!valid) return;
+    const token = submission.current.token + 1;
+    submission.current = { token, busy: true };
+    const submittedSource = source;
+    submissionRun.current?.abort();
+    const controller = new AbortController();
+    submissionRun.current = controller;
+    setOperation("validating");
+    try {
+      await onAdd(
+        name.trim() || nameFromUrl(sourceDisplay(valid)),
+        valid,
+        () => {
+          if (submission.current.token === token) setOperation("saving");
+        },
+        controller.signal,
+      );
+      if (submission.current.token === token) {
+        useSetup.getState().clear();
+        setOperation("idle");
       }
-      const valid = m3uSource(source.url);
-      if (!valid) return;
-      onAdd(name.trim() || nameFromUrl(sourceDisplay(valid)), valid);
-      useSetup.getState().clear();
-      return;
+    } catch (error) {
+      if (submission.current.token === token) {
+        const aborted = error instanceof DOMException && error.name === "AbortError";
+        if (!aborted && useSetup.getState().source === submittedSource) {
+          const key =
+            error instanceof PlaylistEntryFeedbackError
+              ? error.messageKey
+              : "playlist.entryNetwork";
+          const message = t(key);
+          onError(message);
+        }
+        setOperation("idle");
+      }
+    } finally {
+      if (submission.current.token === token) submission.current.busy = false;
     }
-
-    const valid = xtreamSource(source.server, source.username, source.password, source.output);
-    if (!valid) {
-      setProblem("validation.completeAddress");
-      return;
-    }
-    onAdd(name.trim() || nameFromUrl(sourceDisplay(valid)), valid);
-    useSetup.getState().clear();
   };
 
   useRemote((code, event) => {
@@ -169,7 +236,18 @@ export function Onboarding({
       const typing = document.activeElement instanceof HTMLInputElement;
       // While the on-screen keyboard is up, RETURN belongs to the keyboard.
       if (typing) (document.activeElement as HTMLInputElement).blur();
-      else onExit();
+      else if (operation === "validating") {
+        submissionRun.current?.abort();
+        submission.current.token += 1;
+        submission.current.busy = false;
+        setOperation("idle");
+      } else {
+        submissionRun.current?.abort();
+        submission.current.token += 1;
+        submission.current.busy = false;
+        setOperation("idle");
+        onExit();
+      }
       return;
     }
     const active = document.activeElement;
@@ -186,7 +264,7 @@ export function Onboarding({
       submit();
       return;
     }
-    if (typing && code !== KEY.UP && code !== KEY.DOWN) return;
+    if (typing && !textInputExit(active as HTMLInputElement, code)) return;
     if (
       (code === KEY.UP || code === KEY.DOWN) &&
       active instanceof HTMLElement &&
@@ -203,9 +281,24 @@ export function Onboarding({
   });
 
   return (
-    <div className="onboard">
+    <div
+      className="onboard"
+      onFocusCapture={(event) => {
+        if (
+          !(event.target instanceof HTMLElement) ||
+          !event.currentTarget.contains(event.target)
+        )
+          return;
+        event.target.scrollIntoView?.({
+          block: "nearest",
+          behavior: window.matchMedia?.("(prefers-reduced-motion: reduce)").matches
+            ? "auto"
+            : "smooth",
+        });
+      }}
+    >
       <div className="onboard-box" ref={box}>
-        <div className={showRemoteSetup ? "onboard-split" : "onboard-single"}>
+        <div className={showPairing ? "onboard-split" : "onboard-single"}>
           <section
             className="onboard-manual"
             ref={manual}
@@ -224,19 +317,18 @@ export function Onboarding({
                 />
               </div>
             </header>
-            <p className="lead">{t("onboarding.description")}</p>
-
-            <div className="form">
+            <div className="form onboard-form">
               <div className="playlist-source-options">
                 <button
                   ref={m3uButton}
                   type="button"
                   className="btn tonal"
                   aria-pressed={source.kind === "m3u"}
+                  disabled={submitting}
                   onKeyDown={moveFromSource}
                   onClick={() => {
                     setSetup({ name, source: { kind: "m3u", url: "" } });
-                    setProblem("");
+                    clearProblems();
                   }}
                 >
                   <span>{t("onboarding.m3uPlaylist")}</span>
@@ -246,6 +338,7 @@ export function Onboarding({
                   type="button"
                   className="btn tonal"
                   aria-pressed={source.kind === "xtream"}
+                  disabled={submitting}
                   onKeyDown={moveFromSource}
                   onClick={() => {
                     setSetup({
@@ -258,28 +351,27 @@ export function Onboarding({
                         output: "m3u8",
                       },
                     });
-                    setProblem("");
+                    clearProblems();
                   }}
                 >
                   <span>{t("onboarding.xtreamLogin")}</span>
                 </button>
               </div>
               {source.kind === "m3u" ? (
-                <>
+                <div className="form-field">
                   <label htmlFor="ob-url">{t("onboarding.playlistAddress")}</label>
-                  <input
+                  <TextInput
                     id="ob-url"
                     ref={first}
                     value={url}
                     spellCheck={false}
                     dir="ltr"
-                    className={problem ? "wrong" : ""}
-                    aria-invalid={problem ? true : undefined}
-                    aria-describedby={problem ? "ob-url-problem" : undefined}
+                    problem={problems.url ? t(problems.url) : undefined}
+                    disabled={submitting}
                     placeholder={t("onboarding.urlPlaceholder")}
                     onChange={(e) => {
                       setSetup({ name, source: { kind: "m3u", url: e.target.value } });
-                      setProblem("");
+                      clearProblems("url");
                     }}
                   />
                   {suggestedXtream && (
@@ -289,6 +381,7 @@ export function Onboarding({
                         <button
                           type="button"
                           className="btn tonal"
+                          disabled={submitting}
                           onClick={() => setDismissedXtreamUrl(source.url)}
                         >
                           <span>{t("onboarding.keepM3u")}</span>
@@ -296,6 +389,7 @@ export function Onboarding({
                         <button
                           type="button"
                           className="btn tonal"
+                          disabled={submitting}
                           onClick={() => applyXtream(suggestedXtream)}
                         >
                           <span>{t("onboarding.useXtream")}</span>
@@ -303,83 +397,120 @@ export function Onboarding({
                       </div>
                     </div>
                   )}
-                </>
+                </div>
               ) : (
                 <div className="xtream-fields">
-                  <label htmlFor="ob-server">{t("onboarding.serverAddress")}</label>
-                  <input
-                    id="ob-server"
-                    value={server}
-                    spellCheck={false}
-                    dir="ltr"
-                    onChange={(event) => {
-                      setSetup({
-                        name,
-                        source: xtreamFromServerField(source, event.target.value),
-                      });
-                      setProblem("");
-                    }}
-                  />
-                  <label htmlFor="ob-username">{t("onboarding.username")}</label>
-                  <input
-                    id="ob-username"
-                    value={username}
-                    spellCheck={false}
-                    dir="ltr"
-                    onChange={(event) =>
-                      setSetup({ name, source: { ...source, username: event.target.value } })
-                    }
-                  />
-                  <label htmlFor="ob-password">{t("onboarding.password")}</label>
-                  <input
-                    id="ob-password"
-                    type="password"
-                    value={password}
-                    dir="ltr"
-                    onChange={(event) =>
-                      setSetup({ name, source: { ...source, password: event.target.value } })
-                    }
-                  />
-                  <label htmlFor="ob-output">{t("onboarding.streamFormat")}</label>
-                  <OptionPicker
-                    id="ob-output"
-                    label={t("onboarding.streamFormat")}
-                    value={output}
-                    options={[
-                      { value: "m3u8", label: t("onboarding.hls") },
-                      { value: "ts", label: t("onboarding.mpegTs") },
-                    ]}
-                    onChange={(value) =>
-                      setSetup({ name, source: { ...source, output: value } })
-                    }
-                  />
+                  <div className="form-field">
+                    <label htmlFor="ob-server">{t("onboarding.serverAddress")}</label>
+                    <TextInput
+                      id="ob-server"
+                      value={server}
+                      spellCheck={false}
+                      dir="ltr"
+                      disabled={submitting}
+                      problem={problems.server ? t(problems.server) : undefined}
+                      onChange={(event) => {
+                        setSetup({
+                          name,
+                          source: xtreamFromServerField(source, event.target.value),
+                        });
+                        clearProblems();
+                      }}
+                    />
+                  </div>
+                  <div className="form-field-pair">
+                    <div className="form-field">
+                      <label htmlFor="ob-username">{t("onboarding.username")}</label>
+                      <TextInput
+                        id="ob-username"
+                        value={username}
+                        spellCheck={false}
+                        dir="ltr"
+                        disabled={submitting}
+                        problem={problems.username ? t(problems.username) : undefined}
+                        onChange={(event) => {
+                          setSetup({
+                            name,
+                            source: { ...source, username: event.target.value },
+                          });
+                          clearProblems("username");
+                        }}
+                      />
+                    </div>
+                    <div className="form-field">
+                      <label htmlFor="ob-password">{t("onboarding.password")}</label>
+                      <TextInput
+                        id="ob-password"
+                        type="password"
+                        value={password}
+                        dir="ltr"
+                        disabled={submitting}
+                        problem={problems.password ? t(problems.password) : undefined}
+                        onChange={(event) => {
+                          setSetup({
+                            name,
+                            source: { ...source, password: event.target.value },
+                          });
+                          clearProblems("password");
+                        }}
+                      />
+                    </div>
+                  </div>
+                  <div className="form-field">
+                    <label htmlFor="ob-output">{t("onboarding.streamFormat")}</label>
+                    <OptionPicker
+                      id="ob-output"
+                      label={t("onboarding.streamFormat")}
+                      value={output}
+                      disabled={submitting}
+                      options={[
+                        { value: "m3u8", label: t("onboarding.hls") },
+                        { value: "ts", label: t("onboarding.mpegTs") },
+                      ]}
+                      onChange={(value) => {
+                        setSetup({ name, source: { ...source, output: value } });
+                        onClearFeedback?.();
+                      }}
+                    />
+                  </div>
                 </div>
               )}
-              {problem && (
-                <p className="field-problem" id="ob-url-problem" role="alert">
-                  {t(problem)}
-                </p>
-              )}
-              <label htmlFor="ob-name">{t("onboarding.nameOptional")}</label>
-              <input
-                id="ob-name"
-                value={name}
-                dir="auto"
-                placeholder={t("onboarding.takenFromAddress")}
-                onChange={(e) => setSetup({ name: e.target.value, source })}
-              />
+              <div className="form-field">
+                <label htmlFor="ob-name">{t("onboarding.nameOptional")}</label>
+                <TextInput
+                  id="ob-name"
+                  value={name}
+                  disabled={submitting}
+                  placeholder={t("onboarding.takenFromAddress")}
+                  onChange={(e) => {
+                    setSetup({ name: e.target.value, source });
+                    onClearFeedback?.();
+                  }}
+                />
+              </div>
             </div>
 
             <button
               type="button"
               className="btn filled wide"
-              onClick={submit}
-              disabled={!sourceDisplay(source).trim()}
+              aria-busy={submitting || undefined}
+              aria-label={
+                submitting
+                  ? t(operation === "validating" ? "playlist.validating" : "playlist.saving")
+                  : undefined
+              }
+              onClick={() => void submit()}
+              disabled={submitting}
             >
+              {submitting ? (
+                <span className="spinner small" aria-hidden="true" />
+              ) : (
+                <Icon name="plus" />
+              )}
               {t("common.addPlaylist")}
             </button>
           </section>
-          {showRemoteSetup && (
+          {showPairing && (
             <>
               <div className="onboard-divider" aria-hidden="true" />
               <RemoteSetup
@@ -393,8 +524,7 @@ export function Onboarding({
         <KeyGuide
           className="onboard-foot ruled"
           items={[
-            { keys: ["\u2191", "\u2193"], label: t("common.move") },
-            { keys: ["OK"], label: t("guide.addIt") },
+            { keys: ["OK"], label: t("common.select") },
             { keys: ["Return"], label: t("common.closeApp") },
           ]}
         />

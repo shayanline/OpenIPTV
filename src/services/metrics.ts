@@ -1,5 +1,15 @@
-import { LOGO_BOX } from "./logos";
 import { ROW_BASE } from "../hooks/useWindowed";
+import { POSTER_BOX } from "./artwork";
+import { LOGO_BOX } from "./logos";
+
+let enterEasing: string | undefined;
+
+export function cssEnterEasing(): string {
+  enterEasing ||= getComputedStyle(document.documentElement)
+    .getPropertyValue("--ease-enter")
+    .trim();
+  return enterEasing;
+}
 
 /**
  * The measurements the code and the stylesheet both need, published from the code.
@@ -21,6 +31,11 @@ export function applyMetrics(): void {
   root.setProperty("--row-base", `${ROW_BASE}px`);
   root.setProperty("--logo-w", `${LOGO_BOX.width}px`);
   root.setProperty("--logo-h", `${LOGO_BOX.height}px`);
+  root.setProperty("--poster-w", `${POSTER_BOX.width}px`);
+  root.setProperty("--poster-h", `${POSTER_BOX.height}px`);
+  // Resolve the immutable curve before large screen trees can make this a forced style flush.
+  enterEasing = undefined;
+  cssEnterEasing();
 }
 
 /**

@@ -1,156 +1,61 @@
-/**
- * What a playback failure means, in words a viewer can act on.
- *
- * Checklist 4.6 asks a failure to say why it happened and what to do about it, so the
- * engines' own codes are translated rather than shown. Both engines are represented here:
- * AVPlay's PLAYER_ERROR_* names from the TV, hls.js's details from a browser, and the two
- * this app raises itself.
- *
- * Kept out of the component so it is plain data and a plain function, which is what makes
- * it testable without a renderer.
- */
 import type { MessageKey } from "./locale";
 
 export interface Reason {
   why: string;
-  fix: string;
   whyKey: MessageKey;
-  fixKey: MessageKey;
 }
 
-/*
- * Order matters here, and the first three entries are why.
- *
- * The TV reports a status and a fault as two separate things, and services/player.ts joins them
- * into one string: "PLAYER_ERROR_CONNECTION_FAILED (http 403)". A status is the more specific of
- * the two, so it has to be tested first. Matched the other way round, every refusal, every
- * missing stream and every failing server would answer with the engine's generic "could not
- * reach the server", which is what this app said before it asked for the status at all.
- */
+/** Only a reported HTTP response supports a more specific explanation. */
 const REASONS: { match: RegExp; reason: Reason }[] = [
   {
-    // Both shapes: the status this app now joins onto the engine's name, and a bare one, which
-    // is what hls.js hands over when it decides to include the response code and nothing else.
-    match: /http (403|451)|\b(403|451)\b|GEO/i,
+    match: /\bhttp\s+(401|403|451)\b|^(401|403|451)$/i,
     reason: {
-      why: "The broadcaster is refusing this connection.",
-      fix: "Streams are often restricted to the country they are broadcast in.",
-      whyKey: "error.broadcasterRefusing",
-      fixKey: "error.countryRestricted",
+      why: "Access to this stream was denied.",
+      whyKey: "error.accessDenied",
     },
   },
   {
-    match: /http 40[0-9]|\b404\b/i,
+    match: /\bhttp\s+5[0-9][0-9]\b|^5[0-9][0-9]$/i,
     reason: {
-      why: "The address in the playlist no longer points at a stream.",
-      fix: "Refresh the playlist in Settings to pull the current addresses.",
-      whyKey: "error.addressStale",
-      fixKey: "error.refreshPlaylist",
-    },
-  },
-  {
-    match: /http 5[0-9][0-9]/i,
-    reason: {
-      why: "This channel's server is failing.",
-      fix: "Nothing here will fix it, and it often comes back on its own.",
-      whyKey: "error.serverFailing",
-      fixKey: "error.serverMayRecover",
-    },
-  },
-  {
-    match: /CONNECTION_FAILED|NETWORK|manifestLoad|levelLoad|fragLoad|TIMEOUT/i,
-    reason: {
-      why: "The TV could not reach this channel's server.",
-      fix: "It may be off the air. Check the network if other channels fail too.",
-      whyKey: "error.cannotReachServer",
-      fixKey: "error.checkNetwork",
-    },
-  },
-  {
-    match: /SEEK_UNSUPPORTED|SEEK_FAILED/i,
-    reason: {
-      why: "This video cannot seek on this device.",
-      fix: "Continue from the current position or try another format.",
-      whyKey: "error.seekUnavailable",
-      fixKey: "error.continueOrTryFormat",
-    },
-  },
-  {
-    match: /FINITE_FORMAT_UNSUPPORTED/i,
-    reason: {
-      why: "This video uses a format the player cannot decode.",
-      fix: "Try it on the television or choose another video.",
-      whyKey: "error.finiteFormatUnsupported",
-      fixKey: "error.tryTelevisionOrVideo",
-    },
-  },
-  {
-    match: /NOT_SUPPORTED_FILE|CODEC|manifestParsing|manifestIncompatible/i,
-    reason: {
-      why: "This channel sends a format the TV cannot decode.",
-      fix: "Nothing here will fix it. Try another channel.",
-      whyKey: "error.unsupportedFormat",
-      fixKey: "error.tryAnother",
-    },
-  },
-  {
-    match: /INVALID_URI|NO_SUCH_FILE/i,
-    reason: {
-      why: "The address in the playlist no longer points at a stream.",
-      fix: "Refresh the playlist in Settings to pull the current addresses.",
-      whyKey: "error.addressStale",
-      fixKey: "error.refreshPlaylist",
-    },
-  },
-  {
-    match: /STREAM_ENDED/i,
-    reason: {
-      why: "This channel stopped broadcasting.",
-      fix: "It may come back on its own.",
-      whyKey: "error.stoppedBroadcasting",
-      fixKey: "error.mayReturn",
-    },
-  },
-  {
-    // Found by the app rather than reported by either engine: the connection is open and the
-    // picture is not moving, which is how a public relay usually fails.
-    match: /STALLED/i,
-    reason: {
-      why: "The picture from this channel has frozen.",
-      fix: "The server stopped sending. It often recovers.",
-      whyKey: "error.pictureFrozen",
-      fixKey: "error.serverStopped",
-    },
-  },
-  {
-    // The engine says only that nothing playable arrived, which is true of a channel that
-    // is off the air and of one sending something it cannot decode. Saying which would be
-    // a guess, so it says both.
-    match: /NotSupportedError|NOT_SUPPORTED/i,
-    reason: {
-      why: "Nothing playable arrived from this channel.",
-      fix: "It may be off the air, or sending a format the TV cannot decode.",
-      whyKey: "error.nothingPlayable",
-      fixKey: "error.offAirOrFormat",
+      why: "The server returned an error.",
+      whyKey: "error.serverError",
     },
   },
 ];
 
-/*
- * Neither of these names a key any more.
- *
- * Neither names a key. Retrying is automatic and OK means what it means everywhere else, so
- * a remedy telling the viewer to press a key that does something different would be worse
- * than no remedy at all. The cards say what is wrong, and the guide underneath them says
- * what the keys do.
- */
 const FALLBACK: Reason = {
-  why: "The stream stopped unexpectedly.",
-  fix: "This usually clears on its own.",
-  whyKey: "error.streamStopped",
-  fixKey: "error.usuallyClears",
+  why: "Playback is unavailable.",
+  whyKey: "error.playbackUnavailable",
 };
 
 export function explain(code: string): Reason {
   return REASONS.find((r) => r.match.test(code))?.reason ?? FALLBACK;
+}
+
+/** Controls automatic recovery independently of the brief viewer message. */
+export interface FaultPolicy {
+  terminal: boolean;
+  compatibility: boolean;
+  httpFallback: boolean;
+}
+
+const TERMINAL_REFUSAL = /http (401|403|451)|\b(401|403|451)\b|GEO/i;
+const TERMINAL_ADDRESS = /http 40[0-9]|\b404\b|INVALID_URI|NO_SUCH_FILE/i;
+const TERMINAL_FORMAT =
+  /NOT_SUPPORTED_FILE|CODEC|manifestParsing|manifestIncompatible|FINITE_FORMAT_UNSUPPORTED/i;
+const TERMINAL_SOURCE = /FINITE_SOURCE_UNAVAILABLE/i;
+const FALLBACK_ELIGIBLE =
+  /CONNECTION_FAILED|NETWORK|manifestLoad|levelLoad|fragLoad|TIMEOUT|CIPHER|CERT|NOT_SUPPORTED/i;
+
+export function faultPolicy(code: string): FaultPolicy {
+  const terminal =
+    TERMINAL_REFUSAL.test(code) ||
+    TERMINAL_ADDRESS.test(code) ||
+    TERMINAL_FORMAT.test(code) ||
+    TERMINAL_SOURCE.test(code);
+  return {
+    terminal,
+    compatibility: !terminal,
+    httpFallback: !terminal && FALLBACK_ELIGIBLE.test(code),
+  };
 }

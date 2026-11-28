@@ -168,6 +168,7 @@ test("preflight keeps a healthy master on its source and measures its child segm
   assert.equal(target?.url, UPSTREAM);
   assert.equal(target?.repaired, false);
   assert.equal(target?.bufferSeconds, 11);
+  assert.equal(target?.segmentSeconds, 10);
   assert.equal(sent.length, 0, "a healthy master opened the repair socket");
 });
 
@@ -183,6 +184,22 @@ test("a healthy diagnosis survives a relaunch and skips the next preflight fetch
   assert.equal(second?.url, "https://host.example/healthy/index.m3u8");
   assert.equal(second?.repaired, false);
   assert.equal(fetch.mock.calls.length, 1);
+});
+
+test("an old persisted diagnosis defaults and stores its segment duration", async () => {
+  const { prepare } = await load();
+  await prepare("https://host.example/healthy/index.m3u8");
+  const stored = JSON.parse(localStorage.getItem("openiptv.repair.diagnoses") ?? "[]");
+  delete stored[0].segmentSeconds;
+  localStorage.setItem("openiptv.repair.diagnoses", JSON.stringify(stored));
+
+  const next = await load();
+  const target = await next.prepare("https://host.example/healthy/index.m3u8");
+
+  expect(target?.segmentSeconds).toBe(3);
+  expect(
+    JSON.parse(localStorage.getItem("openiptv.repair.diagnoses") ?? "[]")[0].segmentSeconds,
+  ).toBe(3);
 });
 
 test("revalidation uses HTTP validators and rediagnoses changed playlists", async () => {
@@ -216,6 +233,25 @@ test("revalidation uses HTTP validators and rediagnoses changed playlists", asyn
   version = 2;
   assert.equal(await revalidate(UPSTREAM), true);
   assert.equal(knownToNeedRepair(UPSTREAM), true);
+});
+
+test("revalidation reports a changed diagnosed segment duration", async () => {
+  let duration = 2;
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      headers: { get: () => "" },
+      text: async () => HEALTHY.replace("#EXTINF:2.0,", `#EXTINF:${duration}.0,`),
+    })),
+  );
+  const { prepare, revalidate } = await load();
+  expect((await prepare(UPSTREAM))?.segmentSeconds).toBe(2);
+  duration = 5;
+
+  expect(await revalidate(UPSTREAM)).toBe(true);
+  expect((await prepare(UPSTREAM))?.segmentSeconds).toBe(5);
 });
 
 test("a failure forces a fresh diagnosis when a cached healthy playlist changes", async () => {
@@ -272,6 +308,41 @@ test("the same stream asked for twice does not start a second server", async () 
   expect(fetch).toHaveBeenCalledTimes(1);
 });
 
+test("returning to the serving stream invalidates a different prepare in flight", async () => {
+  const nextUpstream = "https://next.example/live/index.m3u8";
+  let finishNext: ((value: unknown) => void) | undefined;
+  vi.stubGlobal(
+    "fetch",
+    vi.fn((url: string) => {
+      if (url === nextUpstream) {
+        return new Promise((resolve) => {
+          finishNext = resolve;
+        });
+      }
+      return Promise.resolve({ ok: true, url, text: async () => BROKEN });
+    }),
+  );
+  const { sent } = fakeWorker("listens");
+  const { prepare } = await load();
+  const first = await prepare(UPSTREAM);
+  const pending = prepare(nextUpstream);
+  await Promise.resolve();
+
+  expect((await prepare(UPSTREAM))?.url).toBe(first?.url);
+  finishNext?.({
+    ok: true,
+    url: nextUpstream,
+    text: async () => BROKEN.replace("a.ts", "next.ts"),
+  });
+  expect(await pending).toBeNull();
+
+  const manifests = sent.filter(
+    (message) => (message as { type?: string }).type === "manifest",
+  );
+  expect((manifests[manifests.length - 1] as { text: string }).text).toContain("a.ts");
+  expect((manifests[manifests.length - 1] as { text: string }).text).not.toContain("next.ts");
+});
+
 test("as the window slides, the number served advances by the segments that dropped off", async () => {
   /*
    * The counting the television forced on us. These streams number segments from a microsecond
@@ -312,6 +383,49 @@ test("as the window slides, the number served advances by the segments that drop
     .map((m) => Number(/#EXT-X-MEDIA-SEQUENCE:(\d+)/.exec((m as { text: string }).text)?.[1]));
 
   assert.deepEqual(served, [0, 2, 4], `served ${JSON.stringify(served)}`);
+});
+
+test("a stale refresh cannot publish over a newer serving target", async () => {
+  vi.useFakeTimers({ shouldAdvanceTime: true });
+  const nextUpstream = "https://next.example/live/index.m3u8";
+  let finishRefresh: ((value: unknown) => void) | undefined;
+  let oldCalls = 0;
+  vi.stubGlobal(
+    "fetch",
+    vi.fn((url: string) => {
+      if (url === UPSTREAM && oldCalls++ > 0) {
+        return new Promise((resolve) => {
+          finishRefresh = resolve;
+        });
+      }
+      const segment = url === nextUpstream ? "next.ts" : "first.ts";
+      return Promise.resolve({
+        ok: true,
+        url,
+        text: async () => BROKEN.replace("a.ts", segment),
+      });
+    }),
+  );
+  const { sent } = fakeWorker("listens");
+  const { prepare } = await load();
+  await prepare(UPSTREAM);
+  vi.advanceTimersByTime(6000);
+  await Promise.resolve();
+  await prepare(nextUpstream);
+
+  finishRefresh?.({
+    ok: true,
+    url: UPSTREAM,
+    text: async () => BROKEN.replace("a.ts", "stale.ts"),
+  });
+  await Promise.resolve();
+  await Promise.resolve();
+
+  const manifests = sent.filter(
+    (message) => (message as { type?: string }).type === "manifest",
+  );
+  expect((manifests[manifests.length - 1] as { text: string }).text).toContain("next.ts");
+  expect((manifests[manifests.length - 1] as { text: string }).text).not.toContain("stale.ts");
 });
 
 test("a television without the bindings is asked once and then left alone", async () => {
