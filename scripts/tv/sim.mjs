@@ -1,40 +1,22 @@
 #!/usr/bin/env node
 /**
- * Run the app under the TV's constraints, on a laptop.
+ * Exercise Tizen application paths in a desktop browser, without modelling TV hardware.
  *
- * Samsung ships an x86 emulator that needs HAXM, which does not exist on Apple silicon,
- * and their simulator is a plain WebKit shell that tells you nothing about performance.
- * Neither is needed here. This uses ordinary Chrome with a host calibrated CPU proxy,
- * conservative resource settings and a native playback state shim.
- *
- * What it reproduces, and does not:
- *
- *   CPU        floor workload calibrated on this host, with an explicitly estimated TV score
- *   memory     a V8 old space stress cap, not emulated physical RAM or total process memory
- *   screen     1920x1080 at a device pixel ratio of 1
- *   engine     the TV's user agent, and ideally its Chromium version, see --chrome
- *   platform   webapis.avplay and tizen shimmed, so the Tizen code paths actually run
- *
- *   GPU        not reproduced. A laptop GPU is far quicker than a TV's, so anything
- *              compositing bound will look better here than it really is.
- *   decoder    not reproduced. There is no hardware video plane, so the simulator draws
- *              a placeholder where the picture would be.
+ * The viewport and API shim are fixtures. CPU, memory, GPU, image decoding and storage
+ * remain the host's. Optional --cpu throttling is a local stress diagnostic, with no
+ * Samsung equivalence. The measurements never provide a TV performance verdict.
  *
  * Usage:
- *   node scripts/tv/sim.mjs                     app under TV constraints
- *   node scripts/tv/sim.mjs --cpu=1             same layout and engine, full speed
+ *   node scripts/tv/sim.mjs                     app with the Tizen API fixture
+ *   node scripts/tv/sim.mjs --cpu=4             explicit desktop main thread stress
  *   node scripts/tv/sim.mjs --net=3g            add a slow network
- *   node scripts/tv/sim.mjs --bench             measure frame times and exit
- *   node scripts/tv/sim.mjs --floor --bench --quick  shorter local sample of every journey
+ *   node scripts/tv/sim.mjs --bench             desktop callback and DOM timing diagnostics
+ *   node scripts/tv/sim.mjs --bench --quick     short Live, VOD and cached startup sample
  *   node scripts/tv/sim.mjs --url=http://...    somewhere other than the preview server
  *   node scripts/tv/sim.mjs --port=9433         a separate Chrome debugging port
  *   node scripts/tv/sim.mjs --playlist=http://... measure against that instead of the default
- *   node scripts/tv/sim.mjs --harsh            half the TV's hardware, on every axis
- *   node scripts/tv/sim.mjs --floor           calibrate to the estimated base TV workload
- *   node scripts/tv/sim.mjs --floor --quick   short Live, VOD and startup quality sample
  *   node scripts/tv/sim.mjs --fit             lay out for this screen, not the set's 1080p
- *   node scripts/tv/sim.mjs --harsh=4          a quarter of it
- *   node scripts/tv/sim.mjs --harsh --software no GPU either, so paint cost shows up
+ *   node scripts/tv/sim.mjs --software        desktop software rendering diagnostic
  *   node scripts/tv/sim.mjs --video           real playback, at the cost of the Tizen paths
  *   node scripts/tv/sim.mjs --net=off         no network throttling, even in harsh mode
  */
@@ -56,9 +38,8 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { deflateSync } from "node:zlib";
 import { XTREAM_FIXTURE, xtreamFixtureResponse } from "../present.mjs";
-import { computeBenchmarkIndex } from "./benchmark-index.mjs";
-import { arg, connect, factor, findChrome, has } from "./cdp.mjs";
-import { calibrateCpu, cpuControl, CPU_TOLERANCE } from "./cpu-model.mjs";
+import { arg, connect, findChrome, has } from "./cdp.mjs";
+import { assessSample, diagnosticOptions, vodCategoryReady } from "./diagnostics.mjs";
 import {
   benchmarkResult,
   createJourneyTracker,
@@ -74,13 +55,8 @@ import {
   measurementOrigins,
   startMeasurementNetwork,
 } from "./measurement-network.mjs";
-import { selectPerformanceProfile } from "./performance-profile.mjs";
-import {
-  assessPhase,
-  STARTUP_GOALS,
-  UI_GOALS,
-  vodCategoryReady,
-} from "./performance-goals.mjs";
+
+const { cpu } = diagnosticOptions({ has, arg });
 
 const here = dirname(fileURLToPath(import.meta.url));
 const read = (name) => JSON.parse(readFileSync(join(here, name), "utf8"));
@@ -97,14 +73,9 @@ const shim = readFileSync(join(here, "shim.js"), "utf8");
 const enginePath = join(here, "..", "..", "node_modules", "hls.js", "dist", "hls.min.js");
 const engine = existsSync(enginePath) ? readFileSync(enginePath, "utf8") : null;
 
-const floor = has("floor");
-const fasterReference = has("reference");
-const calibratedProfile = floor || fasterReference;
-const profile = selectPerformanceProfile(read, { floor, reference: fasterReference });
-const profileLabel = floor ? "Original floor" : fasterReference ? "Everyday TV" : "Device";
-const profileIdentity = createHash("sha256").update(JSON.stringify(profile)).digest("hex");
-// Hardware comparisons share one API fixture. Engine compatibility has its own gate.
-const fixtureUserAgent = calibratedProfile ? read("floor.json").userAgent : profile.userAgent;
+const profile = read("profile.json");
+const fixtureIdentity = createHash("sha256").update(JSON.stringify(profile)).digest("hex");
+const fixtureUserAgent = profile.userAgent;
 
 /**
  * Find the app.
@@ -116,30 +87,9 @@ const fixtureUserAgent = calibratedProfile ? read("floor.json").userAgent : prof
  */
 const DEV = "http://localhost:5173/";
 const PREVIEW = "http://localhost:4173/";
-const measuring = has("bench") || has("profile") || has("budget") || has("quick");
+const measuring = has("bench") || has("profile") || has("quick");
 const isolatedNetwork = measuring && !has("video") && !has("real-logos");
 const quick = has("quick");
-if (quick && (!calibratedProfile || has("profile"))) {
-  throw new Error(
-    "--quick requires --floor or --reference and cannot be combined with --profile.",
-  );
-}
-if (
-  has("budget") &&
-  (quick ||
-    !calibratedProfile ||
-    has("video") ||
-    has("profile") ||
-    has("real-logos") ||
-    arg("net") != null ||
-    arg("cpu") != null ||
-    arg("cpu-score") != null)
-) {
-  throw new Error(
-    "--budget requires a complete --floor or --reference run with automatic CPU calibration and native " +
-      "playback timing with isolated local fixtures. Use --bench for CPU, video or network diagnostics.",
-  );
-}
 
 const alive = async (candidate) => {
   try {
@@ -172,10 +122,8 @@ const children = [];
  *
  * What it replaces was 200 channels in 14 categories, and the gap between those two is where
  * this application's costs actually live. Nothing in the interface is expensive per pixel: it
- * is expensive per row, per logo and per category, and a playlist that fits in a rounding
- * error of the heap cannot say anything about a set with 120MB. Two hundred channels also
- * parse in 0.3ms here against 11.7ms for twelve thousand, which is about 0.7 seconds of
- * frozen main thread on the floor, on the launch path, that nothing had ever measured.
+ * is expensive per row, per logo and per category. Two hundred channels have a much smaller
+ * parsing and rendering workload than the large fixture. Neither size models TV hardware.
  *
  * A number written down twice is a number that drifts, so `--playlist` overrides this and
  * the header says which one was used.
@@ -225,7 +173,7 @@ let url = await findApp();
  *
  * Always the built output, never the dev server, even when working rather than measuring.
  * A development build of React validates every element it creates, which came to half the
- * main thread in a profile, and on a profile as slow as the floor that noise is most of what
+ * main thread in a profile, and under explicit throttling that noise can dominate what
  * you would be looking at.
  */
 if (!url && existsSync(join(dist, "index.html"))) {
@@ -258,8 +206,8 @@ if (measuring && (url === DEV || /\/@vite\/client|\/src\/main\.[jt]sx?/.test(ser
 if (measuring && !/src="[^"]*\/assets\/[^"]+\.js"/.test(servedHtml)) {
   throw new Error("The measurement URL does not serve a production application entry.");
 }
-if (has("budget") && servedHtml !== readFileSync(join(dist, "index.html"), "utf8")) {
-  throw new Error("The budget URL does not serve this worktree's production build.");
+if (measuring && servedHtml !== readFileSync(join(dist, "index.html"), "utf8")) {
+  throw new Error("The diagnostic URL does not serve this worktree's production build.");
 }
 /**
  * The playlist, fetched once and then served from here.
@@ -412,7 +360,7 @@ function crc32(buffer) {
 }
 
 /**
- * Encoded on first request for interactive runs, or before calibration when measuring.
+ * Encoded on first request for interactive runs, or before timing diagnostics.
  *
  * Thirty six large images is a couple of seconds of deflate, and a run that walks eighteen
  * categories asks for a handful of them. Building them on demand keeps that off the start of
@@ -473,7 +421,7 @@ await new Promise((settle) => {
 });
 const fixtureOrigin = `http://127.0.0.1:${fixture.address().port}`;
 if (isolatedNetwork) {
-  // Fixture encoding must finish before calibration or any measured loading journey.
+  // Fixture encoding must finish before any recorded loading journey.
   for (const size of LOGO_SIZES) {
     for (let hue = 0; hue < LOGO_HUES; hue++) logoFor(size, hue);
   }
@@ -502,24 +450,6 @@ if (measuring && !has("real-logos")) {
   });
 }
 
-/**
- * Harsh mode: divide the set's hardware by a factor and see whether the app still holds up.
- *
- * The point is headroom. If it stays fluid on half a TV then the real one is not close to
- * its limits, and the reading stops being hostage to a CPU throttle that is still only an
- * estimate. Every axis is squeezed together, because starving one while leaving the others
- * alone just moves the bottleneck somewhere unrealistic.
- */
-const harsh = factor("harsh", 2);
-const autoCpu = calibratedProfile && arg("cpu") == null;
-let cpu = Number(arg("cpu") ?? (autoCpu ? 1 : profile.cpuThrottle)) * harsh;
-let cpuCalibration = null;
-if (!Number.isFinite(cpu) || cpu < 1) {
-  throw new Error("--cpu must be a finite slowdown of at least 1.");
-}
-const heapMB = Math.max(32, Math.round(profile.jsHeapLimitMB / harsh));
-const cores = Math.max(1, Math.round(profile.cores / harsh));
-const memoryGB = Math.max(0.25, profile.deviceMemoryGB / harsh);
 const netArg = arg("net");
 
 /**
@@ -596,15 +526,13 @@ const fit = has("fit") || arg("fit") !== undefined;
 /*
  * Refused by anything that measures, and the test is deliberately wider than `measuring`.
  *
- * `measuring` is --bench and --profile. --budget is checked as well because it is a separate flag
- * that happens to be useless without --bench: somebody typing `--fit --budget` should be told they
- * cannot have both rather than get an interactive window and no budget, silently.
+ * Diagnostics keep the fixed application viewport so repeated runs have the same layout.
  *
  * The two parity gates cannot reach this at all. gap-parity and engine-parity have their own
  * launchers, both fixed at 1920x1080, and neither reads this file's arguments, so the only way to
  * scale a gate is to change the gate.
  */
-if (fit && (measuring || has("budget"))) {
+if (fit && measuring) {
   console.error(
     "\n--fit lays the app out for this screen rather than the set's 1920x1080, which",
   );
@@ -640,7 +568,7 @@ const link = ({ mbps, latency }) => ({
  * Optional network shaping for diagnostics.
  *
  * Regular measurements use only the owned loopback app and fixtures. --net=3g and
- * --net=slow deliberately add latency and bandwidth constraints, so the budget rejects them.
+ * --net=slow deliberately add latency and bandwidth constraints.
  */
 const netProfile = netArg && NETWORKS[netArg] ? NETWORKS[netArg] : null;
 
@@ -680,14 +608,12 @@ const child = spawn(
      when it is not: a 1920 wide window on a 1512 wide screen is exactly what --fit is for
      getting rid of. */
     ...(fit ? ["--start-maximized"] : [`--window-size=${profile.width},${profile.height}`]),
-    // A conservative project stress cap, not an emulation of total TV memory.
-    `--js-flags=--max-old-space-size=${heapMB}`,
     "--no-first-run",
     "--no-default-browser-check",
     "--autoplay-policy=no-user-gesture-required",
     "--hide-scrollbars",
     // Linux runners have no unprivileged user namespaces, so the sandbox refuses to start and
-    // the budget job cannot run at all. Safe here: a local fixture, for ninety seconds.
+    // the local fixture browser cannot start there.
     "--no-sandbox",
     // No window at all when measuring, so nothing on the desktop can decide the result. See
     // `headless` above for why that is a correctness matter rather than a convenience.
@@ -698,8 +624,8 @@ const child = spawn(
      * requestAnimationFrame stops dead for a window the compositor believes is occluded, and
      * it believes that whenever this window is behind the terminal that launched it. These
      * three do not flatter anything: the work still happens on the same throttled main thread
-     * and the frames are still real, they are simply still produced when the window is not on
-     * top. Kept alongside headless rather than instead of it, because --headful is still a
+     * and callbacks remain scheduled when the window is not on top. Kept alongside headless
+     * rather than instead of it, because --headful is still a
      * supported way to measure and it has the same problem.
      */
     "--disable-backgrounding-occluded-windows",
@@ -736,9 +662,8 @@ const browserVersion = await cdp.send("Browser.getVersion");
  * The profile directory is fixed on purpose, so a playlist added once stays added the way it
  * would on a television. The cost is that a Chrome already holding that profile makes this one
  * detect the singleton lock, hand over its command line and exit immediately, leaving the
- * debugger attached to the browser that was already there. Every flag above is then void: not
- * the CPU throttle, not the heap cap, not the user agent, not headless. The run would report
- * frame times for an unthrottled desktop Chrome and call them a television.
+ * debugger attached to the browser that was already there. Its viewport, headless mode and
+ * network isolation would differ from the requested diagnostic environment.
  *
  * A handed-off launcher exits within moments of starting, so it having exited by the time the
  * debugger is up is the tell.
@@ -746,7 +671,7 @@ const browserVersion = await cdp.send("Browser.getVersion");
 if (child.exitCode !== null) {
   console.error(
     "\nAnother Chrome is already using the simulator's profile, so this one exited and\n" +
-      "handed over to it. None of the TV constraints are in force on that browser.\n\n" +
+      "handed over to it. The requested diagnostic environment is not in force.\n\n" +
       "  Close any other `npm run tv` first, or wait for it to finish.\n",
   );
   process.exit(2);
@@ -767,25 +692,6 @@ if (measurementNetwork) {
       .catch(() => console.error("The network audit snapshot could not be returned."));
   });
 }
-if (autoCpu) {
-  console.log(
-    `Calibrating the laptop to the estimated ${profileLabel.toLowerCase()} CPU workload...`,
-  );
-  await cdp.send("Runtime.evaluate", {
-    expression: `window.__tvCpuIndex = ${computeBenchmarkIndex.toString()}`,
-  });
-  const targetScore = Number(arg("cpu-score") ?? profile.cpuBenchmarkIndex) / harsh;
-  cpuCalibration = await calibrateCpu(async (rate) => {
-    await cdp.send("Emulation.setCPUThrottlingRate", { rate });
-    const response = await cdp.send("Runtime.evaluate", {
-      expression: "window.__tvCpuIndex(250)",
-      returnByValue: true,
-    });
-    return evaluationValue(response, "CPU calibration");
-  }, targetScore);
-  cpu = cpuCalibration.rate;
-}
-
 /*
  * The set's resolution, unless --fit has asked for this display's, in which case nothing is
  * overridden at all and the page uses the window it is in at this machine's own pixel ratio.
@@ -804,20 +710,10 @@ if (measuring) {
   await cdp.send("Page.addScriptToEvaluateOnNewDocument", {
     source: `window.__tvSimulation = ${JSON.stringify({
       cpu,
-      cpuCalibration,
+      environment: "desktop-diagnostic",
       browser: browserVersion,
       buildIdentity,
-      profileLabel,
-      profileIdentity,
-      cpuApproximation: profile.cpuApproximation,
-      hardware: {
-        cores,
-        memoryGB,
-        heapMB,
-        width: profile.width,
-        height: profile.height,
-        deviceScaleFactor: profile.deviceScaleFactor,
-      },
+      fixtureIdentity,
       fixtureUserAgent,
       fixtureOrigin,
       nativeTiming: !video,
@@ -828,11 +724,6 @@ if (measuring) {
     })};`,
   });
 }
-await cdp.send("Emulation.setHardwareConcurrencyOverride", { hardwareConcurrency: cores });
-// navigator.deviceMemory has no CDP override, so it is redefined in the page instead.
-await cdp.send("Page.addScriptToEvaluateOnNewDocument", {
-  source: `Object.defineProperty(navigator, "deviceMemory", { get: () => ${memoryGB} });`,
-});
 if (netProfile) await cdp.send("Network.emulateNetworkConditions", link(netProfile));
 if (!video) {
   if (measuring) {
@@ -938,65 +829,20 @@ cdp.on("Runtime.consoleAPICalled", ({ type, args }) => {
   }
 });
 
-/**
- * How much to trust the throttle.
- *
- * The factor is a ratio between two particular machines, so it expires when either of them
- * changes. Saying so beats reporting confident numbers measured against a laptop nobody is
- * using any more.
- */
 const machine = `${cpus()[0]?.model ?? "unknown"} (${arch()})`;
-const trust =
-  arg("cpu") != null
-    ? "explicit diagnostic override"
-    : cpuCalibration
-      ? `host calibrated to an estimated TV proxy, not a measured TV`
-      : !profile.calibrated
-        ? "estimated, run npm run tv:calibrate"
-        : profile.calibratedMachine && profile.calibratedMachine !== machine
-          ? `calibrated on a different machine, ${profile.calibratedMachine}`
-          : `calibrated ${profile.calibratedOn}`;
 
+console.log(`Desktop diagnostic  ${profile.model}${quick ? ", quick sample" : ""}`);
 console.log(
-  `TV simulator  ${profile.model}` +
-    `${harsh > 1 ? `, divided by a further ${harsh}` : ""}` +
-    `${quick ? ", quick sample" : ""}`,
-);
-console.log(
-  calibratedProfile
-    ? "  APIs       shared Tizen fixture, engine compatibility checked separately by tv:engines"
-    : `  engine     ${profile.platform}, Chromium ${profile.chromium} (spoofed)`,
+  "  APIs       Tizen fixture, engine compatibility checked separately by tv:engines",
 );
 console.log(`  browser    ${browserVersion.product}, V8 ${browserVersion.jsVersion}`);
 if (measuring) console.log(`  build      index.html SHA256 ${buildIdentity}`);
-if (measuring) {
-  console.log(`  profile    ${profileLabel}, SHA256 ${profileIdentity}`);
-}
-if (calibratedProfile) console.log(`  estimate   ${profile.cpuApproximation}`);
-
-// Spelled out against what the set actually reports, because a bare throttle figure reads
-// like a multiple of the TV when it is a multiple of this laptop.
-console.log(`  cpu        ${cpu}x renderer main thread slowdown (${trust})`);
-if (cpuCalibration) {
-  console.log(
-    `  CPU index  host ${cpuCalibration.baselineScore}, target ${cpuCalibration.targetScore}, ` +
-      `achieved ${cpuCalibration.achievedScore}, sample spread ` +
-      `${Math.round(cpuCalibration.spread * 100)}%`,
-  );
-  console.log(
-    `  CPU match  within ${CPU_TOLERANCE * 100}% required before and after measurement`,
-  );
-}
+if (measuring) console.log(`  fixture    SHA256 ${fixtureIdentity}`);
 console.log(
-  `  heap       ${heapMB}MB old space stress cap${harsh > 1 ? ` of ${profile.jsHeapLimitMB}MB` : ""}`,
+  `  cpu        ${cpu}x desktop renderer slowdown${cpu === 1 ? " (unthrottled)" : " (explicit stress setting)"}`,
 );
-console.log(
-  `  cores      ${cores}${harsh > 1 ? ` of ${profile.cores}` : ""}` +
-    ` as a navigator hint, only the renderer main thread is slowed`,
-);
-console.log(
-  `  memory     ${memoryGB}GB navigator hint${harsh > 1 ? ` of ${profile.deviceMemoryGB}GB` : ""}`,
-);
+console.log("  limits     no TV CPU, RAM, GPU, storage or decoder emulation");
+console.log("  verdict    desktop diagnostics only, no TV performance pass or fail");
 console.log(
   `  network    ${measurementNetwork ? "isolated loopback app and fixtures" : "unrestricted diagnostic"}${
     netProfile ? `, ${netProfile.mbps.toFixed(1)}Mbps, ${netProfile.latency}ms` : ""
@@ -1034,6 +880,7 @@ console.log(
 // silent. Without this line there is no way to tell which server answered a question about it.
 console.log(`             served to the app at ${playlist}`);
 if (measuring) {
+  console.log(`  host       ${machine}`);
   console.log(`  machine    load average ${loadavg()[0].toFixed(1)} of ${cpus().length} cores`);
 }
 console.log(`  ${url}`);
@@ -1047,7 +894,7 @@ cdp.on("Page.frameNavigated", ({ frame }) => {
 measurementNetwork?.beginAudit();
 await cdp.send("Page.navigate", { url });
 
-if (has("bench") || has("budget") || quick) {
+if (has("bench") || quick) {
   let benchmarkNavigation = 0;
   const ev = async (expression, allowContextLoss = false) => {
     try {
@@ -1103,17 +950,14 @@ if (has("bench") || has("budget") || quick) {
   /*
    * Wait for the interface, and time how long it took, rather than assuming eight seconds.
    *
-   * Eight was enough for two hundred channels and is not enough for twelve thousand on the
-   * floor: the app has to fetch a playlist it has never seen, parse it and lay out a rail of a
-   * hundred and seventy five categories, and a fixed wait that runs out mid-parse means the
+   * The app must fetch and parse the large fixture, then lay out its category rail.
+   * A fixed wait that runs out during parsing means the
    * check below declares there is no playlist and the run exits 2. Which is the correct answer
    * to a genuinely absent playlist and the wrong one to a slow one, and the two are worth
    * telling apart rather than picking a bigger constant and hoping.
    *
    * This is also the first launch, cold in every sense: nothing cached, nothing parsed, nothing
-   * resumed. Reported rather than budgeted, because it depends on the fixture server and on
-   * whatever the app decides to do about caching, and because the launch worth a budget is the
-   * ordinary one, measured at the end.
+   * resumed. Cached relaunch is recorded separately at the end.
    */
   const readyAt = Date.now();
   const isReady = async () =>
@@ -1166,12 +1010,11 @@ if (has("bench") || has("budget") || quick) {
    * `usedJSHeapSize` counts whatever V8 has not got round to freeing, so reading it once at the
    * end of a run reports the app's real cost plus however much garbage happened to be lying
    * about at that moment. Between two runs of the same build that difference was several
-   * megabytes, which is enough to move a budget set against a 120MB ceiling. Collecting first
-   * turns it into a number about the application.
+   * megabytes. Collecting first reduces that source of variation without measuring native
+   * allocations, artwork bitmaps or total process memory.
    *
-   * Two readings rather than one, because a peak says nothing about a leak. A television is
-   * left on the same app for hours: what matters is whether walking the interface for two
-   * minutes leaves anything behind, and only a before and an after can say.
+   * The before and after readings are diagnostic. A single walk cannot establish a leak
+   * or predict memory pressure during hours of use on a TV.
    */
   await cdp.send("HeapProfiler.enable").catch(() => {
     /* older protocol, no forced GC */
@@ -1284,14 +1127,7 @@ if (has("bench") || has("budget") || quick) {
    */
   const settle = (ms = quick ? 750 : 3000) => new Promise((r) => setTimeout(r, ms));
 
-  /**
-   * The results, kept, because a table printed and forgotten is not a gate.
-   *
-   * `--budget` turns this from something a person reads into something CI can fail on, and
-   * the two must be the same run: a benchmark that only anybody looks at when they suspect
-   * a problem is a benchmark that tells you a regression happened some time in the last
-   * three months.
-   */
+  // Retain raw desktop samples to check recording integrity and journey coverage.
   const results = [];
   const unmeasured = [];
   const paintBoundary = () =>
@@ -1305,7 +1141,7 @@ if (has("bench") || has("budget") || quick) {
   const printResult = (label, result) => {
     const value = (number) => (number == null ? "-" : number.toFixed(1));
     console.log(
-      `  ${label.padEnd(28)}${value(result.fps).padStart(8)}` +
+      `  ${label.padEnd(28)}${value(result.rafHz).padStart(8)}` +
         `${value(result.p95).padStart(9)}${value(result.worst).padStart(9)}` +
         `${value(result.inputP95).padStart(9)}${value(result.worstLag).padStart(9)}` +
         `${value(result.stallTimePercent).padStart(9)}`,
@@ -1316,10 +1152,8 @@ if (has("bench") || has("budget") || quick) {
   /**
    * Resting is watched for long enough to see something.
    *
-   * It was forty press intervals, which is 1.3 seconds and about twenty frames on the floor: a
-   * sample too short to distinguish an interface that is doing nothing from one doing a little
-   * every second. The full gate keeps five seconds, which is enough for a repeating timer to show
-   * up twice. The quick local sample uses two seconds because it does not issue a budget verdict.
+   * The complete diagnostic keeps five seconds to include repeating timers.
+   * The quick sample keeps two seconds. Neither interval establishes a TV performance verdict.
    */
   const RESTING_MS = quick ? 2000 : 5000;
 
@@ -1384,45 +1218,13 @@ if (has("bench") || has("budget") || quick) {
     return r;
   };
 
-  // Keep navigation diagnostics while gating the milestones that make startup useful.
-  const LAUNCH_ALLOWED = {
-    "DOM content loaded": null,
-    "first paint": null,
-    "the interface": null,
-    ...STARTUP_GOALS,
-  };
-
-  /*
-   * An allowance for every mark and a mark for every allowance, or this table quietly stops
-   * applying the day a mark is renamed. The same rule the journey allowances are held to
-   * below, and the reason both exist is that a gate which cannot fail is not a gate.
-   */
-  const marksWithoutAllowance = Object.keys(LAUNCH_MARKS).filter(
-    (label) => LAUNCH_ALLOWED[label] === undefined,
-  );
-  const allowancesWithoutMark = Object.keys(LAUNCH_ALLOWED).filter(
-    (label) => LAUNCH_MARKS[label] === undefined,
-  );
-  if (marksWithoutAllowance.length || allowancesWithoutMark.length) {
-    console.error("The launch marks and their allowances have drifted apart:");
-    if (marksWithoutAllowance.length) {
-      console.error(`  no allowance for: ${marksWithoutAllowance.join(", ")}`);
-    }
-    if (allowancesWithoutMark.length) {
-      console.error(`  no such mark: ${allowancesWithoutMark.join(", ")}`);
-    }
-    process.exit(2);
-  }
-
   const watcher = launchWatcher();
 
   /**
    * Start the application again, and time what the viewer waits for.
    *
    * A relaunch rather than the first load of the run, and the difference is worth stating
-   * because it is large. Measured on the floor, the first navigation after this Chrome starts
-   * reaches the channel rows in 5.4 seconds and a relaunch reaches them in 1.9. Almost none of
-   * that gap belongs to the application: a browser that has just started has an empty code
+   * because it can be large. A browser that has just started has an empty code
    * cache, an empty disk cache and no compiled stylesheet, and a fresh profile has no playlist
    * downloaded and no channel to resume either.
    *
@@ -1562,16 +1364,15 @@ if (has("bench") || has("budget") || quick) {
       })`,
     );
 
-  // Frame cadence and input tails are independent requirements.
   console.log(
-    `\n  ${"journey".padEnd(28)}${"mainFPS".padStart(8)}${"frame95".padStart(9)}` +
-      `${"maxFrame".padStart(9)}${"input95".padStart(9)}${"maxInput".padStart(9)}` +
-      `${"stall%".padStart(9)}`,
+    `\n  ${"journey".padEnd(28)}${"rAF Hz".padStart(8)}${"gap95".padStart(9)}` +
+      `${"maxGap".padStart(9)}${"DOM95".padStart(9)}${"maxDOM".padStart(9)}` +
+      `${"gap%".padStart(9)}`,
   );
   console.log(
-    `  goals: ${UI_GOALS.minFps}+ main thread FPS, frame p95 <= ${UI_GOALS.frameP95Ms}ms, ` +
-      `input p95 <= ${UI_GOALS.inputP95Ms}ms. Timing columns are milliseconds.`,
+    "  Desktop callback cadence and event timestamp to DOM focus observation, not displayed frames.",
   );
+  console.log("  Timing columns are milliseconds. gap% is time in callback gaps over 100ms.");
 
   await phase("resting", [], 1);
 
@@ -1661,7 +1462,7 @@ if (has("bench") || has("budget") || quick) {
   await phase("surfing channels", ["up"], quick ? 4 : 10, 900);
 
   /*
-   * One whole visit to the list, repeated five times by the full gate and twice by the quick
+   * One whole visit to the list, repeated five times by the complete diagnostic and twice by the quick
    * sample: open it, look at a few rows, choose one. The earlier version opened and shut the
    * panel eight times in a row with nothing in between, which measured a thing nobody does.
    */
@@ -1832,7 +1633,7 @@ if (has("bench") || has("budget") || quick) {
     );
   };
   const openSearch = async () => {
-    const clicked = await ev(`(() => {
+    const clicked = await tryUntil(`(() => {
       var button = document.querySelector('.vod-host:not(.hidden) .section-search')
         || document.querySelector('.panel:not(.away) .section-search');
       if (!button) return false;
@@ -2311,9 +2112,16 @@ if (has("bench") || has("budget") || quick) {
     },
     "!!document.querySelector('.vod-search .poster-card')",
   );
+  const searchOpen = "!!document.querySelector('.vod-host:not(.hidden) .vod-search')";
+  for (let step = 0; step < 2 && (await ev(searchOpen)); step += 1) {
+    await press("back");
+    await paintBoundary();
+  }
+  await requireScreen(`!(${searchOpen})`, "Closed scoped search");
+  // Clicking Search focuses its rail entry, which is also the search return origin.
+  if (!(await ev(vodCategoryReady("movie", "grid")))) await press("right");
+  await requireScreen(vodCategoryReady("movie", "grid"), "Movie grid after scoped search");
   xtreamJourneys.complete(XTREAM_JOURNEYS.scopedSearchReturn);
-  await press("back");
-  await press("back");
   await journey(
     XTREAM_JOURNEYS.movieDetail,
     async () => press("enter"),
@@ -2867,10 +2675,9 @@ if (has("bench") || has("budget") || quick) {
   async function finishBenchmark(partial = false) {
     console.log(`\n  walked to: ${landed.cursor ?? "nowhere the rail can name"}`);
     const state = await heapState();
-    // Total V8 heap and the configured old space cap describe different allocations.
     console.log(
       `\n  ${XTREAM_JOURNEYS.heapGrowth}: ${state.nodes} nodes, ${state.rows} rows, ` +
-        `${state.heapMB}MB heap, project old space cap ${heapMB}MB` +
+        `${state.heapMB}MB desktop V8 heap, browser heap limit ${state.heapLimitMB}MB` +
         `, ${state.heapMB - settled.heapMB >= 0 ? "+" : ""}${state.heapMB - settled.heapMB}MB ` +
         "over the run",
     );
@@ -2881,11 +2688,11 @@ if (has("bench") || has("budget") || quick) {
       redesignJourneys.assertComplete();
     } else {
       console.log("  Quick sample covers Live navigation, VOD grid and cached startup.");
-      console.log("  Playback fault, detail and management journeys require tv:budget.");
+      console.log("  Playback fault, detail and management journeys require tv:bench.");
     }
-    console.log("  mainFPS estimates main thread cadence, capped at 60, not GPU or video FPS.");
+    console.log("  rAF Hz counts browser callbacks. It does not measure displayed frames.");
     console.log(
-      "  stall% is time in frame gaps over 100ms, not a count dependent on run length.",
+      "  DOM response observations do not establish paint, presentation or physical remote latency.",
     );
 
     /*
@@ -2946,60 +2753,8 @@ if (has("bench") || has("budget") || quick) {
       );
     }
     console.log("  Cached relaunch from navigation, with the last channel known.");
-    let control = null;
-    if (cpuCalibration) {
-      await cdp.send("Page.navigate", { url: "about:blank" });
-      let ready = false;
-      for (let attempt = 0; attempt < 120; attempt++) {
-        if (
-          await ev(
-            "location.href === 'about:blank' && document.readyState === 'complete'",
-            true,
-          )
-        ) {
-          ready = true;
-          break;
-        }
-        await new Promise((resolve) => setTimeout(resolve, 25));
-      }
-      if (!ready) throw new Error("The final CPU control page did not become ready.");
-      await cdp.send("Runtime.evaluate", {
-        expression: `window.__tvCpuIndex = ${computeBenchmarkIndex.toString()}`,
-      });
-      const sample = async () =>
-        evaluationValue(
-          await cdp.send("Runtime.evaluate", {
-            expression: "window.__tvCpuIndex(250)",
-            returnByValue: true,
-          }),
-          "Final CPU control",
-        );
-      // Match the initial warmup so a fresh V8 context does not skew the final control.
-      await cdp.send("Emulation.setCPUThrottlingRate", { rate: 1 });
-      for (let warmup = 0; warmup < 4; warmup++) await sample();
-      await cdp.send("Emulation.setCPUThrottlingRate", { rate: cpu });
-      await sample();
-      const scores = [];
-      for (let index = 0; index < 5; index++) scores.push(await sample());
-      control = cpuControl(scores, cpuCalibration.targetScore);
-      console.log(
-        `  CPU control: ${control.achievedScore} against ${cpuCalibration.targetScore}, ` +
-          `within ${CPU_TOLERANCE * 100}%: ${control.matches ? "yes" : "no"}`,
-      );
-    }
-
     const network = reportNetworkAudit();
-    if (!has("budget") && !partial) {
-      if (network && (!network.active || network.violations.length)) {
-        throw new Error("Network isolation failed. The diagnostic measurements are invalid.");
-      }
-      child.kill();
-      process.exit(0);
-    }
-
-    // Only cold category loading substitutes a readiness deadline for the stall share goal.
-    // Focus requirements apply where direction keys move it.
-    const ALLOWED = {
+    const EXPECTED = {
       resting: {},
       "racing the categories": { focus: true },
       "and back up again": { focus: true },
@@ -3023,59 +2778,28 @@ if (has("bench") || has("budget") || quick) {
       XTREAM_JOURNEYS.movieDetail,
       XTREAM_JOURNEYS.lineupManagement,
     ]);
-    /** Leave headroom within the project memory stress target. */
-    const HEAP_SHARE = 0.5;
-    /**
-     * How much the heap may grow across one walk of the interface.
-     *
-     * A peak says nothing about a leak, and a television is left on the same application for
-     * hours. Two minutes of walking measures +2MB on this playlist, three rounds running, which is
-     * the logo cache filling to its limit and then holding. Eight is loose enough not to argue
-     * with a different cache order and tight enough that something genuinely accumulating, a row
-     * of listeners or a bitmap per press, would trip it.
-     */
-    const HEAP_GROWTH_MB = 8;
-
-    if (!calibratedProfile) {
-      console.error(
-        "\nThe UX gate requires automatic calibration. Add --floor or --reference.",
-      );
-      child.kill();
-      process.exit(2);
-    }
-
     const failures = [];
-    if (!network?.isolated || !network.active || network.violations.length) {
+    if (
+      isolatedNetwork &&
+      (!network?.isolated || !network.active || network.violations.length)
+    ) {
       failures.push("network isolation failed or an uncontrolled endpoint was requested");
-    }
-    if (control && !control.matches) {
-      failures.push(
-        `the final CPU workload score did not match the estimated TV target within ${CPU_TOLERANCE * 100}%`,
-      );
     }
     for (const phase of unmeasured) {
       failures.push(`${phase}: nothing was measured, so nothing was proved`);
     }
-    /*
-     * Every budget has to have been spent against something.
-     *
-     * `if (allowed === undefined) continue` quietly exempted any phase whose label had drifted
-     * out of this table, and a budget that stops applying when somebody renames a journey is a
-     * budget that stops applying. Checked both ways: a phase with no allowance, and an allowance
-     * with no phase.
-     */
+    // Check recording completeness without applying timing or heap acceptance thresholds.
     const measured = new Set([...results.map((r) => r.label), ...unmeasured]);
     for (const label of measured) {
-      if (!(label in ALLOWED)) failures.push(`${label}: no allowance for this phase`);
+      if (!(label in EXPECTED)) failures.push(`${label}: unexpected diagnostic phase`);
     }
-    for (const label of Object.keys(ALLOWED)) {
+    for (const label of Object.keys(EXPECTED)) {
       if (partial && fullOnly.has(label)) continue;
-      if (!measured.has(label))
-        failures.push(`${label}: an allowance for a phase that never ran`);
+      if (!measured.has(label)) failures.push(`${label}: the diagnostic phase never ran`);
     }
     for (const result of results) {
-      const allowed = ALLOWED[result.label];
-      if (allowed) failures.push(...assessPhase(result, allowed));
+      const expected = EXPECTED[result.label];
+      if (expected) failures.push(...assessSample(result, expected));
     }
     /*
      * A playlist that cannot be cached is a launch that never gets better.
@@ -3097,59 +2821,30 @@ if (has("bench") || has("budget") || quick) {
      * finished starting. Both mean the launch was not measured, and the whole reason this
      * section exists is that an unmeasured launch has been free to get a second slower.
      */
-    for (const [label, allowed] of Object.entries(LAUNCH_ALLOWED)) {
+    for (const label of Object.keys(LAUNCH_MARKS)) {
       const at = marks[label];
       if (!Number.isFinite(at) || at <= 0) {
         failures.push(
           `${label}: never happened within ${LAUNCH_DEADLINE_MS / 1000}s, ` +
             "so the launch was not measured",
         );
-      } else if (allowed !== null && at > allowed) {
-        failures.push(`${label}: ${at}ms into the launch, ${allowed}ms allowed`);
-      }
-    }
-    /*
-     * This checks conservative project heap headroom. It cannot account for native browser
-     * memory or GPU allocations, and is not a measurement of the TV's total app footprint.
-     */
-    if (Number.isFinite(state.heapMB) && Number.isFinite(settled.heapMB)) {
-      const allowed = Math.round(heapMB * HEAP_SHARE);
-      if (state.heapMB > allowed) {
-        failures.push(
-          `heap: ${state.heapMB}MB against project old space cap ${heapMB}MB, ` +
-            `${allowed}MB allowed`,
-        );
-      }
-    } else {
-      failures.push("heap: the required memory sample is missing");
-      const grew = state.heapMB - settled.heapMB;
-      if (grew > HEAP_GROWTH_MB) {
-        failures.push(
-          `heap: grew ${grew}MB over one walk of the interface, ` +
-            `${HEAP_GROWTH_MB}MB allowed`,
-        );
       }
     }
 
     console.log();
     if (failures.length) {
-      console.error(
-        partial
-          ? `${profileLabel} quick sample misses the UX goals:\n`
-          : `${profileLabel} UX goals failed:\n`,
-      );
+      console.error("Desktop diagnostic recording or functional journey failed:\n");
       for (const line of failures) console.error(`  ${line}`);
-      console.error(
-        `\nThese are UX targets under the estimated ${profileLabel.toLowerCase()} profile.`,
-      );
-      console.error("They are not certification of real TV GPU or decoder performance.");
     } else {
       console.log(
         partial
-          ? "Quick sample meets the UX goals. This is not the complete release gate."
-          : `${profileLabel} UX goals passed under the estimated TV profile.`,
+          ? "Desktop diagnostic sample completed. Full journey coverage was not requested."
+          : "Desktop diagnostic recording and functional journeys completed.",
       );
     }
+    console.log(
+      "No TV performance verdict is available. Measure the application on a real set.",
+    );
     child.kill();
     process.exit(failures.length ? 1 : 0);
   }
@@ -3244,12 +2939,9 @@ console.log(`
 Leave this running and work in the window. Saving a file rebuilds and reloads it.
 
   --video       take the app's browser path instead of the Tizen one
-  --floor       a host calibrated approximation of a base Samsung TV
-  --reference   the estimated Everyday TV performance target, independent of compatibility
   --quick       sample Live, VOD grid and cached startup, then exit
   --profile     keep an isolated measurement environment open for an external profiler
-  --cpu-score=N override the estimated workload target for diagnostics
-  --harsh=N     divide the processor, heap, cores and memory by N
+  --cpu=N       explicit desktop renderer slowdown, with no TV equivalence
   --net=3g      throttle the connection, which is otherwise left alone
   --cors        restore the same origin policy the TV does not have
 

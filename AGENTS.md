@@ -39,7 +39,7 @@ Choose checks from the changed files and behavior. Start with the smallest check
 
 Do not repeat a passing check unless later edits could invalidate it. Do not expand the task to fix an unrelated existing failure. Confirm the failure against the unchanged baseline when practical, then report it as a blocker rather than claiming verification passed. Inspect the complete diff and run `git diff --check` during final verification. Before reporting verified completion, state which checks ran and which checks were skipped, with a short reason.
 
-The three `tv:` gates are the checks that speak for hardware nobody here has. Details of what each measures and how to read it are in [testing and measurement](docs/testing.md).
+The `tv:gap` and `tv:engines` gates check layout and browser compatibility. Desktop diagnostics cannot establish TV performance. Details of each tool's scope are in [testing and measurement](docs/testing.md).
 
 ## Running it
 
@@ -49,9 +49,9 @@ floating Smart Remote with the D-pad, the transport keys, the coloured keys and 
 dispatches the same key events the TV sends rather than calling handlers directly, and the bundler
 drops it from a production build, so it cannot be conjured onto a television.
 
-`npm run tv` runs the built app with the estimated Everyday TV performance profile and Tizen APIs shimmed. `npm run tv:floor` retains the original floor as a separate performance comparison. Both CPU workloads are calibrated on the current host. `npm run tv:engines` verifies browser compatibility independently. Hardware assumptions and measurement limits are documented in [testing and measurement](docs/testing.md).
+`npm run tv` runs the built app in a desktop browser with Tizen APIs shimmed and the application viewport fixed. It does not emulate TV hardware. `npm run tv:engines` verifies browser compatibility independently.
 
-`npm run tv:quick` gives a short sample of Live navigation, VOD grid and cached startup against the same UX goals. Its verdict covers only that sample. It runs only inside the approved final verification phase, and `npm run tv:budget` remains the complete functional and performance gate.
+`npm run tv:bench` runs desktop diagnostic and functional journeys. `npm run tv:quick` gives a smaller sample of Live navigation, VOD grid and cached startup. Both require final verification approval. Their exit status checks recording integrity and functional coverage, without a TV performance verdict. The estimated performance budget, floor and reference commands have been retired.
 
 `npm run tv:on-set` measures the app on a real television over sdb: the launch marks, the CPU at
 rest, and, given `--stream=<url>`, what a picture costs and whether the playhead actually moves.
@@ -119,10 +119,9 @@ scripts/
   store-assets.mjs         the six pictures Samsung's store form asks for, from the real build
   screenshots.mjs          the six pictures in the README, from the real build
   stamp-version.mjs        write package.json's version into config.xml at package time
-  tv/                      run the app under documented TV approximations
+  tv/                      compatibility checks, desktop diagnostics and real TV tools
   tv/platforms.json        Samsung's engine matrix, the only copy of it
-  tv/floor.json            base TV facts, estimated CPU target and resource stress limits
-  tv/profile.json          what the reference set reports about itself, rewritten by calibrate
+  tv/profile.json          the viewport and user agent for the desktop API fixture
   tv/harness.mjs           serve the build, walk every screen, measure the boxes
   tv/gap-parity.mjs        spacing is the same with and without flex gap
   tv/engine-parity.mjs     behaviour is the same on Chromium 69 and 120
@@ -199,4 +198,4 @@ Break one of these and the app fails on hardware no test here owns. The reasonin
   No frames looks the same either way.
 - **Piping a long run through `grep` into a file block buffers it**, so a hanging run looks the
   same as a quiet one. Write the full output per run and extract afterwards.
-- Treat exceeded performance budgets as failures. Load average alone does not establish their cause or justify dismissing them as noise. Investigate with a controlled baseline comparison under identical simulator settings.
+- Desktop timings have no TV acceptance thresholds. Investigate suspected regressions with a controlled baseline comparison, then validate the affected behavior on a real set. Load average alone does not establish a cause.

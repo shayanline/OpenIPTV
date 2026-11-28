@@ -1,5 +1,5 @@
 /**
- * The recorder half of the benchmark: it watches frames and nothing else.
+ * A desktop diagnostic recorder for animation callbacks and DOM focus observations.
  *
  * The driving deliberately happens from outside, in sim.mjs, using the browser's real input
  * pipeline. The previous version did both from in here, synthesising key events and
@@ -12,18 +12,10 @@
  * So this only counts. Whatever moves the app has to come through the front door.
  */
 /**
- * The second half of it is what the viewer actually feels, and it was missing.
- *
- * Frame times say how evenly the interface draws. They do not say whether it answered the
- * remote, and on a television that is the whole question: a viewer holding the down key is
- * watching one thing, which is whether the highlight is keeping up with their thumb. An
- * interface can hold a tidy 40ms frame while running four presses behind, and that is a worse
- * experience than an honest stutter that stays level with the finger.
- *
- * So every press is timed to the frame the highlight moves in. Both timestamps are taken in
- * here, on one clock, which is the reason this is measured in the page rather than over the
- * debugging protocol: the harness's timestamps are on the other side of a socket, and aligning
- * two clocks to measure a 60ms answer is how you end up measuring the socket.
+ * Callbacks do not prove paint, compositing or presentation. Event timestamps exclude the
+ * physical remote and platform input path. Focus is observed in the DOM and confirmed at
+ * the next callback, which adds sampling delay without establishing when pixels appeared.
+ * Both timestamps use the page clock so the socket clock is not subtracted from it.
  *
  * The count of moves against the count of presses is the other half of the value, and it is
  * the strongest assertion in the harness. Forty presses that produce forty moves walked forty
@@ -258,8 +250,7 @@ window.__bench = {
       median: quantile(frames, 0.5),
       p95: quantile(frames, 0.95),
       worst: Math.max(...frames),
-      // A frame past 100ms is the threshold the design guidance treats as needing to tell
-      // the viewer something is happening, so it is the one worth counting as a stall.
+      // Count long callback gaps for local comparisons without assigning a UX verdict.
       stalls: frames.filter((f) => f > 100).length,
       of: this.frames.length,
       hidden,
@@ -270,7 +261,7 @@ window.__bench = {
       ended: now,
       tail,
       samples: this.samples,
-      fps: elapsed > 0 ? Math.min(60, (this.frames.length * 1000) / elapsed) : 0,
+      rafHz: elapsed > 0 ? (this.frames.length * 1000) / elapsed : 0,
       stallTimePercent:
         elapsed > 0
           ? (frames.filter((frame) => frame > 100).reduce((sum, frame) => sum + frame, 0) *
@@ -283,7 +274,7 @@ window.__bench = {
       inputP95: this.lags.length ? quantile(this.lags, 0.95) : null,
       worstLag: this.lags.length ? Math.max(...this.lags) : null,
       inputClockErrors: this.inputClockErrors,
-      // The raw slow press count remains diagnostic. The UX gate checks p95 and maximum.
+      // Raw event timestamp to DOM observation counts remain desktop diagnostics.
       slow: this.lags.filter((l) => l > 100).length,
       presses: this.presses,
       moves: this.moves,
@@ -301,7 +292,7 @@ window.__bench = {
       heapMB: performance.memory
         ? Math.round(performance.memory.usedJSHeapSize / 1048576)
         : null,
-      // V8 reports all heap spaces. The old space stress cap is a separate project setting.
+      // V8 heap excludes native allocations, artwork bitmaps and GPU memory.
       heapLimitMB: performance.memory
         ? Math.round(performance.memory.jsHeapSizeLimit / 1048576)
         : null,

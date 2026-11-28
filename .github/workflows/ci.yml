@@ -116,46 +116,6 @@ jobs:
       - name: Check browser engine compatibility
         run: npm run tv:engines
 
-  # Frame timings under the primary estimated Everyday TV hardware target.
-  #
-  # CPU throughput is calibrated on this runner and checked again after the journeys.
-  # The shared runner job remains informational, while the harness rejects mismatched
-  # CPU controls and uncontrolled networking. Compatibility has a separate engine gate.
-  budget:
-    needs: changes
-    if: needs.changes.outputs.run-checks == 'true'
-    runs-on: ubuntu-latest
-    continue-on-error: true
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version-file: .nvmrc
-          cache: npm
-      - run: npm ci
-      - run: npm run build
-
-      - name: Measure the estimated Everyday TV performance target
-        run: |
-          set -o pipefail
-          npm run tv:budget 2>&1 | tee /tmp/budget.txt
-
-      - name: Put the numbers where they can be read
-        if: always()
-        run: |
-          {
-            echo '## Performance budget, on the estimated Everyday TV target'
-            echo ''
-            echo 'Shared runner timings are informational. Inspect regressions before merging.'
-            echo 'This estimated hardware target calibrates CPU throughput on the current runner.'
-            echo 'CPU control and network isolation must pass. Browser compatibility is checked separately.'
-            echo ''
-            echo '```'
-            tail -40 /tmp/budget.txt 2>/dev/null || echo "the run produced nothing"
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
-
   dependencies:
     needs: changes
     if: github.event_name == 'pull_request' && needs.changes.outputs.run-checks == 'true'

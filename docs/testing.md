@@ -1,7 +1,6 @@
 # Testing and measurement
 
-Nobody here owns a 2020 Samsung television, and that is the problem every gate in this
-repository exists to work around.
+Automated checks cover application behavior, browser compatibility and layout. TV performance requires measurements on physical hardware. Desktop diagnostics do not provide a TV performance verdict.
 
 ## Choosing local checks
 
@@ -14,7 +13,7 @@ Builds and packaging do not require approval, including native compilation, gene
 | Entry points, application wiring, imports that alter packaging, compiler or bundler configuration, dependencies, generated assets, public contracts, or several connected areas | `npm run build`. The build is also the prerequisite whenever any selected `tv:` gate needs a `dist/`. |
 | Spacing, layout, flex gap fallbacks, or rendered component structure | `npm run tv:gap`, after the build. |
 | Runtime APIs, browser compatibility, the build target, application wiring, or behavior that could differ across engines, including layout and CSS changes that may render differently between them | `npm run tv:engines`, after the build. |
-| Launch work, interaction paths, rendering volume, windowing, caching, or other measured performance behavior | `npm run tv:budget`, after the build. |
+| Launch work, interaction paths, rendering volume, windowing, caching, or other performance behavior | Run related behavior tests. Select `npm run tv:bench` or targeted profiling only when desktop diagnostics can answer a specific question. Validate performance claims on a real set. There is no simulated TV performance gate. |
 | `wasm/`, `public/wasm/`, its worker, the checksums, or the repair integration | `npm run wasm:check`. It needs no application build unless runtime assets or wiring also require one. |
 | `public/config.xml` | `python3 -c "from xml.dom.minidom import parse; parse('public/config.xml')"`. No application build is needed unless something else justifies one. |
 | Test files only | Lint the changed test files and run the related tests. No production typecheck or build is needed unless shared types, configuration, fixtures or contracts require it. |
@@ -41,15 +40,17 @@ After a fix, rerun the checks that failed and the checks the fix could have inva
 
 ### Selecting benchmarks
 
-`npm run tv:budget` runs the primary estimated Everyday TV benchmark and launch timing, so other benchmark commands are not prerequisites. `npm run tv:budget:floor` runs the original floor as a separate comparison with the same UX goals. Run them sequentially and report each profile by name. Performance acceptance and browser compatibility are independent checks. `npm run tv:quick` gives an optional representative Everyday TV sample with its own limited UX verdict. Select it when validating the short path or answering a quick performance question. It runs only after approval and does not substitute for full journey coverage.
+`npm run tv:bench` walks the complete desktop diagnostic and functional journeys. `npm run tv:quick` samples Live navigation, a VOD grid and cached startup with fewer repetitions. Neither applies timing or heap acceptance thresholds. Select them after approval when investigating their covered behavior or changing the harness. They are not routine prerequisites for every application change.
 
-`npm run tv:engines -- --all` is not routine. `npm run tv:calibrate` updates the physical device profile when that calibration is needed. Both estimated performance profiles calibrate the host automatically against their own workload targets. `npm run tv:on-set` remains a hardware check that the simulator cannot replace and CI does not require.
+`npm run tv:engines -- --all` is not routine. `npm run tv:on-set` remains a hardware diagnostic that desktop tools cannot replace and CI does not require. The estimated hardware profiles, CPU calibration and `tv:budget` commands have been removed.
 
-Default measurements route browser HTTP requests through a local proxy that only forwards to the owned application and fixture origins. It refuses other destinations, HTTPS tunnels and the preview server's HTTP relay before any upstream connection, including requests from workers. Fonts and built assets remain on the local application origin. Playlist data, artwork and Xtream responses come from local fixtures, while AVPlay uses the native timing shim. Generated PNG variants are prepared before calibration. The public playlist snapshot is acquired before measurement, and its SHA256 is recorded with the build identity. Internet latency therefore cannot enter a measured journey. Local request handling, response parsing, image decoding and the application's loading work remain included, so this does not claim to remove all local I/O variation.
+Historical implementation plans may still name the retired budget commands. Those verification steps are superseded by this document.
 
-Both the budget and profiler record the allowed origins, per origin request counts and blocked destinations. The browser must demonstrably use the proxy for both owned origins. Blocked Chrome startup requests are retained separately before the first application navigation, outside the measured journeys. Any unexpected destination after that navigation invalidates the results, without domain exemptions. The complete budget rejects `--real-logos`, `--video` and `--net` overrides. Those options remain available for explicit diagnostics, which cannot establish a release pass. Earlier runs did not enforce this boundary and could encode fixture PNGs during a journey, so use fresh comparable runs before attributing timing changes to application work.
+Default diagnostics route browser HTTP requests through a local proxy that only forwards to the owned application and fixture origins. It refuses other destinations, HTTPS tunnels and the preview server's HTTP relay before any upstream connection, including requests from workers. Fonts and built assets remain on the local application origin. Playlist data, artwork and Xtream responses come from local fixtures, while AVPlay uses a state and clock shim. Generated PNG variants and the public playlist snapshot are prepared before measurement. The snapshot SHA256 is recorded with the build identity. Local request handling, response parsing and image decoding remain included. None reproduces a provider connection, TV storage or a native decoder.
 
-Use a versioned [Chrome for Testing download](https://googlechromelabs.github.io/chrome-for-testing/) for isolated measurements, passing its absolute executable path with `--chrome` to the budget or simulator. For example, run `npm run tv:budget -- --chrome="$CHROME"` after setting the shell variable `CHROME` to that path. Record its version, revision, architecture and download source, then retain the browser for subsequent calibration. The simulator creates a fresh temporary measurement profile, so do not copy an everyday browser profile. Branded Chrome can initiate delayed RLZ requests despite background networking controls. Confirm a replacement browser with a 120 second `about:blank` control through the same strict proxy, with no unexpected requests or audit exemptions. This browser selection does not replace the separate native engine compatibility gate.
+Both diagnostic drivers record allowed origins, request counts and blocked destinations. The browser must demonstrably use the proxy for both owned origins. Blocked Chrome startup requests are retained separately before application navigation. Any unexpected destination after that navigation invalidates isolated results. Explicit `--real-logos` or `--video` options disable isolation and are labelled as unrestricted diagnostics. Do not compare them with isolated fixture runs.
+
+Use a versioned [Chrome for Testing download](https://googlechromelabs.github.io/chrome-for-testing/) for isolated desktop diagnostics. Set `CHROME` to its absolute executable path, then run `npm run tv:bench -- --chrome="$CHROME"`. Record the version, revision, architecture and download source. Retain the browser for comparisons. The simulator creates a fresh temporary diagnostic profile. Branded Chrome can initiate delayed background requests despite networking controls. Browser selection does not replace the separate engine compatibility gate.
 
 The isolated launcher disables Chrome's network time, search preconnections, AI Mode eligibility, cast discovery, autofill communication, translation and optimisation services, together with background extensions and default apps. It also enables the upstream fix that skips Google account discovery in a fresh profile without Gaia cookies. These are browser services outside the application workload. The reasons for the switches are documented in the [upstream browser networking investigation](https://github.com/microsoft/playwright/issues/42910) and the [Chrome automation flag reference](https://github.com/GoogleChrome/chrome-launcher/blob/main/docs/chrome-flags-for-tools.md). The proxy remains the enforcement boundary even if a future Chrome version changes those switches.
 
@@ -59,7 +60,7 @@ The fresh measurement profile also sets secure DNS mode to `off` before launch b
 
 ### Keeping the source identical across runs
 
-The default public playlist cache refreshes after a day, which can change the workload between runs. For a qualification cohort or a controlled comparison, retain one public snapshot outside the repository and use the existing `--playlist` option. A content hash in the source address gives different bytes a different cache ownership key. Do not replace the file during a cohort.
+The default public playlist cache refreshes after a day, which can change the workload between runs. For a controlled desktop comparison, retain one public snapshot outside the repository and use `--playlist`. A content hash in the source address gives different bytes a different cache ownership key. Do not replace the file during a comparison.
 
 ```bash
 FIXTURE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/openiptv-benchmark-source.XXXXXX")"
@@ -72,34 +73,32 @@ printf 'SNAPSHOT_URL=http://127.0.0.1:4195/%s.m3u\n' "$SNAPSHOT_SHA"
 python3 -m http.server 4195 --bind 127.0.0.1 --directory "$FIXTURE_DIR"
 ```
 
-After the server reports that it is ready, copy the printed `SNAPSHOT_URL` assignment into another terminal and set `CHROME` to the retained Chrome for Testing executable. With the production app served, use the same snapshot for every accepted run and the separate floor comparison. Check its digest before and after each command, retain the raw file with the results, and stop on a valid UX failure.
+After the server reports that it is ready, use the printed `SNAPSHOT_URL` assignment in another terminal and set `CHROME` to the retained Chrome for Testing executable. With the production app served, use the same snapshot for each comparison. Check its digest before and after the diagnostic, then retain the raw file with the results.
 
 ```bash
 set -o pipefail
 curl --fail --silent "$SNAPSHOT_URL" | shasum -a 256
-npm run tv:budget -- --playlist="$SNAPSHOT_URL" --chrome="$CHROME"
-curl --fail --silent "$SNAPSHOT_URL" | shasum -a 256
-npm run tv:budget:floor -- --playlist="$SNAPSHOT_URL" --chrome="$CHROME"
+npm run tv:bench -- --playlist="$SNAPSHOT_URL" --chrome="$CHROME"
 curl --fail --silent "$SNAPSHOT_URL" | shasum -a 256
 ```
 
-The simulator acquires this source before calibration and timing. It still seeds the application's owned fixture address, so the playlist names, groups, complete Live workload, substituted artwork and Xtream Movie, Series and management journeys remain unchanged. The extra source server does not add a browser network origin or relax the measurement proxy.
+The simulator acquires this source before timing. It still seeds the application's owned fixture address, so the playlist names, groups, Live workload, substituted artwork and Xtream Movie, Series and management journeys remain unchanged. The extra source server does not add a browser network origin or relax the measurement proxy.
 
 ### Profiling VOD
 
-`npm run tv:profile:vod -- --url=http://127.0.0.1:4183/ --port=9433 --moves=12 --chrome="$CHROME"` profiles initial VOD loading and the complete twelve move grid walk on the primary Everyday TV target. Set `CHROME` to the retained Chrome for Testing executable. Add `--floor` for the original floor comparison. It uses the simulator's production build, automatic CPU calibration, native timing shim and Xtream fixture. The committed category readiness check, three second setup settling period, 100 ms dispatch pause and 600 ms journey tail match the complete benchmark. Both drivers record cold category readiness on the browser recorder's clock after the committed DOM barrier. This avoids replaying unrelated Live journeys for each profile. The output is a unique temporary directory, or a unique child of the existing parent passed with `--output`.
+`npm run tv:profile:vod -- --url=http://127.0.0.1:4183/ --port=9433 --moves=12 --chrome="$CHROME"` profiles initial VOD loading and the twelve move grid walk on the desktop host. Set `CHROME` to the retained Chrome for Testing executable. It uses a production build, the AVPlay state shim and the Xtream fixture without automatic CPU or memory constraints. Add `--cpu=4` only for an explicitly labelled desktop stress experiment. The committed category check, three second setup settling period, 100 ms dispatch pause and 600 ms tail match the complete diagnostic. Both drivers record category readiness on the browser clock after the DOM barrier, which includes polling and protocol overhead. Output goes to a unique temporary directory, or a unique child of the existing parent passed with `--output`.
 
-The profiler captures JavaScript stack samples at a requested 1000 microsecond interval together with rendering events from `toplevel,devtools.timeline,blink.user_timing,v8`. Open `rendering.trace.json` in Chrome DevTools Performance and select the renderer thread identified in `measurements.json`. The `vod-category-start`, `vod-category-end`, `vod-grid-start` and `vod-grid-end` marks bound the measured phases. Add `--details=true` to profile opening the selected movie after the grid walk, with `vod-details-start` and `vod-details-end` marks. Its title row readiness check and 600 ms tail match the complete gate. Setup between those marks is outside the phase metrics. Raw callback intervals, input timestamps, cursor movements and response boundaries in `measurements.json` correlate slow samples with the trace. The mark's trace timestamp and `args.data.startTime` map page milliseconds to trace microseconds. Add `--screenshot=true` to capture the final screen outside the measured phases.
+The profiler captures JavaScript stack samples at a requested 1000 microsecond interval together with rendering events from `toplevel,devtools.timeline,blink.user_timing,v8`. Open `rendering.trace.json` in Chrome DevTools Performance and select the renderer thread identified in `measurements.json`. The `vod-category-start`, `vod-category-end`, `vod-grid-start` and `vod-grid-end` marks bound the measured phases. Add `--details=true` to profile opening the selected movie after the grid walk, with `vod-details-start` and `vod-details-end` marks. Its title row readiness check and 600 ms tail match the complete diagnostic. Setup between those marks is outside the phase metrics. Raw callback intervals, input timestamps, cursor movements and response boundaries in `measurements.json` correlate slow samples with the trace. The mark's trace timestamp and `args.data.startTime` map page milliseconds to trace microseconds. Add `--screenshot=true` to capture the final screen outside the measured phases.
 
-Open `cpu.cpuprofile` in the JavaScript profiler for stack inspection. These samples are not CPU utilisation, and `(program)` cannot be assigned to application JavaScript. Some Chrome versions produce backward sample deltas. Reconstruct absolute timestamps and sort samples before aggregating costs instead of summing those deltas as durations. Trace durations are wall time under throttling, which includes calibration effects. Use exclusive intervals or their union when attributing nested rendering events. Browser native work and time without a usable stack must remain separately labelled.
+Open `cpu.cpuprofile` in the JavaScript profiler for stack inspection. These samples are not CPU utilisation, and `(program)` cannot be assigned to application JavaScript. Some Chrome versions produce backward sample deltas. Reconstruct absolute timestamps and sort samples before aggregating costs instead of summing those deltas as durations. Trace durations are desktop wall time and include any explicitly requested throttling. Use exclusive intervals or their union when attributing nested rendering events. Browser native work and time without a usable stack must remain separately labelled.
 
-Profiling and the optional `--commits=true` React diagnostic add overhead, so neither gives a release verdict. Add `--invalidations=true` when attributing style and layout work to the DOM changes that caused it. This adds detailed invalidation events and further tracing overhead. Add `--capture=false` to the same targeted command to run without CPU sampling or tracing while retaining raw journey measurements. This is useful for checking profiler perturbation and comparing application changes, although the complete calibrated `tv:budget` remains the final gate. The profiler checks its final CPU control and rejects incomplete traces or an incomplete grid walk. Keep timed runs isolated from other tests, builds and rendering workloads.
+Profiling and the optional `--commits=true` React diagnostic add overhead. Add `--invalidations=true` to attribute style and layout work to DOM changes, with additional tracing overhead. Add `--capture=false` to run without CPU sampling or tracing while retaining raw journey observations. The profiler rejects incomplete traces, network violations and incomplete grid walks. It never evaluates TV performance. Keep timed runs isolated from other tests, builds and rendering workloads.
 
 ### What CI does
 
-CI runs the full set on code changes. One job installs dependencies and runs `npm run lint`, `npm test`, `npm run build`, the `public/config.xml` validation, the WebAssembly checks and `npm run tv:gap`. The build includes the typecheck. The engines and budget jobs each install and build independently. Documentation pushes skip CI. Every pull request reports a `changes` check, which skips application jobs when all current and previous file paths are Markdown, under `docs/`, or issue templates. `workflow_dispatch` still runs the jobs deliberately. The budget job is `continue-on-error` on the shared runners and stays informational, for the reason in the budget section.
+CI runs the full set on code changes. One job installs dependencies and runs `npm run lint`, `npm test`, `npm run build`, the `public/config.xml` validation, the WebAssembly checks and `npm run tv:gap`. The build includes the typecheck. The engines job installs and builds independently. There is no performance budget job. Documentation pushes skip CI. Every pull request reports a `changes` check, which skips application jobs when all current and previous paths are Markdown, under `docs/`, or issue templates. `workflow_dispatch` still runs the jobs deliberately.
 
-Dependabot patch and minor updates use native GitHub auto merge. A grouped update qualifies only when every dependency has an eligible update type. Only a single verified Dependabot commit is eligible because the pinned metadata action reads the first commit. Major updates, manually changed pull requests, and unavailable metadata remain available for manual review. Before setting the repository variable `DEPENDABOT_AUTO_MERGE_ENABLED` to `true`, protect `master` with required GitHub Actions checks `changes`, `check`, `engines`, `dependencies`, and `dependabot-auto-merge`. Leave `budget` informational. The automation uses the built in token without approving pull requests or checking out their code.
+Dependabot patch and minor updates use native GitHub auto merge. A grouped update qualifies only when every dependency has an eligible update type. Only a single verified Dependabot commit is eligible because the pinned metadata action reads the first commit. Major updates, manually changed pull requests, and unavailable metadata remain available for manual review. Before setting the repository variable `DEPENDABOT_AUTO_MERGE_ENABLED` to `true`, protect `master` with required GitHub Actions checks `changes`, `check`, `engines`, `dependencies`, and `dependabot-auto-merge`. The automation uses the built in token without approving pull requests or checking out their code.
 
 ## The suite
 
@@ -255,53 +254,24 @@ is added to `platforms.json`.
 
 ## The simulator
 
-Samsung's emulator is x86 and needs HAXM, which does not exist on Apple silicon, and their
-simulator is a plain WebKit shell that says nothing about performance. So instead the app runs in
-ordinary Chrome with documented CPU and resource approximations:
+The simulator exercises application paths in ordinary desktop Chrome. Its Tizen APIs and viewport are fixtures. It does not reproduce Samsung hardware or its browser engine.
 
 ```bash
-npm run tv                  # the app under the estimated Everyday TV target
+npm run tv                  # desktop browser with Tizen APIs shimmed
 npm run tv -- --fit         # lay out for this screen instead of the set's 1080p
-npm run tv:floor            # the calibrated base TV approximation
 npm run tv:video            # the browser path instead, so channels play through hls.js
-npm run tv:bench            # frame timings, then exit
-npm run tv:bench:floor      # the same, against that floor
-npm run tv:budget           # the complete Everyday TV performance gate
-npm run tv:budget:floor     # the complete original floor comparison
-npm run tv:quick            # short Live, VOD grid and cached startup UX sample
-npm run tv:calibrate        # measure the real TV, write the throttle factor
+npm run tv:bench            # desktop diagnostics and complete functional journeys
+npm run tv:quick            # short Live, VOD grid and cached startup sample
+npm run tv:bench -- --cpu=4  # optional desktop renderer stress, with no TV equivalence
 ```
 
-`--floor` selects the conservative base profile in `scripts/tv/floor.json`. Its source notes distinguish published hardware facts from project stress limits and the estimated CPU score. The floor calibrates the current laptop independently of the physical reference profile. The methodology and acceptance goals are described in [the budget](#the-budget) and [known weaknesses](#known-weaknesses).
+`scripts/tv/profile.json` contains only the desktop API fixture's viewport and user agent. CPU throttling defaults to 1, while navigator memory and core hints remain the host's. No V8 heap cap is imposed. The actual Chrome version appears in every diagnostic header. Compatibility remains the responsibility of `tv:engines`.
 
-`--reference` selects the estimated Everyday TV hardware class in `scripts/tv/performance-reference.json`. It is the default for `npm run tv`, `tv:bench`, `tv:quick`, `tv:profile:vod` and `tv:budget`. The `tv:reference`, `tv:bench:reference` and `tv:budget:reference` aliases select the same target explicitly. The original `floor.json` remains unchanged and is available through `tv:floor`, `tv:bench:floor`, `tv:budget:floor` and the profiler's `--floor` option.
+The estimated floor and reference profiles and their passing cohorts have been withdrawn as performance evidence. The original floor was derived from a mobile benchmark without Samsung measurements. The reference target was then raised until the application passed. Matching that synthetic JavaScript workload did not reproduce TV rendering, decoding, storage or input behavior. The simulator rejects `--floor`, `--reference`, `--budget`, `--cpu-score` and `--harsh` so old automation cannot silently obtain a different verdict.
 
-The Everyday TV target is a development workload class rather than a claim about a named Samsung model. Its CPU target is 4 times the original floor BenchmarkIndex. It is the lowest repeatably qualified tested CPU class, not an exact mathematical minimum or a measured Samsung floor. The other resource assumptions are independent of that multiplier.
+`--cpu=N` explicitly slows only the desktop renderer main thread. It has no Samsung equivalence and cannot make results comparable across different hosts. `--software` requests desktop software rendering, which is not a TV GPU model. Use `--net=3g` only when investigating a constrained connection.
 
-| Resource | Everyday TV | Original floor | Meaning |
-|:--|:--|:--|:--|
-| CPU BenchmarkIndex | 528 | 132 | Both CPU targets are estimated and calibrated automatically on the current host. |
-| RAM hint | 1.5 GB | 1 GB | The Everyday TV value is an engineering assumption that can affect the adaptive artwork workload, without limiting physical host RAM. |
-| V8 old space cap | 160 MB | 120 MB | Each is a separate project memory pressure allowance, without a cap on native or GPU allocations. |
-| Core hint | 4 | 4 | Faster individual cores do not imply more cores, and this hint does not constrain host worker count. |
-| Viewport | 1920 by 1080 | 1920 by 1080 | The rendering workload remains the same at device scale factor 1. |
-
-Both targets use the same journeys, fixture data, Tizen API shim, build provenance checks, network isolation and UX goals. A hardware profile does not select a compatibility engine. The benchmark uses installed Chrome and identifies its actual version, while `tv:engines` tests the supported browser engines independently. Both hardware comparisons use the same user agent as a fixture input, which does not establish compatibility. The original floor remains a separate performance comparison, without requiring the primary target to represent the weakest supported TV.
-
-The integrated 2.0.0 production build, with `index.html` SHA256 `e1a3ce72c42075e4408be88ea41e3d192e0685bf05c6c1dded9d7b386554f94a`, passed three valid complete runs at the 528 target with all 15 measured phases on official Chrome for Testing 158.0.8127.88, revision `0cefb18236a23db1ebb6b2bc040fbbaf8cbe759e`, for mac arm64. All three runs used the same retained public fixture, SHA256 `0b2023cbf81668afc6b36146712ebb6ed7ce2ae22031c7b4b9c6c71bf228d2ab`, containing 11,512 channels in 187 categories and 11,370 logos. Initial CPU medians were 527, 527.5 and 526, while final medians were 517.5, 531 and 525.5. All six controls were within 5% of 528. One intervening complete attempt had an initial median of 517 and a final median of 495.5, so it was excluded as CPU invalid. Every attempt had zero network and browser startup violations. Two earlier passing runs used a different public snapshot and do not count toward this cohort. The three accepted cold category readiness times were 519.8 ms, 494.9 ms and 490.5 ms against the approved 2000 ms deadline. Live, grid, search and detail interaction goals were unchanged, and each complete grid walk answered all 12 presses across 72 positions. A previous lower 396 target had a valid Live navigation failure, so its earlier passing runs do not qualify it. These results establish repeatability for this estimated renderer workload on the retained production build, with real TV GPU, decoder and input validation still missing.
-
-The separate original floor comparison used the same frozen source and completed all 15 phases with initial and final CPU medians of 132.5 and 127, both within 5% of 132, and zero network or browser startup violations. Its first attempt was excluded before timing because calibration reached 124. The valid comparison missed frame, input and stall goals, including 134 ms grid input p95 and 17% of scoped search time in frame gaps over 100 ms. Cold category readiness was 1065.7 ms, but its 106 ms frame p95 exceeded the unchanged 50 ms goal. This comparison does not qualify the original floor or establish a measured four times speedup on physical hardware.
-
-Both profiles calibrate the current host automatically and repeat the final CPU control. The separate physical device profile retains its recorded S90D facts, but its CPU calibration is marked false. Neither performance gate uses that file or its legacy fixed slowdown. Direct simulator invocation without a profile flag retains that legacy diagnostic path. The physical calibration command measures a different arithmetic workload and cannot supply a BenchmarkIndex score by converting its slowdown ratio. None of these resource controls emulates TV GPU, video decoding, worker execution or storage performance.
-
-`--harsh=N` adds resource stress, while `--software` turns off GPU acceleration. These are diagnostic stress modes, and neither reproduces a TV GPU. Network conditions are separate because waiting for a transfer and blocking an input are different performance questions. Use `--net=3g` when investigating a constrained connection.
-
-`scripts/tv/profile.json` retains physical device facts and its CPU calibration metadata. The simulator supplies the selected hardware hints and shims `webapis.avplay` and `tizen`. Navigator hints do not limit actual worker count or physical RAM. The V8 old space cap does not cover every browser allocation. The installed Chrome engine remains visible in the run header because spoofing a user agent cannot reproduce an older engine.
-
-Leave `npm run tv` running and work in the window. It watches `dist/`, so it needs
-`vite build --watch` alongside it, and it reloads the page rather than hot patching a module: the
-production build is the only one worth judging speed on. There is a choice to make about the
-player, because the two things worth testing are not compatible:
+Leave `npm run tv` running and work in the window. It starts a production build watcher and reloads when `dist/` changes. The two playback paths exercise different behavior.
 
 | | Tizen paths | Picture |
 |:--|:--|:--|
@@ -331,15 +301,7 @@ Both ignore the same origin policy, because the set's player fetches streams its
 heard of it. A browser refusing a playlist on CORS grounds is the simulator being unfaithful
 rather than the app being wrong. `--cors` puts it back.
 
-`--fit` is for working on a screen smaller than the television's. Everything else still applies,
-the slow cores, the heap ceiling, the user agent and the shimmed AVPlay: only the 1920x1080 goes.
-Be clear about what it costs. A window 1512 wide is a screen no Samsung sells: the panel keeps its
-1064 pixels and so takes a larger share of the width, the columns hold fewer rows, and anything
-that would only crowd at the set's proportions looks fine here. It is a flag for working
-comfortably, not for judging a layout, and `--bench`, `--profile` and `--budget` all refuse to run
-with it.
-
-Run `npm run tv:calibrate` only when a paired physical reference TV can be used without interrupting someone. It measures the same arithmetic on that TV and the laptop, updates the reference ratio and refreshes the device facts. That ratio depends on both machines and their engines. It does not replace the floor's separate workload target or its automatic host calibration.
+`--fit` adapts the viewport for a smaller desktop display while retaining the API fixture. This changes layout proportions, so `--bench` and `--profile` refuse to run with it. Use the fixed application viewport for layout comparisons.
 
 ## On the set itself
 
@@ -446,6 +408,20 @@ Use content whose owner permits playback, then record the television model, Tize
 14. Hold page two on the phone, make a television edit and request the next page. Confirm a conflict loads page one at the current revision without combining rows or replaying the mutation.
 15. Clear the refetchable cache and confirm lineup personalisation remains. Remove one playlist and replace one provider account, then confirm only state owned by that source is removed.
 
+### TV performance evidence
+
+Record the model, firmware, installed build, provider catalogue size, cache state and stream format for each run. Repeat the same actions on baseline and changed builds using the same set and content. Keep cold launch, cached relaunch, first category entry and cached revisits separate. Report the number of observations, median, p95 and maximum only when enough observations support those statistics. Preserve failures and unavailable samples.
+
+| Area | Evidence to collect on the set |
+|:--|:--|
+| Launch | Time from physical launch to usable Live rows, then separately to the first moving picture. A DOM milestone does not establish a usable picture. |
+| Live navigation | Physical key to visible focus, channel selection to first moving picture, missed or queued presses during held input, and Back while loading. |
+| Movies and Series | First and cached category readiness, poster visibility, grid traversal, search submission to usable results, detail entry and episode selection. |
+| Playback | Start and resume delay, seek completion, buffering duration, recovery and continued playhead progress while overlays are used. |
+| Sustained use | Repeated browse and playback cycles, renderer activity at rest and during playback, retained JavaScript heap, and total process memory when the platform exposes it. |
+
+Use recorded screen and input evidence for visible response or presentation claims. Label inspector timestamps as instrumented observations. `tv:on-set` currently covers cached relaunch, renderer activity and playhead progress only. The remaining observations need manual capture or dedicated hardware instrumentation. Do not replace unavailable measurements with a desktop estimate or infer low tier results from a different model.
+
 ### Phone management on a set
 
 Run these checks after changing the management socket, pairing, welcome screen or phone interface:
@@ -534,12 +510,7 @@ it, keeps a copy for a day, serves it from localhost and asserts it into the sim
 on every run, so there is nothing to pass and nothing to remember. `--playlist=` overrides it and
 the header says which one was used, with its shape counted rather than assumed.
 
-It is deliberately the largest playlist anybody is likely to point this app at, because that is
-where the costs are. Nothing in the interface is expensive per pixel: it is expensive per row, per
-logo and per category. Two hundred channels parse in 0.3ms and twelve thousand in 11.7ms, which is
-about 0.7 seconds of frozen main thread on the floor, on the launch path, and the old benchmark
-playlist could not see it. Neither could it see that a 2.7MB playlist was too big to cache at all,
-so every launch downloaded it again.
+This fixture exercises large Live lists, category replacement, parsing and artwork queues. Its size and content can change, so use the counts and digest in the diagnostic header. It does not establish a worst case for every provider or represent real TV rendering cost.
 
 The artwork is served locally too, and that changed the numbers most. The playlist points at
 10,602 logos on a few hundred hosts and most of them are dead: eight runs of the walk cached 280 of
@@ -557,59 +528,46 @@ they see.
 
 ## The Xtream fixture
 
-`scripts/present.mjs` owns a synthetic Player API account used by the test server, parity walk, and budget simulator. It returns 3,200 live summaries, 840 movies, 560 series, duplicate and empty category names, fixed movie details, three seasons with twelve episodes each, short programme data, archived catchup, and finite media routes. Every value is invented. Responses contain no username or password, while requests still exercise the real credential transport required by Xtream.
+`scripts/present.mjs` owns a synthetic Player API account used by the test server, parity walk and desktop diagnostics. It returns 3,200 live summaries, 840 movies, 560 series, duplicate and empty category names, fixed movie details, three seasons with twelve episodes each, short programme data, archived catchup and finite media routes. Every value is invented. Responses contain no username or password, while requests still exercise the credential transport required by Xtream.
 
 The fixture filters live, movie, and series lists by opaque category identifier, so duplicate display names cannot route a request. Its empty categories return successful empty arrays. This distinction lets the harness detect a repeated request that mistakes empty for unloaded.
 
-The shared parity walk starts from Xtream live rows, performs live search, opens a movie category twice, opens movie details, and descends through a series, season, and episode list. The budget simulator retains the M3U regression walk, then changes to the Xtream fixture and measures launch to live rows, an accelerated rail walk, first and cached category visits, movie details, episode navigation, live search, and heap growth. Xtream phases reuse existing stall and response allowances because they exercise the same windowed rows and panel transitions. A new allowance requires repeated quiet measurements that show an existing one measures a different cost.
+The shared parity walk starts from Xtream Live rows, performs Live search, opens a movie category twice, opens movie details and descends through a series, season and episode list. Desktop diagnostics retain the M3U walk before changing to the Xtream fixture. They record launch milestones, rail and grid walks, category visits, movie details, search and JavaScript heap observations without timing acceptance thresholds.
 
-## The budget
+## Desktop diagnostics
 
-`npm run tv:budget` checks explicit viewer experience goals under the primary estimated Everyday TV hardware profile. `npm run tv:budget:floor` applies the same goals to the original floor and reports its result separately. Neither verdict establishes browser compatibility. The goals are engineering acceptance criteria, not margins added to whichever timings a laptop happened to produce.
+There is no simulated TV performance budget. `tv:bench` and `tv:quick` retain raw desktop observations and functional journey assertions. Their successful exit means the requested journeys and recordings completed. Slow durations or heap growth do not produce a performance pass or failure.
 
-`npm run tv:quick` samples Live navigation, channel changes, one VOD grid and cached startup. It uses fewer repetitions and skips playback faults, details, episodes and management. Its pass or fail applies only to that sample. Use the full budget for complete journey coverage. Both commands belong to the approved final verification phase.
+| Observation | What it measures | What it cannot establish |
+|:--|:--|:--|
+| rAF Hz | Animation callback count divided by elapsed desktop wall time, without a 60 Hz cap. | Displayed UI FPS, GPU throughput or video frame rate. |
+| Callback gap p95 and maximum | Time between callback entries, including the initial partial interval and a terminal interval longer than 16.67 ms. | Whether the compositor presented a changed frame. |
+| Long gap time share | Whole duration of callback intervals over 100 ms divided by elapsed time. | An acceptance threshold or a count of missed TV frames. |
+| DOM response p95 and maximum | Browser event timestamp to the callback after a DOM cursor change is observed. | Physical remote latency or time to visible pixels. |
+| Category readiness | Phase start to the driver's committed category DOM barrier. | Poster decode completion or visual readiness of every card. |
+| V8 heap and growth | Reported JavaScript heap after requested garbage collection. | Total application memory, native image allocations or GPU memory. |
 
-| Measurement | Acceptance goal |
-|:--|:--|
-| Effective main thread frame cadence | At least 30 FPS, capped at 60 in the report |
-| Frame interval p95 | At most 50 ms |
-| Longest frame interval | At most 250 ms |
-| Time spent in frame intervals over 100 ms | At most 10% of measured time, except cold first category loading |
-| Cold first category committed readiness | Within 2000 ms of phase start |
-| Input to visible focus estimate p95 | At most 100 ms |
-| Longest input to visible focus estimate | At most 250 ms |
-| Cached channel rows | Within 6 seconds of navigation |
-| Resumed channel name | Within 6.5 seconds of navigation |
+Callback p95 uses nearest rank, selecting sorted interval `ceil(0.95 * count) - 1`. The elapsed denominator includes the unsampled tail. A hidden page or an absent callback sample invalidates the recording.
 
-The frame report divides animation callback count by elapsed wall time, then caps the result at 60 FPS. Each interval runs from the previous callback's entry time, or the phase start, to `performance.now()` at the next callback's entry. It does not use the animation callback's supplied timestamp, count GPU presentations or measure video frame rate. Gate comparisons use unrounded values, while the table rounds to one decimal place.
+The input recorder rejects incompatible browser event clocks. Inputs pending at one observed cursor change share the next callback boundary, so response counts alone cannot prove every intermediate state was visible. The complete twelve press grid walk must also traverse 72 items. The default driver pauses 100 ms after each completed CDP dispatch, which is not a fixed 10 Hz input stream. An explicit `--gap` changes that pause.
 
-Frame p95 uses nearest rank, selecting sorted interval `ceil(0.95 * count) - 1`, so fewer than 20 intervals select the maximum. The initial partial interval counts. A terminal partial interval over 16.67 ms counts in frame statistics, and every terminal interval remains in the FPS denominator. Stall percentage counts the whole duration of intervals over 100 ms, rather than only the excess over 100 ms. A phase that becomes hidden fails even if it is visible again when stopped.
+Setup and a three second settling period precede each complete phase. A journey includes its action, asynchronous DOM readiness wait, a 600 ms tail and a final pair of callbacks. Ordinary Live phases omit the 600 ms tail. Work outside these windows is excluded. The fixed waits can dilute aggregate statistics, so use the targeted profiler's raw intervals and action boundaries when attributing a regression.
 
-The input recorder uses the browser event timestamp, including time queued before JavaScript delivery, and rejects incompatible clocks. It tracks Live and VOD focus, then waits for another animation callback after observing a cursor change. That callback establishes a paint opportunity estimate, not proof that the compositor presented the change. All inputs pending at one observed movement share that response boundary, so the oldest delay remains visible. Logical distance is checked separately for held Live walks and the complete twelve move grid walk, which must traverse 72 items. The default driver pauses 100 ms after each completed CDP press dispatch, rather than scheduling a fixed 10 Hz input stream. An explicit `--gap` changes that pause.
-
-Setup and the three second settling period occur before each complete benchmark phase. A journey includes its action, asynchronous readiness wait, a 600 ms settling tail and a final pair of animation callbacks. Ordinary Live phases include their input sequence and final animation callbacks without that extra tail. Work arriving after a phase stops is outside its sample, so these bounded journeys do not claim to measure every later idle task.
-
-Only `Xtream first category` is explicitly classified as cold category loading. It retains the 30 FPS minimum, 50 ms frame p95 and 250 ms maximum gap. Its stall percentage is recorded as a diagnostic, while a 2000 ms deadline measures the committed ready category from phase start. Missing, nonfinite or negative readiness times fail. Readiness requires the current Movies mode, focused rail, a committed category that is no longer busy and poster DOM. Retained cards from a previous category cannot satisfy the busy check. The readiness timestamp is taken after the driver's existing DOM barrier on the same browser `performance.now()` clock as the phase start, conservatively including polling and protocol overhead. The complete preamble, action ordering, queued application work and 600 ms tail remain unchanged.
-
-This loading deadline is an explicit engineering UX budget for the controlled fixture, rather than an industry threshold or real TV certification. A stall share over a short loading observation depends on how long loading took before the fixed 600 ms tail. For example, one 157.8 ms construction gap in about 1.35 seconds accounts for 11.7%, despite remaining within the absolute gap ceiling. A deadline plus the existing absolute frame limits describes this loading contract without making a faster load reduce its allowed stall share. The cold phase records no directional input latency, so it does not certify Back response p95. Functional Back tests cover a different property.
-
-Long stalls at the start or end of every sample still count. A fast median cannot hide a poor p95 or a long pause. Every other phase, including Live, held keys, search and details, retains the 10% stall share goal as well as its existing frame and input goals. Missing frames, missing required focus measurements, unanswered navigation and incorrect logical row distance fail the measurement. The project also retains its conservative heap headroom and 8 MB growth guard.
-
-Measurements use a fresh browser profile and debugging port 9433 by default, separate from the interactive profile on 9333. Native playback state and clock behavior are simulated without loading hls.js into the measured document. Explicit controlled preparation and playback faults remain available for the full functional journeys. `--video` measures the browser playback path separately and cannot claim a base TV budget pass.
+Diagnostics use a fresh browser profile and debugging port 9433, separate from the interactive profile on 9333. The native playback shim exercises application state transitions without measuring real decoding, stream startup, buffering behavior or decoder resource contention. Functional faults are controlled test outcomes.
 
 ## The launch
 
 The same run relaunches the app through `about:blank` and records five milestones relative to navigation. This avoids overlapping teardown of the old app with startup of the new one. The browser runtime and disk cache are warm, so this is cached startup rather than a cold boot of a television.
 
-The initial provider catalogue load is reported separately as a diagnostic. It must reach the expected Live state, but the cached startup allowance does not also become an uncached provider loading limit.
+The initial provider catalogue load is reported separately. It must reach the expected Live state. All launch durations are desktop diagnostics without acceptance thresholds. The harness deadline bounds how long it waits for missing milestones.
 
 | Milestone | Meaning | Acceptance |
 |:--|:--|:--|
 | DOM content loaded | The navigation's DOMContentLoaded event ended | Diagnostic |
 | First paint | Browser paint timing | Diagnostic |
 | The interface | Interface DOM appeared | Diagnostic |
-| The channel rows | Channel row DOM appeared | Within 6 seconds |
-| The channel named | Resumed channel label appeared | Within 6.5 seconds |
+| The channel rows | Channel row DOM appeared | Diagnostic |
+| The channel named | Resumed channel label appeared | Diagnostic |
 
 DOMContentLoaded is not isolated bundle compilation or execution time. It may occur after first paint and includes work beyond parsing JavaScript. Intermediate milestones help attribute startup cost without adding unrelated pass ceilings. The exact active fixture account, category and Live catalogue records must already exist before relaunch. The harness checks the active playlist identifier, source revision, fixture server and Live catalogue length instead of accepting any Xtream cache key. The channel row milestone excludes category rows and channel skeletons.
 
@@ -617,22 +575,9 @@ DOMContentLoaded is not isolated bundle compilation or execution time. It may oc
 
 **Always headless, and never compare a headless figure with a headful one.** `--bench` is headless by default because a headful window's occlusion and presentation scheduling can change its callback cadence. Headless avoids desktop occlusion, but does not guarantee a particular callback frequency or remove refresh scheduling. `--headful` exists for visual diagnosis.
 
-Alternate baseline and changed builds under identical simulator settings, take medians, and use at least three rounds so drift does not affect only one build. Record the conditions for each run. The header reports load average as context, but that reading alone neither measures CPU utilisation nor establishes why a budget failed. Treat exceeded budgets as failures and investigate their cause with the controlled comparison rather than automatically dismissing them as noise.
+Alternate baseline and changed builds on the same host and browser with identical fixtures and settings. Use at least three paired rounds, retaining raw observations and recording the conditions for each run. Load average is context, without a CPU utilisation measurement or proof of a cause. Desktop differences are leads for investigation and do not establish a change in TV performance.
 
-To measure against the code before a change, without disturbing the working tree:
-
-```bash
-git worktree add /tmp/iptv-before HEAD     # or whichever commit
-cd /tmp/iptv-before && npm ci && npm run build && rm -rf node_modules
-# serve that dist on another port, then point the current simulator at it, so the
-# harness is identical and only the application differs:
-node scripts/tv/sim.mjs --floor --bench --url=http://localhost:4180/ --playlist=...
-```
-
-Remove `node_modules` once built, or the scanner will be chewing through 185MB of new files during
-the measurement. The two builds are on different ports and therefore different origins, so each has
-its own localStorage and IndexedDB and each needs `--playlist`. Discard the first round on each
-side, which is the only one that fetches the playlist over the network.
+Use isolated worktrees for baseline and changed builds. Run the same diagnostic harness against each worktree's own production build, since the driver checks the served build identity. Keep unrelated builds, tests and rendering workloads stopped while timing. Preserve identical fixture bytes through `--playlist` and compare matching phases.
 
 ## Gates must be able to fail
 
@@ -645,24 +590,16 @@ ask what it does when the thing it measures is absent rather than wrong:
   agree perfectly on screens neither of them visited. `harness.mjs` throws if a label is gone.
 - Comparing only the reference's keys hides everything the reference failed to draw, and the
   reference is the oldest and slowest engine. `compare()` walks the union.
-- A budget keyed on phase labels stops applying when a label is renamed. `sim.mjs` asserts the
-  allowances and the measured phases are the same set.
+- A recording can omit a renamed phase. `sim.mjs` checks expected and recorded phase labels in both directions.
 - A benchmark that drops long frame gaps can flatter a window that went quiet. `bench.js` retains long gaps and terminal stalls, divides callback count by the whole phase duration, and rejects visibility loss.
-- `npm run tv:budget` refuses `--budget` without `--floor` or the separate `--reference`. It silently exited 2 on every CI run
-  for a while, under `continue-on-error`.
+- Retired hardware and budget flags must fail before a browser starts. Silently ignoring them would give old automation a misleading success.
 - Ask the browser its version rather than trusting the path it came from. `engine-parity.mjs` does,
   because a stale lock entry otherwise tests the wrong engine and passes.
 
 ## Known weaknesses
 
-The base profile is an approximation, not a claim of measured Samsung performance. It calibrates the current laptop to the Lighthouse BenchmarkIndex workload used by [Chrome DevTools CPU calibration](https://developer.chrome.com/blog/devtools-grounded-real-world). DevTools uses a measured low tier mobile score of 264. This project chooses 132, a further 2x conservative margin for older TV hardware and browser behavior. That margin is estimated. The score is not a benchmark result from a Samsung TV.
+Desktop CPU throttling suspends the renderer main thread without reproducing TV CPU architecture, workers, GPU, image decoding, memory bandwidth, flash or thermals. A synthetic JavaScript score cannot map those costs to Samsung models. No passing desktop cohort qualifies TV performance.
 
-Samsung's [2020 security target](http://www.commoncriteriaportal.org/files/epfiles/[ENG]%20Smart%20TV%20Security%20Solution_V5.0_for_Samsung_Knox_Security_Target_Lite_V1.0.pdf) identifies a minimum environment of four Cortex A53 cores and 1 GB RAM, but publishes no workload score or CPU clock. The proxy offers a repeatable development target in that hardware class. A real TV score should replace the estimate when available. `npm run tv:calibrate` remains available for a paired physical reference TV and can interrupt viewing.
+The API shim cannot expose native decoder resource contention, real buffering, firmware faults or the physical remote path. Callback cadence and DOM focus observations cannot prove frame presentation. V8 heap measurements omit native and GPU allocations. Compatibility and spacing gates cover different properties and cannot close these gaps.
 
-Every calibrated profile run warms and measures the host, searches for a slowdown within 1% of the target, then verifies the median of five fresh samples within 5%. A run whose calibration cannot match the target fails before measuring a journey. The final control repeats the unthrottled warmup in its fresh browser context, then checks the median of five samples at the selected slowdown within 5% of the target. A mismatch invalidates the measurement rather than relaxing the bound. Raw host score, target, achieved score and final control are reported. Compare achieved CPU scores when describing the difference between hardware targets. The two 5% acceptance bands permit the nominal CPU target ratio of 4 to range from approximately 3.62 to 4.42, so the target ratio must not be presented as the measured ratio. No load average warning explains away a failed goal. An explicit `--cpu` or `--cpu-score` is a diagnostic override and cannot pass the full release budget.
-
-CPU throttling affects renderer main thread JavaScript, style and layout. It does not emulate the TV's GPU, image decoder, workers, memory bandwidth, flash or thermals. Navigator core and RAM values are hints, not physical limits. The selected 120 MB or 160 MB cap constrains V8 old space only, while native and GPU allocations remain outside that cap. Compatibility on the supported engines is covered separately by the engine and spacing gates. None of these checks certifies real TV video playback or physical display FPS.
-
-Nothing substitutes for a 2020 television. The three things no browser can answer are which font
-the set resolves `system-ui` to, whether it overscans, and which keys its remote actually sends,
-which is why the Diagnostics screen reports all three from the set itself.
+The real TV tool measures cached relaunch, renderer activity at rest and AVPlay playhead progress. It does not automate every navigation journey or measure visible frame presentation. Inspector attachment also changes the runtime and excludes a true cold boot. Report unavailable measurements and untested hardware explicitly.

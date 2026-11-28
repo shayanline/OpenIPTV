@@ -5,16 +5,12 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { XTREAM_FIXTURE } from "../present.mjs";
-import { computeBenchmarkIndex } from "./benchmark-index.mjs";
 import { arg, connect, has } from "./cdp.mjs";
-import { cpuControl, CPU_TOLERANCE } from "./cpu-model.mjs";
-import { vodCategoryReady } from "./performance-goals.mjs";
+import { diagnosticOptions, vodCategoryReady } from "./diagnostics.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = resolve(here, "../..");
-if (has("floor") && has("reference")) {
-  throw new Error("--floor and --reference select separate profiles and cannot be combined.");
-}
+diagnosticOptions({ has, arg });
 const output = mkdtempSync(join(resolve(arg("output") ?? tmpdir()), "openiptv-vod-profile-"));
 const logPath = join(output, "environment.log");
 const log = openSync(logPath, "wx");
@@ -33,19 +29,12 @@ const capture = arg("capture") !== "false";
 if (!Number.isInteger(moves) || moves < 1) {
   throw new Error("--moves must be a positive integer.");
 }
-const forwarded = ["url", "cpu", "cpu-score", "harsh", "chrome"]
+const forwarded = ["url", "cpu", "chrome"]
   .filter((name) => arg(name) !== undefined)
   .map((name) => `--${name}=${arg(name)}`);
 const child = spawn(
   process.execPath,
-  [
-    join(here, "sim.mjs"),
-    has("floor") ? "--floor" : "--reference",
-    "--profile",
-    "--headless",
-    `--port=${port}`,
-    ...forwarded,
-  ],
+  [join(here, "sim.mjs"), "--profile", "--headless", `--port=${port}`, ...forwarded],
   { cwd: root, stdio: ["ignore", log, log] },
 );
 closeSync(log);
@@ -277,6 +266,7 @@ try {
     scripts: Array.from(document.scripts, script => script.src).filter(Boolean),
     nativeTiming: window.__openiptvNativeTiming === true,
     browserHlsLoaded: typeof window.Hls !== "undefined",
+    hostHints: { cores: navigator.hardwareConcurrency, memoryGB: navigator.deviceMemory },
     viewport: { width: innerWidth, height: innerHeight }
   })`);
   if (
@@ -284,9 +274,9 @@ try {
     environment.browserHlsLoaded ||
     environment.viewport.width !== 1920 ||
     environment.viewport.height !== 1080 ||
-    !environment.simulation?.cpu
+    environment.simulation?.environment !== "desktop-diagnostic"
   ) {
-    throw new Error("The profiler did not reach the intended native timing TV environment.");
+    throw new Error("The profiler did not reach the intended desktop API fixture.");
   }
   const events = [];
   cdp.on("Tracing.dataCollected", ({ value }) => events.push(...value));
@@ -415,21 +405,6 @@ try {
     const { data } = await cdp.send("Page.captureScreenshot", { format: "png" });
     writeFileSync(join(output, "grid.png"), Buffer.from(data, "base64"), { flag: "wx" });
   }
-  let control;
-  if (environment.simulation.cpuCalibration) {
-    await cdp.send("Page.navigate", { url: "about:blank" });
-    await waitFor("location.href === 'about:blank' && document.readyState === 'complete'");
-    await evaluate(`window.__tvCpuIndex = ${computeBenchmarkIndex.toString()}; true`);
-    await cdp.send("Emulation.setCPUThrottlingRate", { rate: 1 });
-    for (let index = 0; index < 4; index++) await evaluate("window.__tvCpuIndex(250)");
-    await cdp.send("Emulation.setCPUThrottlingRate", { rate: environment.simulation.cpu });
-    await evaluate("window.__tvCpuIndex(250)");
-    const scores = [];
-    for (let index = 0; index < 5; index++) {
-      scores.push(await evaluate("window.__tvCpuIndex(250)"));
-    }
-    control = cpuControl(scores, environment.simulation.cpuCalibration.targetScore);
-  }
   const network = await evaluate(`new Promise(resolve => {
     window.__tvNetworkDone = resolve;
     window.__tvMeasurementNetworkSnapshot("");
@@ -438,7 +413,6 @@ try {
     join(output, "measurements.json"),
     JSON.stringify({
       environment,
-      control,
       moves,
       gapMs: 100,
       settlingTailMs: 600,
@@ -456,29 +430,23 @@ try {
   );
   console.log(
     capture
-      ? "These diagnostic timings include profiler overhead and give no release verdict."
-      : "This unprofiled targeted diagnostic gives no complete release verdict.",
+      ? "These desktop timings include profiler overhead and give no TV performance verdict."
+      : "These desktop timings give no TV performance verdict.",
   );
   console.table(
     Object.entries(phases).map(([phase, result]) => ({
       phase,
-      mainFPS: +result.fps.toFixed(1),
-      frameP95Ms: +result.p95.toFixed(1),
-      maxFrameMs: +result.worst.toFixed(1),
-      inputP95Ms: result.inputP95 === null ? null : +result.inputP95.toFixed(1),
-      maxInputMs: result.worstLag === null ? null : +result.worstLag.toFixed(1),
+      rafHz: +result.rafHz.toFixed(1),
+      callbackGapP95Ms: +result.p95.toFixed(1),
+      maxCallbackGapMs: +result.worst.toFixed(1),
+      domResponseP95Ms: result.inputP95 === null ? null : +result.inputP95.toFixed(1),
+      maxDomResponseMs: result.worstLag === null ? null : +result.worstLag.toFixed(1),
       answered: `${result.answered}/${result.presses}`,
       distance: result.distance,
     })),
   );
   console.log(`Artifacts: ${output}`);
-  if (control) {
-    console.log(
-      `CPU control: ${control.achievedScore} against ` +
-        `${environment.simulation.cpuCalibration.targetScore}, ` +
-        `within ${CPU_TOLERANCE * 100}%: ${control.matches}`,
-    );
-  }
+  console.log("rAF callbacks and DOM observations do not prove paint or frame presentation.");
   if (capture) {
     console.log("Use the marked renderer thread and phase boundaries for trace attribution.");
     console.log(
@@ -497,12 +465,6 @@ try {
   if (failure) throw failure;
   if (!network?.isolated || !network.active || network.violations.length) {
     throw new Error(`Network isolation failed. See ${output}/measurements.json`);
-  }
-  if (control && !control.matches) {
-    throw new Error(
-      `CPU control reached ${control.achievedScore}, outside ${CPU_TOLERANCE * 100}% of ` +
-        `${environment.simulation.cpuCalibration.targetScore}. Timings are invalid. See ${output}`,
-    );
   }
   if (
     (capture &&
