@@ -27,6 +27,7 @@ interface Props {
    * screen of their own.
    */
   search?: {
+    externalField?: boolean;
     query: string;
     /** How many matched altogether, so the header can own up to a capped list. */
     total: number;
@@ -319,7 +320,7 @@ export const ChannelList = memo(function ChannelList({
        * this one describes the list actually on screen.
        */}
       <div className="pane-head">
-        {search ? (
+        {search && !search.externalField ? (
           <SearchField
             value={search.query}
             focused={search.onField}
@@ -333,7 +334,11 @@ export const ChannelList = memo(function ChannelList({
         ) : (
           <>
             <Text value={category || t("channel.channels")} className="panel-title" />
-            <span className="count">{number(channels.length)}</span>
+            <span className="count">
+              {search && channels.length < search.total
+                ? `${number(channels.length)} / ${number(search.total)}`
+                : number(channels.length)}
+            </span>
           </>
         )}
       </div>

@@ -196,13 +196,16 @@ export function VodDetailTags({
       </div>
       {genre && (
         <div className="vod-detail-genres">
-          {genre
-            .split(",")
-            .map((value) => value.trim())
-            .filter(Boolean)
-            .map((value, index) => (
-              <span key={`${index}:${value}`}>{value}</span>
-            ))}
+          {Array.from(
+            new Set(
+              genre
+                .split(",")
+                .map((value) => value.trim())
+                .filter(Boolean),
+            ),
+          ).map((value) => (
+            <span key={value}>{value}</span>
+          ))}
         </div>
       )}
     </div>
@@ -254,6 +257,7 @@ export function VodDetailSkeleton({
             aria-hidden="true"
           >
             {Array.from({ length: actionCount }, (_, index) => (
+              // biome-ignore lint/suspicious/noArrayIndexKey: Loading slots remain in a fixed order.
               <span key={index} className="skeleton-line vod-action-skeleton" />
             ))}
           </div>

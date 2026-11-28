@@ -20,6 +20,7 @@ import { TextInput } from "./TextInput";
 export function SearchField({
   value,
   focused,
+  keyboardOpen = true,
   shown,
   total,
   placeholder,
@@ -37,6 +38,7 @@ export function SearchField({
   value: string;
   /** Whether the cursor is on the field, as opposed to down among the results. */
   focused: boolean;
+  keyboardOpen?: boolean;
   /** How many results the column is holding. */
   shown: number;
   /** How many matched altogether, which is the larger number when the list has been capped. */
@@ -67,9 +69,9 @@ export function SearchField({
   useEffect(() => {
     const el = field.current;
     if (!el) return;
-    if (focused) el.focus();
+    if (focused && keyboardOpen) el.focus();
     else if (document.activeElement === el) el.blur();
-  }, [focused]);
+  }, [focused, keyboardOpen]);
 
   return (
     <div className={`search ${focused ? "focused" : ""}`}>
@@ -104,7 +106,7 @@ export function SearchField({
             return;
           }
         }}
-        placeholder={placeholder ?? t("search.channelName")}
+        placeholder={placeholder ?? t("common.search")}
         aria-label={ariaLabel ?? t("search.ariaLabel")}
         spellCheck={false}
         autoComplete="off"

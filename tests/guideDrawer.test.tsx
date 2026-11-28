@@ -59,9 +59,10 @@ test.each(["audio", "subtitles", "live-browser"] as const)(
       drawer.querySelector(".playback-drawer-head"),
     );
     expect(drawer.querySelector(".playback-drawer-body")?.textContent).toBe("Original options");
-    expect(
-      drawer.querySelector(".playback-drawer-subtitle, .playback-drawer-footer, svg"),
-    ).toBeNull();
+    expect(drawer.querySelector(".playback-drawer-subtitle, svg")).toBeNull();
+    expect(drawer.querySelector(".playback-drawer-footer")?.textContent).toBe(
+      "OKSelectReturnBack",
+    );
     press(KEY.BACK);
     expect(onBack).toHaveBeenCalledExactlyOnceWith(origin);
   },

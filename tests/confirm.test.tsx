@@ -1,6 +1,7 @@
 import { act, cleanup, fireEvent, render } from "@testing-library/react";
 import { afterEach, expect, test, vi } from "vitest";
 import { Confirm } from "../src/components/Confirm";
+import { ExitDialog } from "../src/components/ExitDialog";
 import { KEY } from "../src/hooks/useRemote";
 
 function pressKey(code: number) {
@@ -18,6 +19,17 @@ afterEach(() => {
   cleanup();
   vi.useRealTimers();
   vi.restoreAllMocks();
+});
+
+test("Keep app open has no icon and remains the focused safe action", () => {
+  const onCancel = vi.fn();
+  const view = render(<ExitDialog onCancel={onCancel} />);
+  const keep = view.getByRole("button", { name: "Keep app open" });
+  expect(keep.querySelector("svg")).toBeNull();
+  expect(view.getByRole("button", { name: "Exit app" }).querySelector("svg")).toBeTruthy();
+  expect(document.activeElement).toBe(keep);
+  fireEvent.click(keep);
+  expect(onCancel).toHaveBeenCalledTimes(1);
 });
 
 test("a busy confirmation cannot be dismissed, re-answered or timed out", async () => {
@@ -47,6 +59,7 @@ test("a busy confirmation cannot be dismissed, re-answered or timed out", async 
 
   // The safe answer takes focus and the destructive slot is already mounted.
   expect(document.activeElement).toBe(cancel());
+  expect(cancel().querySelector("svg")).toBeTruthy();
   const slot = confirm().querySelector(".confirm-action-icon");
   expect(slot).toBeTruthy();
   const label = confirm().textContent;

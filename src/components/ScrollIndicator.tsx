@@ -23,8 +23,8 @@ export function scrollIndicatorMetrics(
  *
  * Samsung's UX checklist makes this a requirement rather than a nicety: item 1.2 says a
  * scroll indicator must be provided when a list exceeds one page. Their guidance is that
- * the bar's length reflects how much of the list is visible, and that it appears when the
- * viewer arrives or moves and withdraws about two seconds later.
+ * bar's length reflects how much of the list is visible. Vertical tracks stay visible,
+ * while movement briefly emphasizes their thumbs. Horizontal indicators withdraw when idle.
  *
  * It takes the window rather than a scrolling element, because the lists no longer scroll:
  * they render a slice and slide it. That also means no scroll listener, which on a TV is a

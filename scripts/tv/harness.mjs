@@ -473,13 +473,26 @@ export async function walk(cdp, port, selectors, { before } = {}) {
           const outer = screen.getBoundingClientRect();
           const inner = content.getBoundingClientRect();
           const style = getComputedStyle(screen);
+          let bottom = outer.bottom - parseFloat(style.paddingBottom);
+          let footerBottom = 0;
+          const guide = screen.querySelector('.page-key-guide');
+          if (guide && !content.contains(guide)) {
+            const guideStyle = getComputedStyle(guide);
+            const guideBox = guide.getBoundingClientRect();
+            if (guideBox.height > 0 && guideStyle.position !== 'absolute'
+              && guideStyle.position !== 'fixed') {
+              footerBottom = bottom - guideBox.bottom - parseFloat(guideStyle.marginBottom);
+              bottom = guideBox.top - parseFloat(guideStyle.marginTop);
+            }
+          }
           return {
             top: inner.top - outer.top - parseFloat(style.paddingTop),
-            bottom: outer.bottom - parseFloat(style.paddingBottom) - inner.bottom,
+            bottom: bottom - inner.bottom,
+            footerBottom,
           };
         })())`),
       );
-      if (vodHeight && (Math.abs(vodHeight.top) > 1 || Math.abs(vodHeight.bottom) > 1)) {
+      if (vodHeight && Object.values(vodHeight).some((value) => Math.abs(value) > 1)) {
         throw new Error(
           `${name} leaves a VOD height reservation: ${JSON.stringify(vodHeight)}`,
         );
@@ -663,11 +676,12 @@ export async function walk(cdp, port, selectors, { before } = {}) {
   const click = async (label, ready) => {
     const byText = await d.clickText(label);
     const selector =
-      label === "Search" ? '[aria-label^="Search "]' : `[aria-label=${JSON.stringify(label)}]`;
+      label === "Search" ? ".section-search" : `[aria-label=${JSON.stringify(label)}]`;
     const byName =
       byText ||
       (await d.evaluate(`(() => {
-      const el = document.querySelector(${JSON.stringify(selector)});
+      const el = [...document.querySelectorAll(${JSON.stringify(selector)})]
+        .find(element => element.matches("button") && element.getClientRects().length);
       if (!el) return false;
       el.click();
       return true;
@@ -714,14 +728,15 @@ export async function walk(cdp, port, selectors, { before } = {}) {
    */
   const keyed = async (label, ready) => {
     const selector =
-      label === "Search" ? '[aria-label^="Search "]' : `[aria-label=${JSON.stringify(label)}]`;
+      label === "Search" ? ".section-search" : `[aria-label=${JSON.stringify(label)}]`;
     const hit = await d.evaluate(`(() => {
-      const el = document.querySelector(${JSON.stringify(selector)});
+      const el = [...document.querySelectorAll(${JSON.stringify(selector)})]
+        .find(element => element.matches("button") && element.getClientRects().length);
       if (!el) return false;
       el.click();
       return true;
     })()`);
-    if (!hit) throw new Error(`No key labelled "${label}" in the panel's title bar.`);
+    if (!hit) throw new Error(`No visible control labelled "${label}".`);
     if (ready) await d.waitFor(ready);
   };
 
@@ -859,14 +874,22 @@ export async function walk(cdp, port, selectors, { before } = {}) {
     13,
     "!!document.querySelector('.vod-details.loaded .vod-actions .vod-favourite')",
   );
-  const fullFavourite = await d.evaluate(`(() => {
+  const detailActionsValid = await d.evaluate(`(() => {
     const actions = document.querySelector('.vod-details.loaded .vod-actions');
     const favourite = actions && actions.querySelector('.vod-favourite');
-    return !!favourite && actions.lastElementChild === favourite
-      && Math.abs(favourite.getBoundingClientRect().width - actions.clientWidth) <= 1;
+    const primary = actions && actions.firstElementChild;
+    if (!favourite || !primary || primary === favourite) return false;
+    const actionBox = actions.getBoundingClientRect();
+    const primaryBox = primary.getBoundingClientRect();
+    const favouriteBox = favourite.getBoundingClientRect();
+    return actions.lastElementChild === favourite
+      && Math.abs(primaryBox.width - actions.clientWidth) <= 1
+      && favouriteBox.top >= primaryBox.bottom
+      && favouriteBox.left >= actionBox.left - 1
+      && favouriteBox.right <= actionBox.right + 1;
   })()`);
-  if (!fullFavourite)
-    throw new Error("The detail Favourite is not the final full width action.");
+  if (!detailActionsValid)
+    throw new Error("Details must place the final Favourite below the full width primary action.");
   await capture(XTREAM_JOURNEYS.movieDetailsFavourite);
   await click(
     "Add to Favourites",

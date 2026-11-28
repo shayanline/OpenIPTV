@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { afterEach, expect, test, vi } from "vitest";
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { ScrollIndicator, scrollIndicatorMetrics } from "../src/components/ScrollIndicator";
 import {
   EPISODE_ROW_BASE,
@@ -21,6 +21,7 @@ import * as viewport from "../src/hooks/useViewport";
 import * as artworkService from "../src/services/artwork";
 import { availableVodSorts, applyVodView } from "../src/screens/VodScreen";
 import {
+  finishPageEntry,
   hold,
   mountApp,
   playCalls,
@@ -129,7 +130,10 @@ async function mountLibrary(options?: Parameters<typeof libraryFetch>[0]) {
     const clientHeight = Object.getOwnPropertyDescriptor(Element.prototype, "clientHeight")!
       .get!;
     vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockImplementation(function () {
-      return this.classList.contains("poster-grid-region") ? 400 : clientHeight.call(this);
+      return this.classList.contains("poster-grid-region") ||
+        this.classList.contains("vod-rail")
+        ? 400
+        : clientHeight.call(this);
     });
   }
   const fetchImplementation = libraryFetch(options);
@@ -157,13 +161,7 @@ async function chooseMode(name: "Movies" | "Series") {
   fireEvent.click(button);
   await act(async () => Promise.resolve());
   await settle(300);
-  await vi.waitFor(
-    async () => {
-      await settle(0);
-      expect(document.querySelector(".app")?.getAttribute("data-page-transition")).toBe("idle");
-    },
-    { interval: 10 },
-  );
+  await finishPageEntry();
   if (document.querySelector(".app-navigation.expanded")) press(KEY.RIGHT);
   await settle(0);
 }
@@ -182,6 +180,192 @@ afterEach(() => {
   vi.useRealTimers();
   vi.unstubAllGlobals();
 });
+
+test.each(["Movies", "Series"] as const)(
+  "%s search keeps categories outside the content grid",
+  async (mode) => {
+    await mountLibrary({
+      movieCategories: [{ category_id: "10", category_name: "Shared name" }],
+      seriesCategories: [{ category_id: "20", category_name: "Shared name" }],
+      movies: [movie(100, "Shared name")],
+      series: [{ series_id: "200", category_id: "20", name: "Shared name" }],
+    });
+    await chooseMode(mode);
+    expect(document.querySelector('[data-navigation-action="search"]')).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Search" }));
+    const field = screen.getByRole("textbox", { name: `Search ${mode}` });
+    fireEvent.change(field, { target: { value: "Shared name" } });
+    fireEvent.keyDown(field, { keyCode: KEY.ENTER });
+    await settle(300);
+    const search = screen.getByRole("region", { name: `Search ${mode}` });
+    const content = within(search).getByRole("region", { name: mode });
+    await vi.waitFor(async () => {
+      await settle(0);
+      expect(content.querySelectorAll(".poster-card")).toHaveLength(1);
+    });
+    const categories = within(search).getByRole("navigation", { name: "Categories" });
+    expect(within(content).getByRole("heading", { name: mode })).toBeTruthy();
+    expect(content.querySelector(".poster-title")?.textContent).toBe("Shared name");
+    expect(categories.querySelector(".poster-card")).toBeNull();
+    expect(content.querySelector(".row")).toBeNull();
+    fireEvent.click(within(categories).getByRole("button", { name: /Shared name/ }));
+    await settle(300);
+    expect(document.querySelector(".vod-search")).toBeNull();
+    expect(
+      document.querySelector(".vod-category.selected .vod-category-name")?.textContent,
+    ).toBe("Shared name");
+    expect(document.querySelector(".poster-card.cursor")).toBeTruthy();
+    expect(document.querySelector(".vod-details, .series-details")).toBeNull();
+  },
+);
+
+test.each(["Movies", "Series"] as const)(
+  "%s Search separates its initial prompt from query results even with an empty catalogue",
+  async (mode) => {
+    await mountLibrary({ movies: [], series: [] });
+    await chooseMode(mode);
+    fireEvent.click(screen.getByRole("button", { name: "Search" }));
+    const search = document.querySelector<HTMLElement>(".vod-search")!;
+    expect(within(search).getByRole("heading", { name: `Search ${mode}` })).toBeTruthy();
+    expect(
+      within(search).getByText("Type a title or category, then select Search or press Enter."),
+    ).toBeTruthy();
+    expect(within(search).queryByRole("navigation", { name: "Categories" })).toBeNull();
+
+    const field = within(search).getByRole("textbox", { name: `Search ${mode}` });
+    fireEvent.change(field, { target: { value: "Missing name" } });
+    fireEvent.keyDown(field, { keyCode: KEY.ENTER });
+    await vi.waitFor(async () => {
+      await settle(0);
+      expect(
+        within(search).getByRole("heading", { name: "No results for Missing name" }),
+      ).toBeTruthy();
+    });
+    expect(within(search).queryByRole("navigation", { name: "Categories" })).toBeNull();
+    expect(within(search).getByText("Check the spelling or try another search.")).toBeTruthy();
+    expect(
+      within(search).queryByText("The provider has no titles in this catalogue."),
+    ).toBeNull();
+  },
+);
+
+test.each(["Movies", "Series"] as const)(
+  "%s Search returns from details and exits on the following Back",
+  async (mode) => {
+    await mountLibrary();
+    await chooseMode(mode);
+    const rail = screen.getByRole("navigation", { name: "Categories" });
+    const heading = within(rail).getByRole("heading", { name: "Categories" });
+    expect(heading.closest(".vod-rail-heading")?.querySelector(".count")?.textContent).toBe(
+      "1",
+    );
+    const rows = rail.querySelector(".vod-rail-window")!;
+    expect(rows.children[0].classList.contains("vod-rail-heading")).toBe(true);
+    expect(rows.children[1].textContent).toContain(
+      mode === "Movies" ? "Cinema, exactly" : "Shows, exactly",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Search" }));
+    const field = screen.getByRole("textbox", { name: `Search ${mode}` });
+    fireEvent.change(field, { target: { value: "exactly" } });
+    fireEvent.keyDown(field, { keyCode: KEY.ENTER });
+    await vi.waitFor(async () => {
+      await settle(0);
+      expect(document.querySelector(".vod-search .poster-card")).toBeTruthy();
+    });
+    fireEvent.click(document.querySelector<HTMLElement>(".vod-search .poster-card")!);
+    await settle(300);
+    expect(document.querySelector(".vod-details, .series-details")).toBeTruthy();
+    expect(document.querySelector(".page-key-guide kbd[data-key='Blue']")).toBeNull();
+    press(KEY.BLUE);
+    expect(document.querySelector(".vod-details, .series-details")).toBeTruthy();
+    expect(document.querySelector(".vod-search")).toBeNull();
+
+    press(KEY.BACK);
+    await settle(300);
+    expect(document.querySelector(".vod-search .poster-card.cursor")).toBeTruthy();
+    press(KEY.BACK);
+    await settle(300);
+    expect(document.querySelector(".vod-search")).toBeNull();
+    expect(document.querySelector(".vod-catalogue")).toBeTruthy();
+  },
+);
+
+test("a category remains selectable when no Movie title matches", async () => {
+  await mountLibrary({
+    movieCategories: [{ category_id: "10", category_name: "Archive" }],
+    movies: [movie(100, "Unrelated title")],
+  });
+  await chooseMode("Movies");
+  fireEvent.click(screen.getByRole("button", { name: "Search" }));
+  const field = screen.getByRole("textbox", { name: "Search Movies" });
+  fireEvent.change(field, { target: { value: "Archive" } });
+  fireEvent.keyDown(field, { keyCode: KEY.ENTER });
+  await settle(300);
+  await vi.waitFor(async () => {
+    await settle(0);
+    expect(
+      document.querySelector(".vod-search-content .vod-search-state")?.textContent,
+    ).toContain("No results for Archive");
+  });
+  press(KEY.DOWN);
+  expect(document.querySelector(".search-categories .row.cursor .row-label")?.textContent).toBe(
+    "Archive",
+  );
+  press(KEY.ENTER);
+  await settle(300);
+  expect(document.querySelector(".vod-search")).toBeNull();
+  expect(document.querySelector(".poster-card.cursor .poster-title")?.textContent).toBe(
+    "Unrelated title",
+  );
+});
+
+test.each(["Movies", "Series"] as const)(
+  "colour shortcuts hide categories, toggle favourites and search in %s",
+  async (mode) => {
+    const { useLineup, usePersonal } = await mountLibrary();
+    await chooseMode(mode);
+    const name = mode === "Movies" ? "Cinema, exactly" : "Shows, exactly";
+    const category = screen.getByRole("button", { name });
+    fireEvent.click(category);
+    await settle(300);
+    press(KEY.LEFT);
+    press(KEY.RED);
+    await vi.waitFor(async () => {
+      await settle(0);
+      expect(useLineup.getState().categories.find((row) => row.name === name)?.hidden).toBe(
+        true,
+      );
+    });
+    expect(document.querySelector(".vod-category.category-hidden")).toBeTruthy();
+    press(KEY.RED);
+    await vi.waitFor(async () => {
+      await settle(0);
+      expect(useLineup.getState().categories.find((row) => row.name === name)?.hidden).toBe(
+        false,
+      );
+    });
+    press(KEY.RIGHT);
+    press(KEY.GREEN);
+    expect(
+      usePersonal
+        .getState()
+        .favourites.some((item) => item.kind === (mode === "Movies" ? "movie" : "series")),
+    ).toBe(true);
+    press(KEY.GREEN);
+    expect(
+      usePersonal
+        .getState()
+        .favourites.some((item) => item.kind === (mode === "Movies" ? "movie" : "series")),
+    ).toBe(false);
+    press(KEY.BLUE);
+    await settle(0);
+    expect(screen.getByRole("textbox", { name: `Search ${mode}` })).toBeTruthy();
+    expect(
+      screen.getByRole("textbox", { name: `Search ${mode}` }).getAttribute("placeholder"),
+    ).toBe("Search");
+    expect(document.querySelector(".vod-search kbd[data-key='Blue']")).toBeTruthy();
+  },
+);
 
 test("hovering another category keeps displayed grid artwork loading", async () => {
   const poster = "https://images.example/visible-grid-poster.jpg";
@@ -208,7 +392,10 @@ test("hovering another category keeps displayed grid artwork loading", async () 
     });
     const category = screen.getByRole("button", { name: /Unopened category/ });
     fireEvent.pointerEnter(category);
-    expect(category.classList.contains("cursor")).toBe(true);
+    await settle(32);
+    expect(
+      screen.getByRole("button", { name: /Unopened category/ }).classList.contains("cursor"),
+    ).toBe(true);
     expect(release.mock.calls.some(([request]) => request.url === poster)).toBe(false);
   } finally {
     load.mockRestore();
@@ -238,15 +425,7 @@ test.each([
     .playlists.find((playlist) => playlist.name === "Replacement");
   if (!replacement) throw new Error("expected a replacement playlist");
   const starts = playCalls.length;
-  fireEvent.click(screen.getByRole("button", { name: /^Playlists,/ }));
-  await vi.waitFor(
-    async () => {
-      await settle(0);
-      expect(document.querySelector(".app")?.getAttribute("data-page-transition")).toBe("idle");
-    },
-    { interval: 10 },
-  );
-  fireEvent.click(screen.getByRole("menuitemradio", { name: "Replacement" }));
+  act(() => useSettings.getState().set("activePlaylistId", replacement.id));
   await vi.waitFor(
     async () => {
       await settle(0);
@@ -577,9 +756,12 @@ test.each(["Movies", "Series"] as const)(
     expect(favourite.classList.contains("vod-action")).toBe(true);
     expect(favourite.parentElement?.classList.contains("vod-actions")).toBe(true);
     expect(favourite.parentElement?.lastElementChild).toBe(favourite);
-    expect(favourite.textContent).toContain("Add to Favourites");
+    expect(favourite.textContent).toBe("Favourites");
     const actions = document.querySelectorAll(".vod-actions .vod-action");
-    for (let index = 1; index < actions.length; index++) press(KEY.DOWN);
+    expect(actions.length).toBeGreaterThan(1);
+    press(KEY.DOWN);
+    press(KEY.RIGHT);
+    if (mode === "Series") press(KEY.RIGHT);
     expect(favourite.classList.contains("cursor")).toBe(true);
 
     press(KEY.ENTER);
@@ -915,6 +1097,7 @@ test("VOD categories remain rendered while application navigation expands", asyn
 });
 
 test("VOD browsing hides only the categories known to be empty", async () => {
+  vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(400);
   const movieCategories = [
     { category_id: "10", category_name: "Cinema, exactly" },
     { category_id: "30", category_name: "Empty, exactly", count: 0 },
@@ -955,32 +1138,21 @@ test("VOD browsing hides only the categories known to be empty", async () => {
     fetchImplementation: libraryFetch({ movieCategories }),
     appearance: { hideEmptyCategories: false },
   });
-  await settle(300);
+  await chooseMode("Movies");
 
   expect(railNames()).toContain("Empty, exactly");
   expect(railNames()).toContain("Unknown, exactly");
 });
 
 test("the content pane reports busy while a category commit is pending", async () => {
-  const { useLineup } = await mountLibrary();
+  await mountLibrary({
+    movieCategories: [
+      ...categories.movie,
+      { category_id: "11", category_name: "Docs, exactly" },
+    ],
+    movies: [movie(100), { ...movie(101), category_id: "11" }],
+  });
   await chooseMode("Movies");
-
-  act(() =>
-    useLineup.setState({
-      revision: useLineup.getState().revision + 1,
-      categories: [
-        ...useLineup.getState().categories,
-        {
-          key: "movie:11",
-          name: "Docs, exactly",
-          kind: "movie",
-          channels: [],
-          hidden: false,
-          personal: false,
-        },
-      ],
-    }),
-  );
 
   const pane = () => document.querySelector(".vod-pane");
   expect(pane()?.getAttribute("aria-busy")).toBe("false");
@@ -1110,7 +1282,9 @@ test("VOD Search keeps poster columns compact like category grids", () => {
   expect(styles).toMatch(
     /\.poster-grid-row \{[^}]*grid-template-columns:\s*repeat\(var\(--poster-columns\),\s*var\(--poster-w\)\);[^}]*justify-content:\s*space-between;/,
   );
-  expect(styles).toMatch(/\.vod-search \.poster-grid-row \{[^}]*justify-content:\s*center;/);
+  expect(styles).toMatch(
+    /\.vod-search \.poster-grid-row \{[^}]*justify-content:\s*space-between;/,
+  );
 });
 
 test("every display edge uses the same 48px safe margin", () => {
@@ -1143,7 +1317,7 @@ test("VOD category rows keep balanced physical insets beside the divider", () =>
   );
   expect(styles).not.toMatch(/\.vod-category-divider \{[^}]*margin:/);
   expect(styles).toMatch(
-    /\.vod-synthetic-divider \{[^}]*height:\s*1px;[^}]*margin:\s*var\(--s2\) 0;/,
+    /\.vod-rail-heading \{[^}]*height:\s*var\(--vod-rail-row\);[^}]*margin-bottom:\s*0;/,
   );
 });
 
@@ -1216,7 +1390,7 @@ test("Live headers use the VOD header bar and inset divider treatment", () => {
     /\.pane-head::after \{[\s\S]*left:\s*var\(--content-gutter\);[\s\S]*right:\s*var\(--content-gutter\);[\s\S]*background:\s*var\(--line\);/,
   );
   expect(styles).toMatch(
-    /\.pane-head \{[^}]*padding-left:\s*var\(--content-gutter\);[^}]*padding-right:\s*var\(--content-gutter\);[^}]*padding-bottom:\s*var\(--s2\);[^}]*border-bottom:\s*0;/,
+    /\.pane-head \{[^}]*padding-left:\s*var\(--content-gutter\);[^}]*padding-right:\s*var\(--content-gutter\);[^}]*padding-top:\s*var\(--s2\);[^}]*padding-bottom:\s*0;[^}]*border-bottom:\s*0;/,
   );
   expect(styles).not.toMatch(/\.pane-head \{[^}]*min-height:/);
 });
@@ -1436,7 +1610,7 @@ test("VOD Search inline start preserves Search while application navigation owns
 
   expect(document.querySelector(".vod-search")).toBeTruthy();
   expect(document.querySelector(".app-navigation.expanded")).toBeTruthy();
-  expect(document.activeElement).toBe(screen.getByRole("button", { name: "Search Movies" }));
+  expect(document.activeElement).toBe(screen.getByRole("button", { name: "Movies" }));
 
   press(KEY.RIGHT);
   await settle(0);
@@ -1487,7 +1661,9 @@ test("VOD Search applies queries only after Search or Enter", async () => {
   await settle(500);
   expect(document.querySelector(".vod-search .poster-card")).toBeNull();
   expect(document.querySelector(".vod-search .search .count")).toBeNull();
-  expect(screen.getByText("Type a title, then select Search or press Enter.")).toBeTruthy();
+  expect(
+    screen.getByText("Type a title or category, then select Search or press Enter."),
+  ).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Search", exact: true }));
   await settle(200);
 
@@ -1504,7 +1680,7 @@ test("VOD Search applies queries only after Search or Enter", async () => {
   fireEvent.keyDown(field, { keyCode: KEY.ENTER });
   await settle(200);
   expect(screen.getByRole("heading", { name: "No results for No match" })).toBeTruthy();
-  expect(screen.getByText("Check the spelling or try a shorter title.")).toBeTruthy();
+  expect(screen.getByText("Check the spelling or try another search.")).toBeTruthy();
 });
 
 test("Search grid owns focus and exits to application navigation", async () => {
@@ -1529,7 +1705,7 @@ test("Search grid owns focus and exits to application navigation", async () => {
   press(KEY.LEFT);
   await settle(0);
   expect(document.querySelector(".app-navigation.expanded")).toBeTruthy();
-  expect(document.activeElement).toBe(screen.getByRole("button", { name: "Search Movies" }));
+  expect(document.activeElement).toBe(screen.getByRole("button", { name: "Movies" }));
 });
 
 test("Search Retry reloads the current nonempty query without a category id", async () => {
@@ -1643,11 +1819,11 @@ test("horizontal indicators stay hidden until scrolling and withdraw after movem
   expect(document.querySelector(".scrollbar.show")).toBeNull();
 });
 
-test("scroll tracks use symmetric insets and are invisible while inactive", () => {
+test("vertical scroll tracks overlay the lists with symmetric insets", () => {
   const css = readFileSync("src/styles/app.css", "utf8");
-  expect(css).toMatch(/\.scrollbar \{[^}]*opacity:\s*0;/);
+  expect(css).toMatch(/\.scrollbar \{[^}]*position:\s*absolute;/);
   expect(css).toMatch(
-    /\.scrollbar\.vertical \{[^}]*top:\s*var\(--s2\);[^}]*bottom:\s*var\(--s2\);/,
+    /\.scrollbar\.vertical \{[^}]*display:\s*block;[^}]*top:\s*var\(--s2\);[^}]*bottom:\s*var\(--s2\);[^}]*width:\s*2px;[^}]*opacity:\s*1;/,
   );
 });
 
@@ -1661,7 +1837,7 @@ test("Movie details Back restores the exact poster origin", async () => {
   press(KEY.UP);
   press(KEY.LEFT);
   await settle(0);
-  expect(document.querySelector(".app-navigation.expanded")).toBeTruthy();
+  expect(document.querySelector(".app-navigation.expanded")).toBeNull();
   press(KEY.RIGHT);
   await settle(0);
   press(KEY.BACK);
@@ -1671,12 +1847,13 @@ test("Movie details Back restores the exact poster origin", async () => {
   expect(document.querySelector(".poster-card.cursor")?.textContent).toContain("Film, exactly");
 });
 
-test("clicking active Movies returns from details to the Movie grid", async () => {
+test("Movie details hide application navigation and Back restores the grid", async () => {
   await mountLibrary();
   await chooseMode("Movies");
   await chooseButton(/Film, exactly/);
 
-  fireEvent.click(screen.getByRole("button", { name: "Movies" }));
+  expect(screen.queryByRole("navigation", { name: "Application navigation" })).toBeNull();
+  press(KEY.BACK);
   await settle(0);
 
   expect(document.querySelector(".vod-details")).toBeNull();
@@ -1684,12 +1861,13 @@ test("clicking active Movies returns from details to the Movie grid", async () =
   expect(document.querySelector(".app-navigation.expanded")).toBeNull();
 });
 
-test("clicking active Series returns from details to the Series grid", async () => {
+test("Series details hide application navigation and Back restores the grid", async () => {
   await mountLibrary();
   await chooseMode("Series");
   await chooseButton(/Series, exactly/);
 
-  fireEvent.click(screen.getByRole("button", { name: "Series" }));
+  expect(screen.queryByRole("navigation", { name: "Application navigation" })).toBeNull();
+  press(KEY.BACK);
   await settle(0);
 
   expect(document.querySelector(".series-details")).toBeNull();
@@ -1722,24 +1900,31 @@ test("switching VOD modes closes search instead of reusing its query", async () 
   expect(document.querySelector(".vod-screen[data-mode='movie'] .vod-catalogue")).toBeTruthy();
 });
 
-test("Search from details closes details and opens the scoped search", async () => {
+test("Search stays unavailable in details and opens after returning to the browser", async () => {
   await mountLibrary();
   await chooseMode("Movies");
   await chooseButton(/Film, exactly/);
 
-  fireEvent.click(screen.getByRole("button", { name: /^Search/ }));
+  press(KEY.BLUE);
+  expect(document.querySelector(".vod-details")).toBeTruthy();
+  expect(screen.queryByRole("button", { name: /^Search/ })).toBeNull();
+  expect(document.querySelector(".vod-details kbd[data-key='Blue']")).toBeNull();
+  press(KEY.BACK);
+  await settle(0);
+  fireEvent.click(screen.getByRole("button", { name: "Search" }));
   await settle(0);
 
   expect(document.querySelector(".vod-details")).toBeNull();
   expect(screen.getByRole("textbox", { name: /Search Movies/ })).toBeTruthy();
 });
 
-test("Down from the focused Play action reaches the full Favourite action", async () => {
+test("Down and Right from Play reach the Favourite action", async () => {
   await mountLibrary();
   await chooseMode("Movies");
   await chooseButton(/Film, exactly/);
 
   press(KEY.DOWN);
+  press(KEY.RIGHT);
   press(KEY.ENTER);
 
   expect(screen.getByRole("button", { name: "Remove from Favourites" })).toBeTruthy();
@@ -1772,24 +1957,33 @@ test("failed Movie details expose one local Retry action", async () => {
   expect(screen.getByText("A provider supplied plot")).toBeTruthy();
 });
 
-test("Right activates the focused Series Play action like OK", async () => {
+test("Series Play requires OK and ignores Right", async () => {
   await mountLibrary();
   await chooseMode("Series");
   await chooseButton(/Series, exactly/);
 
   press(KEY.RIGHT);
   await settle(0);
+  expect(playCalls).toHaveLength(0);
+  press(KEY.ENTER);
+  await settle(0);
 
   expect(playCalls).toHaveLength(1);
 });
 
-test("Right activates the focused Episodes action like OK", async () => {
+test("Episodes requires OK and ignores Right", async () => {
   await mountLibrary();
   await chooseMode("Series");
   await chooseButton(/Series, exactly/);
   press(KEY.DOWN);
 
   press(KEY.RIGHT);
+  await settle(0);
+  expect(document.querySelector(".series-details")?.classList.contains("panel-open")).toBe(
+    false,
+  );
+  press(KEY.LEFT);
+  press(KEY.ENTER);
   await settle(0);
 
   expect(document.querySelector(".series-details")?.classList.contains("panel-open")).toBe(
@@ -2886,7 +3080,7 @@ test("loading Movie details keeps the provider title without a Back button", () 
   expect(screen.getByText("Provider title")).toBeTruthy();
 });
 
-test("Movie actions do not add a duplicate information drawer", () => {
+test("Movie actions retain information even without provider metadata", () => {
   const progress = {
     itemKey: "movie:1",
     playlistId: "pl-1",
@@ -2898,9 +3092,9 @@ test("Movie actions do not add a duplicate information drawer", () => {
     name: "Movie",
     logo: "",
   };
-  expect(movieActions(undefined, false)).toEqual(["play", "favourite"]);
-  expect(movieActions(undefined, true)).toEqual(["play", "favourite"]);
-  expect(movieActions(progress, true)).toEqual(["resume", "restart", "favourite"]);
+  expect(movieActions(undefined, false)).toEqual(["play", "info", "favourite"]);
+  expect(movieActions(undefined, true)).toEqual(["play", "info", "favourite"]);
+  expect(movieActions(progress, true)).toEqual(["resume", "restart", "info", "favourite"]);
 });
 
 test("Movie details keeps Favourite in its action column and emits explicit resume choices", () => {
@@ -2971,10 +3165,10 @@ test("Movie details keeps Favourite in its action column and emits explicit resu
   expect([...(tags?.children ?? [])].map((child) => child.textContent?.trim())).toEqual([
     "2026",
     "8.4",
-    "Drama",
     "120 min",
     "",
   ]);
+  expect(document.querySelector(".vod-detail-genres")?.textContent).toBe("Drama");
   expect(tags?.querySelector('img[alt="Italy"]')?.getAttribute("src")).toBe(
     `${import.meta.env.BASE_URL}flags/it.svg`,
   );
@@ -3003,7 +3197,7 @@ test("detail titles wrap and the copy panel aligns with the poster", () => {
     /\.vod-hero \{[^}]*grid-template-columns:\s*minmax\(0, 1fr\) minmax\(0, 1fr\);[^}]*column-gap:\s*var\(--safe-x\);/,
   );
   expect(styles).toMatch(
-    /\.vod-copy-panel \{[^}]*grid-column:\s*1;[^}]*height:\s*100%;[^}]*overflow-y:\s*auto;/,
+    /\.vod-copy-panel \{[^}]*grid-column:\s*1;[^}]*height:\s*100%;[^}]*overflow:\s*hidden;/,
   );
   expect(styles).toMatch(
     /\.series-poster \{[\s\S]*top:\s*50%;[\s\S]*transform:\s*translateY\(-50%\) scale\(1\);/,
@@ -3076,10 +3270,12 @@ test("Series details show the season count in the shared metadata tag row", () =
   expect([...(tags?.children ?? [])].map((child) => child.textContent?.trim())).toEqual([
     "2016",
     "8.6",
-    "Drama, Documentary",
     "3 Seasons",
     "",
   ]);
+  expect(
+    [...document.querySelectorAll(".vod-detail-genres > *")].map((genre) => genre.textContent),
+  ).toEqual(["Drama", "Documentary"]);
   expect(tags?.querySelector('img[alt="Italy"]')?.getAttribute("src")).toBe(
     `${import.meta.env.BASE_URL}flags/it.svg`,
   );
@@ -3241,7 +3437,7 @@ test.each([
   { mode: "Movies" as const, scope: "Movies", query: "Film", marker: "Film, exactly" },
   { mode: "Series" as const, scope: "Series", query: "Series", marker: "Series, exactly" },
 ])(
-  "VOD Search Enter stays in the field and never submits early ($mode)",
+  "VOD Search Enter applies the query without starting playback ($mode)",
   async ({ mode, scope, query, marker }) => {
     await mountLibrary();
     await chooseMode(mode);
@@ -3250,37 +3446,29 @@ test.each([
     const field = screen.getByRole("textbox", {
       name: new RegExp(`Search ${scope}`),
     }) as HTMLInputElement;
-    const count = () => document.querySelector(".vod-search-bar .count");
+    const count = () =>
+      document.querySelector(".vod-search-results .search-content-heading .count");
     const posters = () => document.querySelector(".vod-search .poster-card");
 
     fireEvent.input(field, { target: { value: query } });
     const plays = playCalls.length;
-    // Enter before the debounce settles submits nothing and moves nothing.
-    fireEvent.keyDown(field, { keyCode: KEY.ENTER });
-    press(KEY.ENTER);
-    await settle(0);
-    expect(document.activeElement).toBe(field);
-    expect(field.value).toBe(query);
-    expect(count()).toBeNull();
     expect(posters()).toBeNull();
+    press(KEY.ENTER);
+    await settle(250);
+    expect(document.activeElement).toBe(document.querySelector(".vod-search-submit"));
+    expect(field.value).toBe(query);
     expect(playCalls.length).toBe(plays);
 
-    // The debounce still applies the query on its own schedule.
-    await settle(250);
     expect(count()).toBeTruthy();
     expect(posters()?.textContent).toContain(marker);
 
-    // The explicit Search button still submits on demand: a changed query
-    // hides the count until it is applied, and the button applies it at once.
     fireEvent.input(field, { target: { value: `${query} ` } });
     await settle(0);
-    expect(count()).toBeNull();
     fireEvent.click(document.querySelector<HTMLButtonElement>(".vod-search-submit")!);
     await settle(0);
     expect(count()).toBeTruthy();
 
-    // Down reaches a result and Enter there still activates it.
-    fireEvent.keyDown(field, { keyCode: KEY.DOWN });
+    press(KEY.DOWN);
     await settle(0);
     const card = document.querySelector<HTMLButtonElement>(".vod-search .poster-card");
     expect(document.activeElement).toBe(card?.closest('[role="grid"]'));

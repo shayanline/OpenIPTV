@@ -66,7 +66,7 @@ const labels = {
   searchPlaylists: "Search playlists",
   hideEmptyCategories: "Hide empty categories",
   hideEmptyCategoriesHint: "Categories with nothing in them are left out.",
-  playlistShortcut: "Playlist Shortcut",
+  playlistShortcut: "Playlist shortcut",
   playlistShortcutHint: "Show the active playlist in the main menu for quick switching.",
   showLive: "Live TV",
   showMovies: "Movies",
@@ -13674,7 +13674,7 @@ test.each(["session", "source"])(
   },
 );
 
-test("content descriptions name sections in the main menu and search results", async () => {
+test("content descriptions name sections in the main menu", async () => {
   localStorage.setItem("openiptv.remote", JSON.stringify({ deviceId: "p", credential: "c" }));
   vi.stubGlobal(
     "fetch",
@@ -13690,7 +13690,7 @@ test("content descriptions name sections in the main menu and search results", a
     const control = document.querySelector<HTMLInputElement>(`[data-setting="${key}"]`)!;
     expect(
       control.closest(".content-setting")?.querySelector(".setting-hint")?.textContent,
-    ).toBe(`Include ${content} in the main menu and search results.`);
+    ).toBe(`Show ${content} in the main menu.`);
   }
 });
 

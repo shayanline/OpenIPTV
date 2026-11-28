@@ -9,7 +9,7 @@ import {
   useState,
 } from "react";
 import { Icon } from "../components/Icon";
-import { NavigationGuide } from "../components/KeyGuide";
+import { NavigationGuide, type Guide } from "../components/KeyGuide";
 import { PlaybackDetails } from "../components/playback/PlaybackDetails";
 import { PosterGrid, type PosterItem } from "../components/vod/PosterGrid";
 import { VodCategoryRail } from "../components/vod/VodCategoryRail";
@@ -20,6 +20,7 @@ import { VodSearch } from "../components/vod/VodSearch";
 import { pointerOnly } from "../hooks/usePointerAwake";
 import { useLocale } from "../hooks/useLocale";
 import { KEY } from "../hooks/useRemote";
+import { useLongPress } from "../hooks/useLongPress";
 import {
   useVodNavigation,
   type VodNavigation,
@@ -28,7 +29,7 @@ import {
 } from "../hooks/useVodNavigation";
 import { posterColumnsForViewport } from "../hooks/useWindowed";
 import { recordFromEntries } from "../services/record";
-import { searchVodItems, type SearchResults } from "../services/search";
+import { searchNamedItems, searchVodItems, type SearchResults } from "../services/search";
 import type { AppMode, SurfaceKeyHandler } from "../services/surfaceStack";
 import type {
   XtreamCategory,
@@ -45,7 +46,7 @@ import {
   type VodCategoryRow,
   useLibrary,
 } from "../stores/library";
-import { useLineup } from "../stores/lineup";
+import { applyLineupMutation, useLineup } from "../stores/lineup";
 import {
   type FavouriteSnapshot,
   type ResolvedPlaybackProgress,
@@ -87,6 +88,8 @@ export interface VodScreenProps {
   playbackPending: boolean;
   onCancelPending: () => void;
   onAppNavigationFocus: () => void;
+  onContentFocus?: () => void;
+  onAnnounce?: (message: string) => void;
   searchRequest: { id: number; mode: AppMode; open: boolean };
   onSearchClosed?: (mode: AppMode, requestId: number) => void;
   onPageReady?: (mode: "movie" | "series") => void;
@@ -142,6 +145,9 @@ export function applyVodView<T extends VodViewItem>(items: readonly T[], sort: V
   });
 }
 
+const searchColumnsForViewport = (width: number) =>
+  width < 1080 ? 1 : width < 1280 ? 2 : posterColumnsForViewport(width);
+
 const posterItems = (
   items: readonly LibraryItem[],
   favourites: ReadonlySet<string>,
@@ -173,6 +179,8 @@ export const VodScreen = forwardRef<VodScreenHandle, VodScreenProps>(function Vo
     playbackPending,
     onCancelPending,
     onAppNavigationFocus,
+    onContentFocus,
+    onAnnounce,
     searchRequest,
     onSearchClosed,
     onPageReady,
@@ -257,6 +265,12 @@ export const VodScreen = forwardRef<VodScreenHandle, VodScreenProps>(function Vo
   const lastPlayed = usePersonal((state) => (visible ? state.lastPlayed : null));
   const toggleFavourite = usePersonal((state) => state.toggleFavourite);
   const lineupRevision = useLineup((state) => (visible ? state.revision : 0));
+  const [revealHidden, setRevealHidden] = useState(false);
+  const [softHidden, setSoftHidden] = useState<string[]>([]);
+  useEffect(() => {
+    setRevealHidden(false);
+    setSoftHidden([]);
+  }, [mode, playlist.id]);
   const hideEmptyCategories = useSettings((state) => state.hideEmptyCategories);
   const movieInfoOverflow = false;
   const [searchAttempt, setSearchAttempt] = useState(0);
@@ -268,6 +282,9 @@ export const VodScreen = forwardRef<VodScreenHandle, VodScreenProps>(function Vo
   } | null>(null);
   const [posterColumns, setPosterColumns] = useState(() =>
     posterColumnsForViewport(window.innerWidth),
+  );
+  const [searchColumns, setSearchColumns] = useState(() =>
+    searchColumnsForViewport(window.innerWidth),
   );
   const [sortByMode, setSortByMode] = useState<Record<"movie" | "series", VodSort>>({
     movie: "provider",
@@ -308,11 +325,15 @@ export const VodScreen = forwardRef<VodScreenHandle, VodScreenProps>(function Vo
     categoryResources,
     viewedItemsByCategory,
     itemKeysByCategory,
-    searchIndex: catalogueIndex,
-  } = useMemo(() => { // biome-ignore lint/correctness/useExhaustiveDependencies: The getters read catalogue resources, personal overlays, lineup order and locale outside their arguments.
-    const categories = visible
-      ? categoriesFor(kind).filter((category) => !hideEmptyCategories || category.count !== 0)
-      : EMPTY_VOD_CATEGORIES;
+  } = useMemo(() => {
+    // biome-ignore lint/correctness/useExhaustiveDependencies: The getters read catalogue resources, personal overlays, lineup order and locale outside their arguments.
+    const allCategories = visible ? categoriesFor(kind, true) : EMPTY_VOD_CATEGORIES;
+    const retained = new Set(softHidden);
+    const categories = allCategories.filter(
+      (category) =>
+        (!category.hidden || revealHidden || retained.has(category.key)) &&
+        (!hideEmptyCategories || category.count !== 0),
+    );
     const categoryResources = recordFromEntries(
       categories.map((category) => [category.key, itemsFor(kind, category.key)] as const),
     );
@@ -332,7 +353,6 @@ export const VodScreen = forwardRef<VodScreenHandle, VodScreenProps>(function Vo
       categoryResources,
       viewedItemsByCategory,
       itemKeysByCategory,
-      searchIndex: visible ? itemsFor(kind, `${kind}:all`) : EMPTY_LIBRARY_RESOURCE,
     };
   }, [
     visible,
@@ -349,6 +369,8 @@ export const VodScreen = forwardRef<VodScreenHandle, VodScreenProps>(function Vo
     lineupRevision,
     locale,
     hideEmptyCategories,
+    revealHidden,
+    softHidden,
   ]);
 
   const hintedDetailKey = navigationRef.current?.state.details?.itemKey ?? "";
@@ -429,8 +451,35 @@ export const VodScreen = forwardRef<VodScreenHandle, VodScreenProps>(function Vo
       return cached;
     };
   }, [kind, queryReply, searchIndex.value]);
+  const categorySearchForQuery = useMemo(() => {
+    const searchable = categories.filter((category) => category.source === "provider");
+    let cached:
+      | { query: string; result: SearchResults<VodCategoryRow>; keys: string[] }
+      | undefined;
+    return (query: string) => {
+      if (!cached || cached.query !== query) {
+        const result = searchNamedItems(searchable, query);
+        cached = { query, result, keys: result.matches.map((category) => category.key) };
+      }
+      return cached;
+    };
+  }, [categories]);
+  const openSearchCategory = useCallback(
+    (key: string) => {
+      const index = categoryKeys.indexOf(key);
+      if (index < 0) return;
+      navigationRef.current?.closeSearch();
+      navigationRef.current?.selectCategory(index);
+    },
+    [categoryKeys],
+  );
 
+  const categoryHeaderIndex = categories.findIndex(
+    (category) => category.source === "provider" && category.key !== `${kind}:all`,
+  );
   const navigation = useVodNavigation({
+    active: active && visible,
+    inputScope: playlist.id,
     mode,
     direction,
     onDetailsTransition: (commit) => {
@@ -439,11 +488,13 @@ export const VodScreen = forwardRef<VodScreenHandle, VodScreenProps>(function Vo
     },
     headerKeys: ["live", "movie", "series", "search", "settings"],
     categoryKeys,
+    categoryHeaderIndex,
     itemKeys: itemKeysByCategory[hintedDisplayed] ?? [],
-    posterColumns,
+    posterColumns: navigationRef.current?.state.search ? searchColumns : posterColumns,
     itemKeysByCategory,
     searchItemKeys: [],
     searchKeysForQuery: (query) => searchForQuery(query).keys,
+    searchCategoryKeysForQuery: (query) => categorySearchForQuery(query).keys,
     seasons: hintedSeries?.seasons ?? [],
     episodeKeys: episodeKeysBySeason[String(hintedSeason)] ?? [],
     episodeKeysBySeason,
@@ -481,6 +532,13 @@ export const VodScreen = forwardRef<VodScreenHandle, VodScreenProps>(function Vo
     },
     onPosterSettled: () => undefined,
     onActivate: (state) => {
+      if (state.zone === "search-categories") {
+        const category = categorySearchForQuery(state.search?.applied ?? "").result.matches[
+          state.search?.categoryIndex ?? 0
+        ];
+        if (category) openSearchCategory(category.key);
+        return;
+      }
       if (state.zone === "header") {
         if (playbackPending) onCancelPending();
         if (state.headerControl === "live") onReturnLive();
@@ -542,6 +600,28 @@ export const VodScreen = forwardRef<VodScreenHandle, VodScreenProps>(function Vo
   const categoryItems = viewedItemsByCategory[displayedKey] ?? categoryResource.value;
   const appliedQuery = navigation.state.search?.applied ?? "";
   const searchResult = searchForQuery(appliedQuery).result;
+  const categorySearchResult = categorySearchForQuery(appliedQuery).result;
+  const searchCategoryRows = useMemo(
+    () =>
+      categorySearchResult.matches.map((category) => ({
+        ...category,
+        hidden: category.hidden ?? false,
+      })),
+    [categorySearchResult.matches],
+  );
+  const selectSearchCategory = useCallback(
+    (index: number) => {
+      const category = categorySearchResult.matches[index];
+      if (category) openSearchCategory(category.key);
+    },
+    [categorySearchResult.matches, openSearchCategory],
+  );
+  const wheelSearchCategories = useCallback((direction: -1 | 1) => {
+    const current = navigationRef.current;
+    if (current?.state.search) {
+      current.focusSearchCategory((current.state.search.categoryIndex ?? 0) + direction);
+    }
+  }, []);
   const searchResource: LibraryResource<LibraryItem[]> = {
     ...searchIndex,
     state:
@@ -743,7 +823,10 @@ export const VodScreen = forwardRef<VodScreenHandle, VodScreenProps>(function Vo
   };
 
   useEffect(() => {
-    const resize = () => setPosterColumns(posterColumnsForViewport(window.innerWidth));
+    const resize = () => {
+      setPosterColumns(posterColumnsForViewport(window.innerWidth));
+      setSearchColumns(searchColumnsForViewport(window.innerWidth));
+    };
     window.addEventListener("resize", resize);
     return () => window.removeEventListener("resize", resize);
   }, []);
@@ -801,6 +884,50 @@ export const VodScreen = forwardRef<VodScreenHandle, VodScreenProps>(function Vo
     if (!categories.length || navigation.state.selectedCategoryKey) return;
     navigation.selectCategory(0, false);
   }, [categories.length, navigation.selectCategory, navigation.state.selectedCategoryKey]);
+
+  useLayoutEffect(() => {
+    const current = navigationRef.current;
+    if (
+      !visible ||
+      !current ||
+      current.state.search ||
+      current.state.details ||
+      !categoryKeys.length ||
+      !current.state.selectedCategoryKey ||
+      categoryKeys.includes(current.state.selectedCategoryKey)
+    )
+      return;
+    current.selectCategory(
+      Math.min(current.state.memories[mode].railIndex, categoryKeys.length - 1),
+      false,
+    );
+  }, [
+    visible,
+    categoryKeys,
+    mode,
+    navigation.state.selectedCategoryKey,
+    navigation.state.search,
+    navigation.state.details,
+  ]);
+
+  useLayoutEffect(() => {
+    const current = navigationRef.current;
+    if (
+      !current ||
+      current.state.search ||
+      current.state.details ||
+      !current.state.selectedItemKey
+    )
+      return;
+    if (!categoryItems.some((item) => item.key === current.state.selectedItemKey)) {
+      current.reconcileItems(current.state.selectedItemKey);
+    }
+  }, [
+    categoryItems,
+    navigation.state.selectedItemKey,
+    navigation.state.search,
+    navigation.state.details,
+  ]);
 
   useEffect(() => {
     if (
@@ -910,6 +1037,79 @@ export const VodScreen = forwardRef<VodScreenHandle, VodScreenProps>(function Vo
     onDetailsOpenChange?.(visible && detailsOpen);
   }, [detailsOpen, onDetailsOpenChange, visible]);
 
+  const toggleCategoryVisibility = useCallback(() => {
+    const current = navigationRef.current?.state;
+    if (current?.zone !== "rail") return;
+    const lineup = useLineup.getState();
+    if (lineup.playlistId !== playlist.id) return;
+    const row = categories.find((category) => category.key === current.selectedCategoryKey);
+    if (!row || row.source !== "provider" || row.key === `${kind}:all`) return;
+    if (!row.hidden && !revealHidden) {
+      setSoftHidden((held) => (held.includes(row.key) ? held : [...held, row.key]));
+    }
+    void applyLineupMutation(lineup.revision, {
+      type: "category.visibility",
+      categoryKey: row.key,
+      hidden: !row.hidden,
+    }).then((result) => {
+      if (!result.ok) onAnnounce?.(t("lineup.persistenceFailed"));
+    });
+  }, [categories, kind, playlist.id, revealHidden, onAnnounce, t]);
+  useLongPress({
+    code: KEY.RED,
+    enabled: active && visible && !detailsOpen && !navigation.state.search && !cataloguePopup,
+    onShortPress: toggleCategoryVisibility,
+    onLongPress: () => {
+      setSoftHidden([]);
+      setRevealHidden((shown) => !shown);
+    },
+  });
+  const toggleCurrentFavourite = useCallback(() => {
+    const current = navigationRef.current?.state;
+    if (!current) return;
+    const store = useLibrary.getState();
+    if (store.playlistId !== playlist.id) return;
+    const item = current.details
+      ? mode === "movie"
+        ? store.movieDetails[current.details.itemKey]?.value
+        : store.seriesDetails[current.details.itemKey]?.value
+      : current.zone === "search-grid"
+        ? searchResult.matches[current.search?.itemIndex ?? 0]
+        : current.zone === "grid"
+          ? categoryItems[current.selectedItemIndex]
+          : undefined;
+    if (!item) return;
+    toggleFavourite({
+      itemKey: item.key,
+      playlistId: playlist.id,
+      kind,
+      providerId: "streamId" in item ? item.streamId : item.seriesId,
+      categoryKey: item.categoryKey,
+      name: item.name,
+      logo: item.logo,
+      ...("extension" in item && item.extension ? { extension: item.extension } : {}),
+    });
+  }, [mode, kind, playlist.id, categoryItems, searchResult.matches, toggleFavourite]);
+  const visibilityCategory =
+    navigation.state.zone === "rail" ? categories[selectedCategoryIndex] : undefined;
+  const editableCategory =
+    visibilityCategory?.source === "provider" && visibilityCategory.key !== `${kind}:all`;
+  const shortcutGuides: Guide[] = [
+    ...(!navigation.state.search && !detailsOpen && editableCategory
+      ? [
+          {
+            keys: ["Red"],
+            label: t(visibilityCategory.hidden ? "remote.lineupShow" : "remote.lineupHide"),
+          },
+        ]
+      : []),
+    ...(navigation.state.zone === "grid" ||
+    navigation.state.zone === "search-grid" ||
+    informationDetail
+      ? [{ keys: ["Green"], label: t("guide.favourite") }]
+      : []),
+    ...(!detailsOpen ? [{ keys: ["Blue"], label: t("common.search") }] : []),
+  ];
   const handleKey = useCallback<SurfaceKeyHandler>(
     (code, event) => {
       if (navigationRef.current?.state.details?.drawerOpen) return;
@@ -943,6 +1143,26 @@ export const VodScreen = forwardRef<VodScreenHandle, VodScreenProps>(function Vo
         activeElement instanceof HTMLTextAreaElement ||
         (activeElement instanceof HTMLElement && activeElement.isContentEditable);
       if (textControl && code >= KEY.SPACE && code <= 126) return;
+      if (textControl && (code === KEY.GREEN || code === KEY.BLUE)) return;
+      if (code === KEY.GREEN) {
+        event.preventDefault();
+        if (!event.repeat) toggleCurrentFavourite();
+        return;
+      }
+      if (code === KEY.BLUE) {
+        event.preventDefault();
+        if (navigationRef.current?.state.details) return;
+        if (!event.repeat) {
+          if (navigationRef.current?.state.search)
+            navigationRef.current.focusSearchControl("search-field");
+          else {
+            if (playbackPending) onCancelPending();
+            onContentFocus?.();
+            navigationRef.current?.openSearch();
+          }
+        }
+        return;
+      }
       if (playbackPending && code === KEY.STOP) {
         onCancelPending();
         event.preventDefault();
@@ -971,6 +1191,8 @@ export const VodScreen = forwardRef<VodScreenHandle, VodScreenProps>(function Vo
     },
     [
       cataloguePopup,
+      toggleCurrentFavourite,
+      onContentFocus,
       categoryLoading,
       choosePopupOption,
       detailKey,
@@ -1004,9 +1226,10 @@ export const VodScreen = forwardRef<VodScreenHandle, VodScreenProps>(function Vo
   );
 
   const openSearch = useCallback(() => {
+    onContentFocus?.();
     if (playbackPending) onCancelPending();
     navigation.openSearch();
-  }, [navigation.openSearch, onCancelPending, playbackPending]);
+  }, [navigation.openSearch, onCancelPending, onContentFocus, playbackPending]);
 
   const lastSearchRequest = useRef<typeof searchRequest | null>(null);
   const searchOwnerRef = useRef<{ mode: AppMode; id: number } | null>(null);
@@ -1199,28 +1422,37 @@ export const VodScreen = forwardRef<VodScreenHandle, VodScreenProps>(function Vo
         />
       ) : navigation.state.search ? (
         <VodSearch
+          shortcuts={shortcutGuides}
           kind={kind}
           query={navigation.state.search.query}
           appliedQuery={navigation.state.search.applied}
           fieldFocused={active && navigation.state.zone === "search-field"}
+          keyboardOpen={navigation.state.search.keyboardOpen}
           submitFocused={active && navigation.state.zone === "search-submit"}
+          retryFocused={active && navigation.state.zone === "retry"}
+          categories={searchCategoryRows}
+          categoryTotal={categorySearchResult.total}
+          categoryCursor={navigation.state.search.categoryIndex ?? 0}
+          categoriesFocused={active && navigation.state.zone === "search-categories"}
+          categoriesLoading={libraryCategories[kind].state === "loading"}
+          onCategoryFocus={navigation.focusSearchCategory}
+          onCategorySelect={selectSearchCategory}
+          onCategoryWheel={wheelSearchCategories}
           results={searchResource}
           items={searchCards}
           total={searchResult.total}
-          catalogueEmpty={catalogueIndex.state === "empty"}
           onFieldFocus={() => navigation.focusSearchControl("search-field")}
           onSubmitFocus={() => navigation.focusSearchControl("search-submit")}
           onRetryFocus={navigation.focusRetry}
           onRetry={navigation.retry}
           grid={{
             ...grid,
+            columns: searchColumns,
             windowKey: `${mode}:search:${navigation.state.search.applied}`,
             cursor: navigation.state.search.itemIndex,
             totalItems: searchCards.length,
             firstRow: navigation.state.search.firstRow,
-            focused:
-              active &&
-              (navigation.state.zone === "search-grid" || navigation.state.zone === "retry"),
+            focused: active && navigation.state.zone === "search-grid",
             onRetry: () => setSearchAttempt((attempt) => attempt + 1),
             onWindowChange: rememberSearchWindow,
             onFocus: navigation.selectItem,
@@ -1255,12 +1487,16 @@ export const VodScreen = forwardRef<VodScreenHandle, VodScreenProps>(function Vo
             selectedKey={navigation.state.selectedCategoryKey}
             focused={active && navigation.state.zone === "rail"}
             scale={scale}
+            headerIndex={categoryHeaderIndex}
             firstRow={navigation.state.memories[mode].categoryFirst}
             scrollOffset={navigation.state.memories[mode].categoryScrollOffset}
             reportWindowMetrics
             onFocus={navigation.focusCategory}
             onSelect={navigation.selectCategory}
             onWindowChange={navigation.rememberCategoryWindow}
+            onSearch={openSearch}
+            searchFocused={active && navigation.state.zone === "rail-search"}
+            onSearchFocus={() => navigation.focusCategory(-1)}
           />
           <div className="vod-pane-divider" aria-hidden="true" />
           <div
@@ -1379,6 +1615,7 @@ export const VodScreen = forwardRef<VodScreenHandle, VodScreenProps>(function Vo
       )}
       {(navigation.state.details || !navigation.state.search) && (
         <NavigationGuide
+          shortcuts={shortcutGuides}
           className={`page-key-guide${navigation.state.details ? "" : " vod-catalogue-key-guide"}`}
         />
       )}

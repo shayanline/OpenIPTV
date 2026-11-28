@@ -13,7 +13,14 @@ import {
 } from "../src/services/deviceAccess";
 import { channelRef, emptyPersonalisation, type StoredLineupV1 } from "../src/services/lineup";
 import { type Locale, translate } from "../src/services/locale";
-import { mountApp, playCalls, press, settle, XTREAM_SOURCE } from "./support/app";
+import {
+  finishPageEntry,
+  mountApp,
+  playCalls,
+  press,
+  settle,
+  XTREAM_SOURCE,
+} from "./support/app";
 
 const PLAYLIST = `#EXTM3U
 #EXTINF:-1 tvg-id="a" group-title="News",Alpha
@@ -3945,7 +3952,7 @@ test("a search with no matches keeps the scoped settings available", async () =>
   expect(document.querySelector("[data-lineup-visibility]")).toBeNull();
 });
 
-test("suspended settings cannot move or place a held reorder item", async () => {
+test("native focus outside settings cannot move or place a held reorder item", async () => {
   const writes: unknown[] = [];
   await mountApp(REORDER_PLAYLIST, {
     personalWrite: (_playlistId, value) => {
@@ -3970,7 +3977,7 @@ test("suspended settings cannot move or place a held reorder item", async () => 
   const appNav = document.querySelector<HTMLElement>('[data-navigation-action="settings"]')!;
   appNav.focus();
   await settle(0);
-  expect(document.querySelector(".sheet")?.classList.contains("input-suspended")).toBe(true);
+  expect(document.querySelector(".sheet")?.classList.contains("input-suspended")).toBe(false);
   expect(document.activeElement).toBe(appNav);
 
   press(KEY.DOWN);
@@ -3979,7 +3986,7 @@ test("suspended settings cannot move or place a held reorder item", async () => 
   expect(order()).toEqual(held);
   expect(grabbed.getAttribute("aria-pressed")).toBe("true");
   press(KEY.ENTER);
-  await settle(0);
+  await settle(700);
   expect(writes.length).toBe(writeMark);
 });
 
@@ -4389,7 +4396,7 @@ test.each([
     const pendingFrame = nextFrame;
 
     if (ending === "input loss") {
-      fireEvent.pointerEnter(document.querySelector<HTMLElement>(".app-navigation")!);
+      fireEvent.blur(window);
       await settle(0);
       frame();
     } else if (ending === "owner loss") {
@@ -4958,7 +4965,7 @@ test.each([
   },
 );
 
-test("a suspended settings body cannot open or drive an action menu", async () => {
+test("hidden application navigation cannot suspend settings menu actions", async () => {
   await mountApp(PLAYLIST);
   press(KEY.YELLOW);
   fireEvent.click(screen.getByRole("button", { name: "Content & playlists" }));
@@ -4970,12 +4977,12 @@ test("a suspended settings body cannot open or drive an action menu", async () =
   const appNav = document.querySelector<HTMLElement>('[data-navigation-action="settings"]')!;
   appNav.focus();
   await settle(0);
-  expect(document.querySelector(".sheet")?.classList.contains("input-suspended")).toBe(true);
+  expect(document.querySelector(".sheet")?.classList.contains("input-suspended")).toBe(false);
 
   fireEvent.click(screen.getByRole("button", { name: "Actions, Test" }));
   await settle(0);
-  expect(openActionMenu()).toBeNull();
-  expect(document.activeElement).toBe(appNav);
+  expect(openActionMenu()).toBeTruthy();
+  expect(document.activeElement).toBe(menuItem("refresh"));
 
   press(KEY.ESC);
   await settle(0);
@@ -4986,7 +4993,7 @@ test("a suspended settings body cannot open or drive an action menu", async () =
   expect(document.activeElement).toBe(menuItem("refresh"));
 });
 
-test("an open action menu yields to higher navigation and regains focus on resume", async () => {
+test("an open settings menu preserves selection while native focus is outside", async () => {
   await mountApp(PLAYLIST);
   press(KEY.YELLOW);
   fireEvent.click(screen.getByRole("button", { name: "Content & playlists" }));
@@ -5002,20 +5009,19 @@ test("an open action menu yields to higher navigation and regains focus on resum
   const appNav = document.querySelector<HTMLElement>('[data-navigation-action="settings"]')!;
   appNav.focus();
   await settle(0);
-  expect(document.querySelector(".sheet")?.classList.contains("input-suspended")).toBe(true);
+  expect(document.querySelector(".sheet")?.classList.contains("input-suspended")).toBe(false);
   expect(document.activeElement).toBe(appNav);
   expect(openActionMenu()).toBeTruthy();
 
-  fireEvent.click(menuItem("remove")!);
-  fireEvent.click(menuItem("reset")!);
+  press(KEY.DOWN);
   expect(openActionMenu()).toBeTruthy();
   expect(document.activeElement).toBe(appNav);
 
+  act(() => menuItem("refresh")!.focus());
   press(KEY.ESC);
   await settle(0);
   expect(document.querySelector(".sheet")?.classList.contains("input-suspended")).toBe(false);
-  expect(openActionMenu()).toBeTruthy();
-  expect(document.activeElement).toBe(menuItem("refresh"));
+  expect(openActionMenu()).toBeNull();
 });
 
 test("a programmatic row menu still opens while edge Back keeps focus", async () => {
@@ -5233,11 +5239,10 @@ test("a failed active playlist is gated while edit and retry stay reachable", as
   expect(testActivate.getAttribute("aria-disabled")).toBeNull();
   press(KEY.ESC);
   await settle(0);
-  fireEvent.click(testOpen);
-  await settle(0);
-  expect(
-    document.querySelector(".lineup-manager .lineup-row-open")?.getAttribute("aria-label"),
-  ).toBe("Open, News");
+  fireEvent.click(rowFor("Test").querySelector<HTMLButtonElement>(".pl-open")!);
+  await finishPageEntry();
+  expect(screen.getByRole("heading", { name: "Test", exact: true })).toBeTruthy();
+  expect(screen.getByText("Here you can manage your playlist content.")).toBeTruthy();
   expect(useSettings.getState().activePlaylist()?.name).toBe("Second");
 });
 
@@ -7234,7 +7239,7 @@ test("vertical content tabs route directional keys without stealing text carets"
   expect(document.activeElement).toBe(back);
   press(KEY.LEFT);
   await settle(0);
-  expect(document.activeElement?.closest(".app-navigation")).toBeTruthy();
+  expect(document.activeElement).toBe(back);
 });
 
 test("vertical content tabs mirror their horizontal routes in RTL", async () => {
@@ -7280,7 +7285,9 @@ test("vertical content tabs mirror their horizontal routes in RTL", async () => 
   );
   press(KEY.RIGHT);
   await settle(0);
-  expect(document.activeElement?.closest(".app-navigation")).toBeTruthy();
+  expect(document.activeElement).toBe(
+    document.querySelector<HTMLElement>("[data-settings-edge-back]"),
+  );
 });
 
 test("reorder motion animates real moves, carries in-flight translation and cancels cleanly", async () => {
@@ -7880,7 +7887,7 @@ test("content settings keep their switches on the landing with section explanati
 
   const switches = [...document.querySelectorAll<HTMLButtonElement>(".switch")];
   expect(switches.map((element) => element.getAttribute("aria-label"))).toEqual([
-    "Playlist Shortcut",
+    "Playlist shortcut",
     "Hide empty categories",
     "Show Live",
     "Show Movies",
@@ -8166,7 +8173,7 @@ test("playlist content tabs are usable as soon as their Settings page opens", as
   document.documentElement.style.setProperty("--t-navigation", "180ms");
   try {
     fireEvent.click(document.querySelector<HTMLButtonElement>(".pl .pl-open")!);
-    await settle(0);
+    await finishPageEntry();
     expect(document.querySelector(".sheet .content-transition-shade")).toBeNull();
     const live = screen.getByRole("tab", { name: "Live" });
     expect(document.activeElement).toBe(live);
@@ -8508,6 +8515,7 @@ test.each([
         "channels",
       );
       press(KEY.BACK);
+      await finishPageEntry();
       const expectParent = () => {
         expect(
           document.querySelector(".lineup-manager")?.getAttribute("data-lineup-scope"),
@@ -8692,7 +8700,7 @@ test("supported section descriptions name their content and menu scope", async (
       (button) => button.getAttribute("aria-label") === label,
     )!;
     expect(control.closest(".field")?.querySelector(".field-hint")?.textContent).toBe(
-      `Include ${content} in the main menu and search results.`,
+      `Show ${content} in the main menu.`,
     );
   }
 });
@@ -8707,6 +8715,7 @@ test.each(["physical", "edge OK", "edge click"])(
     try {
       const back = document.querySelector<HTMLButtonElement>("[data-settings-edge-back]")!;
       await openFirstCategory();
+      await finishPageEntry();
       expect(document.querySelector(".sheet .content-transition-shade")).toBeNull();
       expect(document.querySelector(".lineup-manager")?.getAttribute("data-lineup-scope")).toBe(
         "channels",
@@ -8720,6 +8729,7 @@ test.each(["physical", "edge OK", "edge click"])(
         if (method === "edge OK") press(KEY.ENTER);
         else fireEvent.click(back);
       }
+      await finishPageEntry();
       expect(document.querySelector(".lineup-manager")?.getAttribute("data-lineup-scope")).toBe(
         "categories",
       );

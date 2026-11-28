@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import assert from "node:assert/strict";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { TextInput } from "../src/components/TextInput";
 import { KEY } from "../src/hooks/useRemote";
 import {
@@ -66,11 +66,11 @@ async function type(text: string) {
   await settle();
 }
 
-/** Open the existing Live search flow through the shared application action. */
+/** Open Search above the Live lists. */
 async function openSearch() {
-  if (!screen.queryByRole("button", { name: /^Search/ })) {
-    press(KEY.LEFT);
-    await settle(0);
+  if (!panelOpen()) {
+    press(KEY.ENTER);
+    await settle();
   }
   fireEvent.click(screen.getByRole("button", { name: /^Search/ }));
   await settle();
@@ -85,6 +85,87 @@ afterEach(() => {
   document.documentElement.dir = "ltr";
   vi.unstubAllGlobals();
   vi.doUnmock("../src/services/player");
+});
+
+test("Live Search sits above both lists and is reachable from either", async () => {
+  await mountApp(PLAYLIST);
+  expect(document.querySelector('[data-navigation-action="search"]')).toBeNull();
+  expect(screen.getByRole("button", { name: "Search" }).classList.contains("btn")).toBe(true);
+  expect(screen.getByRole("button", { name: "Search" }).closest(".rail")).toBeNull();
+  expect(
+    screen.getByRole("button", { name: "Search" }).closest(".live-search-entry"),
+  ).toBeTruthy();
+  press(KEY.UP);
+  expect(document.querySelector(".section-search.cursor")).toBeTruthy();
+  press(KEY.DOWN);
+  expect(document.querySelector(".list.focused")).toBeTruthy();
+  press(KEY.LEFT);
+  press(KEY.UP);
+  expect(document.querySelector(".section-search.cursor")).toBeTruthy();
+  press(KEY.ENTER);
+  await settle();
+  expect(document.activeElement).toBe(field());
+  expect(field()?.getAttribute("placeholder")).toBe("Search");
+  press(KEY.BACK);
+  await settle();
+  expect(field()).toBeNull();
+  expect(document.querySelector(".section-search.cursor")).toBeTruthy();
+});
+
+test("Blue opens Live Search without losing a draft on repeated presses", async () => {
+  await mountApp(PLAYLIST);
+  press(KEY.BLUE);
+  await settle();
+  await type("News");
+  press(KEY.BLUE);
+  expect(field()?.value).toBe("News");
+  expect(document.querySelector(".panel-hints kbd[data-key='Blue']")).toBeTruthy();
+});
+
+test("Live Search shows one prompt or no-results state without empty result columns", async () => {
+  await mountApp(PLAYLIST);
+  await openSearch();
+  expect(screen.getByRole("heading", { name: "Search Channels" })).toBeTruthy();
+  expect(screen.getByText("Type a channel or category name.")).toBeTruthy();
+  expect(screen.queryByRole("navigation", { name: "Categories" })).toBeNull();
+
+  await type("No matching name");
+  expect(screen.getByRole("heading", { name: "No results for No matching name" })).toBeTruthy();
+  expect(screen.getByText("Check the spelling or try another search.")).toBeTruthy();
+  expect(screen.queryByRole("navigation", { name: "Categories" })).toBeNull();
+  expect(document.activeElement).toBe(field());
+});
+
+test("Live search separates category matches from channel matches", async () => {
+  await mountApp(PLAYLIST);
+  const before = played.length;
+  await openSearch();
+  await type("News");
+  const categories = screen.getByRole("navigation", { name: "Categories" });
+  expect(within(categories).getByRole("button", { name: /News/ })).toBeTruthy();
+  expect(rows()).toEqual(["Alpha News"]);
+
+  press(KEY.DOWN);
+  press(KEY.LEFT);
+  expect(categories.classList.contains("focused")).toBe(true);
+  expect(
+    within(categories).getByRole("button", { name: /News/ }).classList.contains("cursor"),
+  ).toBe(true);
+  press(KEY.UP);
+  await settle(0);
+  expect(document.activeElement).toBe(field());
+  press(KEY.DOWN);
+  press(KEY.LEFT);
+  press(KEY.ENTER);
+  await settle();
+
+  expect(field()).toBeNull();
+  expect(rows()).toEqual(["Alpha News", "Beta Report"]);
+  expect(played).toHaveLength(before);
+  press(KEY.LEFT);
+  expect(document.querySelector(".rail.focused")).toBeTruthy();
+  press(KEY.RIGHT);
+  expect(document.querySelector(".list.focused")).toBeTruthy();
 });
 
 test("text input exits only at logical caret boundaries", () => {
@@ -418,7 +499,7 @@ test("left on an empty field enters application navigation", async () => {
   assert.notEqual(document.activeElement, field(), "and the keyboard has gone with it");
 });
 
-test("Search removes categories and Back restores the exact browsing origin", async () => {
+test("Search replaces browsing categories with matches and Back restores the exact origin", async () => {
   await mountApp(PLAYLIST);
   press(KEY.LEFT);
   press(KEY.DOWN);
@@ -428,7 +509,8 @@ test("Search removes categories and Back restores the exact browsing origin", as
 
   await openSearch();
   await type("alpha");
-  expect(document.querySelector(".panel .rail")).toBeNull();
+  expect(document.querySelector(".panel .search-categories")).toBeTruthy();
+  expect(document.querySelectorAll(".panel .search-categories .row")).toHaveLength(0);
   press(KEY.BACK);
   press(KEY.BACK);
   await settle();

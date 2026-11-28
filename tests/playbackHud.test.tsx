@@ -12,6 +12,7 @@ import type { MediaTrack } from "../src/types";
 import {
   emitPlayback,
   finishPlayback,
+  finishPageEntry,
   mountApp,
   pauseCalls,
   playCalls,
@@ -35,6 +36,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  document.documentElement.style.removeProperty("--t-navigation");
   localStorage.clear();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
@@ -91,7 +93,7 @@ test("a terminal error keeps long names readable without exposing engine diagnos
   expect(alert.querySelector(".picture-state-mark.error .icon-warn")).toBeTruthy();
   const actions = alert.querySelector(".picture-state-keys")!;
   expect(reading.contains(actions)).toBe(false);
-  expect(actions.textContent).toContain("All channels");
+  expect(actions.textContent).toContain("Select");
 });
 
 test.each([false, true])(
@@ -366,6 +368,7 @@ async function chooseMode(name: "Movies" | "Series") {
   fireEvent.click(button);
   await act(async () => Promise.resolve());
   await settle(300);
+  await finishPageEntry();
   if (document.querySelector(".app-navigation.expanded")) press(KEY.RIGHT);
   await settle(0);
 }
@@ -378,12 +381,24 @@ async function chooseButton(name: string | RegExp) {
   await settle(0);
 }
 
+const finishFiniteStartup = async () => {
+  await vi.waitFor(
+    async () => {
+      await settle(0);
+      expect(playCalls.some((call) => call[3] === "finite")).toBe(true);
+    },
+    { interval: 10 },
+  );
+  if (document.querySelector(".playback-deck")) press(KEY.BACK);
+};
+
 const playMovie = async () => {
   await chooseMode("Movies");
   await chooseButton(/Film/);
   await chooseButton(/^(Play|Resume)\b/);
   await settle(0);
   await settle(0);
+  await finishFiniteStartup();
 };
 
 const playSeries = async () => {
@@ -393,6 +408,7 @@ const playSeries = async () => {
   press(KEY.ENTER);
   await settle(0);
   await settle(0);
+  await finishFiniteStartup();
 };
 
 test.each(["Movies", "Series"] as const)(
@@ -434,18 +450,20 @@ test.each(["Movies", "Series"] as const)(
   },
 );
 
-test("the playlist switcher pauses a playing movie without starting another title", async () => {
+test("playlist management preserves movie playback without starting another title", async () => {
   await mountVod();
   await playMovie();
   const { useSettings } = await import("../src/stores/settings");
   act(() => useSettings.getState().addPlaylist("Second", XTREAM_SOURCE));
   const before = played.length;
+  const pauses = pauseCalls;
   press(KEY.YELLOW);
   await settle(0);
-  fireEvent.click(screen.getByRole("button", { name: /^Playlists,/ }));
+  fireEvent.click(screen.getByRole("button", { name: "Content & playlists" }));
+  fireEvent.click(screen.getByRole("button", { name: "Open, Manage playlists" }));
   await settle(0);
-  expect(screen.getByRole("menu", { name: "Saved playlists" })).toBeTruthy();
-  expect(pauseCalls).toBeGreaterThan(0);
+  expect(screen.getByRole("heading", { name: "Saved playlists" })).toBeTruthy();
+  expect(pauseCalls).toBe(pauses);
   expect(played).toHaveLength(before);
 });
 

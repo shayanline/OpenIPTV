@@ -988,7 +988,7 @@ test("an oversized complete index lands in the terminal too large state", async 
       if (action === "get_vod_streams") {
         return new Response("", {
           status: 200,
-          headers: { "Content-Length": String(13 * 1024 * 1024) },
+          headers: { "Content-Length": String(129 * 1024 * 1024) },
         });
       }
       return response({

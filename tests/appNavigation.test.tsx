@@ -161,22 +161,23 @@ afterEach(() => {
   localStorage.clear();
   document.documentElement.style.removeProperty("--t-panel");
   document.documentElement.style.removeProperty("--t-med");
+  document.documentElement.style.removeProperty("--t-navigation");
 });
 
-test("M3U sources place Search after Live in rail order", () => {
+test("M3U sources keep only Live and Settings in the application menu", () => {
   renderNavigation("m3u");
 
   expect(
     screen.getAllByRole("button").map((button) => button.getAttribute("aria-label")),
-  ).toEqual(["Live", "Search Live", "Settings"]);
+  ).toEqual(["Live", "Settings"]);
 });
 
-test("Xtream sources place Search after Series in rail order", () => {
+test("Xtream sources keep content sections and Settings in the application menu", () => {
   renderNavigation("xtream");
 
   expect(
     screen.getAllByRole("button").map((button) => button.getAttribute("aria-label")),
-  ).toEqual(["Live", "Movies", "Series", "Search Live", "Settings"]);
+  ).toEqual(["Live", "Movies", "Series", "Settings"]);
 });
 
 test("Playlist support changes animate only changing content destinations.", () => {
@@ -198,7 +199,6 @@ test("Playlist support changes animate only changing content destinations.", () 
     );
     const view = render(renderRail("m3u"));
     const live = screen.getByRole("button", { name: "Live" });
-    const search = screen.getByRole("button", { name: "Search Live" });
     const settings = screen.getByRole("button", { name: "Settings" });
     expect(motion.records).toHaveLength(0);
 
@@ -246,7 +246,7 @@ test("Playlist support changes animate only changing content destinations.", () 
     );
     expect(motion.records).toHaveLength(4);
     expect(document.querySelector('[data-navigation-action="live"]')).toBe(live);
-    expect(document.querySelector('[data-navigation-action="search"]')).toBe(search);
+    expect(document.querySelector('[data-navigation-action="search"]')).toBeNull();
     expect(document.querySelector('[data-navigation-action="settings"]')).toBe(settings);
 
     const movie = document.querySelector<HTMLElement>('[data-navigation-action="movie"]')!;
@@ -267,7 +267,7 @@ test("Playlist support changes animate only changing content destinations.", () 
       [...view.container.querySelectorAll("[data-navigation-action]")].map(
         (node) => (node as HTMLElement).dataset.navigationAction,
       ),
-    ).toEqual(["live", "search", "settings"]);
+    ).toEqual(["live", "settings"]);
     const exits = motion.records.slice(4);
     for (const id of ["movie", "series"]) {
       const layout = channelFor(exits, id, false);
@@ -447,107 +447,43 @@ test("A reduced motion preference change settles both presence channels at once.
   }
 });
 
-test("the decorative divider sits between Series and Search", () => {
+test("the application menu has no empty Search group", () => {
   renderNavigation("xtream");
-
-  const divider = document.querySelector(".app-navigation-divider");
-  expect(divider).toBeTruthy();
-  expect(divider?.getAttribute("aria-hidden")).toBe("true");
-  expect(divider?.getAttribute("tabindex")).toBeNull();
-  expect(divider?.previousElementSibling?.getAttribute("data-navigation-action")).toBe(
-    "series",
-  );
-  expect(divider?.nextElementSibling?.getAttribute("data-navigation-action")).toBe("search");
-  const styles = readFileSync("src/styles/app.css", "utf8");
-  expect(styles).toMatch(
-    /\.app-navigation-divider \{[^}]*width:\s*100%;[^}]*height:\s*1px;[^}]*margin:\s*var\(--s1\)\s*0;/,
-  );
-  expect(styles).toMatch(
-    /\.no-flex-gap \.app-navigation-actions > \* \+ \* \{\s*margin-top:\s*var\(--s1\);/,
-  );
-  expect(styles).toMatch(
-    /\.no-flex-gap \.app-navigation-actions > \.app-navigation-divider \{\s*margin-top:\s*calc\(var\(--s1\) \* 2\);/,
-  );
+  expect(document.querySelector('[data-navigation-action="search"]')).toBeNull();
+  expect(document.querySelector(".app-navigation-divider")).toBeNull();
 });
 
-test("Search names and scope badge follow active Movies mode", () => {
-  renderNavigation("xtream", false, vi.fn(), vi.fn(), "movie", "search");
-
-  const search = screen.getByRole("button", { name: "Search Movies" });
-  const scope = search.querySelector("[data-navigation-scope]");
+test("Movies keeps its active marker when the menu is collapsed", () => {
+  renderNavigation("xtream", false, vi.fn(), vi.fn(), "movie", "movie");
   const movies = document.querySelector('[data-navigation-action="movie"]');
-
-  expect(scope?.getAttribute("aria-hidden")).toBe("true");
-  expect(scope?.querySelector(".icon-movie")?.outerHTML).toBe(
-    movies?.querySelector(".icon-movie")?.outerHTML,
-  );
-  expect(search.classList.contains("cursor")).toBe(true);
-  expect(search.classList.contains("active")).toBe(false);
   expect(movies?.classList.contains("active")).toBe(true);
-  expect(movies?.classList.contains("cursor")).toBe(false);
+  expect(document.querySelector("[data-navigation-scope]")).toBeNull();
 });
 
-test("M3U Search shows the Live scope and omits VOD destinations", () => {
-  renderNavigation("m3u", false, vi.fn(), vi.fn(), "live", "search");
-
-  const search = screen.getByRole("button", { name: "Search Live" });
-  expect(search.querySelector(".icon-live")).toBeTruthy();
-  expect(search.querySelector(".icon-movie")).toBeNull();
-  expect(search.querySelector(".icon-series")).toBeNull();
+test("M3U application navigation omits VOD destinations", () => {
+  renderNavigation("m3u");
   expect(screen.queryByRole("button", { name: "Movies" })).toBeNull();
   expect(screen.queryByRole("button", { name: "Series" })).toBeNull();
 });
 
-test("Search uses a stable three area layout and hides its scope cleanly when collapsed", () => {
+test("expanding the menu preserves the focused section button", () => {
   const onActivate = vi.fn();
   const onFocusChange = vi.fn();
-  const view = renderNavigation("xtream", false, onActivate, onFocusChange, "movie", "search");
-  const scope = document.querySelector("[data-navigation-scope]");
-  const styles = readFileSync("src/styles/app.css", "utf8");
-  const tokens = readFileSync("src/styles/tokens.css", "utf8");
-
-  expect(scope?.querySelector(".app-navigation-scope-label")?.textContent).toBe("Movies");
-  expect(styles).toMatch(/\.app-navigation-scope-badge \{[^}]*display:\s*none;/);
-
+  const view = renderNavigation("xtream", false, onActivate, onFocusChange, "movie", "movie");
+  const movies = screen.getByRole("button", { name: "Movies" });
   view.rerender(
     <AppNavigation
       activeMode="movie"
       items={navigationItemsFor("xtream")}
       focused
-      focusedAction="search"
+      focusedAction="movie"
       onActivate={onActivate}
       onFocusChange={onFocusChange}
     />,
   );
 
-  expect(document.querySelectorAll("[data-navigation-scope]")).toHaveLength(1);
-  expect(document.querySelector(".app-navigation.expanded [data-navigation-scope]")).toBe(
-    scope,
-  );
-  const searchContent = document.querySelector(".app-navigation-search-content");
-  expect(
-    searchContent?.closest<HTMLElement>("[data-navigation-action]")?.dataset.navigationAction,
-  ).toBe("search");
-  expect(searchContent?.querySelectorAll(":scope > span")).toHaveLength(3);
-  expect(searchContent?.querySelector(".app-navigation-icon")).toBeTruthy();
-  expect(searchContent?.querySelector(".app-navigation-label")).toBeTruthy();
-  expect(searchContent?.querySelector("[data-navigation-scope]")).toBe(scope);
-  expect(styles).toMatch(
-    /\.app-navigation\.expanded \.app-navigation-search-content \{[^}]*display:\s*grid;[^}]*grid-template-columns:\s*var\(--s6\) minmax\(0, 1fr\) auto;/,
-  );
-  const expandedBadge =
-    styles.match(/\.app-navigation\.expanded \.app-navigation-scope-badge \{([^}]*)\}/)?.[1] ??
-    "";
-  expect(expandedBadge).toContain("display: flex");
-  expect(expandedBadge).not.toMatch(/width:\s*104px/);
-  expect(expandedBadge).not.toMatch(/position:\s*absolute/);
-  expect(styles).toMatch(
-    /\.app-navigation\.expanded \.app-navigation-scope-label \{[^}]*-webkit-line-clamp:\s*2;[^}]*white-space:\s*normal;/,
-  );
-  expect(tokens).toMatch(/--app-nav-gutter:\s*var\(--safe-x\);/);
-  expect(tokens).toMatch(
-    /--app-nav-collapsed-w:\s*calc\(var\(--app-nav-gutter\) \* 2 \+ var\(--s6\)\);/,
-  );
+  expect(screen.getByRole("button", { name: "Movies" })).toBe(movies);
+  expect(document.activeElement).toBe(movies);
 });
 
 test("Settings remains selected while the rail owns a different active content mode", () => {
@@ -582,8 +518,11 @@ test("the application rail uses an opaque flat surface with no raised shadow", (
   expect(rail).toContain("border-inline-end: 1px solid var(--line)");
   expect(tokens).toMatch(/--app-navigation-surface:\s*#[0-9a-f]{6};/i);
   expect(styles).toMatch(/\.app-navigation-action\.active \{[^}]*color:\s*var\(--text\);/);
-  expect(styles).toMatch(
+  expect(styles).not.toMatch(
     /\.app-navigation-action\.active > \.app-navigation-action-visual \{[^}]*background:\s*var\(--accent-dim\);/,
+  );
+  expect(styles).toMatch(
+    /\.row\.showing::before,\s*\.app-navigation-action\.active::before,\s*\.vod-category\.selected::before \{[^}]*background:\s*var\(--accent\);/,
   );
   expect(styles).toMatch(
     /html\[data-input-mode="remote"\] \.app-navigation-action\.cursor[\s\S]*background:\s*var\(--target-bg\);[\s\S]*color:\s*var\(--target-text\);/,
@@ -638,7 +577,7 @@ test("the expanded brand pairs the application icon with a bold OpenIPTV label",
 test("collapsed actions use centred square geometry without moving their icons when expanded", () => {
   renderNavigation("xtream");
   expect(document.querySelectorAll(".app-navigation-action .app-navigation-icon")).toHaveLength(
-    5,
+    4,
   );
   const styles = readFileSync("src/styles/app.css", "utf8");
   expect(styles).toMatch(
@@ -653,7 +592,7 @@ test("collapsed actions use centred square geometry without moving their icons w
   expect(styles).toMatch(/\.app-navigation-mark-gap \{[^}]*min-height:\s*var\(--s3\);/);
 });
 
-test("Search shares the top action group while only the Settings spacer grows", () => {
+test("only the Settings spacer grows below the content sections", () => {
   renderNavigation("xtream");
   const navigation = document.querySelector(".app-navigation");
 
@@ -675,9 +614,9 @@ test("pointer focus does not expand the rail or claim remote ownership", () => {
   document.documentElement.dataset.inputMode = "pointer";
   renderNavigation("m3u", false, vi.fn(), onFocusChange);
   const navigation = document.querySelector(".app-navigation");
-  const search = screen.getByRole("button", { name: /^Search/ });
+  const settings = screen.getByRole("button", { name: "Settings" });
 
-  fireEvent.focus(search);
+  fireEvent.focus(settings);
 
   expect(navigation?.classList.contains("expanded")).toBe(false);
   expect(onFocusChange).not.toHaveBeenCalled();
@@ -698,6 +637,7 @@ test("a pointerenter cannot move the remote navigation cursor", () => {
       onFocusChange={() => undefined}
     />,
   );
+  onHover.mockClear();
 
   fireEvent.pointerEnter(screen.getByRole("button", { name: "Movies" }));
 
@@ -729,9 +669,7 @@ test("mounted pointer hover expands the rail and becomes the arrow origin", asyn
   );
 
   press(KEY.UP);
-  expect(screen.getByRole("button", { name: "Search Live" }).classList.contains("cursor")).toBe(
-    true,
-  );
+  expect(screen.getByRole("button", { name: "Live" }).classList.contains("cursor")).toBe(true);
 
   fireEvent.click(settings);
   await settle(0);
@@ -796,11 +734,7 @@ test("playlist failure retries each selected content context without forcing Liv
     expect(fetch.mock.calls.length).toBeGreaterThan(attempts);
     expect(document.querySelector(".playlist-recovery-context")?.textContent).toContain(name);
   }
-  const attempts = fetch.mock.calls.length;
-  fireEvent.click(screen.getByRole("button", { name: /^Search/ }));
-  await settle(300);
-  expect(fetch.mock.calls.length).toBeGreaterThan(attempts);
-  expect(document.querySelector(".playlist-recovery-context")?.textContent).toContain("Search");
+  expect(screen.queryByRole("button", { name: /^Search/ })).toBeNull();
 });
 
 test("playlist error actions move horizontally before handing focus to the menu", async () => {
@@ -926,12 +860,11 @@ test("rail actions report the existing navigation action when activated", () => 
   const onActivate = vi.fn();
   renderNavigation("xtream", false, onActivate);
 
-  for (const name of ["Search Live", "Live", "Movies", "Series", "Settings"]) {
+  for (const name of ["Live", "Movies", "Series", "Settings"]) {
     fireEvent.click(screen.getByRole("button", { name }));
   }
 
   expect(onActivate.mock.calls.map(([item]) => item.id)).toEqual([
-    "search",
     "live",
     "movie",
     "series",
@@ -947,7 +880,7 @@ test("the M3U application mounts one rail without the old Live header", async ()
     [...document.querySelectorAll(".app-navigation button")].map((button) =>
       button.getAttribute("aria-label"),
     ),
-  ).toEqual(["Live", "Search Live", "Settings"]);
+  ).toEqual(["Live", "Settings"]);
   expect(document.querySelector(".panel-bar")).toBeNull();
 });
 
@@ -971,7 +904,7 @@ test("Search selected from Settings opens a fresh scoped Live search", async () 
   press(KEY.YELLOW);
   await settle();
   press(KEY.BACK);
-  fireEvent.click(screen.getByRole("button", { name: "Search Live" }));
+  fireEvent.click(screen.getByRole("button", { name: "Search" }));
   await settle();
 
   expect(document.querySelector(".settings-host:not(.hidden) .sheet")).toBeNull();
@@ -1048,8 +981,8 @@ test("hidden sections leave the rail and the last supported switch stays on", as
   const actions = [...document.querySelectorAll("[data-navigation-action]")].map((element) =>
     element.getAttribute("data-navigation-action"),
   );
-  expect(actions).toEqual(["movie", "search", "settings"]);
-  expect(screen.getByRole("button", { name: "Search Movies" })).toBeTruthy();
+  expect(actions).toEqual(["movie", "settings"]);
+  expect(screen.getByRole("button", { name: "Search" })).toBeTruthy();
   const rail = document.querySelector(".app-navigation");
   expect(rail?.querySelector('[data-navigation-action="live"]')).toBeNull();
   expect(rail?.querySelector('[data-navigation-action="series"]')).toBeNull();
@@ -1143,7 +1076,7 @@ test("a remembered section that was switched off falls back to an enabled one", 
   const actions = [...document.querySelectorAll("[data-navigation-action]")].map((element) =>
     element.getAttribute("data-navigation-action"),
   );
-  expect(actions).toEqual(["live", "movie", "search", "settings"]);
+  expect(actions).toEqual(["live", "movie", "settings"]);
   const rail = document.querySelector(".app-navigation");
   expect(rail?.querySelector('[data-navigation-action="series"]')).toBeNull();
   expect(
@@ -1229,7 +1162,7 @@ test("moving through application navigation changes only the focused action", as
   expect(screen.getByRole("button", { name: "Live" }).getAttribute("aria-current")).toBe(
     "page",
   );
-  expect(document.activeElement).toBe(screen.getByRole("button", { name: /^Search/ }));
+  expect(document.activeElement).toBe(screen.getByRole("button", { name: "Settings" }));
   expect(fetchImplementation.mock.calls).toHaveLength(initialRequestCount);
 });
 
@@ -1243,26 +1176,28 @@ test("OK on Search from Movies opens Movie search without changing the active mo
 
   expect(document.querySelector(".vod-screen[data-mode='movie']")).toBeTruthy();
   expect(document.querySelector(".app-navigation.expanded")).toBeNull();
+  await finishPageTransition();
 
-  press(KEY.LEFT);
-  press(KEY.DOWN);
-  press(KEY.DOWN);
+  if (!screen.getByRole("button", { name: "Search" }).classList.contains("cursor")) {
+    if (!document.querySelector(".vod-rail.focused")) press(KEY.LEFT);
+    press(KEY.UP);
+  }
   await settle(0);
   expect(screen.getByRole("button", { name: "Movies" }).getAttribute("aria-current")).toBe(
     "page",
   );
-  expect(document.activeElement).toBe(screen.getByRole("button", { name: "Search Movies" }));
+  expect(screen.getByRole("button", { name: "Search" }).classList.contains("cursor")).toBe(
+    true,
+  );
 
   press(KEY.ENTER);
   await settle(0);
   expect(screen.getByRole("textbox", { name: /Search Movies/ })).toBeTruthy();
   expect(document.querySelector(".app-navigation.expanded")).toBeNull();
-  expect(
-    screen.getByRole("button", { name: "Search Movies" }).getAttribute("aria-current"),
-  ).toBe("page");
-  expect(
-    screen.getByRole("button", { name: "Movies" }).getAttribute("aria-current"),
-  ).toBeNull();
+  expect(document.querySelector('[data-navigation-action="search"]')).toBeNull();
+  expect(screen.getByRole("button", { name: "Movies" }).getAttribute("aria-current")).toBe(
+    "page",
+  );
 });
 
 test("OK on Search from Series opens Series search without changing the active mode", async () => {
@@ -1276,10 +1211,15 @@ test("OK on Search from Series opens Series search without changing the active m
 
   expect(document.querySelector(".vod-screen[data-mode='series']")).toBeTruthy();
   expect(document.querySelector(".app-navigation.expanded")).toBeNull();
-  press(KEY.LEFT);
-  press(KEY.DOWN);
+  await finishPageTransition();
+  if (!screen.getByRole("button", { name: "Search" }).classList.contains("cursor")) {
+    if (!document.querySelector(".vod-rail.focused")) press(KEY.LEFT);
+    press(KEY.UP);
+  }
   await settle(0);
-  expect(document.activeElement).toBe(screen.getByRole("button", { name: "Search Series" }));
+  expect(screen.getByRole("button", { name: "Search" }).classList.contains("cursor")).toBe(
+    true,
+  );
   expect(screen.getByRole("button", { name: "Series" }).getAttribute("aria-current")).toBe(
     "page",
   );
@@ -1287,12 +1227,10 @@ test("OK on Search from Series opens Series search without changing the active m
   press(KEY.ENTER);
   await settle(0);
   expect(screen.getByRole("textbox", { name: /Search Series/ })).toBeTruthy();
-  expect(
-    screen.getByRole("button", { name: "Search Series" }).getAttribute("aria-current"),
-  ).toBe("page");
-  expect(
-    screen.getByRole("button", { name: "Series" }).getAttribute("aria-current"),
-  ).toBeNull();
+  expect(document.querySelector('[data-navigation-action="search"]')).toBeNull();
+  expect(screen.getByRole("button", { name: "Series" }).getAttribute("aria-current")).toBe(
+    "page",
+  );
 });
 
 test.each([
@@ -1326,6 +1264,7 @@ test("destinations switch immediately with one focus owner", async () => {
   expect(navigation?.parentElement).toBe(motion);
   expect(host?.parentElement).toBe(motion);
   const activate = async (name: string, destination: string) => {
+    if (document.querySelector(".settings-host:not(.hidden) .sheet")) await closeSettings();
     fireEvent.click(screen.getByRole("button", { name }));
     expect(document.querySelector(".app.page-transition-exiting")).toBeNull();
     expect(document.querySelector(".app.page-transition-entering")).toBeNull();
@@ -1344,10 +1283,7 @@ test("destinations switch immediately with one focus owner", async () => {
     "Movies",
     ".vod-host:not(.hidden) .vod-screen[data-mode='movie'] .vod-catalogue",
   );
-  await activate(
-    "Search Movies",
-    ".vod-host:not(.hidden) .vod-screen[data-mode='movie'] .vod-search",
-  );
+  await activate("Search", ".vod-host:not(.hidden) .vod-screen[data-mode='movie'] .vod-search");
   await activate(
     "Series",
     ".vod-host:not(.hidden) .vod-screen[data-mode='series'] .vod-catalogue",
@@ -1551,7 +1487,7 @@ test("returning from application navigation restores the existing Live Search fi
 
   expect(document.querySelector(".search-field")).toBe(field);
   expect(document.querySelector(".app-navigation.expanded")).toBeTruthy();
-  expect(document.activeElement).toBe(screen.getByRole("button", { name: "Search Live" }));
+  expect(document.activeElement).toBe(screen.getByRole("button", { name: "Live" }));
 
   press(KEY.RIGHT);
   await settle(0);
@@ -1559,38 +1495,39 @@ test("returning from application navigation restores the existing Live Search fi
   expect(document.activeElement).toBe(field);
 });
 
-test("the shared Search action opens the existing Live search flow", async () => {
+test("the embedded Search action opens the existing Live search flow", async () => {
   await mountApp(PLAYLIST);
 
   press(KEY.LEFT);
-  press(KEY.LEFT);
-  press(KEY.DOWN);
+  press(KEY.UP);
   press(KEY.ENTER);
   await settle(0);
 
   expect(document.querySelector(".search-field")).toBeTruthy();
 });
 
-test("clicking an already active Search preserves its query and surface", async () => {
+test("the Search entry returns after closing its results", async () => {
   await mountApp(PLAYLIST);
-  const search = screen.getByRole("button", { name: "Search Live" });
+  const search = screen.getByRole("button", { name: "Search" });
   fireEvent.click(search);
   const field = screen.getByRole("textbox", { name: /Search channels/ }) as HTMLInputElement;
   fireEvent.change(field, { target: { value: "Alpha" } });
   await settle(200);
 
-  fireEvent.pointerMove(search);
-  fireEvent.click(search);
+  expect(screen.queryByRole("button", { name: "Search" })).toBeNull();
+  press(KEY.BACK);
+  press(KEY.BACK);
   await settle(0);
 
-  expect(screen.getByRole("textbox", { name: /Search channels/ })).toBe(field);
-  expect(field.value).toBe("Alpha");
-  expect(search.getAttribute("aria-current")).toBe("page");
-  expect(screen.getByRole("button", { name: "Live" }).getAttribute("aria-current")).toBeNull();
-  expect(document.querySelector(".app-navigation-scope-badge")?.textContent).toContain("Live");
+  expect(screen.queryByRole("textbox", { name: /Search channels/ })).toBeNull();
+  expect(screen.getByRole("button", { name: "Search" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Live" }).getAttribute("aria-current")).toBe(
+    "page",
+  );
+  expect(document.querySelector(".app-navigation-scope-badge")).toBeNull();
 });
 
-test("Live search keeps application navigation and removes the category rail from focus", async () => {
+test("Live search keeps application navigation and shows its prompt before results", async () => {
   await mountApp(PLAYLIST);
   fireEvent.click(screen.getByRole("button", { name: /^Search/ }));
   await settle(0);
@@ -1598,7 +1535,7 @@ test("Live search keeps application navigation and removes the category rail fro
   expect(document.querySelector(".app-navigation")).toBeTruthy();
   expect(document.querySelector(".panel .rail")).toBeNull();
   expect(document.querySelector(".search-field")).toBeTruthy();
-  expect(document.querySelector(".panel .list")).toBeTruthy();
+  expect(document.querySelector(".panel .search-state")).toBeTruthy();
 });
 
 test("Settings owns its section input without the application rail", async () => {
@@ -1646,7 +1583,7 @@ test.each(["Movies", "Series"])(
   },
 );
 
-test.each(["Live", "Search Live", "Movies", "Series"])(
+test.each(["Live", "Search", "Movies", "Series"])(
   "Settings opens on Appearance from %s",
   async (origin) => {
     await mountXtream();
@@ -1781,7 +1718,9 @@ test("Settings retains direction input at the page edge", async () => {
   press(KEY.DOWN);
   await settle(0);
 
-  expect(appearance.getAttribute("aria-current")).toBe("page");
+  expect(screen.getByRole("button", { name: "Playback" }).getAttribute("aria-current")).toBe(
+    "page",
+  );
   expect(document.querySelectorAll(".app-navigation .cursor")).toHaveLength(0);
   expect(document.querySelectorAll(".sheet .cursor")).toHaveLength(1);
   expect(screen.queryByRole("navigation", { name: "Application navigation" })).toBeNull();
@@ -1800,7 +1739,7 @@ test("the Xtream application keeps one rail while switching to VOD", async () =>
     [...document.querySelectorAll(".app-navigation button")].map((button) =>
       button.getAttribute("aria-label"),
     ),
-  ).toEqual(["Live", "Movies", "Series", "Search Live", "Settings"]);
+  ).toEqual(["Live", "Movies", "Series", "Settings"]);
   fireEvent.click(screen.getByRole("button", { name: "Movies" }));
   await settle(300);
 
@@ -1895,7 +1834,7 @@ test("the rail shows the configured actions on Live while the first playlist is 
   );
   expect(live?.classList.contains("active")).toBe(true);
   expect(live?.getAttribute("aria-current")).toBe("page");
-  for (const id of ["search", "live", "movie", "series", "settings"]) {
+  for (const id of ["live", "movie", "series", "settings"]) {
     expect(
       navigation?.querySelector(`.app-navigation-action[data-navigation-action="${id}"]`),
     ).toBeTruthy();
@@ -2001,7 +1940,7 @@ test("a failed playlist refresh keeps cached browsing available with a warning",
   fireEvent.click(screen.getByRole("menuitem", { name: "Refresh playlist" }));
   await act(async () => Promise.resolve());
   await settle(0);
-  fireEvent.click(screen.getByRole("button", { name: "Live" }));
+  await closeSettings();
   await settle(0);
 
   expect(screen.queryByRole("button", { name: "Manage playlists" })).toBeNull();
@@ -2043,7 +1982,7 @@ test("playlist recovery can replace the failed active address", async () => {
     kind: "m3u",
     url: "http://replacement.invalid/list.m3u",
   });
-  fireEvent.click(screen.getByRole("button", { name: "Live" }));
+  await closeSettings();
   expect(document.querySelector(".panel .list")?.textContent).toContain("First Channel");
 });
 
@@ -2241,8 +2180,8 @@ test("the Live panel motion scope is absent on VOD surfaces", async () => {
 
 test.each([
   ["Live", "live", false],
-  ["Search Live", "search", true],
-  ["Settings", "settings", true],
+  ["Search", "live", true],
+  ["Settings", "settings", false],
 ] as const)(
   "native focus into the %s rail fires one focusin and no focusout",
   async (surface, action, open) => {
@@ -2382,8 +2321,6 @@ test("a routed activation releases immediately, commits under the shade, and ena
 test.each([
   ["mouse", "Settings"],
   ["remote", "Settings"],
-  ["mouse", "Search Movies"],
-  ["remote", "Search Movies"],
 ] as const)(
   "%s activation selects Movies and then %s before outgoing content commits",
   async (input, destination) => {
@@ -2391,7 +2328,8 @@ test.each([
     await mountXtream();
     const app = document.querySelector(".app")!;
     const expectSelected = (name: string) => {
-      const button = screen.getByRole("button", { name });
+      const action = name === "Movies" ? "movie" : name.toLowerCase();
+      const button = document.querySelector(`[data-navigation-action="${action}"]`)!;
       expect(button.getAttribute("aria-current")).toBe("page");
       expect(button.classList.contains("active")).toBe(true);
       expect(document.querySelectorAll(".app-navigation [aria-current='page']")).toHaveLength(
@@ -2431,7 +2369,7 @@ test.each([
     expect(movie).toBeTruthy();
     if (input === "remote") {
       press(KEY.LEFT);
-      const steps = destination === "Settings" ? 3 : 2;
+      const steps = 2;
       for (let index = 0; index < steps; index++) press(KEY.DOWN);
       await settle(0);
       expect(document.activeElement).toBe(screen.getByRole("button", { name: destination }));
@@ -2452,8 +2390,8 @@ test.each([
     ).toBe(movie);
     expect(document.querySelector(".settings-host:not(.hidden) .sheet")).toBeNull();
     expect(document.querySelector(".vod-search")).toBeNull();
-    // Search scope follows the committed mode while the marker follows the request.
-    expect(screen.getByRole("button", { name: "Search Movies" })).toBeTruthy();
+    // Search stays inside the committed section during the transition.
+    expect(screen.getByRole("button", { name: "Search" })).toBeTruthy();
 
     await finishPageTransition();
     expectSelected(destination);
@@ -2595,6 +2533,7 @@ test("Back cancels a pending activation and a newer press retargets the latest d
   expect(app.getAttribute("data-page-transition")).toBe("leaving");
   expect(app.getAttribute("data-page-enter-motion")).toBe("fade");
   await settle(700);
+  await finishPageTransition();
   expect(app.classList.contains("page-transition-active")).toBe(false);
   expect(document.querySelector(".settings-host:not(.hidden) .sheet")).toBeTruthy();
   expect(document.querySelector(".vod-host:not(.hidden) .vod-screen")).toBeNull();
@@ -2612,21 +2551,20 @@ test("a zero navigation duration commits and releases in the same batch", async 
   ).toBeTruthy();
 });
 
-test("a local Search Back clears the active marker so a fresh Search opens cleanly", async () => {
+test("local Search keeps Live selected and opens a fresh query after Back", async () => {
   await mountXtream();
   fireEvent.click(screen.getByRole("button", { name: /^Search/ }));
   await settle(0);
   expect(document.querySelector(".search-field")).toBeTruthy();
-  expect(
-    document.querySelector('[data-navigation-action="search"]')?.getAttribute("aria-current"),
-  ).toBe("page");
+  expect(document.querySelector('[data-navigation-action="search"]')).toBeNull();
+  expect(screen.getByRole("button", { name: "Live" }).getAttribute("aria-current")).toBe(
+    "page",
+  );
 
   press(KEY.BACK);
   await settle(0);
   expect(document.querySelector(".search-field")).toBeNull();
-  expect(
-    document.querySelector('[data-navigation-action="search"]')?.getAttribute("aria-current"),
-  ).toBeNull();
+  expect(document.querySelector('[data-navigation-action="search"]')).toBeNull();
   expect(screen.getByRole("button", { name: "Live" }).getAttribute("aria-current")).toBe(
     "page",
   );
@@ -2661,48 +2599,22 @@ test("leaving Search for Live never resurrects the old query field", async () =>
   ).toBe("");
 });
 
-test("Live search uses fades and swaps content only under the transition shade", async () => {
+test("Live search expands in place without replacing the panel host or fading the page", async () => {
   document.documentElement.style.setProperty("--t-navigation", "180ms");
   await mountXtream();
-  press(KEY.LEFT);
-  press(KEY.LEFT);
-  await settle(0);
-
-  fireEvent.click(screen.getByRole("button", { name: /^Search/ }));
   const app = document.querySelector(".app")!;
-  expect(app.getAttribute("data-page-transition")).toBe("leaving");
-  expect(app.getAttribute("data-page-leave-motion")).toBe("fade");
-  expect(app.getAttribute("data-page-enter-motion")).toBe("fade");
-  expect(app.getAttribute("data-page-fade-scope")).toBe("content");
-  expect(app.classList.contains("navigation-static")).toBe(true);
-  expect(document.querySelector(".search-field")).toBeNull();
-  expect(document.querySelector(".panel .rail")).toBeTruthy();
-
-  await settle(300);
-  expect(app.getAttribute("data-page-transition")).toBe("settling");
-  expect(document.querySelector(".search-field")).toBeTruthy();
-  expect(document.activeElement).not.toBe(document.querySelector(".search-field"));
   const host = document.querySelector(".live-panel-host");
-
-  await settle(60);
-  expect(app.getAttribute("data-page-transition")).toBe("entering");
-  expect(document.querySelector(".live-panel-host")).toBe(host);
-  expect(app.getAttribute("data-page-enter-motion")).toBe("fade");
-  expect(document.activeElement).not.toBe(document.querySelector(".search-field"));
-  await settle(300);
-  expect(app.classList.contains("page-transition-active")).toBe(false);
+  fireEvent.click(screen.getByRole("button", { name: "Search" }));
+  await settle(0);
+  expect(app.getAttribute("data-page-transition")).toBe("idle");
   expect(document.querySelector(".search-field")).toBeTruthy();
   expect(document.activeElement).toBe(document.querySelector(".search-field"));
-
-  fireEvent.click(screen.getByRole("button", { name: "Live" }));
-  expect(app.getAttribute("data-page-leave-motion")).toBe("fade");
-  expect(app.getAttribute("data-page-enter-motion")).toBe("fade");
-  expect(document.querySelector(".search-field")).toBeTruthy();
-
-  await settle(300);
+  expect(document.querySelector(".live-panel-host")).toBe(host);
+  press(KEY.BACK);
+  await settle(0);
   expect(document.querySelector(".search-field")).toBeNull();
   expect(document.querySelector(".panel .rail")).toBeTruthy();
-  await settle(400);
+  expect(document.querySelector(".live-panel-host")).toBe(host);
   expect(app.classList.contains("page-transition-active")).toBe(false);
 });
 
@@ -2804,7 +2716,7 @@ test("external destinations keep fade legs on both sides of the swap", async () 
   await finishPageTransition();
   expect(app.classList.contains("page-transition-active")).toBe(false);
 
-  fireEvent.click(screen.getByRole("button", { name: "Live" }));
+  press(KEY.BACK);
   expect(app.getAttribute("data-page-leave-motion")).toBe("fade");
   expect(app.getAttribute("data-page-enter-motion")).toBe("fade");
   await finishPageTransition();
@@ -2828,7 +2740,7 @@ test("transport keys still answer once while a Live page fade releases navigatio
   press(KEY.LEFT);
   await settle(0);
 
-  fireEvent.click(screen.getByRole("button", { name: /^Search/ }));
+  fireEvent.click(screen.getByRole("button", { name: "Settings" }));
   const app = document.querySelector(".app")!;
   expect(app.getAttribute("data-page-transition")).toBe("leaving");
 
@@ -2836,9 +2748,9 @@ test("transport keys still answer once while a Live page fade releases navigatio
   await settle(0);
   expect(pause).toHaveBeenCalledTimes(1);
   expect(document.querySelector(".playback-deck")).toBeNull();
-  const search = screen.getByRole("button", { name: /^Search/ });
-  expect(search.classList.contains("cursor")).toBe(false);
-  expect(search.getAttribute("aria-current")).toBe("page");
+  const settings = document.querySelector('[data-navigation-action="settings"]')!;
+  expect(settings.classList.contains("cursor")).toBe(false);
+  expect(settings.getAttribute("aria-current")).toBe("page");
   expect(app.getAttribute("data-page-transition")).not.toBe("idle");
 });
 
@@ -2951,7 +2863,7 @@ test("the playlist shortcut keeps its Back control and switches only on a differ
   expect(shortcut().querySelector(".playlist-avatar-number")?.textContent).toBe("2");
   act(() => useSettings.getState().set("playlistShortcut", false));
   expect(screen.queryByRole("button", { name: /^Playlists,/ })).toBeNull();
-  expect(screen.getByRole("button", { name: "Search Live" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Search" })).toBeTruthy();
 });
 
 test.each([false, true])(
@@ -2970,6 +2882,7 @@ test.each([false, true])(
         url: "http://second.invalid/list.m3u",
       }),
     );
+    if (document.querySelector(".playback-deck")) press(KEY.BACK);
     press(KEY.LEFT);
     await settle(0);
     fireEvent.click(screen.getByRole("button", { name: /^Playlists,/ }));
@@ -3125,7 +3038,7 @@ test.each([false, true])(
     );
     let field: HTMLInputElement | undefined;
     if (searching) {
-      fireEvent.click(screen.getByRole("button", { name: "Search Live" }));
+      fireEvent.click(screen.getByRole("button", { name: "Search" }));
       await settle(0);
       field = screen.getByRole("textbox", { name: /Search channels/ }) as HTMLInputElement;
       fireEvent.change(field, { target: { value: "First" } });
@@ -3151,7 +3064,7 @@ test.each([false, true])(
     fireEvent.click(current);
     expect(document.querySelector(".app-navigation.expanded")).toBeNull();
     expect(screen.getByRole("menu", { name: "Saved playlists" })).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: searching ? "Search Live" : "Live" }));
+    press(KEY.BACK);
     await finishPageTransition();
     expect(host.hidden).toBe(false);
     expect(document.querySelector(".panel")).toBe(panel);
@@ -3200,8 +3113,8 @@ test("the playlist shortcut focuses a distant active playlist without rendering 
   expect(document.activeElement?.getAttribute("aria-label")).toBe("Playlist 246");
   expect(useSettings.getState().activePlaylistId).toBe(base.id);
   press(KEY.BACK);
-  expect(document.querySelector(".dialog")).toBeTruthy();
-  expect(screen.getByRole("menu", { name: "Saved playlists" })).toBeTruthy();
+  await finishPageTransition();
+  expect(screen.queryByRole("menu", { name: "Saved playlists" })).toBeNull();
 });
 
 test("playlist search resets pagination while preserving saved numbers and input focus", async () => {

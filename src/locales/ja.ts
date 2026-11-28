@@ -1,6 +1,25 @@
 import type { MessageKey, MessageValues } from "../services/locale";
 
 export default {
+  "vod.searchHint": "タイトルまたはカテゴリーを入力し、検索を選ぶかEnterを押してください。",
+  "vod.searching": "カタログを検索中…",
+  "vod.searchFailed": "検索を利用できません",
+  "vod.searchFailedHint":
+    "検索内容は保存されています。提供元のカタログの読み込みを再試行してください。",
+  "vod.searchEmptyHint": "入力を確認するか、別の語句で検索してください。",
+  "vod.searchEmptyCatalogue": "このカタログには提供元の作品がありません。",
+  "vod.searchDraft": ({ query }) =>
+    `"${query}" の検索結果です。更新するには検索を選択してください。`,
+  "vod.searchCached": "保存済みのカタログの結果を表示しています。",
+  "vod.browseCategories": "カテゴリーを見る",
+  "vod.resumeTime": ({ time }) => `${time}から`,
+  "vod.resumeEpisode": ({ episode, time }) => `${episode}を${time}から再開`,
+  "vod.restartShort": "最初から",
+  "vod.restartEpisode": "エピソードを最初から再生",
+  "vod.continueShort": "続ける",
+  "vod.overview": "概要",
+  "vod.information": "この作品について",
+  "app.playlistUnavailable": "このプレイリストを読み込めませんでした",
   "error.playbackUnavailable": "再生できません。",
   "error.accessDenied": "このストリームへのアクセスが拒否されました。",
   "error.serverError": "サーバーからエラーが返されました。",
@@ -221,7 +240,7 @@ export default {
   "settings.showLive": "ライブを表示",
   "settings.showMovies": "映画を表示",
   "settings.showSeries": "シリーズを表示",
-  "settings.sectionVisibilityHint": "メインメニューと検索結果に{section}を表示します。",
+  "settings.sectionVisibilityHint": "メインメニューに{section}を表示します。",
   "settings.keepSectionHint":
     "サポートされているセクションを少なくとも1つオンのままにする必要があります。",
   "settings.sectionUnsupportedHint":
@@ -239,14 +258,14 @@ export default {
   "settings.continuousReconnectHint":
     "数回の試行で諦めずに、ライブチャンネルの復旧を試み続けます。",
   "settings.playbackInfo": "再生情報",
-  "settings.playbackInfoHint":
-    "再生診断を常に表示します。再生中にOKを長押しすると表示または非表示にできます。",
+  "settings.playbackInfoHint": "再生情報を標準で表示します。",
   "playbackInfo.title": "再生情報",
   "playbackInfo.hold": "長押し",
   "playbackInfo.hideHint": "再生情報を非表示",
   "playbackInfo.engine": "再生エンジン",
   "playbackInfo.resolution": "解像度",
   "playbackInfo.dynamicRange": "ダイナミックレンジ",
+  "playbackInfo.manifestRange": "ダイナミックレンジ（マニフェスト）",
   "playbackInfo.scan": "走査方式",
   "playbackInfo.progressive": "プログレッシブ",
   "playbackInfo.interlaced": "インターレース",

@@ -1,6 +1,25 @@
 import type { MessageKey, MessageValues } from "../services/locale";
 
 export default {
+  "vod.searchHint": "Escribe un título o categoría y selecciona Buscar o pulsa Enter.",
+  "vod.searching": "Buscando en el catálogo…",
+  "vod.searchFailed": "La búsqueda no está disponible",
+  "vod.searchFailedHint":
+    "Tu consulta está guardada. Reintenta cargar el catálogo del proveedor.",
+  "vod.searchEmptyHint": "Comprueba la ortografía o prueba otra búsqueda.",
+  "vod.searchEmptyCatalogue": "El proveedor no tiene títulos en este catálogo.",
+  "vod.searchDraft": ({ query }) =>
+    `Resultados de "${query}". Selecciona Buscar para actualizarlos.`,
+  "vod.searchCached": "Se muestran los resultados guardados del catálogo.",
+  "vod.browseCategories": "Explorar categorías",
+  "vod.resumeTime": ({ time }) => `Desde ${time}`,
+  "vod.resumeEpisode": ({ episode, time }) => `Reanudar ${episode} desde ${time}`,
+  "vod.restartShort": "Reiniciar",
+  "vod.restartEpisode": "Reiniciar episodio",
+  "vod.continueShort": "Continuar",
+  "vod.overview": "Resumen",
+  "vod.information": "Acerca de este título",
+  "app.playlistUnavailable": "No se pudo cargar esta lista de reproducción",
   "error.playbackUnavailable": "La reproducción no está disponible.",
   "error.accessDenied": "Se ha denegado el acceso a esta emisión.",
   "error.serverError": "El servidor ha devuelto un error.",
@@ -226,8 +245,7 @@ export default {
   "settings.showLive": "Mostrar directos",
   "settings.showMovies": "Mostrar películas",
   "settings.showSeries": "Mostrar series",
-  "settings.sectionVisibilityHint":
-    "Mostrar {section} en el menú principal y los resultados de búsqueda.",
+  "settings.sectionVisibilityHint": "Mostrar {section} en el menú principal.",
   "settings.keepSectionHint": "Al menos una sección compatible debe permanecer activada.",
   "settings.sectionUnsupportedHint":
     "Disponible cuando la lista de reproducción activa admite esta sección.",
@@ -245,14 +263,14 @@ export default {
   "settings.continuousReconnectHint":
     "Sigue intentando restaurar un canal en directo en lugar de rendirse tras varios intentos.",
   "settings.playbackInfo": "Información de reproducción",
-  "settings.playbackInfoHint":
-    "Muestra los diagnósticos de reproducción de forma predeterminada. Mantén pulsado OK durante la reproducción para mostrarlos u ocultarlos.",
+  "settings.playbackInfoHint": "Mostrar los detalles de reproducción de forma predeterminada.",
   "playbackInfo.title": "Información de reproducción",
   "playbackInfo.hold": "Mantener pulsado",
   "playbackInfo.hideHint": "Ocultar información de reproducción",
   "playbackInfo.engine": "Motor",
   "playbackInfo.resolution": "Resolución",
   "playbackInfo.dynamicRange": "Rango dinámico",
+  "playbackInfo.manifestRange": "Rango dinámico (manifiesto)",
   "playbackInfo.scan": "Barrido",
   "playbackInfo.progressive": "Progresivo",
   "playbackInfo.interlaced": "Entrelazado",

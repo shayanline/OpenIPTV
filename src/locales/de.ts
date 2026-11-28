@@ -1,6 +1,25 @@
 import type { MessageKey, MessageValues } from "../services/locale";
 
 export default {
+  "vod.searchHint": "Titel oder Kategorie eingeben, dann Suchen wählen oder Enter drücken.",
+  "vod.searching": "Katalog wird durchsucht…",
+  "vod.searchFailed": "Suche nicht verfügbar",
+  "vod.searchFailedHint":
+    "Ihre Suchanfrage ist gespeichert. Laden Sie den Anbieterkatalog erneut.",
+  "vod.searchEmptyHint": "Prüfen Sie die Schreibweise oder versuchen Sie eine andere Suche.",
+  "vod.searchEmptyCatalogue": "Der Anbieter hat keine Titel in diesem Katalog.",
+  "vod.searchDraft": ({ query }) =>
+    `Ergebnisse für "${query}". Zum Aktualisieren Suchen wählen.`,
+  "vod.searchCached": "Gespeicherte Katalogergebnisse werden angezeigt.",
+  "vod.browseCategories": "Kategorien durchsuchen",
+  "vod.resumeTime": ({ time }) => `Ab ${time}`,
+  "vod.resumeEpisode": ({ episode, time }) => `${episode} ab ${time} fortsetzen`,
+  "vod.restartShort": "Neu starten",
+  "vod.restartEpisode": "Episode neu starten",
+  "vod.continueShort": "Fortsetzen",
+  "vod.overview": "Übersicht",
+  "vod.information": "Über diesen Titel",
+  "app.playlistUnavailable": "Diese Playlist konnte nicht geladen werden",
   "error.playbackUnavailable": "Die Wiedergabe ist nicht verfügbar.",
   "error.accessDenied": "Der Zugriff auf diesen Stream wurde verweigert.",
   "error.serverError": "Der Server hat einen Fehler zurückgegeben.",
@@ -224,8 +243,7 @@ export default {
   "settings.showLive": "Live anzeigen",
   "settings.showMovies": "Filme anzeigen",
   "settings.showSeries": "Serien anzeigen",
-  "settings.sectionVisibilityHint":
-    "{section} im Hauptmenü und in den Suchergebnissen anzeigen.",
+  "settings.sectionVisibilityHint": "{section} im Hauptmenü anzeigen.",
   "settings.keepSectionHint": "Mindestens ein unterstützter Bereich muss aktiviert bleiben.",
   "settings.sectionUnsupportedHint":
     "Verfügbar, wenn die aktive Wiedergabeliste diesen Bereich unterstützt.",
@@ -244,14 +262,14 @@ export default {
   "settings.continuousReconnectHint":
     "Versucht weiterhin, einen Live-Kanal wiederherzustellen, statt nach einigen Versuchen aufzugeben.",
   "settings.playbackInfo": "Wiedergabeinformationen",
-  "settings.playbackInfoHint":
-    "Wiedergabediagnose standardmäßig anzeigen. Halten Sie während der Wiedergabe OK gedrückt, um sie ein- oder auszublenden.",
+  "settings.playbackInfoHint": "Wiedergabedetails standardmäßig anzeigen.",
   "playbackInfo.title": "Wiedergabeinformationen",
   "playbackInfo.hold": "Gedrückt halten",
   "playbackInfo.hideHint": "Wiedergabeinformationen ausblenden",
   "playbackInfo.engine": "Wiedergabeengine",
   "playbackInfo.resolution": "Auflösung",
   "playbackInfo.dynamicRange": "Dynamikumfang",
+  "playbackInfo.manifestRange": "Dynamikumfang (Manifest)",
   "playbackInfo.scan": "Abtastung",
   "playbackInfo.progressive": "Progressiv",
   "playbackInfo.interlaced": "Interlaced",
@@ -612,7 +630,8 @@ export default {
   "guide.seek": "Zehn Sekunden springen",
   "search.mediaName": "Film- oder Serienname",
   "search.mediaAria": "Filme oder Serien nach Namen durchsuchen",
-  "error.seekUnavailable": "Zu dieser Position konnte nicht gesprungen werden. Bitte erneut versuchen.",
+  "error.seekUnavailable":
+    "Zu dieser Position konnte nicht gesprungen werden. Bitte erneut versuchen.",
   "error.continueOrTryFormat":
     "Setzen Sie an der aktuellen Position fort oder versuchen Sie ein anderes Format.",
   "error.finiteFormatUnsupported":

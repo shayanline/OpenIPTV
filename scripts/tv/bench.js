@@ -120,25 +120,34 @@ window.__bench = {
       const choices = [
         ["vod-rail", ".vod-host:not(.hidden) .vod-rail.focused .vod-category.cursor"],
         ["vod-grid", ".vod-host:not(.hidden) .poster-grid-region.focused .poster-card.cursor"],
-        ["live", ".panel:not(.away) .pane.focused .row.cursor"],
+        [
+          "live",
+          ".panel:not(.away) .section-search.cursor, .panel:not(.away) .pane.focused .row.cursor",
+        ],
       ];
       for (const [owner, selector] of choices) {
         const row = Array.from(document.querySelectorAll(selector)).find(
           (element) => !element.closest(".hidden, .away, [hidden]"),
         );
         if (!row) continue;
+        const searchEntry = owner === "live" && row.matches(".section-search");
+        const pane =
+          row.closest(".pane") ??
+          (searchEntry ? row.closest(".panel")?.querySelector(".rail.focused") : null);
+        if (searchEntry && !pane) continue;
         const measuredPosition =
           owner === "vod-grid"
             ? this.posterPosition(row)
-            : Number.parseFloat(row.style.top) / Number.parseFloat(row.style.height);
+            : searchEntry
+              ? -1
+              : Number.parseFloat(row.style.top) / Number.parseFloat(row.style.height);
         const position = Number.isFinite(measuredPosition) ? measuredPosition : null;
-        const pane = row.closest(".pane");
-        const count =
-          owner === "live" && pane?.classList.contains("rail")
-            ? Number(
-                pane.querySelector(".pane-head > .count")?.textContent.replace(/\D/g, "") ?? 0,
-              )
-            : 0;
+        let count = 0;
+        if (owner === "live" && pane?.classList.contains("rail")) {
+          const label = pane.querySelector(".pane-head > .count")?.textContent ?? "";
+          count = Number(label.split("/")[0].replace(/\D/g, ""));
+          if (pane.closest(".panel")?.querySelector(".section-search")) count += 1;
+        }
         return {
           owner: `${owner}:${pane?.classList.contains("rail") ? "rail" : "list"}`,
           position,

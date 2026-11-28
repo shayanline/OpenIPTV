@@ -8,33 +8,18 @@ import { KeyGuide, SettingsPath } from "./KeyGuide";
 import { RAIL_ROW_BASE, useNavigableWindow } from "../hooks/useWindowed";
 import { useViewport } from "../hooks/useViewport";
 
-/**
- * The category rail.
- *
- * Its own header carries a subheader naming what the column is and how many of them there are,
- * and nothing else. The application's name and its two keys moved up to the panel's title bar,
- * which spans both columns: an application level control sitting inside this column made it look
- * like part of the categories, and there was nowhere to put a second one.
- *
- * What is left is the One UI shape for a list: a quiet subheader, a count, then the rows. The
- * channel column beside it carries the same shape, and the two subheaders share a line, so the
- * two lists start level. That is the checklist's grid alignment rule, and it is the reason
- * nothing here is allowed to grow taller than its neighbour.
- *
- * The cursor treats the title bar as position zero, above the first category, so it is reached
- * by pressing up and nothing sits outside the four directional path.
- */
+/** The category heading shares the channel heading's baseline. */
 interface Props {
   categories: {
     key: string;
     name: string;
-    count: number;
+    count?: number;
     hidden: boolean;
     favourite?: boolean;
   }[];
   /** Which category the channel list is showing. */
   selected: number;
-  /** Which row the remote is on. Zero is the title bar, so a category is index + 1. */
+  /** Categories start at one. Zero leaves the category rows unfocused. */
   cursor: number;
   /** So an arriving playlist is not announced as a playlist with nothing in it. */
   loading: boolean;
@@ -45,6 +30,9 @@ interface Props {
   onFocus: (index: number) => void;
   onSelect: (index: number) => void;
   onWheel: (direction: -1 | 1) => void;
+  className?: string;
+  emptyLabel?: string;
+  total?: number;
 }
 
 const Row = memo(function Row({
@@ -62,7 +50,7 @@ const Row = memo(function Row({
   onPick,
 }: {
   name: string;
-  count: number;
+  count?: number;
   index: number;
   cursor: boolean;
   pointerMode: boolean;
@@ -102,7 +90,7 @@ const Row = memo(function Row({
           <Icon name="hidden" />
         </span>
       )}{" "}
-      <span className="count">{number(count)}</span>
+      {count !== undefined && <span className="count">{number(count)}</span>}
     </button>
   );
 });
@@ -126,12 +114,14 @@ export const Sidebar = memo(function Sidebar({
   onFocus,
   onSelect,
   onWheel,
+  className = "",
+  emptyLabel,
+  total = categories.length,
 }: Props) {
   const { t, number, direction } = useLocale();
   const pointerMode = usePointerInput();
   const viewport = useRef<HTMLDivElement>(null);
   const height = useViewport(viewport);
-  // Cursor zero is the Settings key in the header, so the list's own cursor is one behind.
   const win = useNavigableWindow(
     categories.length,
     Math.max(0, cursor - 1),
@@ -162,7 +152,10 @@ export const Sidebar = memo(function Sidebar({
   }
 
   return (
-    <nav className={`rail pane ${focused ? "focused" : ""}`}>
+    <nav
+      className={`rail pane ${focused ? "focused" : ""} ${className}`}
+      aria-label={t("channel.categories")}
+    >
       {/*
        * What this column is, and how many are in it.
        *
@@ -173,16 +166,14 @@ export const Sidebar = memo(function Sidebar({
        * furniture.
        */}
       <div className="pane-head">
-        {/*
-         * The glyph and the word travel together in a wrapper of their own, because the header
-         * spreads its children to the edges so the count sits at the far side: a third child left
-         * loose would push the word into the middle of the column.
-         */}
-        <span className="pane-head-label">
-          <Icon name="categories" />
-          <p className="panel-title">{t("channel.categories")}</p>
-        </span>
-        {!!categories.length && <span className="count">{number(categories.length)}</span>}
+        <h2 className="panel-title">{t("channel.categories")}</h2>
+        {!!total && (
+          <span className="count">
+            {categories.length < total
+              ? `${number(categories.length)} / ${number(total)}`
+              : number(total)}
+          </span>
+        )}
       </div>
 
       <div
@@ -217,7 +208,7 @@ export const Sidebar = memo(function Sidebar({
               </div>
             </div>
           ) : (
-            <p className="empty">{t("channel.noCategories")}</p>
+            <p className="empty">{emptyLabel ?? t("channel.noCategories")}</p>
           ))}
         <ScrollIndicator
           count={categories.length}

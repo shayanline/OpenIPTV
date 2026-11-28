@@ -62,6 +62,7 @@ export type VodCategoryRow = {
   source: "continue" | "favourites" | "provider";
   name: string;
   count?: number;
+  hidden?: boolean;
 };
 
 export interface SeriesContinueTarget {
@@ -119,7 +120,7 @@ interface LibraryState {
   ) => Promise<SearchResults<LibraryItem>>;
   loadMovie: (movieKey: string) => Promise<void>;
   loadSeries: (seriesKey: string) => Promise<void>;
-  categoriesFor: (kind: LibraryKind) => VodCategoryRow[];
+  categoriesFor: (kind: LibraryKind, includeHidden?: boolean) => VodCategoryRow[];
   categoryCountFor: (
     kind: LibraryKind,
     categoryKey: string,
@@ -1199,7 +1200,7 @@ export const useLibrary = create<LibraryState>((set, get) => ({
     );
   },
 
-  categoriesFor(kind) {
+  categoriesFor(kind, includeHidden = false) {
     const personal = usePersonal.getState();
     const rows: VodCategoryRow[] = [];
     const continued = continueWatching(personal.progress, get().playlistId, kind);
@@ -1227,7 +1228,9 @@ export const useLibrary = create<LibraryState>((set, get) => ({
     const providerByKey = new Map(providerCategories.map((item) => [item.key, item]));
     const categories =
       effective.playlistId === get().playlistId
-        ? effective.categories.filter((category) => category.kind === kind && !category.hidden)
+        ? effective.categories.filter(
+            (category) => category.kind === kind && (includeHidden || !category.hidden),
+          )
         : providerCategories;
     for (const category of categories) {
       const provider = providerByKey.get(category.key);
@@ -1236,6 +1239,7 @@ export const useLibrary = create<LibraryState>((set, get) => ({
         key: category.key,
         source: "provider",
         name: category.name,
+        ...("hidden" in category && category.hidden === true ? { hidden: true } : {}),
         ...(count !== undefined ? { count } : {}),
       });
     }

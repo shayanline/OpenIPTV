@@ -82,9 +82,7 @@ test("the top strip mirrors under the logical margin fallback", () => {
 
 test("the application rail mirrors to the physical leading edge in RTL", () => {
   expect(styles).toMatch(/html\[dir="rtl"\] \.app-navigation \{[^}]*right: 0;[^}]*left: auto;/);
-  expect(styles).toMatch(
-    /html\[dir="rtl"\] \.sheet \{[^}]*right: var\(--app-nav-collapsed-w\);/,
-  );
+  expect(styles).toMatch(/\.sheet \{[^}]*right: 0;[^}]*left: 0;/);
 });
 
 test("subtitle cues stay below modals and track spacing survives without flex gap", () => {

@@ -2,8 +2,10 @@ import { useEffect, useId, useRef } from "react";
 import { useLocale } from "../../hooks/useLocale";
 import type { LibraryItem, LibraryResource } from "../../stores/library";
 import { Icon } from "../Icon";
-import { NavigationGuide } from "../KeyGuide";
+import { NavigationGuide, type Guide } from "../KeyGuide";
 import { SearchField } from "../SearchField";
+import { SearchState } from "../SearchState";
+import { Sidebar } from "../Sidebar";
 import { PosterGrid, type PosterGridProps, type PosterItem } from "./PosterGrid";
 
 export interface VodSearchProps {
@@ -11,11 +13,21 @@ export interface VodSearchProps {
   query: string;
   appliedQuery: string;
   fieldFocused: boolean;
+  keyboardOpen?: boolean;
   submitFocused: boolean;
+  retryFocused?: boolean;
+  categories: { key: string; name: string; count?: number; hidden: boolean }[];
+  categoryTotal: number;
+  categoryCursor: number;
+  categoriesFocused: boolean;
+  categoriesLoading?: boolean;
+  shortcuts?: Guide[];
+  onCategoryFocus: (index: number) => void;
+  onCategorySelect: (index: number) => void;
+  onCategoryWheel: (direction: -1 | 1) => void;
   results: LibraryResource<LibraryItem[]>;
   items: readonly PosterItem[];
   total: number;
-  catalogueEmpty: boolean;
   onFieldFocus: () => void;
   onSubmitFocus: () => void;
   onRetryFocus: () => void;
@@ -35,11 +47,21 @@ export function VodSearch({
   query,
   appliedQuery,
   fieldFocused,
+  keyboardOpen = true,
   submitFocused,
+  retryFocused,
+  categories,
+  categoryTotal,
+  categoryCursor,
+  categoriesFocused,
+  categoriesLoading = false,
+  shortcuts,
+  onCategoryFocus,
+  onCategorySelect,
+  onCategoryWheel,
   results,
   items,
   total,
-  catalogueEmpty,
   onFieldFocus,
   onSubmitFocus,
   onRetryFocus,
@@ -53,7 +75,7 @@ export function VodSearch({
   onExitEnd,
   onDismissKeyboard,
 }: VodSearchProps) {
-  const { t } = useLocale();
+  const { t, number } = useLocale();
   const submit = useRef<HTMLButtonElement>(null);
   const retry = useRef<HTMLButtonElement>(null);
   const descriptionId = useId();
@@ -62,10 +84,12 @@ export function VodSearch({
   const loading = submitted && (results.state === "loading" || results.state === "idle");
   const failed = submitted && results.state === "failed";
   const empty = submitted && results.state === "empty" && !items.length;
+  const showColumns = submitted && (!empty || categoriesLoading || categories.length > 0);
   const showGrid = submitted && !loading && !failed && !empty;
   const busy = loading && query === appliedQuery;
   const tooLarge = results.error === "too-large";
-  const title = !submitted || (empty && catalogueEmpty)
+  const retryActive = retryFocused ?? grid.focused;
+  const title = !submitted
     ? `${t("common.search")} ${scope}`
     : loading
       ? t("vod.searching")
@@ -77,30 +101,27 @@ export function VodSearch({
     : failed
       ? t(tooLarge ? "vod.tooLarge" : "vod.searchFailedHint")
       : empty
-        ? t(catalogueEmpty ? "vod.searchEmptyCatalogue" : "vod.searchEmptyHint")
+        ? t("vod.searchEmptyHint")
         : "";
 
   useEffect(() => {
     if (submitFocused) submit.current?.focus();
   }, [submitFocused]);
   useEffect(() => {
-    if (failed && grid.focused) retry.current?.focus();
-  }, [failed, grid.focused]);
+    if (failed && retryActive) retry.current?.focus();
+  }, [failed, retryActive]);
 
   return (
-    <section
-      className="vod-search"
-      aria-label={`${t("common.search")} ${scope}`}
-      aria-busy={loading}
-    >
+    <section className="vod-search" aria-label={`${t("common.search")} ${scope}`}>
       <div className="vod-search-bar">
         <SearchField
           value={query}
           focused={fieldFocused}
-          shown={items.length}
-          total={total}
+          keyboardOpen={keyboardOpen}
+          shown={items.length + categories.length}
+          total={total + categoryTotal}
           showCount={submitted && !loading && !failed && appliedQuery === query}
-          placeholder={`${t("common.search")} ${scope}`}
+          placeholder={t("common.search")}
           ariaLabel={`${t("common.search")} ${scope}`}
           onChange={onQuery}
           onFocus={onFieldFocus}
@@ -136,36 +157,68 @@ export function VodSearch({
           {t("vod.searchCached")}
         </p>
       )}
-      {showGrid ? (
-        <PosterGrid {...grid} items={items} resourceState={results.state} />
-      ) : (
-        <div className="vod-search-state" role="status" aria-atomic="true">
-          {loading ? (
-            <div className="spinner" aria-hidden="true" />
+      <div className={`vod-search-results ${showColumns ? "" : "search-prompt"}`}>
+        {showColumns && (
+          <Sidebar
+            className="search-categories"
+            categories={categories}
+            total={categoryTotal}
+            cursor={categoryCursor + 1}
+            selected={-1}
+            focused={categoriesFocused}
+            loading={categoriesLoading}
+            allHidden={false}
+            emptyLabel={t("playlist.noCategoryMatches")}
+            scale={grid.scale}
+            onFocus={onCategoryFocus}
+            onSelect={onCategorySelect}
+            onWheel={onCategoryWheel}
+          />
+        )}
+        <section className="vod-search-content" aria-label={scope} aria-busy={loading}>
+          {showColumns && (
+            <header className="pane-head search-content-heading">
+              <h2>{scope}</h2>
+              {!loading && !failed && (
+                <span className="count">
+                  {items.length < total
+                    ? `${number(items.length)} / ${number(total)}`
+                    : number(total)}
+                </span>
+              )}
+            </header>
+          )}
+          {showGrid ? (
+            <PosterGrid {...grid} items={items} resourceState={results.state} />
           ) : (
-            <span className="vod-error-icon" aria-hidden="true">
-              <Icon name={failed ? "warn" : "search"} />
-            </span>
-          )}
-          <h2>{title}</h2>
-          {message && <p id={descriptionId}>{message}</p>}
-          {failed && (
-            <button
-              ref={retry}
-              type="button"
-              className="vod-retry"
-              data-selected={grid.focused || undefined}
-              aria-describedby={descriptionId}
-              onFocus={onRetryFocus}
-              onClick={onRetry}
+            <SearchState
+              className="vod-search-state"
+              title={title}
+              description={message}
+              descriptionId={descriptionId}
+              loading={loading}
+              failed={failed}
+              compact={empty && !!showColumns}
             >
-              <Icon name={tooLarge ? kind : "refresh"} />
-              <span>{t(tooLarge ? "vod.browseCategories" : "vod.retry")}</span>
-            </button>
+              {failed && (
+                <button
+                  ref={retry}
+                  type="button"
+                  className="vod-retry"
+                  data-selected={retryActive || undefined}
+                  aria-describedby={descriptionId}
+                  onFocus={onRetryFocus}
+                  onClick={onRetry}
+                >
+                  <Icon name={tooLarge ? kind : "refresh"} />
+                  <span>{t(tooLarge ? "vod.browseCategories" : "vod.retry")}</span>
+                </button>
+              )}
+            </SearchState>
           )}
-        </div>
-      )}
-      <NavigationGuide className="page-key-guide vod-search-key-guide" />
+        </section>
+      </div>
+      <NavigationGuide className="page-key-guide vod-search-key-guide" shortcuts={shortcuts} />
     </section>
   );
 }

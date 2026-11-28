@@ -1284,6 +1284,7 @@ export default function App() {
               chrome={chrome}
               videoRef={videoRef}
               onAppNavigationFocus={focusAppNavigation}
+              onContentFocus={releaseAppNavigation}
               searchRequest={searchRequest}
               onSearchClosed={onSearchClosed}
               navigationTransitionActive={pageTransitionPhase !== "idle"}
@@ -1369,6 +1370,8 @@ export default function App() {
                 playbackPending={vodPhase === "resolving" || vodPhase === "starting"}
                 onCancelPending={cancelPendingVod}
                 onAppNavigationFocus={focusAppNavigation}
+                onContentFocus={releaseAppNavigation}
+                onAnnounce={chrome.say}
                 searchRequest={searchRequest}
                 onSearchClosed={onSearchClosed}
                 onPageReady={vodPageReady}

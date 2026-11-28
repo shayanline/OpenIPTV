@@ -49,7 +49,6 @@ export function appNavigationItems(
       label: t(item.label),
       icon: item.icon,
     })),
-    { id: "search", label: t("common.search"), icon: "search" },
     { id: "settings", label: t("common.settings"), icon: "settings" },
   ];
 }
@@ -81,11 +80,7 @@ export function AppNavigation({
   onFocusChange,
 }: AppNavigationProps) {
   const navigation = useRef<HTMLElement>(null);
-  const scope =
-    items.find((item) => item.id === activeMode) ??
-    items.find((item) => CONTENT_ITEMS.some((content) => content.id === item.id));
   const playlist = items.find((item) => item.id === "playlists");
-  const search = items.find((item) => item.id === "search");
 
   useLayoutEffect(() => {
     const element = navigation.current;
@@ -105,11 +100,19 @@ export function AppNavigation({
   return (
     <nav
       ref={navigation}
-      className={`app-navigation ${visible ? "visible" : ""} ${expanded ? "expanded" : ""}`.trim()}
+      className={`app-navigation ${visible ? "visible" : ""} ${expanded ? "expanded" : ""} ${focused ? "focused" : ""}`.trim()}
       aria-label="Application navigation"
       aria-hidden={!visible}
-      onFocus={() => {
-        if (!pointerInputActive()) onFocusChange(true);
+      onFocus={(event) => {
+        if (!visible || pointerInputActive()) return;
+        const action =
+          event.target instanceof HTMLElement
+            ? event.target.closest<HTMLElement>("[data-navigation-action]")?.dataset
+                .navigationAction
+            : undefined;
+        const item = items.find((candidate) => candidate.id === action);
+        onFocusChange(true);
+        if (item) onHover?.(item);
       }}
       onPointerEnter={() => {
         if (pointerInputActive()) onFocusChange(true);
@@ -157,18 +160,6 @@ export function AppNavigation({
           onActivate={onActivate}
           onHover={onHover}
         />
-        <div className="app-navigation-divider" aria-hidden="true" />
-        {search && (
-          <Action
-            item={search}
-            activeMode={activeMode}
-            activeAction={activeAction}
-            focusedAction={focusedAction}
-            onActivate={onActivate}
-            onHover={onHover}
-            scope={scope}
-          />
-        )}
       </div>
       <div className="app-navigation-spacer app-navigation-footer-spacer" aria-hidden="true" />
       <Action
@@ -222,7 +213,6 @@ type ActionProps = {
   focusedAction?: AppNavigationAction;
   onActivate: (item: AppNavigationItem) => void;
   onHover?: (item: AppNavigationItem) => void;
-  scope?: AppNavigationItem;
   available?: boolean;
   buttonRef?: RefObject<HTMLButtonElement | null>;
 };
@@ -400,16 +390,10 @@ function Action({
   focusedAction,
   onActivate,
   onHover,
-  scope,
   available = true,
   buttonRef,
 }: ActionProps) {
-  const isSearch = item.id === "search";
-  const accessibleName = item.playlist
-    ? `${item.label}, ${item.playlist.name}`
-    : isSearch && scope
-      ? `${item.label} ${scope.label}`
-      : item.label;
+  const accessibleName = item.playlist ? `${item.label}, ${item.playlist.name}` : item.label;
   const content = (
     <>
       <span className="app-navigation-icon">
@@ -420,12 +404,6 @@ function Action({
         )}
       </span>
       <span className="app-navigation-label">{item.label}</span>
-      {isSearch && scope && (
-        <span className="app-navigation-scope-badge" data-navigation-scope aria-hidden="true">
-          <Icon name={scope.icon} />
-          <span className="app-navigation-scope-label">{scope.label}</span>
-        </span>
-      )}
     </>
   );
 
@@ -445,9 +423,7 @@ function Action({
       onPointerEnter={available ? () => pointerOnly(() => onHover?.(item)) : undefined}
       onClick={available ? () => onActivate(item) : undefined}
     >
-      <span className="app-navigation-action-visual">
-        {isSearch ? <span className="app-navigation-search-content">{content}</span> : content}
-      </span>
+      <span className="app-navigation-action-visual">{content}</span>
     </button>
   );
 }

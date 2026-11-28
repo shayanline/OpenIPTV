@@ -123,10 +123,14 @@ function Harness({
 }
 
 const renderDeck = (props: Partial<PlaybackDeckProps> = {}, focus?: PlaybackDeckFocus) =>
-  render(<Harness {...renderDeckProps(props)} initialFocus={focus} />);
+  render(<Harness {...renderDeckProps(props)} initialFocus={focus ?? props.focus} />);
 
 const selectedControl = () =>
-  document.querySelector("[data-selected]")?.getAttribute("data-control") ?? null;
+  document
+    .querySelector(
+      "[data-control][data-selected], .deck-programme-panel[data-selected] [data-control]",
+    )
+    ?.getAttribute("data-control") ?? null;
 const deckVisible = () => !!document.querySelector(".playback-deck");
 
 let inputMode: string | undefined;
@@ -951,7 +955,7 @@ test.each(["connecting", "rebuffering", "recovering"] as const)(
     expect(selectedControl()).toBe("next");
     press(KEY.RIGHT);
     expect(selectedControl()).toBe("guide");
-    expect(guide?.getAttribute("data-selected")).toBe("true");
+    expect(guide?.closest(".deck-programme-panel")?.getAttribute("data-selected")).toBe("true");
     press(KEY.ENTER);
     expect(props.onAction).toHaveBeenCalledOnce();
     expect(props.onAction).toHaveBeenCalledWith("guide");
@@ -992,7 +996,7 @@ test("Guide becomes focused when it is the first enabled control", () => {
   expect(props.onAction).not.toHaveBeenCalled();
   press(KEY.RIGHT);
   expect(selectedControl()).toBe("guide");
-  expect(guide?.getAttribute("data-selected")).toBe("true");
+  expect(guide?.closest(".deck-programme-panel")?.getAttribute("data-selected")).toBe("true");
   expect(view.container.querySelector(".deck-lead > [role=status]")).toBe(status);
   expect(status?.parentElement).toBe(view.container.querySelector(".deck-lead"));
   expect(guide?.closest(".deck-programme-panel")?.querySelector("[role=status]")).toBeNull();
@@ -1439,6 +1443,25 @@ test("shows the reported dynamic range without guessing a PQ format", () => {
   expect(label?.nextElementSibling?.textContent).toBe("PQ (HDR)");
 });
 
+test("identifies a manifest declaration separately from an engine reported range", () => {
+  render(
+    <PlaybackInfo
+      read={() => ({
+        engine: "AVPlay",
+        dynamicRange: "HDR10+",
+        dynamicRangeSource: "manifest",
+        switches: 0,
+      })}
+      visible
+    />,
+  );
+  advance(400);
+  const label = Array.from(document.querySelectorAll("dt")).find(
+    (item) => item.textContent === "Dynamic range (manifest)",
+  );
+  expect(label?.nextElementSibling?.textContent).toBe("HDR10+");
+});
+
 test("retains the recovery diagnostic without displaying recovery information", () => {
   const target = "http://viewer:secret@example.invalid/live/channel.m3u8";
   render(<PlaybackInfo read={() => null} recovery={{ cause: "engine-network", attempt: 2 }} />);
@@ -1451,20 +1474,16 @@ test("retains the recovery diagnostic without displaying recovery information", 
   expect(diagnostics?.textContent).not.toContain("secret");
 });
 
-/*
- * The hint row is a caption, not a control. It gives fixed horizontal directions for
- * controls and vertical directions for the current focus, with no added focus stops.
- */
+/* The hint row describes playback actions without adding focus stops. */
 const deckHints = () =>
   Array.from(document.querySelectorAll(".playback-deck .deck-hints > span")).map((item) => ({
     keys: Array.from(item.querySelectorAll("kbd")).map((key) => key.textContent),
     text: item.textContent ?? "",
   }));
 
-test("finite hints keep fixed control arrows and context specific dismissal hints", () => {
+test("finite hints retain seeking and context specific dismissal actions", () => {
   const view = renderDeck({}, "play-pause");
   expect(deckHints()).toEqual([
-    { keys: ["\u2190", "\u2192", "\u2191"], text: "\u2190\u2192\u2191Move" },
     { keys: ["OK"], text: "OKSelect" },
     { keys: ["\u2193", "Return"], text: "\u2193ReturnClose" },
   ]);
@@ -1474,7 +1493,6 @@ test("finite hints keep fixed control arrows and context specific dismissal hint
   expect(selectedControl()).toBe("seek");
   expect(deckHints()).toEqual([
     { keys: ["\u2190", "\u2192"], text: "\u2190\u2192Seek" },
-    { keys: ["\u2193"], text: "\u2193Move" },
     { keys: ["\u2191", "Return"], text: "\u2191ReturnClose" },
   ]);
   view.unmount();
@@ -1483,7 +1501,6 @@ test("finite hints keep fixed control arrows and context specific dismissal hint
   renderDeck({ previousEnabled: false }, "previous");
   expect(selectedControl()).toBe("play-pause");
   expect(deckHints()).toEqual([
-    { keys: ["\u2190", "\u2192", "\u2191"], text: "\u2190\u2192\u2191Move" },
     { keys: ["OK"], text: "OKSelect" },
     { keys: ["\u2193", "Return"], text: "\u2193ReturnClose" },
   ]);
@@ -1492,11 +1509,11 @@ test("finite hints keep fixed control arrows and context specific dismissal hint
 test.each([
   ["previous", { previousEnabled: false, nextEnabled: true }],
   ["next", { previousEnabled: true, nextEnabled: false }],
-] as const)("control focus %s keeps both horizontal Move arrows", (focus, availability) => {
+] as const)("control focus %s shows the available action hint", (focus, availability) => {
   renderDeck(availability, focus);
   expect(deckHints()[0]).toEqual({
-    keys: ["\u2190", "\u2192", "\u2191"],
-    text: "\u2190\u2192\u2191Move",
+    keys: ["OK"],
+    text: "OKSelect",
   });
 });
 
@@ -1510,7 +1527,6 @@ test("a Live channel without a DVR window offers no seek hints", () => {
     "play-pause",
   );
   expect(deckHints()).toEqual([
-    { keys: ["\u2190", "\u2192"], text: "\u2190\u2192Move" },
     { keys: ["OK"], text: "OKSelect" },
     { keys: ["\u2191", "\u2193", "Return"], text: "\u2191\u2193ReturnClose" },
   ]);
@@ -1530,7 +1546,6 @@ test("a removed Go live action restores Play or Pause focus and its Select hint"
   );
   expect(selectedControl()).toBe("play-pause");
   expect(deckHints()).toEqual([
-    { keys: ["\u2190", "\u2192"], text: "\u2190\u2192Move" },
     { keys: ["OK"], text: "OKSelect" },
     { keys: ["\u2191", "\u2193", "Return"], text: "\u2191\u2193ReturnClose" },
   ]);
@@ -1549,7 +1564,6 @@ test("delayed Live hints cover the seek window and the Go live focus", () => {
   );
   expect(deckHints()).toEqual([
     { keys: ["\u2190", "\u2192"], text: "\u2190\u2192Seek" },
-    { keys: ["\u2193"], text: "\u2193Move" },
     { keys: ["\u2191", "Return"], text: "\u2191ReturnClose" },
   ]);
 
@@ -1560,7 +1574,6 @@ test("delayed Live hints cover the seek window and the Go live focus", () => {
   press(KEY.LEFT);
   expect(selectedControl()).toBe("go-live");
   expect(deckHints()).toEqual([
-    { keys: ["\u2190", "\u2192", "\u2191"], text: "\u2190\u2192\u2191Move" },
     { keys: ["OK"], text: "OKSelect" },
     { keys: ["\u2193", "Return"], text: "\u2193ReturnClose" },
   ]);
@@ -1580,7 +1593,6 @@ test.each(["episode", "catchup"] as const)(
     );
     expect(document.querySelector('[data-control="details"]')).toBeTruthy();
     expect(deckHints()).toEqual([
-      { keys: ["\u2190", "\u2192", "\u2191"], text: "\u2190\u2192\u2191Move" },
       { keys: ["OK"], text: "OKSelect" },
       { keys: ["\u2193", "Return"], text: "\u2193ReturnClose" },
     ]);
@@ -1593,10 +1605,6 @@ test("hint arrows follow the reading direction", () => {
   try {
     renderDeck({}, "play-pause");
     expect(deckHints()).toEqual([
-      {
-        keys: ["\u2192", "\u2190", "\u2191"],
-        text: `\u2192\u2190\u2191${translate("fa", "common.move")}`,
-      },
       { keys: ["OK"], text: `OK${translate("fa", "common.select")}` },
       { keys: ["\u2193", "Return"], text: `\u2193Return${translate("fa", "common.close")}` },
     ]);
@@ -1605,7 +1613,6 @@ test("hint arrows follow the reading direction", () => {
     expect(selectedControl()).toBe("seek");
     expect(deckHints()).toEqual([
       { keys: ["\u2192", "\u2190"], text: `\u2192\u2190${translate("fa", "deck.seek")}` },
-      { keys: ["\u2193"], text: `\u2193${translate("fa", "common.move")}` },
       { keys: ["\u2191", "Return"], text: `\u2191Return${translate("fa", "common.close")}` },
     ]);
   } finally {

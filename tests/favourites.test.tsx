@@ -241,7 +241,7 @@ test("the red key hides and unhides the selected category immediately", async ()
   await mountApp(PLAYLIST);
   const { useLineup } = await import("../src/stores/lineup");
   press(KEY.LEFT);
-  assert.ok(screen.getByText("Hide category"));
+  assert.ok(screen.getByText("Hide"));
 
   press(KEY.RED);
   assert.deepEqual(rail(), ["News", "Sport"]);
@@ -259,6 +259,43 @@ test("the red key hides and unhides the selected category immediately", async ()
     useLineup.getState().managedCategories.find((item) => item.key === "News")?.hidden,
     false,
   );
+});
+
+test("Red hides and shows a focused channel while its reveal shortcut stays unadvertised", async () => {
+  await mountApp(PLAYLIST);
+  const { useLineup } = await import("../src/stores/lineup");
+  const hidden = () =>
+    useLineup.getState().managedChannels.find((item) => item.providerName === "Alpha")?.hidden;
+  const redLabel = () =>
+    document
+      .querySelector(".panel-hints kbd[data-key='Red']")
+      ?.parentElement?.querySelector(".guide-label")?.textContent;
+  const channelNames = () =>
+    [...document.querySelectorAll(".list .row .row-label")].map((row) => row.textContent);
+  assert.equal(redLabel(), "Hide");
+  assert.equal(
+    document
+      .querySelector(".panel-hints kbd[data-key='OK']")
+      ?.parentElement?.querySelector(".guide-label")?.textContent,
+    "Select",
+  );
+
+  press(KEY.RED);
+  assert.equal(hidden(), true);
+  assert.equal(redLabel(), "Show");
+  assert.equal(channelNames().includes("Alpha"), true);
+
+  await hold(KEY.RED);
+  await hold(KEY.RED);
+  assert.equal(channelNames().includes("Alpha"), false);
+  assert.equal(document.querySelector(".panel-hints")?.textContent?.includes("Hold"), false);
+
+  await hold(KEY.RED);
+  assert.equal(channelNames().includes("Alpha"), true);
+  assert.equal(redLabel(), "Show");
+  press(KEY.RED);
+  assert.equal(hidden(), false);
+  assert.equal(redLabel(), "Hide");
 });
 
 test("a real category named Favourites can be hidden", async () => {
@@ -355,7 +392,7 @@ test("holding Red during search keeps focus in search", async () => {
   await hold(KEY.RED);
 
   assert.equal(Boolean(document.querySelector(".rail")), false);
-  assert.ok(screen.getByLabelText("Search channels by name"));
+  assert.ok(screen.getByRole("textbox", { name: /^Search channels/ }));
 });
 
 test("the on-screen Smart Remote red key toggles category visibility", async () => {
@@ -467,13 +504,13 @@ test("unfavouriting a hidden playing channel keeps the visible category selected
  * viewer's thumb. Nothing on screen says this has regressed except that it feels slow, so
  * the timing is asserted rather than left to be noticed.
  */
-test("walking the rail moves the cursor immediately and settles the category once", async () => {
+test("a fresh category press updates the cursor and content immediately", async () => {
   await mountApp(PLAYLIST);
   press(KEY.LEFT); // into the rail, on News
 
   press(KEY.DOWN);
   assert.equal(cursorOn(), "Sport", "the cursor did not answer the press");
-  assert.equal(showing(), "News", "the column was rebuilt while the key was still moving");
+  assert.equal(showing(), "Sport", "the content did not answer the fresh press");
 
   await settle();
   assert.equal(showing(), "Sport", "the settled category did not follow the cursor");

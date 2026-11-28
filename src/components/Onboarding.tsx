@@ -524,8 +524,7 @@ export function Onboarding({
         <KeyGuide
           className="onboard-foot ruled"
           items={[
-            { keys: ["\u2191", "\u2193"], label: t("common.move") },
-            { keys: ["OK"], label: t("guide.addIt") },
+            { keys: ["OK"], label: t("common.select") },
             { keys: ["Return"], label: t("common.closeApp") },
           ]}
         />

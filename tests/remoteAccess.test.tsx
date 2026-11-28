@@ -22,7 +22,9 @@ const server = vi.hoisted(() => {
     read: () => state,
     publish(change: Partial<RemoteAccessState>) {
       state = { ...state, ...change };
-      listeners.forEach((listener) => listener(state));
+      listeners.forEach((listener) => {
+        listener(state);
+      });
     },
     subscribe(listener: (state: RemoteAccessState) => void) {
       listeners.add(listener);

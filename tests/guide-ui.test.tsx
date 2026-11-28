@@ -302,16 +302,16 @@ test("the live Guide shows its channel header and truthful hints for the selecte
   expect(drawer.querySelector(".playback-drawer-head .icon-guide")).toBeTruthy();
   expect(screen.getByRole("region", { name: "Programme guide: Provider One" })).toBeTruthy();
   const hints = () => drawer.querySelector(".guide-drawer-hints")?.textContent;
-  expect(hints()).toBe("\u2191\u2193Move\u2190RETURNClose");
+  expect(hints()).toBe("\u2190RETURNClose");
   expect(drawer.querySelector(".playback-drawer-body")?.nextElementSibling).toBe(
     drawer.querySelector(".playback-drawer-footer"),
   );
 
   press(KEY.UP);
-  expect(hints()).toBe("\u2191\u2193MoveOKPlay from start\u2190RETURNClose");
+  expect(hints()).toBe("OKSelect\u2190RETURNClose");
   press(KEY.DOWN);
   press(KEY.DOWN);
-  expect(hints()).toBe("\u2191\u2193Move\u2190RETURNClose");
+  expect(hints()).toBe("\u2190RETURNClose");
   const before = played.length;
   press(KEY.ENTER);
   expect(played).toHaveLength(before);
@@ -320,7 +320,7 @@ test("the live Guide shows its channel header and truthful hints for the selecte
   press(KEY.BACK);
   await settle(180);
   expect(document.querySelector(".guide-drawer")).toBeNull();
-  expect(document.querySelector('[data-control="guide"]')?.hasAttribute("data-selected")).toBe(
+  expect(document.querySelector(".deck-programme-panel")?.hasAttribute("data-selected")).toBe(
     true,
   );
 });
@@ -378,7 +378,7 @@ test.each(["loading", "empty", "failed"] as const)(
     expect(screen.getByRole("heading", { level: 2, name: "Provider One" })).toBeTruthy();
     expect(screen.getByText("Programme Guide")).toBeTruthy();
     expect(drawer.querySelector(".guide-drawer-hints")?.textContent).toBe(
-      state === "failed" ? "OKRetry\u2190RETURNClose" : "\u2190RETURNClose",
+      state === "failed" ? "OKSelect\u2190RETURNClose" : "\u2190RETURNClose",
     );
     if (state === "loading") expect(within(drawer).getByRole("status")).toBeTruthy();
     if (state === "empty") {

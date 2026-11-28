@@ -17,7 +17,7 @@ import {
 test("playback range constants use the approved values", () => {
   expect(DEFAULT_SEGMENT_SECONDS).toBe(3);
   expect(SEEK_STEP_SECONDS).toBe(10);
-  expect(SEEK_SETTLE_MS).toBe(750);
+  expect(SEEK_SETTLE_MS).toBe(375);
   expect(SEEK_TIMEOUT_MS).toBe(5000);
 });
 

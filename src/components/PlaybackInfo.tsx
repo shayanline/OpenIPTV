@@ -74,7 +74,11 @@ export function PlaybackInfo({
       stats.width && stats.height ? `${stats.width} × ${stats.height}` : missing,
     ],
     [
-      t("playbackInfo.dynamicRange"),
+      t(
+        stats.dynamicRangeSource === "manifest"
+          ? "playbackInfo.manifestRange"
+          : "playbackInfo.dynamicRange",
+      ),
       stats.dynamicRange === "PQ" ? "PQ (HDR)" : (stats.dynamicRange ?? missing),
     ],
     [t("playbackInfo.scan"), stats.scan ? t(`playbackInfo.${stats.scan}`) : missing],

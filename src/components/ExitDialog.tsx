@@ -36,6 +36,7 @@ export function ExitDialog({
       cancelLabel={t("exit.stay")}
       destructive
       confirmIcon="power"
+      cancelIcon={null}
       onConfirm={() => {
         onConfirm?.();
         exitApp();

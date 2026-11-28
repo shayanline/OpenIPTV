@@ -108,7 +108,7 @@ export function PictureState({
               ? [{ keys: ["OK", "Return"], label: t("common.back") }]
               : [
                   { keys: ["\u2191", "\u2193"], label: t("common.anotherChannel") },
-                  { keys: ["OK"], label: t("common.allChannels") },
+                  { keys: ["OK"], label: t("common.select") },
                   { keys: ["Return"], label: t("common.closeApp") },
                 ]
           }

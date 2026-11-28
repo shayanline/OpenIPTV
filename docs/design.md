@@ -7,6 +7,8 @@ The interface follows Samsung's
 [Smart TV design guidelines](https://developer.samsung.com/smarttv/design/design-principles.html)
 and takes its look from [One UI](https://developer.samsung.com/one-ui/index.html).
 
+Shared control layouts center labels and icons. SVG icons use one scale aware optical alignment token for the bundled font. Button labels inherit the control's line height, so their baseline stays consistent with inputs and across font sizes. The same rule applies to list labels, settings fields and option pickers.
+
 ## The screen is a stack
 
 | Level | Slot | Current surface |
@@ -25,9 +27,15 @@ An ordinary channel press commits after two animation frames, which let feedback
 
 Playback controls use the banner's opacity and vertical translation entrance through one shared animation rule, including its duration and easing. Live, Movies and Series use that same rule whether or not the banner was visible. Opening controls never measures or scales individual banner parts.
 
-The navigation menu's painted background and border move through a fixed width pseudo element using the channel panel's transform duration and easing during ordinary channel browsing. Section changes between Live, Movies, Series and Search fade only the content area beside the application menu. The fade boundary follows the menu's collapsed or expanded width and mirrors in RTL. Full screen pages such as Settings, Change Playlist and VOD details fade the whole screen, including the menu. Rail geometry changes without animation during page navigation. Search waits until the fade is idle before focusing its input.
+The navigation menu's painted background and border move through a fixed width pseudo element using the channel panel's transform duration and easing during ordinary channel browsing. Section changes between Live, Movies and Series fade only the content area beside the application menu. The fade boundary follows the menu's collapsed or expanded width and mirrors in RTL. Full screen pages such as Settings, Change Playlist and VOD details fade the whole screen, including the menu. Rail geometry changes without animation during page navigation. Search belongs to each section's browsing header.
 
 Playback information and the banner share opacity and vertical translation animations for their entrance and exit. Dismissal releases accessibility immediately while the report finishes its exit. Information reserves its diagnostic rows before its first native read and samples after the entrance has painted, so synchronous AVPlay queries do not interrupt that animation. It never waits behind a full screen transition mask. Programme Guide uses the same right drawer as audio and subtitles, and opening it from the Live browser leaves that browser stationary underneath. Track selection records the viewer's intent before entering the player, updates accepted native selection flags in the cached track list and prevents synchronous track events from recursively selecting again.
+
+Dynamic range uses the active video track's explicit format or transfer characteristics from Samsung's documented [AVPlay stream information methods](https://developer.samsung.com/smarttv/develop/api-references/samsung-product-api-references/avplay-api.html). Total track information may refine that value only for the active video track index with compatible dimensions and transfer characteristics. Missing metadata is never replaced with the previous sample, a colour primaries value or an undocumented streaming property.
+
+When AVPlay omits a format, playback information can inspect the original HLS multivariant manifest once per playback attempt without delaying playback. The request starts only when diagnostics are sampled, has a five second timeout and is aborted when playback changes. Parsing is limited to 524,288 characters. The original rendition declarations are retained so each sample can match the current dimensions and reported transfer function. Every remaining candidate must declare the same format, including candidates whose metadata is missing. Bandwidth proximity never selects a format. Failed requests and ambiguous or absent declarations leave the engine value or "not reported" visible.
+
+HLS values use a separate "Dynamic range (manifest)" label because declarations do not establish the TV's output mode or prove that it processes an optional enhancement. This also applies to the selected hls.js level in a browser. Following [Apple's HLS authoring specification](https://developer.apple.com/streaming/hls-authoring-specification-for-apple-devices.html), `VIDEO-RANGE` identifies SDR, PQ or HLG, Dolby Vision codec declarations identify that format, and the `cdm4` compatibility brand in `SUPPLEMENTAL-CODECS` advertises HDR10+ metadata. PQ alone does not prove HDR10, and an HEVC Main 10 codec string does not prove HDR10+. Native browser playback without exposed metadata remains "not reported". Genuine HDR fixtures must already contain correctly mastered HDR pixels and metadata because assigning HDR colour tags to SDR pixels cannot create them.
 
 Loading preserves the initial decision to resume a picture or show the browser. It does not reveal navigation or change the Live panel's motion owner while the remembered channel's playlist arrives.
 
@@ -45,7 +53,7 @@ A live TV app has two jobs competing for the same four keys: changing channel, w
 
 1. **At the Live picture, up and down always change channel.** This applies while the Live picture is the active surface, including when the channel has failed. In the Live panel they move the highlight because the panel owns those keys. At the finite picture they deliberately do nothing, because there is no next channel.
 2. **OK does the obvious thing where it is pressed.** At the Live picture that is the channel list. At the finite picture it opens the playback deck. On a focused button it is that button.
-3. **Left and right move within the active surface.** At the Live picture, left goes to the channel list and right opens the playback deck. At the finite picture they quick seek ten seconds at a time. In the panel, either direction switches between the category and channel lists while preserving each list's cursor, and the title bar cycles Search and Settings.
+3. **Left and right move within the active surface.** At the Live picture, left goes to the channel list and right opens the playback deck. At the finite picture they quick seek ten seconds at a time. In the Live panel, Left moves from channels into categories, while Right enters a category or selects a channel. Poster grids retain spatial arrow movement.
 4. **RETURN always goes back within the active surface.** It clears the Live picture if anything is on it, closes a drawer back to the surface that opened it, closes the deck or panel if open, and closes the application only when there is nothing left to close.
 5. **Physical transport keys keep their semantic meaning on every surface.** Play, Pause, Play or Pause, Stop, Rewind, Fast Forward, Previous and Next do the same thing whether or not the deck is showing.
 
@@ -125,15 +133,9 @@ A broken channel stays inside the Live picture presentation. It takes no focus a
 
 ## The panel
 
-The Live picture is the home of the current screen, and the panel is the primary surface opened from it. `LiveScreen.tsx` owns both surfaces and gives the panel every focus key while it is active. The panel takes 1064 of 1920 so the picture it is chosen against stays visible. It has three bands and one cursor among them:
+The Live picture is the home of the current screen, and the panel is the primary surface opened from it. `LiveScreen.tsx` owns both surfaces and gives the panel every focus key while it is active. The panel contains a category rail and a channel list, with the key guide beneath them.
 
-- **A title bar** across the top: the app's mark and name, and the Search and Settings keys on
-  the trailing edge. The mark is an `<img>` at `public/icon.svg`, the same vector the set's
-  launcher icon is rendered from, rather than a glyph copied into a component where the two would
-  drift apart. They are the application's own controls rather than either column's, which is
-  where they now say so: Settings used to sit inside the rail's header, and there was nowhere to
-  put a second key that would not read as belonging to the channel list. The pair is one cursor
-  position, reached by pressing up from the first category.
+- A Search control matching the category column's usable width sits above the list headings. The application menu holds the available content sections, the optional playlist shortcut and Settings.
 - **The rail**: Favourites first while there is something in it, then the playlist's own
   categories, under a subheader saying how many there are. The row appears with the first
   favourite and goes with the last, and the green key corrects the highlight as it does, so
@@ -146,13 +148,12 @@ The Live picture is the home of the current screen, and the panel is the primary
   column as wide as the playlist's largest number, so the names line up whether there are nine
   channels or twelve thousand.
 
-The cursor answers the key and the column follows it, rather than the two moving together. Up and
-down walk each list and use the title bar as its boundary: reaching Search from the top returns to
-the top with down, and reaching it from the bottom returns to the bottom with up. Left and right
-switch columns without changing their remembered rows. Search and Settings themselves are a
-two control horizontal ring. Vertical movement leaves the ring for the list edge that matches the
-pressed direction.
-Fresh Live category presses update the channel column on keydown without waiting for release. Held repeats move the cursor on every command, while the channel column refreshes at most once every 150ms. The next deadline is measured from the last applied category rather than the last repeated command, so the column keeps following while the button remains held. Category and channel cursor changes commit together, and category browsing never tunes a channel.
+Up from the first row of either Live list reaches Search, while Down returns to that list. The Search button matches the category rows. Opening Search expands the input across both result columns while preserving the control height and space before the headings. Left and Right retain the existing movement between categories and channels. Search results use a separate category cursor, so moving through matching categories never changes the content matches beside them.
+
+Long lists use thin overlay scroll indicators in the existing edge space without changing row widths, grid columns or padding. Thumb position and size update together without an independent transform animation that can overshoot the correct position.
+Fresh Live category presses update the channel column on keydown without waiting for release. Holding Up or Down gradually increases the movement through category, content, search result and episode lists. Fresh presses still move one item or grid row, while releasing a key, changing direction or changing lists resets acceleration. Repeats are rate limited, and held movement stops at list boundaries rather than opening adjacent controls or the keyboard. The Live channel column refreshes at most once every 150ms, measured from its last applied category. Category and channel cursor changes commit together, and category browsing never tunes a channel.
+
+The content browsers share remote colour key shortcuts. A short Red press hides or shows the focused provider category or Live channel. Its guide label is simply Hide or Show. Holding Red reveals or conceals hidden entries as an unadvertised shortcut, while newly hidden rows remain available until then so their visibility can be restored immediately. Green adds or removes the focused channel, Movie or Series from Favourites. Blue opens or focuses Search in content browsers, while Yellow retains Settings. Movie and Series information pages omit the Search action and its footer hint. Synthetic category filters cannot be hidden. Footer guides use monochrome key badges in one compact row. Ordinary OK actions are labelled Select. Guides omit routine focus movement and retain directional hints when arrows perform a specific action, including seeking or reordering. Concise labels retain the app's text scale, while unusually narrow layouts truncate labels with their full text retained in the document. Plain text labels also retain their full text in pointer tooltips.
 
 Focus and selection are drawn differently, because the guidelines treat them as different
 states: the row the cursor is on inverts to a solid light fill only in the pane that holds the
@@ -160,18 +161,14 @@ remote, and the category being shown is marked with a bar instead.
 
 ## Searching
 
-The Search key turns the channel column's heading into a field and its rows into matches from
-the whole playlist, ranked so that names beginning with the query come first. The field is a row
-of that column rather than a mode: down leaves it for the results, up from the first result comes
-back to it, and the keyboard follows the cursor, so there is nothing to learn and no way to be
-stuck somewhere with no way out.
+Live Search places one query field above two result columns. Matching categories occupy the category column, while matching channels occupy the content column. Each column has its own heading, count and empty response, so rows do not need repeated type labels. Category matching uses the visible effective lineup without widening a channel name match to every channel in its group. Selecting a category closes search and opens that category without starting playback. Search inputs use the shared Search label as their placeholder in the selected app language.
 
 It is the set's own on screen keyboard, raised by focusing the field, which is what the playlist
 address in Settings already relies on. While it has the field, left and right are a caret and the
 digits are text: a viewer correcting the third letter of a name must not be thrown into the
 category rail, and 0-9 cannot be dialling channels while somebody is typing.
 
-Live search waits 150ms after the last keystroke to avoid running a catalogue query for each character. Results are capped at 300 per rank, so an exact or prefix match cannot be crowded out by matches elsewhere in a channel name.
+Live search waits 150ms after the last keystroke. Each result column retains at most 300 matches, with prefix matches before substring matches. Horizontal arrows move between the result columns, and Up from their first result returns to the query field. Column order follows the app language's direction.
 
 Choosing a result takes the rail to that channel's category, exactly as dialling a number does.
 Otherwise channel up and down would walk a category the playing channel is not in, and leaving
@@ -230,11 +227,17 @@ An Xtream source stores the server, username, password, and preferred live outpu
 
 Movies and Series are opaque full screen modes beside Live. Entering either mode stops playback and releases the decoder, while returning to Live retunes the remembered channel through the ordinary playback controller. App owns the mode and screen stack, `VodScreen` owns the VOD surface, and `useVodNavigation` owns independent Movie and Series positions.
 
-The category rail contains Continue watching when it has resolved progress, Favourites when it has saved parent items, All, then provider categories in provider order. Focus selects a category immediately, catalogue replacement settles after 150 milliseconds, and poster requests begin 120 milliseconds later. The poster window owns wheel scrolling, including partially visible rows, while remote input moves the selected item. Focusing a poster never adds native scrolling to the window transform. Sorted catalogue snapshots change with provider data, personal overlays, locale or the selected sort rather than rebuilding during cursor movement.
+The category rail begins with a full width Search control aligned with the content toolbar. The rows begin with Continue watching when it has resolved progress, Favourites when it has saved parent items and All. A text only Categories heading with a subdued provider category count and a rule above it sits immediately before the provider categories. The smaller caption typography and outdented label distinguish the heading from interactive rows. Live and Search column headings share this treatment. The heading occupies one virtual row without becoming a focus target, while category buttons use that same measured row height. Search entries and inputs share their height, icon size and label typography. The Sort action uses the shared tonal pill button styling, while its dropdown entries retain their menu row shape. Focus selects a category immediately, catalogue replacement settles after 150 milliseconds, and poster requests begin 120 milliseconds later. The poster window owns wheel scrolling, including partially visible rows, while remote input moves the selected item. Focusing a poster never adds native scrolling to the window transform. Sorted catalogue snapshots change with provider data, personal overlays, locale or the selected sort rather than rebuilding during cursor movement.
+
+Down preserves the current grid column when that cell exists in the target row. A shorter final row clamps to its last title. Down on that final row does not move sideways. Returning from a search result's details retains both the search cursor and the category return location, so the following Back leaves Search.
 
 Category badges count provider titles in their exact normalized category rather than episodes, without applying hidden or personal view filters. A successful category frame is preferred, followed by a valid provider total and then an explicitly loaded complete index. Counts are reused only within the same playlist and source version. An initial empty index does not qualify as loaded, so unknown counts remain blank. Badge rendering does not start catalogue requests, read additional disk data or persist count records because those operations would delay navigation solely to populate badges.
 
-Movie and Series search submits when Search is activated or Enter is pressed in its input. Typing edits the draft without applying it or starting a search request. Previous results remain tied to their submitted query until the next submission, with a notice when the draft differs. The field and button share one height. Search has distinct prompt, loading, empty and error responses, while result counts stay hidden until a completed search. Down reaches Retry from either search control, and Up returns to the control that led there. Retrying preserves the query and focuses Search without reopening the keyboard. Ranked names that begin with the query precede names that contain it, and the grid retains at most 300 matches. Back restores the exact category or search result origin, including the submitted query and any unsent draft.
+Movie and Series search submits when Search is activated or Enter is pressed in its input. Typing edits the draft without applying it or starting a search request. Previous results remain tied to their submitted query until the next submission, with a notice when the draft differs. The field and button share one height within a bounded toolbar centered in the available page area. Search has distinct prompt, loading, empty and error responses, while result counts stay hidden until a completed search. Down reaches Retry from either search control, and Up returns to the control that led there. Retrying preserves the query and focuses Search without reopening the keyboard. Ranked names that begin with the query precede names that contain it, and the grid retains at most 300 matches. Back restores the exact category or search result origin, including the submitted query and any unsent draft.
+
+Submitted Movie and Series searches show matching provider categories beside the content grid, with one shared search bar above both columns. Category names and titles are matched independently, and each result type retains at most 300 matches. Column headings identify categories and Movies or Series without adding type badges to every result. Category matches remain available while title search loads or fails. Selecting a category opens its normal catalogue without opening details or starting playback. Left from the first content column reaches matching categories, Right returns to the content grid, and Up from the first category returns to the query field.
+
+Live, Movie and Series Search use the same centered status layout before a query and when neither result column has matches. Empty column headings and counts are absent in those states. A completed query with no matches names the query and offers another search without inferring that the provider catalogue is empty. When just one column has results, the empty column uses a compact message aligned below its heading. The current category uses the same accent marker across all section browsers, while the white focus highlight identifies the row receiving input. The virtual remote preserves remote navigation mode while keeping the mouse pointer visible over its controls.
 
 Complete Movie and Series indexes normalize each provider record as the response arrives, rather than retaining the whole raw payload. The raw response is limited to 128 MiB, while retained normalized records share a 12 MiB budget. A single record is also bounded. Parsing yields between short work slices, and complete index requests have a bounded two minute timeout. Category and detail request limits remain unchanged. An index that exceeds these limits fails without publishing partial results.
 
@@ -297,6 +300,8 @@ Movie and Series details use the shared page fade for entry and exit. Their layo
 Movie and Series backdrops cover the full page behind the content, remote key guide and display safe margins. The programme guide action in playback controls highlights its whole information wrapper rather than the icon button inside it.
 
 Browser fullscreen requests Escape locking where supported and permitted. A short Escape press follows the ordinary Back action, while holding Escape exits fullscreen without also navigating through pages. Browser shortcuts such as Cmd+R and Ctrl+R remain available, including in the remote key tester.
+
+The development Smart Remote isolates its double clicks from the app's fullscreen gesture. Pointer interaction within the remote does not switch the app to pointer input. Held keys release when pointer capture is lost, the window loses focus or the remote closes, so repeats cannot continue after an interrupted press.
 
 Modal key guides share the action footer with their buttons and show Select and Back without the full page movement badges. Movies and episodes start with playback controls open on Play/Pause. Their dismissal timer uses the same interval as the Live banner and restarts for each playback target.
 

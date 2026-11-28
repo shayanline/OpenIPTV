@@ -1,6 +1,24 @@
 import type { MessageKey, MessageValues } from "../services/locale";
 
 export default {
+  "vod.searchHint": "Typ een titel of categorie en kies Zoeken of druk op Enter.",
+  "vod.searching": "Catalogus doorzoeken…",
+  "vod.searchFailed": "Zoeken is niet beschikbaar",
+  "vod.searchFailedHint": "Je zoekopdracht is bewaard. Probeer de catalogus opnieuw te laden.",
+  "vod.searchEmptyHint": "Controleer de spelling of probeer een andere zoekopdracht.",
+  "vod.searchEmptyCatalogue": "De aanbieder heeft geen titels in deze catalogus.",
+  "vod.searchDraft": ({ query }) =>
+    `Resultaten voor "${query}". Kies Zoeken om ze bij te werken.`,
+  "vod.searchCached": "Opgeslagen catalogusresultaten worden getoond.",
+  "vod.browseCategories": "Categorieën bekijken",
+  "vod.resumeTime": ({ time }) => `Vanaf ${time}`,
+  "vod.resumeEpisode": ({ episode, time }) => `${episode} hervatten vanaf ${time}`,
+  "vod.restartShort": "Opnieuw starten",
+  "vod.restartEpisode": "Aflevering opnieuw starten",
+  "vod.continueShort": "Doorgaan",
+  "vod.overview": "Overzicht",
+  "vod.information": "Over deze titel",
+  "app.playlistUnavailable": "Deze afspeellijst kon niet worden geladen",
   "error.playbackUnavailable": "Afspelen is niet beschikbaar.",
   "error.accessDenied": "Toegang tot deze stream is geweigerd.",
   "error.serverError": "De server heeft een fout teruggestuurd.",
@@ -225,7 +243,7 @@ export default {
   "settings.showLive": "Live tonen",
   "settings.showMovies": "Films tonen",
   "settings.showSeries": "Series tonen",
-  "settings.sectionVisibilityHint": "Toon {section} in het hoofdmenu en de zoekresultaten.",
+  "settings.sectionVisibilityHint": "Toon {section} in het hoofdmenu.",
   "settings.keepSectionHint": "Minstens één ondersteund onderdeel moet aan blijven.",
   "settings.sectionUnsupportedHint":
     "Beschikbaar wanneer de actieve afspeellijst dit onderdeel ondersteunt.",
@@ -242,14 +260,14 @@ export default {
   "settings.continuousReconnectHint":
     "Blijft proberen een live-kanaal te herstellen in plaats van na een paar pogingen op te geven.",
   "settings.playbackInfo": "Afspeelinformatie",
-  "settings.playbackInfoHint":
-    "Toon standaard afspeeldiagnostiek. Houd OK ingedrukt tijdens het afspelen om deze te tonen of te verbergen.",
+  "settings.playbackInfoHint": "Toon standaard afspeeldetails.",
   "playbackInfo.title": "Afspeelinformatie",
   "playbackInfo.hold": "Ingedrukt houden",
   "playbackInfo.hideHint": "Afspeelinformatie verbergen",
   "playbackInfo.engine": "Afspeelengine",
   "playbackInfo.resolution": "Resolutie",
   "playbackInfo.dynamicRange": "Dynamisch bereik",
+  "playbackInfo.manifestRange": "Dynamisch bereik (manifest)",
   "playbackInfo.scan": "Scanmethode",
   "playbackInfo.progressive": "Progressief",
   "playbackInfo.interlaced": "Interlaced",

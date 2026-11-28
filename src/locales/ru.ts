@@ -1,6 +1,24 @@
 import type { MessageKey, MessageValues } from "../services/locale";
 
 export default {
+  "vod.searchHint": "Введите название или категорию, затем выберите Поиск или нажмите Enter.",
+  "vod.searching": "Поиск в каталоге…",
+  "vod.searchFailed": "Поиск недоступен",
+  "vod.searchFailedHint": "Ваш запрос сохранён. Повторите загрузку каталога поставщика.",
+  "vod.searchEmptyHint": "Проверьте написание или попробуйте другой запрос.",
+  "vod.searchEmptyCatalogue": "В этом каталоге поставщика нет названий.",
+  "vod.searchDraft": ({ query }) =>
+    `Результаты для "${query}". Выберите Поиск, чтобы обновить их.`,
+  "vod.searchCached": "Показаны сохранённые результаты каталога.",
+  "vod.browseCategories": "Просмотр категорий",
+  "vod.resumeTime": ({ time }) => `С ${time}`,
+  "vod.resumeEpisode": ({ episode, time }) => `Продолжить ${episode} с ${time}`,
+  "vod.restartShort": "Сначала",
+  "vod.restartEpisode": "Начать серию сначала",
+  "vod.continueShort": "Продолжить",
+  "vod.overview": "Обзор",
+  "vod.information": "Об этом названии",
+  "app.playlistUnavailable": "Не удалось загрузить этот плейлист",
   "error.playbackUnavailable": "Воспроизведение недоступно.",
   "error.accessDenied": "В доступе к этому потоку отказано.",
   "error.serverError": "Сервер вернул ошибку.",
@@ -231,7 +249,7 @@ export default {
   "settings.showLive": "Показывать эфир",
   "settings.showMovies": "Показывать фильмы",
   "settings.showSeries": "Показывать сериалы",
-  "settings.sectionVisibilityHint": "Показывать {section} в главном меню и результатах поиска.",
+  "settings.sectionVisibilityHint": "Показывать {section} в главном меню.",
   "settings.keepSectionHint":
     "Хотя бы один поддерживаемый раздел должен оставаться включённым.",
   "settings.sectionUnsupportedHint":
@@ -249,14 +267,14 @@ export default {
   "settings.continuousReconnectHint":
     "Продолжает попытки восстановить прямой канал вместо остановки после нескольких попыток.",
   "settings.playbackInfo": "Информация о воспроизведении",
-  "settings.playbackInfoHint":
-    "Показывать диагностику воспроизведения по умолчанию. Удерживайте OK во время воспроизведения, чтобы показать или скрыть её.",
+  "settings.playbackInfoHint": "Показывать сведения о воспроизведении по умолчанию.",
   "playbackInfo.title": "Информация о воспроизведении",
   "playbackInfo.hold": "Удерживать",
   "playbackInfo.hideHint": "Скрыть информацию о воспроизведении",
   "playbackInfo.engine": "Проигрыватель",
   "playbackInfo.resolution": "Разрешение",
   "playbackInfo.dynamicRange": "Динамический диапазон",
+  "playbackInfo.manifestRange": "Динамический диапазон (манифест)",
   "playbackInfo.scan": "Развёртка",
   "playbackInfo.progressive": "Прогрессивная",
   "playbackInfo.interlaced": "Чересстрочная",

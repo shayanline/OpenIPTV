@@ -22,6 +22,15 @@ html[data-input-mode="remote"],
 html[data-input-mode="remote"] * {
   cursor: none;
 }
+html[data-input-mode="remote"] [data-virtual-remote],
+html[data-input-mode="remote"] [data-virtual-remote] * {
+  cursor: auto;
+}
+html[data-input-mode="remote"] button[data-virtual-remote],
+html[data-input-mode="remote"] [data-virtual-remote] button,
+html[data-input-mode="remote"] [data-virtual-remote] button * {
+  cursor: pointer;
+}
 
 html,
 body,
@@ -545,8 +554,8 @@ html[data-input-mode="pointer"] .app-navigation-action:hover .app-navigation-sco
 .app-navigation-action.active {
   color: var(--text);
 }
-.app-navigation-action.active > .app-navigation-action-visual {
-  background: var(--accent-dim);
+.app-navigation-action.active::before {
+  z-index: 1;
 }
 .app-navigation-action:focus {
   outline: none;
@@ -612,7 +621,7 @@ html.tizen .app {
 
 .icon {
   position: relative;
-  top: -1px;
+  top: var(--icon-optical-offset);
   display: block;
   width: 1.05em;
   height: 1.05em;
@@ -634,7 +643,8 @@ html[dir="rtl"] .icon-logical-direction {
  * has to be expressed as a ratio here because a TV control is far taller.
  */
 .btn,
-.chip {
+.chip,
+.vod-catalogue-action {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -650,7 +660,8 @@ html[dir="rtl"] .icon-logical-direction {
 .btn.flat {
   background: transparent;
 }
-.btn.tonal {
+.btn.tonal,
+.vod-catalogue-action {
   background: var(--tonal);
   color: var(--text);
 }
@@ -678,28 +689,20 @@ html[dir="rtl"] .icon-logical-direction {
   width: 1em;
   height: 1em;
 }
-.settings-list-header .btn > span {
-  top: 0;
-}
 .btn > span,
 .chip > span,
 .switch > span:last-child {
   position: relative;
-  top: 2px;
   display: inline-flex;
   align-items: center;
-  min-height: 28px;
-  line-height: 1.1;
+  min-height: 0;
+  line-height: inherit;
 }
 .settings-about-action .icon {
   flex-basis: 1em;
   width: 1em;
   height: 1em;
-  top: 0;
   color: inherit;
-}
-.settings-about-action > span {
-  top: 0;
 }
 .btn.danger {
   color: var(--danger);
@@ -1056,6 +1059,10 @@ html[dir="rtl"]
   width: var(--rail-w);
   padding-left: 0;
 }
+/* The panel footer already owns the bottom safe area. */
+.panel-cols > .pane {
+  padding-bottom: var(--s1);
+}
 /*
  * The divider between the categories and the channels.
  *
@@ -1072,11 +1079,24 @@ html[dir="rtl"]
   padding-left: 0;
   border-left: 1px solid var(--line);
 }
-.panel-cols.searching .list {
+.live-search-entry,
+.live-search-bar {
+  box-sizing: border-box;
+  max-width: 100%;
+  flex: 0 0 auto;
+  padding: var(--safe-y) var(--content-gutter) var(--s4);
+}
+.live-search-entry {
+  width: var(--rail-w);
+}
+.live-search-bar {
   width: 100%;
-  padding-right: var(--content-gutter);
-  padding-left: var(--content-gutter);
-  border-left: 0;
+}
+.live-search-entry + .panel-cols > .pane {
+  padding-top: 0;
+}
+.panel-cols.searching > .pane {
+  padding-top: 0;
 }
 
 /*
@@ -1176,15 +1196,17 @@ html[dir="rtl"] .window {
   margin-bottom: var(--s2);
   padding-left: var(--content-gutter);
   padding-right: var(--content-gutter);
-  padding-bottom: var(--s2);
+  padding-top: var(--s2);
+  padding-bottom: 0;
   border-bottom: 0;
 }
+.search-content-heading::after,
 .pane-head::after {
   content: "";
   position: absolute;
   left: var(--content-gutter);
   right: var(--content-gutter);
-  bottom: 0;
+  top: 0;
   height: 1px;
   background: var(--line);
 }
@@ -1414,7 +1436,6 @@ html[data-input-mode="remote"] .panel-key.on.cursor {
  */
 .rail .row-label {
   position: relative;
-  top: 2px;
 }
 .rail .row > .icon,
 .vod-category.has-icon > .icon {
@@ -1439,13 +1460,17 @@ html[data-input-mode="pointer"] .rail .row.hidden:hover {
   height: 22px;
 }
 html[data-input-mode="remote"] .rail.focused .row.hidden.cursor .hidden-state,
-html[data-input-mode="pointer"] .rail .row.hidden:hover .hidden-state {
+html[data-input-mode="pointer"] .rail .row.hidden:hover .hidden-state,
+html[data-input-mode="remote"] .vod-category.cursor .hidden-state,
+html[data-input-mode="pointer"] .vod-category:hover .hidden-state {
   color: var(--target-muted);
 }
 .pane:not(.focused) .row.showing {
   color: var(--text);
 }
-.row.showing::before {
+.row.showing::before,
+.app-navigation-action.active::before,
+.vod-category.selected::before {
   content: "";
   position: absolute;
   left: 0;
@@ -1456,8 +1481,10 @@ html[data-input-mode="pointer"] .rail .row.hidden:hover .hidden-state {
   background: var(--accent);
   transform: translateY(-50%);
 }
-html[data-input-mode="remote"] .rail.focused .row.showing.cursor::before,
-html[data-input-mode="remote"] .sheet-rail.focused .row.showing.cursor::before,
+.rail.focused .row.showing::before,
+.app-navigation.focused .app-navigation-action.active::before,
+.sheet-rail.focused .row.showing::before,
+.vod-rail.focused .vod-category.selected::before,
 html[data-input-mode="pointer"] .rail .row.showing:hover::before,
 html[data-input-mode="pointer"] .sheet-rail .row.showing:hover::before {
   display: none;
@@ -1672,13 +1699,22 @@ html[data-input-mode="pointer"] .pane .row:hover .ch-badge {
  * header rather than sitting in the middle of it so the field is plainly the whole of that line.
  * The focused state inverts, exactly as a focused row does: one focus language across the app.
  */
+.search,
+.btn.section-search,
+.vod-search-submit,
+.vod-catalogue-action {
+  --browse-control-height: calc(52px * var(--scale));
+  height: var(--browse-control-height);
+  min-height: var(--browse-control-height);
+  font-size: var(--t-label);
+  line-height: var(--lh);
+}
 .search {
   display: flex;
   align-items: center;
   flex: 1;
   min-width: 0;
   gap: var(--s2);
-  height: 52px;
   padding: 0 var(--s2);
   border-radius: var(--r-pill);
   background: var(--tonal);
@@ -1847,8 +1883,7 @@ html[data-input-mode="pointer"] .pane .row:hover .playing-dot.live::after {
 }
 
 /* -------------------------------------------------------------- scroll indicator ---- */
-/* Required by the UX checklist: a list longer than one page must show where the viewer
-   is within it. It fades in on movement and away when idle, as the guidelines describe. */
+/* Vertical indicators overlay the existing edge space without changing list geometry. */
 .scrollbar {
   display: none;
   position: absolute;
@@ -1858,10 +1893,13 @@ html[data-input-mode="pointer"] .pane .row:hover .playing-dot.live::after {
   transition: opacity var(--t-med) linear;
 }
 .scrollbar.vertical {
+  display: block;
   top: var(--s2);
   right: var(--s1);
   bottom: var(--s2);
-  width: 4px;
+  width: 2px;
+  opacity: 1;
+  pointer-events: none;
 }
 html[dir="rtl"] .scrollbar.vertical {
   right: auto;
@@ -1880,9 +1918,7 @@ html[dir="rtl"] .scrollbar.vertical {
   position: absolute;
   border-radius: var(--r-pill);
   background: rgba(255, 255, 255, 0.42);
-  transition:
-    transform var(--t-fast) var(--ease),
-    background var(--t-fast) linear;
+  transition: background var(--t-fast) linear;
 }
 .scrollbar.vertical .scrollbar-thumb {
   left: 0;
@@ -2277,17 +2313,13 @@ html[data-input-mode="remote"] .playlist-recovery-actions .btn[data-selected] {
  */
 .hints {
   display: flex;
-  flex-wrap: wrap;
+  min-width: 0;
+  flex-wrap: nowrap;
   align-items: center;
-  gap: var(--s1) var(--s4);
+  gap: var(--s2);
   color: var(--text-2);
-  /*
-   * Caption size, which is the one rule every guide in the application takes its size from: the
-   * banner and the panel measured 22px and identical badges of 35 pixels, and the settings rail was
-   * already a size smaller, so this brings the two loud ones down to meet the quiet one. A guide is
-   * read once and then remembered, so it does not need the room a channel name needs.
-   */
-  font-size: var(--t-caption);
+  white-space: nowrap;
+  font-size: calc(var(--t-caption) * 0.9);
   /*
    * One key, drawn as a badge, sized from here.
    *
@@ -2296,7 +2328,7 @@ html[data-input-mode="remote"] .playlist-recovery-actions .btn[data-selected] {
    * so it follows the viewer's text size and the smaller type the settings rail uses, and
    * the four arrows never come out as slightly squat rectangles beside a square OK.
    */
-  --key: 1.6em;
+  --key: 1.5em;
 }
 /*
  * Each item is its keys followed by what they do, kept together on one line.
@@ -2307,12 +2339,16 @@ html[data-input-mode="remote"] .playlist-recovery-actions .btn[data-selected] {
  * themselves, where the two cases can differ: tight between keys pressed as a pair, ordinary
  * before the words that describe them.
  */
-.hints span {
+.hints > span {
   display: inline-flex;
+  min-width: 0;
+  flex: 0 1 auto;
   align-items: center;
 }
-.hints .guide-prefix {
-  margin-right: var(--s1);
+.hints .guide-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 /* A guide that follows content it belongs to is ruled off from it. */
 .hints.ruled {
@@ -2323,7 +2359,7 @@ html[data-input-mode="remote"] .playlist-recovery-actions .btn[data-selected] {
    instead of covering the bottom of them. */
 .hints.panel-hints {
   flex: 0 0 auto;
-  justify-content: center;
+  justify-content: flex-start;
   margin: 0 var(--safe-x) var(--safe-y);
 }
 /* A key looks the same everywhere in the application because this is the only rule that
@@ -2335,7 +2371,7 @@ html[data-input-mode="remote"] .playlist-recovery-actions .btn[data-selected] {
   justify-content: center;
   height: var(--key);
   min-width: var(--key);
-  padding: 0 6px;
+  padding: 0 0.25em;
   border-radius: var(--r-sm);
   background: var(--tonal);
   color: var(--text);
@@ -2733,7 +2769,6 @@ html[data-input-mode="remote"] .option-picker-current:focus .option-picker-chevr
 .option-picker-current > span:first-child,
 .option-picker-text > span {
   position: relative;
-  top: 2px;
 }
 .option-picker-list {
   position: fixed;
@@ -3242,7 +3277,6 @@ html[data-input-mode="remote"] .settings-icon-action:focus {
 }
 .field-label {
   position: relative;
-  top: 2px;
   font-size: var(--t-body);
 }
 .field-hint {
@@ -3402,7 +3436,6 @@ html[data-input-mode="remote"] .switch:focus:not(.on) .switch-knob {
 .device-row-main > strong,
 .device-row-main > span {
   position: relative;
-  top: 2px;
 }
 .pl-title {
   display: flex;
@@ -3721,11 +3754,6 @@ html[dir="rtl"] .dialog-footer-start {
   height: 24px;
   align-self: center;
   color: inherit;
-  top: 0;
-}
-.settings-dialog .btn > span,
-.action-menu .dialog-actions .btn > span {
-  top: 0;
 }
 .settings-dialog .field-problem {
   color: var(--danger);
@@ -4729,7 +4757,6 @@ html[data-input-mode="remote"] .pad-round:focus {
   flex: 0 0 24px;
   width: 24px;
   height: 24px;
-  top: 0;
 }
 .confirm-action-icon + span {
   display: block;
@@ -5556,12 +5583,10 @@ html[dir="rtl"].no-flex-gap .lineup-layout-tabbed > * + * {
  * slack after the last item is not invisible, it moves the whole row. Measured, it took the
  * panel's key guide sixteen pixels left and eight pixels up.
  *
- * So they are spaced between siblings, which is exact for one line and is what both of
- * these are in practice. The cost is that an old set gets no spacing *between* lines on the
- * rare occasion one wraps, which is a far smaller thing than moving a row that did not.
+ * Sibling margins preserve the same compact row on sets without flex gap support.
  */
 .no-flex-gap .hints > * + * {
-  margin-left: var(--s4);
+  margin-left: var(--s2);
 }
 .no-flex-gap .hints.sheet-hints > * + * {
   margin-left: 0;
@@ -5595,11 +5620,6 @@ html[dir="rtl"] .list {
   border-left: 0;
   border-right: 1px solid var(--line);
 }
-html[dir="rtl"] .panel-cols.searching .list {
-  padding-right: var(--content-gutter);
-  padding-left: var(--content-gutter);
-  border-right: 0;
-}
 html[dir="rtl"] .viewport {
   padding-left: var(--s2);
   padding-right: 0;
@@ -5609,6 +5629,8 @@ html[dir="rtl"] .window {
   right: 0;
 }
 html[dir="rtl"] .row.showing::before,
+html[dir="rtl"] .app-navigation-action.active::before,
+html[dir="rtl"] .vod-category.selected::before,
 html[dir="rtl"] .guide-row.current::before {
   left: auto;
   right: 0;
@@ -5700,10 +5722,6 @@ html[dir="rtl"] .remote-stage {
   right: auto;
   direction: ltr;
 }
-html[dir="rtl"] .hints .guide-prefix {
-  margin-right: 0;
-  margin-left: var(--s1);
-}
 html[dir="rtl"] .hints kbd + kbd {
   margin-left: 0;
   margin-right: 5px;
@@ -5712,7 +5730,6 @@ html[dir="rtl"] .hints kbd:last-of-type {
   margin-right: 5px;
   margin-left: var(--s1);
 }
-html[dir="rtl"] .playback-info-guide .guide-prefix,
 html[dir="rtl"] .playback-info-guide kbd:last-of-type {
   margin: 0;
 }
@@ -5819,7 +5836,7 @@ html[dir="rtl"].no-flex-gap .switch > * + * {
 }
 html[dir="rtl"].no-flex-gap .hints > * + * {
   margin-left: 0;
-  margin-right: var(--s4);
+  margin-right: var(--s2);
 }
 html[dir="rtl"].no-flex-gap .hints.sheet-hints > * + * {
   margin-left: 0;
@@ -7979,11 +7996,14 @@ html[dir="rtl"].no-flex-gap .lineup-header-actions > * + * {
   margin-right: var(--s1);
   margin-left: 0;
 }
-html[dir="rtl"].no-flex-gap .vod-search-submit .icon,
+html[dir="rtl"].no-flex-gap .vod-search-submit .icon {
+  margin-right: 0;
+  margin-left: var(--s1);
+}
 html[dir="rtl"].no-flex-gap .deck-rating .icon,
 html[dir="rtl"].no-flex-gap .episode-meta-badge .icon {
   margin-right: 0;
-  margin-left: var(--s1);
+  margin-left: 4px;
 }
 html[dir="rtl"].no-flex-gap .deck-rating .icon,
 html[dir="rtl"].no-flex-gap .episode-meta-badge .icon {
@@ -8489,8 +8509,7 @@ html[data-input-mode="pointer"] .vod-header .mode-key.on:hover::after {
   height: 100%;
   column-gap: 0;
 }
-.vod-pane-divider,
-.vod-synthetic-divider {
+.vod-pane-divider {
   background: var(--line);
 }
 .vod-category-divider {
@@ -8508,10 +8527,6 @@ html[data-input-mode="pointer"] .vod-header .mode-key.on:hover::after {
 }
 .vod-pane-divider {
   height: 100%;
-}
-.vod-synthetic-divider {
-  height: 1px;
-  margin: var(--s2) 0;
 }
 .vod-pane {
   display: grid;
@@ -8554,7 +8569,6 @@ html[data-input-mode="pointer"] .vod-header .mode-key.on:hover::after {
   position: relative;
   flex: 0 0 auto;
 }
-.vod-catalogue-action,
 .vod-catalogue-popup button {
   min-height: 52px;
   padding: 0 var(--s2);
@@ -8565,8 +8579,8 @@ html[data-input-mode="pointer"] .vod-header .mode-key.on:hover::after {
   font: inherit;
 }
 .vod-catalogue-action {
-  display: flex;
-  align-items: center;
+  gap: 0;
+  padding: 0 var(--s2);
 }
 .vod-catalogue-action > * + * {
   margin-inline-start: var(--s1);
@@ -8632,9 +8646,6 @@ html[dir="rtl"] .vod-catalogue-popup {
   opacity: 1;
   animation: skeleton-pulse 1.4s ease-in-out infinite;
 }
-.vod-catalogue-action-skeleton:disabled {
-  border-radius: var(--r-md);
-}
 .vod-catalogue-action-skeleton > * {
   visibility: hidden;
 }
@@ -8644,13 +8655,85 @@ html[dir="rtl"] .vod-catalogue-popup {
   padding: var(--safe-y) 0 var(--s2);
   overflow: hidden;
 }
+.vod-rail-panel {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  padding-top: var(--safe-y);
+}
+.vod-rail-panel .vod-rail {
+  flex: 1;
+  padding-top: 0;
+}
+.vod-rail-panel .vod-rail-window {
+  top: 0;
+}
+.vod-rail-heading {
+  flex: 0 0 auto;
+  height: var(--vod-rail-row);
+  margin-bottom: 0;
+  padding-top: var(--s2);
+  padding-bottom: var(--s2);
+  align-items: flex-end;
+}
+.vod-rail-window .vod-rail-heading {
+  padding-left: 0;
+  padding-right: 0;
+}
+.vod-rail-window .vod-rail-heading::after {
+  top: var(--s2);
+  left: 0;
+  right: 0;
+}
+.vod-rail-window .vod-category {
+  height: var(--vod-rail-row);
+  min-height: 0;
+}
+.rail-search-row {
+  flex: 0 0 auto;
+  margin: 0 var(--s4) var(--s2);
+  padding-bottom: var(--s2);
+  border-bottom: 1px solid var(--line);
+}
+.btn.section-search {
+  width: 100%;
+  justify-content: flex-start;
+  gap: var(--s2);
+  padding: 0 var(--s2);
+  color: var(--text-2);
+  font-size: var(--t-label);
+}
+.btn.section-search .icon,
+.vod-search-submit .icon {
+  width: 24px;
+  height: 24px;
+  flex-basis: 24px;
+}
+.no-flex-gap .btn.section-search > * + * {
+  margin-left: var(--s2);
+}
+html[dir="rtl"].no-flex-gap .btn.section-search > * + * {
+  margin-left: 0;
+  margin-right: var(--s2);
+}
+html[data-input-mode="remote"] .btn.section-search.cursor {
+  background: var(--target-bg);
+  color: var(--target-text);
+}
 .vod-rail-window {
   position: absolute;
   top: var(--safe-y);
   left: var(--s4);
   right: var(--s4);
 }
+.vod-category.category-hidden {
+  grid-template-columns: minmax(0, 1fr) 24px;
+}
+.vod-category.category-hidden .vod-category-name {
+  opacity: 0.6;
+}
 .vod-category {
+  position: relative;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   align-items: center;
@@ -8665,7 +8748,6 @@ html[dir="rtl"] .vod-catalogue-popup {
   text-align: start;
 }
 .vod-category.selected {
-  background: var(--accent-dim);
   color: var(--text);
 }
 .vod-category.has-icon {
@@ -8914,6 +8996,7 @@ html[data-input-mode="pointer"]
   }
 }
 .vod-error-icon {
+  --icon-optical-offset: 0px;
   display: flex;
   width: 64px;
   height: 64px;
@@ -8966,7 +9049,6 @@ html[data-input-mode="pointer"] .vod-retry:hover {
   padding-top: var(--safe-y);
 }
 .vod-search-bar {
-  --vod-search-control-height: calc(64px * var(--scale));
   display: flex;
   width: calc(100% - var(--safe-x) * 2);
   max-width: 960px;
@@ -8977,25 +9059,24 @@ html[data-input-mode="pointer"] .vod-retry:hover {
 }
 .vod-search-bar .search {
   box-sizing: border-box;
-  height: var(--vod-search-control-height);
   min-width: 0;
   flex: 1;
 }
 .vod-search-submit {
   display: flex;
-  min-width: 156px;
+  min-width: 0;
   box-sizing: border-box;
-  height: var(--vod-search-control-height);
   align-items: center;
   justify-content: center;
   gap: var(--s1);
-  padding: 0 var(--s3);
+  padding: 0 var(--s2);
   border: 0;
   border-radius: var(--r-pill);
   background: var(--tonal);
   color: var(--text);
   font: inherit;
-  font-weight: 600;
+  font-size: var(--t-label);
+  font-weight: 500;
 }
 html[data-input-mode="pointer"] .vod-search-submit:hover,
 html[data-input-mode="remote"] .vod-search-submit:focus {
@@ -9011,7 +9092,7 @@ html[data-input-mode="remote"] .vod-search-submit:focus {
   opacity: 0.55;
   cursor: progress;
 }
-.vod-search-state {
+.search-state {
   display: flex;
   flex: 1;
   min-height: 0;
@@ -9022,20 +9103,44 @@ html[data-input-mode="remote"] .vod-search-submit:focus {
   margin: 0 var(--safe-x) var(--s2);
   text-align: center;
 }
-.vod-search-state h2,
-.vod-search-state p {
+.search-state h2,
+.search-state p {
+  width: 100%;
   max-width: 36em;
   margin: 0;
   overflow-wrap: break-word;
 }
-.vod-search-state h2 {
+.search-state h2 {
   color: var(--text);
   font-size: var(--t-section);
   font-weight: 600;
 }
-.vod-search-state p {
+.search-state p {
   color: var(--text-2);
   font-size: var(--t-body);
+}
+.search-state.compact {
+  justify-content: flex-start;
+  padding-top: var(--s4);
+}
+.search-state.compact h2,
+.search-categories .empty,
+.panel-cols.searching .empty {
+  color: var(--text-3);
+  font-size: var(--t-label);
+  font-weight: 400;
+  line-height: var(--lh);
+}
+.search-state.compact p {
+  color: var(--text-3);
+  font-size: var(--t-caption);
+}
+.search-categories .empty,
+.panel-cols.searching .empty {
+  margin: 0;
+  padding: var(--s4) var(--s3);
+  text-align: center;
+  overflow-wrap: break-word;
 }
 .vod-search-notice {
   margin: 0 var(--safe-x) var(--s2);
@@ -9044,16 +9149,88 @@ html[data-input-mode="remote"] .vod-search-submit:focus {
   text-align: center;
   overflow-wrap: break-word;
 }
+.vod-search-results {
+  display: grid;
+  grid-template-columns: var(--vod-rail-w) minmax(0, 1fr);
+  flex: 1;
+  min-height: 0;
+}
+.vod-search-results.search-prompt {
+  grid-template-columns: minmax(0, 1fr);
+}
+.vod-search-results > .rail {
+  width: auto;
+  min-width: 0;
+  padding: 0;
+}
+.vod-search-results .pane-head,
+.search-content-heading {
+  min-height: calc(48px * var(--scale));
+  flex: 0 0 auto;
+}
+.vod-search-results .panel-title {
+  color: var(--text-2);
+}
+.vod-search-content {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  border-left: 1px solid var(--line);
+}
+.search-prompt .vod-search-content {
+  border: 0;
+}
+.search-content-heading {
+  position: relative;
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--s2);
+  padding: var(--s2) var(--content-gutter) 0;
+}
+.search-content-heading h2 {
+  margin: 0;
+  color: var(--text-2);
+  font-size: var(--t-caption);
+  font-weight: 600;
+}
 .vod-search .poster-grid-region {
   flex: 1;
-  padding-inline-start: var(--safe-x);
+  padding-inline-start: var(--content-gutter);
+  padding-inline-end: var(--safe-x);
   padding-bottom: var(--s2);
 }
 html[dir="rtl"][data-input-mode="remote"] .vod-search .poster-grid-region {
-  padding-right: var(--safe-x);
+  padding-right: var(--content-gutter);
+}
+html[dir="rtl"] .vod-search-content {
+  border-left: 0;
+  border-right: 1px solid var(--line);
+}
+html[dir="rtl"] .search-prompt .vod-search-content {
+  border: 0;
 }
 .vod-search .poster-grid-row {
-  justify-content: center;
+  justify-content: space-between;
+}
+@media (max-width: 800px) {
+  .vod-search-results {
+    grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
+  }
+  .vod-search .poster-grid-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .vod-search .poster-card,
+  .vod-search .poster-title,
+  .vod-search .poster-art {
+    width: 100%;
+  }
+  .vod-search .poster-art {
+    height: auto;
+    aspect-ratio: 2 / 3;
+  }
 }
 .vod-search-key-guide,
 .vod-catalogue-key-guide {
@@ -9243,8 +9420,7 @@ html[dir="rtl"] .poster-rating {
   background: var(--tonal);
   box-shadow: 0 30px 80px rgba(0, 0, 0, 0.45);
 }
-.vod-hero-copy,
-.vod-actions {
+.vod-hero-copy {
   display: flex;
   flex-direction: column;
   gap: var(--s2);
@@ -9315,6 +9491,7 @@ html[dir="rtl"] .poster-rating {
 }
 .vod-actions {
   display: grid;
+  min-width: 0;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   width: 520px;
   max-width: 100%;
@@ -9534,7 +9711,7 @@ html[dir="rtl"] .vod-backdrop-shade {
   margin-inline-start: 12px;
 }
 .no-flex-gap .vod-search-loading > * + *,
-.no-flex-gap .vod-search-state > * + * {
+.no-flex-gap .search-state > * + * {
   margin-top: var(--s2);
 }
 .no-flex-gap .vod-details.loading > * + *,
@@ -9557,6 +9734,7 @@ html[dir="rtl"].no-flex-gap .vod-action-copy {
 }
 html[dir="rtl"].no-flex-gap .vod-action:first-child .vod-action-copy {
   margin-right: var(--s2);
+  margin-left: 0;
 }
 
 .series-details::after {
@@ -9715,8 +9893,9 @@ html[data-input-mode="pointer"] .season-pill:hover {
 .episode-content {
   display: grid;
   min-height: 0;
-  flex: 1 1 auto;
+  flex: 1 1 0;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
   gap: var(--s2);
 }
 .episode-list {

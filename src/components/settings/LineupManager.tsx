@@ -372,12 +372,17 @@ function OwnedLineupManager({
 
   useEffect(() => {
     mountedRef.current = true;
+    const cancelPointerDrag = () => {
+      if (drag.current) cancelSortDrag();
+    };
+    window.addEventListener("blur", cancelPointerDrag);
     return () => {
+      window.removeEventListener("blur", cancelPointerDrag);
       mountedRef.current = false;
       endDragGesture(drag.current);
       if (suppressDragClick.current) window.clearTimeout(suppressDragClick.current.timer);
     };
-  }, [endDragGesture]);
+  }, [cancelSortDrag, endDragGesture]);
   const categoryBrowseSnapshot = useRef<{
     page: number;
     query: string;

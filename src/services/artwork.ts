@@ -52,7 +52,7 @@ const MAX_DISPLAY_ARTWORK_PIXELS = 1920 * 1080;
 
 export function displayArtworkBox(
   box: { width: number; height: number },
-  pixelRatio = globalThis.devicePixelRatio || 1,
+  pixelRatio = typeof devicePixelRatio === "number" ? devicePixelRatio : 1,
 ) {
   const density = Number.isFinite(pixelRatio) ? Math.min(2, Math.max(1, pixelRatio)) : 1;
   const scale = Math.min(

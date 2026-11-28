@@ -1,6 +1,6 @@
 import { act, render } from "@testing-library/react";
 import { StrictMode } from "react";
-import { afterEach, vi } from "vitest";
+import { afterEach, expect, vi } from "vitest";
 import type { LocalePreference } from "../../src/services/locale";
 import type { PlaylistSource } from "../../src/services/playlistUrl";
 import type { XtreamEpisode, XtreamMovie } from "../../src/services/xtream";
@@ -148,6 +148,16 @@ export async function settle(ms = 260) {
     if (vi.isFakeTimers()) await vi.advanceTimersByTimeAsync(ms);
     else await new Promise((resolve) => setTimeout(resolve, ms));
   });
+}
+
+export async function finishPageEntry() {
+  await vi.waitFor(
+    async () => {
+      await settle(0);
+      expect(document.querySelector(".app")?.getAttribute("data-page-transition")).toBe("idle");
+    },
+    { interval: 10 },
+  );
 }
 
 export interface MountOptions {

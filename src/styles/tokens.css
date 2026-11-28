@@ -189,6 +189,8 @@
   --t-label: calc(22px * var(--scale));
   --t-caption: calc(20px * var(--scale));
   --lh: 1.35;
+  /* Google Sans capitals paint slightly above the centered line box. */
+  --icon-optical-offset: calc(-1px * var(--scale));
 
   /*
    * Motion, from the One UI motion guidance.

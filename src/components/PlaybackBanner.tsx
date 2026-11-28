@@ -210,7 +210,7 @@ export function PlaybackBanner({
         className="pb-hints"
         items={[
           { keys: ["↑", "↓"], label: t("guide.changeChannel") },
-          { keys: ["OK"], label: t("common.allChannels") },
+          { keys: ["OK"], label: t("common.select") },
           { keys: [inlineEndArrow], label: t("deck.controls") },
           { keys: ["Return"], label: t("guide.hideThis") },
         ]}

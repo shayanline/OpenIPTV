@@ -1,6 +1,24 @@
 import type { MessageKey, MessageValues } from "../services/locale";
 
 export default {
+  "vod.searchHint": "Digita un titolo o una categoria, poi seleziona Cerca o premi Invio.",
+  "vod.searching": "Ricerca nel catalogo…",
+  "vod.searchFailed": "La ricerca non è disponibile",
+  "vod.searchFailedHint": "La ricerca è salvata. Riprova a caricare il catalogo del fornitore.",
+  "vod.searchEmptyHint": "Controlla l’ortografia o prova un’altra ricerca.",
+  "vod.searchEmptyCatalogue": "Il fornitore non ha titoli in questo catalogo.",
+  "vod.searchDraft": ({ query }) =>
+    `Risultati per "${query}". Seleziona Cerca per aggiornarli.`,
+  "vod.searchCached": "Vengono mostrati i risultati salvati del catalogo.",
+  "vod.browseCategories": "Esplora categorie",
+  "vod.resumeTime": ({ time }) => `Da ${time}`,
+  "vod.resumeEpisode": ({ episode, time }) => `Riprendi ${episode} da ${time}`,
+  "vod.restartShort": "Ricomincia",
+  "vod.restartEpisode": "Ricomincia episodio",
+  "vod.continueShort": "Continua",
+  "vod.overview": "Panoramica",
+  "vod.information": "Informazioni sul titolo",
+  "app.playlistUnavailable": "Impossibile caricare questa playlist",
   "error.playbackUnavailable": "La riproduzione non è disponibile.",
   "error.accessDenied": "L'accesso a questo flusso è stato negato.",
   "error.serverError": "Il server ha restituito un errore.",
@@ -220,8 +238,7 @@ export default {
   "settings.showLive": "Mostra diretta",
   "settings.showMovies": "Mostra film",
   "settings.showSeries": "Mostra serie",
-  "settings.sectionVisibilityHint":
-    "Mostra {section} nel menu principale e nei risultati di ricerca.",
+  "settings.sectionVisibilityHint": "Mostra {section} nel menu principale.",
   "settings.keepSectionHint": "Almeno una sezione supportata deve rimanere attiva.",
   "settings.sectionUnsupportedHint":
     "Disponibile quando la playlist attiva supporta questa sezione.",
@@ -240,13 +257,14 @@ export default {
     "Continua a tentare di ripristinare un canale in diretta invece di arrendersi dopo alcuni tentativi.",
   "settings.playbackInfo": "Informazioni di riproduzione",
   "settings.playbackInfoHint":
-    "Mostra per impostazione predefinita la diagnostica di riproduzione. Tieni premuto OK durante la riproduzione per mostrarla o nasconderla.",
+    "Mostra i dettagli di riproduzione per impostazione predefinita.",
   "playbackInfo.title": "Informazioni di riproduzione",
   "playbackInfo.hold": "Tieni premuto",
   "playbackInfo.hideHint": "Nascondi informazioni di riproduzione",
   "playbackInfo.engine": "Motore",
   "playbackInfo.resolution": "Risoluzione",
   "playbackInfo.dynamicRange": "Gamma dinamica",
+  "playbackInfo.manifestRange": "Gamma dinamica (manifest)",
   "playbackInfo.scan": "Scansione",
   "playbackInfo.progressive": "Progressiva",
   "playbackInfo.interlaced": "Interlacciata",

@@ -47,14 +47,16 @@ export function usePointerAwake(): boolean {
 
   useEffect(() => {
     const root = document.documentElement;
-    const wake = () => {
+    const wake = (event: PointerEvent) => {
+      if (event.target instanceof Element && event.target.closest("[data-virtual-remote]"))
+        return;
       activatePointerInput();
       setAwake(true);
       window.clearTimeout(timer.current);
       timer.current = window.setTimeout(() => setAwake(false), POINTER_IDLE_MS);
     };
-    const movePointer = () => {
-      wake();
+    const movePointer = (event: PointerEvent) => {
+      wake(event);
     };
     const activateRemote = (event?: KeyboardEvent) => {
       if (event && !REMOTE_KEY_CODES.has(event.keyCode)) return;

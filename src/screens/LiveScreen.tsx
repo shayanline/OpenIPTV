@@ -14,16 +14,20 @@ import { cssMs } from "../services/metrics";
 import {
   isFavouritesList,
   lineupOf,
+  channelRef,
   stepColumn,
   type ChannelList as LineupList,
 } from "../services/lineup";
 import { UNCATEGORISED } from "../services/m3u";
-import { searchChannels } from "../services/search";
+import { searchChannels, searchNamedItems } from "../services/search";
 import { KEY, useRemote } from "../hooks/useRemote";
 import { useLongPress } from "../hooks/useLongPress";
+import { useListAcceleration } from "../hooks/useListAcceleration";
 import { pointerOnly } from "../hooks/usePointerAwake";
 import { ChannelList } from "../components/ChannelList";
 import { Sidebar } from "../components/Sidebar";
+import { SearchField } from "../components/SearchField";
+import { SearchState } from "../components/SearchState";
 import { PlaybackBanner } from "../components/PlaybackBanner";
 import { PlaybackInfo } from "../components/PlaybackInfo";
 import { PictureState } from "../components/PictureState";
@@ -148,6 +152,7 @@ export interface LiveScreenProps {
   chrome: Chrome;
   videoRef: React.RefObject<HTMLVideoElement | null>;
   onAppNavigationFocus: () => void;
+  onContentFocus?: () => void;
   searchRequest: { id: number; mode: AppMode; open: boolean };
   onSearchClosed?: (mode: AppMode, requestId: number) => void;
   navigationTransitionActive?: boolean;
@@ -203,6 +208,7 @@ export function LiveScreen({
   chrome,
   videoRef,
   onAppNavigationFocus,
+  onContentFocus,
   searchRequest,
   onSearchClosed,
   navigationTransitionActive = false,
@@ -366,6 +372,7 @@ export function LiveScreen({
    * otherwise search five times, four of them for strings nobody wanted results for.
    */
   const [searching, setSearching] = useState(false);
+  const [searchCategoryIndex, setSearchCategoryIndex] = useState(0);
   const [query, setQuery] = useState("");
   const [applied, setApplied] = useState("");
   const searchOrigin = useRef<{
@@ -390,6 +397,9 @@ export function LiveScreen({
     channels: readonly Channel[];
     total: number;
     index: number;
+    categories: { key: string; name: string; count: number; hidden: boolean; index: number }[];
+    categoryIndex: number;
+    categoryTotal: number;
   } | null>(null);
   const handledEntryId = useRef(0);
 
@@ -412,9 +422,14 @@ export function LiveScreen({
   }, [onSearchClosed]);
 
   const railTimer = useRef<number | undefined>(undefined);
+  const listStep = useListAcceleration(
+    inputEnabled && (surface === "panel" || surface === "guide"),
+  );
+  const searchEntryPane = useRef<"rail" | "list">("rail");
   const railAppliedAt = useRef<number | null>(null);
   const [revealHidden, setRevealHidden] = useState(false);
   const [softHidden, setSoftHidden] = useState<string[]>([]);
+  const [softHiddenChannels, setSoftHiddenChannels] = useState<string[]>([]);
   const previousSurface = useRef(surface);
   useLayoutEffect(() => {
     const settingsClosed = previousSurface.current === "settings" && surface !== "confirmation";
@@ -426,6 +441,13 @@ export function LiveScreen({
     () => managedChannels.filter((channel) => channel.hidden).map((channel) => channel.ref.id),
     [managedChannels],
   );
+  const hiddenChannelIds = useMemo(() => new Set(hiddenChannels), [hiddenChannels]);
+  const excludedChannelIds = useMemo(() => {
+    if (revealHidden) return new Set<string>();
+    if (!softHiddenChannels.length) return hiddenChannelIds;
+    const retained = new Set(softHiddenChannels);
+    return new Set(hiddenChannels.filter((id) => !retained.has(id)));
+  }, [hiddenChannels, hiddenChannelIds, revealHidden, softHiddenChannels]);
   const hiddenCategories = useMemo(
     () => categories.filter((category) => category.hidden).map((category) => category.key),
     [categories],
@@ -438,7 +460,7 @@ export function LiveScreen({
     () =>
       lineupOf(channels, categories, playlistFavourites, {
         hiddenCategories,
-        hiddenChannels,
+        hiddenChannels: Array.from(excludedChannelIds),
         hideEmptyCategories,
       }),
     [
@@ -446,7 +468,7 @@ export function LiveScreen({
       categories,
       playlistFavourites,
       hiddenCategories,
-      hiddenChannels,
+      excludedChannelIds,
       hideEmptyCategories,
     ],
   );
@@ -462,7 +484,18 @@ export function LiveScreen({
         : categories.filter(
             (category) => !savedHidden.has(category.key) || softHiddenSet.has(category.key),
           )
-    ).filter((category) => hideEmptyCategories === false || category.channels.length > 0);
+    )
+      .map((category) =>
+        excludedChannelIds.size
+          ? {
+              ...category,
+              channels: category.channels.filter(
+                (channel) => !excludedChannelIds.has(channelRef(channel).id),
+              ),
+            }
+          : category,
+      )
+      .filter((category) => hideEmptyCategories === false || category.channels.length > 0);
     return favouriteList ? [favouriteList, ...categoryLists] : categoryLists;
   }, [
     browsableLists,
@@ -471,10 +504,12 @@ export function LiveScreen({
     revealHidden,
     savedHidden,
     softHiddenSet,
+    excludedChannelIds,
   ]);
   useEffect(() => {
     setRevealHidden(false);
     setSoftHidden([]);
+    setSoftHiddenChannels([]);
   }, [activePlaylist?.id]);
 
   const displayListName = (list: LineupList | undefined) =>
@@ -521,6 +556,28 @@ export function LiveScreen({
     () => searchChannels(searchableChannels, applied),
     [searchableChannels, applied],
   );
+  const searchableCategories = useMemo(
+    () =>
+      lists.flatMap((list, index) =>
+        isFavouritesList(list) || savedHidden.has(list.key)
+          ? []
+          : [
+              {
+                key: list.key,
+                name: list.name === UNCATEGORISED ? t("channel.uncategorised") : list.name,
+                count: list.channels.length,
+                hidden: false,
+                index,
+              },
+            ],
+      ),
+    [lists, savedHidden, t],
+  );
+  const categoryResults = useMemo(
+    () => searchNamedItems(searchableCategories, applied),
+    [applied, searchableCategories],
+  );
+  useEffect(() => setSearchCategoryIndex(0), [applied]);
 
   /**
    * What the channel column is showing: an answer, or a category.
@@ -938,14 +995,14 @@ export function LiveScreen({
 
   const panelWasVisible = useRef(false);
   useLayoutEffect(() => {
-    const panelVisible = visible && surface === "panel";
+    const panelVisible = liveSurface === "panel";
     const entering = panelVisible && !panelWasVisible.current;
     panelWasVisible.current = panelVisible;
     if (!panelVisible) return;
     if (!entering && entryRequestId === handledEntryId.current) return;
     handledEntryId.current = entryRequestId;
     revealPanel();
-  }, [entryRequestId, revealPanel, surface, visible]);
+  }, [entryRequestId, liveSurface, revealPanel]);
 
   /**
    * Resume whatever was on last time, once the playlist has arrived.
@@ -990,10 +1047,11 @@ export function LiveScreen({
    */
   const moveCursor = useCallback(
     (to: number, now = false) => {
-      const next = Math.max(1, Math.min(Math.max(1, lists.length), to));
+      const next = Math.max(0, Math.min(lists.length, to));
       cursorRef.current = next;
       setCursor(next);
-      if (lists.length) showCategory(next - 1, 0, now);
+      if (next > 0) showCategory(next - 1, 0, now);
+      else window.clearTimeout(railTimer.current);
     },
     [lists.length, showCategory],
   );
@@ -1008,9 +1066,12 @@ export function LiveScreen({
   }, [category, showCategory]);
 
   const nudgeCursor = useCallback(
-    (delta: number, now = false) => {
+    (delta: number, now = false, bounded = false) => {
       const previous = cursorRef.current;
-      const next = cycleIndex(previous - 1, delta, lists.length) + 1;
+      const next = bounded
+        ? Math.max(lists.length ? 1 : 0, Math.min(lists.length, previous + delta))
+        : cycleIndex(previous, delta, lists.length + 1);
+      if (next === 0) searchEntryPane.current = "rail";
       if (next !== previous) moveCursor(next, now);
     },
     [lists.length, moveCursor],
@@ -1100,7 +1161,7 @@ export function LiveScreen({
     ],
   );
 
-  const revealHiddenCategories = useCallback(() => {
+  const toggleHiddenEntries = useCallback(() => {
     if (view !== "panel" || (pane === "rail" && cursor === 0)) return false;
     const favouriteList = isFavouritesList(browsableLists[0]) ? browsableLists[0] : undefined;
     const nextLists = revealHidden
@@ -1139,7 +1200,10 @@ export function LiveScreen({
       setCursor(focusedAt + 1);
       cursorRef.current = focusedAt + 1;
     }
-    if (revealHidden) setSoftHidden([]);
+    if (revealHidden) {
+      setSoftHidden([]);
+      setSoftHiddenChannels([]);
+    }
     setRevealHidden((visible) => !visible);
     return true;
   }, [
@@ -1155,8 +1219,31 @@ export function LiveScreen({
     index,
   ]);
 
-  const toggleCategoryVisibility = useCallback(() => {
-    if (view !== "panel" || pane !== "rail" || cursor === 0) return false;
+  const toggleFocusedVisibility = useCallback(() => {
+    if (view !== "panel") return false;
+    if (pane === "list") {
+      const channel = visible[index];
+      if (!channel) return false;
+      const ref = channelRef(channel);
+      const managed = managedChannels.find((item) => item.ref.id === ref.id);
+      if (!managed) return false;
+      if (!managed.hidden && !revealHidden) {
+        setSoftHiddenChannels((current) =>
+          current.includes(managed.ref.id) ? current : [...current, managed.ref.id],
+        );
+      } else if (managed.hidden) {
+        setSoftHiddenChannels((current) => current.filter((id) => id !== managed.ref.id));
+      }
+      void applyLineupMutation(useLineup.getState().revision, {
+        type: "channel.visibility",
+        channel: managed.ref,
+        hidden: !managed.hidden,
+      }).then((result) => {
+        if (!result.ok) chrome.say(t("lineup.persistenceFailed"));
+      });
+      return true;
+    }
+    if (pane !== "rail" || cursor === 0) return false;
     const item = lists[cursor - 1];
     if (!item || isFavouritesList(item)) return true;
     if (!useSettings.getState().activePlaylist()) return true;
@@ -1168,7 +1255,7 @@ export function LiveScreen({
     } else if (hidden) {
       setSoftHidden((current) => current.filter((key) => key !== item.key));
     }
-    if (hidden && revealHidden && savedHidden.size === 1) {
+    if (hidden && revealHidden && savedHidden.size === 1 && !hiddenChannelIds.size) {
       const favouriteAppears =
         isFavouritesList(lists[0]) ||
         item.channels.some((channel) => favouriteIds.has(channel.id));
@@ -1194,8 +1281,12 @@ export function LiveScreen({
     lists,
     savedHidden,
     revealHidden,
+    hiddenChannelIds,
     categories,
     favouriteIds,
+    visible,
+    index,
+    managedChannels,
     chrome.say,
     t,
   ]);
@@ -1209,10 +1300,10 @@ export function LiveScreen({
     code: KEY.RED,
     enabled: redEnabled,
     onShortPress: () => {
-      if (surface === "panel" && !searchingRef.current) toggleCategoryVisibility();
+      if (surface === "panel" && !searchingRef.current) toggleFocusedVisibility();
     },
     onLongPress: () => {
-      if (surface === "panel" && !searchingRef.current) revealHiddenCategories();
+      if (surface === "panel" && !searchingRef.current) toggleHiddenEntries();
     },
   });
 
@@ -1233,6 +1324,7 @@ export function LiveScreen({
    */
   const openSearch = useCallback(
     (requestId: number) => {
+      onContentFocus?.();
       if (!searchingRef.current) searchOrigin.current = { category, cursor, index, pane };
       searchOwnerId.current = requestId;
       window.clearTimeout(railTimer.current);
@@ -1241,12 +1333,23 @@ export function LiveScreen({
       setQuery("");
       setApplied("");
       setSearching(true);
+      setSearchCategoryIndex(0);
       setPane("list");
       setIndex(FIELD);
       openPanel();
     },
-    [category, cursor, index, openPanel, pane],
+    [category, cursor, index, onContentFocus, openPanel, pane],
   );
+  const searchOpener = useRef(openSearch);
+  searchOpener.current = openSearch;
+  const openSectionSearch = useCallback(() => searchOpener.current(0), []);
+  const focusSearchEntry = useCallback((from: "rail" | "list" = "rail") => {
+    searchEntryPane.current = from;
+    window.clearTimeout(railTimer.current);
+    setPane("rail");
+    setCursor(0);
+    cursorRef.current = 0;
+  }, []);
 
   /**
    * Leave search, and land somewhere that exists.
@@ -1284,9 +1387,33 @@ export function LiveScreen({
     onAppNavigationFocus();
   }, [onAppNavigationFocus]);
 
-  const leaveSearchStart = focusApplicationNavigation;
-
-  const leaveSearchUp = leaveSearchStart;
+  const focusSearchCategory = useCallback((i: number) => {
+    setPane("rail");
+    setSearchCategoryIndex(i);
+  }, []);
+  const leaveSearchStart = useCallback(() => {
+    if (categoryResults.matches.length) focusSearchCategory(searchCategoryIndex);
+    else focusApplicationNavigation();
+  }, [
+    categoryResults.matches.length,
+    focusApplicationNavigation,
+    focusSearchCategory,
+    searchCategoryIndex,
+  ]);
+  const leaveSearchUp = focusApplicationNavigation;
+  const pickSearchCategory = useCallback(
+    (i: number) => {
+      const match = categoryResults.matches[i];
+      if (!match) return;
+      endSearch();
+      setQuery("");
+      setApplied("");
+      moveCursor(match.index + 1, true);
+      setIndex(0);
+      setPane("list");
+    },
+    [categoryResults.matches, endSearch, moveCursor],
+  );
 
   const openGuideChannel = useCallback(
     (channel: Channel, origin: "live-browser" | "deck") => {
@@ -1769,7 +1896,11 @@ export function LiveScreen({
         active instanceof HTMLInputElement ||
         active instanceof HTMLTextAreaElement ||
         (active instanceof HTMLElement && active.isContentEditable);
-      if (textControl && code >= KEY.SPACE && code <= 126) return true;
+      if (
+        textControl &&
+        ((code >= KEY.SPACE && code <= 126) || code === KEY.GREEN || code === KEY.BLUE)
+      )
+        return true;
 
       if (onTransport(code, event.repeat)) {
         event.preventDefault();
@@ -1782,15 +1913,33 @@ export function LiveScreen({
         openSettings();
         return true;
       }
+      if (
+        code === KEY.BLUE &&
+        configured &&
+        (surface === "panel" || (surface === "picture" && current?.mode !== "finite"))
+      ) {
+        event.preventDefault();
+        if (!event.repeat) {
+          if (searching) {
+            setPane("list");
+            setIndex(FIELD);
+          } else openSectionSearch();
+        }
+        return true;
+      }
       if (code === KEY.GREEN) {
         event.preventDefault();
+        if (event.repeat) return true;
+        if (searching && pane === "rail") return true;
         if (view === "panel" && guideChannel) favouriteCurrent(guideChannel);
         else {
           const playing =
             current?.mode === "live"
               ? channels.find((channel) => channel.id === current.id)
               : undefined;
-          favouriteCurrent(view === "panel" ? visible[index] : playing);
+          favouriteCurrent(
+            view === "panel" ? (searching ? results.matches[index] : visible[index]) : playing,
+          );
         }
         return true;
       }
@@ -1864,6 +2013,7 @@ export function LiveScreen({
     [
       activePlaylist?.source.kind,
       channels,
+      configured,
       chrome,
       current,
       favouriteCurrent,
@@ -1879,10 +2029,14 @@ export function LiveScreen({
       onRequestExit,
       onTransport,
       openSettings,
+      openSectionSearch,
       recoveryAction,
+      results.matches,
       retryPlaylist,
       surface,
       playback,
+      pane,
+      searching,
       view,
       visible,
     ],
@@ -1902,12 +2056,14 @@ export function LiveScreen({
         code === KEY.RIGHT;
       if (owned) event.preventDefault();
       if (code === KEY.UP) {
-        setGuideIndex((currentIndex) => Math.max(0, currentIndex - 1));
+        const amount = listStep(code, event.repeat, `guide:${guideChannel?.id ?? ""}`);
+        setGuideIndex((currentIndex) => Math.max(0, currentIndex - amount));
         return;
       }
       if (code === KEY.DOWN) {
+        const amount = listStep(code, event.repeat, `guide:${guideChannel?.id ?? ""}`);
         setGuideIndex((currentIndex) =>
-          Math.min(Math.max(0, guide.items.length - 1), currentIndex + 1),
+          Math.min(Math.max(0, guide.items.length - 1), currentIndex + amount),
         );
         return;
       }
@@ -1921,7 +2077,7 @@ export function LiveScreen({
         return;
       }
     },
-    [closeGuide, guide, playGuide, retryGuide],
+    [closeGuide, guide, guideChannel?.id, listStep, playGuide, retryGuide],
   );
 
   const onPictureKey: SurfaceKeyHandler = useCallback(
@@ -2028,6 +2184,43 @@ export function LiveScreen({
     (code, event) => {
       // The channel panel.
       openPanel();
+      const amount =
+        (code === KEY.UP || code === KEY.DOWN) &&
+        !(searching && pane === "list" && index === FIELD)
+          ? listStep(
+              code,
+              event.repeat,
+              `live:${activePlaylist?.id ?? ""}:${pane}:${searching ? applied : pane === "list" ? category : ""}`,
+            )
+          : 1;
+      if (!amount) {
+        event.preventDefault();
+        return;
+      }
+      if (searching && pane === "rail") {
+        event.preventDefault();
+        if (code === KEY.UP && searchCategoryIndex <= 0) {
+          if (event.repeat) return;
+          setPane("list");
+          setIndex(FIELD);
+        } else if (code === KEY.UP || code === KEY.DOWN) {
+          setSearchCategoryIndex((i) =>
+            Math.max(
+              0,
+              Math.min(
+                categoryResults.matches.length - 1,
+                i + (code === KEY.DOWN ? amount : -amount),
+              ),
+            ),
+          );
+        } else if (code === inlineEnd) {
+          setPane("list");
+          setIndex(column.length ? Math.min(column.length - 1, Math.max(0, index)) : FIELD);
+        } else if (code === inlineStart) focusApplicationNavigation();
+        else if (code === KEY.ENTER) pickSearchCategory(searchCategoryIndex);
+        else if (code === KEY.BACK || code === KEY.ESC) closeSearch();
+        return;
+      }
 
       /*
        * While the keyboard has the field, most keys are the field's.
@@ -2064,7 +2257,7 @@ export function LiveScreen({
           if (el.selectionStart === 0 && el.selectionEnd === 0) {
             event.preventDefault();
             el.blur();
-            focusApplicationNavigation();
+            leaveSearchStart();
           }
           return;
         }
@@ -2132,27 +2325,36 @@ export function LiveScreen({
       if (pane === "list") {
         if (code === KEY.UP) {
           event.preventDefault();
+          if (!searching && atTop) {
+            if (!event.repeat) focusSearchEntry("list");
+            return;
+          }
           setIndex((i) =>
             searching && atTop
-              ? FIELD
-              : searching
-                ? stepColumn(i, -1, panelLength, true)
-                : cycleIndex(i, -1, panelLength),
+              ? event.repeat
+                ? 0
+                : FIELD
+              : searching || event.repeat
+                ? stepColumn(i, -amount, panelLength, false)
+                : cycleIndex(i, -amount, panelLength),
           );
           return;
         }
         if (code === KEY.DOWN) {
           event.preventDefault();
-          if (searching && atBottom) setIndex(FIELD);
-          else
+          if (searching && atBottom) {
+            if (!event.repeat) setIndex(FIELD);
+          } else
             setIndex((i) =>
-              searching ? stepColumn(i, 1, panelLength, true) : cycleIndex(i, 1, panelLength),
+              searching || event.repeat
+                ? stepColumn(i, amount, panelLength, false)
+                : cycleIndex(i, amount, panelLength),
             );
           return;
         }
         if (code === inlineStart) {
           event.preventDefault();
-          if (searching) focusApplicationNavigation();
+          if (searching) leaveSearchStart();
           else {
             setPane("rail");
             if (cursor < 1) moveCursor(category + 1);
@@ -2167,12 +2369,23 @@ export function LiveScreen({
       } else {
         if (code === KEY.UP) {
           event.preventDefault();
-          nudgeCursor(-1, !event.repeat);
+          if (cursorRef.current === 0 && event.repeat) return;
+          if (cursorRef.current === 0 && searchEntryPane.current === "list") {
+            setPane("list");
+            setIndex(Math.max(0, panelLength - 1));
+            return;
+          }
+          nudgeCursor(-amount, !event.repeat, event.repeat);
           return;
         }
         if (code === KEY.DOWN) {
           event.preventDefault();
-          nudgeCursor(1, !event.repeat);
+          if (cursorRef.current === 0 && searchEntryPane.current === "list") {
+            setPane("list");
+            setIndex(0);
+            return;
+          }
+          nudgeCursor(amount, !event.repeat, event.repeat);
           return;
         }
         if (code === inlineStart) {
@@ -2182,6 +2395,10 @@ export function LiveScreen({
         }
         if (code === inlineEnd || code === KEY.ENTER) {
           event.preventDefault();
+          if (code === KEY.ENTER && cursorRef.current === 0) {
+            openSectionSearch();
+            return;
+          }
           commitRailCursor();
           setPane("list");
           return;
@@ -2201,20 +2418,29 @@ export function LiveScreen({
     [
       category,
       closeSearch,
+      categoryResults.matches.length,
+      activePlaylist?.id,
+      applied,
       column,
       commitRailCursor,
       current,
       index,
       inlineEnd,
       inlineStart,
+      leaveSearchStart,
+      listStep,
       moveCursor,
       nudgeCursor,
       focusApplicationNavigation,
+      focusSearchEntry,
       openPanel,
+      openSectionSearch,
       pane,
       pickResult,
+      pickSearchCategory,
       query,
       searching,
+      searchCategoryIndex,
       playback,
       visible,
       watch,
@@ -2334,7 +2560,15 @@ export function LiveScreen({
 
   if (panelOpen) {
     searchExit.current = searching
-      ? { query, channels: results.matches, total: results.total, index }
+      ? {
+          query,
+          channels: results.matches,
+          total: results.total,
+          index,
+          categories: categoryResults.matches,
+          categoryIndex: searchCategoryIndex,
+          categoryTotal: categoryResults.total,
+        }
       : null;
   } else if (restingClosed) {
     searchExit.current = null;
@@ -2345,6 +2579,11 @@ export function LiveScreen({
   const panelIndex = exitingSearch?.index ?? index;
   const panelQuery = exitingSearch?.query ?? query;
   const panelResultCount = exitingSearch?.total ?? results.total;
+  const panelSearchCategories = exitingSearch?.categories ?? categoryResults.matches;
+  const panelSearchCategoryIndex = exitingSearch?.categoryIndex ?? searchCategoryIndex;
+  const panelCategoryTotal = exitingSearch?.categoryTotal ?? categoryResults.total;
+  const panelSearchPending =
+    !!panelQuery.trim() && (loading || (!exitingSearch && query.trim() !== applied.trim()));
 
   /**
    * Handlers the panel hands to its rows.
@@ -2411,8 +2650,20 @@ export function LiveScreen({
     [allowWheel, column.length, searching],
   );
   const leaveSearchDown = useCallback(() => {
-    if (column.length) setIndex(0);
-  }, [column.length]);
+    if (column.length) {
+      setPane("list");
+      setIndex(0);
+    } else if (categoryResults.matches.length) focusSearchCategory(0);
+  }, [categoryResults.matches.length, column.length, focusSearchCategory]);
+  const wheelSearchCategory = useCallback(
+    (direction: -1 | 1) => {
+      setPane("rail");
+      setSearchCategoryIndex((i) =>
+        Math.max(0, Math.min(categoryResults.matches.length - 1, i + direction)),
+      );
+    },
+    [categoryResults.matches.length],
+  );
   const searchOnField =
     inputEnabled && !navigationTransitionActive && pane === "list" && index === FIELD;
   const panelSearch = useMemo(
@@ -2429,6 +2680,7 @@ export function LiveScreen({
             onExitStart: leaveSearchStart,
             onExitUp: leaveSearchUp,
             onExitDown: leaveSearchDown,
+            externalField: true,
           }
         : undefined,
     [
@@ -2459,9 +2711,15 @@ export function LiveScreen({
   const selectedRailList = cursor > 0 ? lists[cursor - 1] : undefined;
   const visibilityKey =
     selectedRailList && !isFavouritesList(selectedRailList) ? selectedRailList.key : undefined;
-  const categoryVisibilityGuide =
+  const focusedVisibility =
     pane === "rail" && visibilityKey
-      ? t(savedHidden.has(visibilityKey) ? "guide.unhideCategory" : "guide.hideCategory")
+      ? savedHidden.has(visibilityKey)
+      : pane === "list" && panelIndex >= 0 && panelChannels[panelIndex]
+        ? hiddenChannelIds.has(channelRef(panelChannels[panelIndex]).id)
+        : undefined;
+  const visibilityGuide =
+    !searching && focusedVisibility !== undefined
+      ? t(focusedVisibility ? "remote.lineupShow" : "remote.lineupHide")
       : undefined;
 
   /**
@@ -2629,12 +2887,11 @@ export function LiveScreen({
                 items={
                   loadFailed
                     ? [
-                        { keys: ["↑", "↓", "←", "→"], label: t("common.move") },
                         { keys: ["OK"], label: t("common.select") },
                         { keys: ["Return"], label: t("common.closeApp") },
                       ]
                     : [
-                        { keys: ["OK"], label: t("app.chooseAnotherPlaylist") },
+                        { keys: ["OK"], label: t("common.select") },
                         { keys: ["Return"], label: t("common.closeApp") },
                       ]
                 }
@@ -2749,7 +3006,6 @@ export function LiveScreen({
             <KeyGuide
               className="playback-drawer-hints ruled"
               items={[
-                { keys: ["\u2191", "\u2193"], label: t("common.move") },
                 { keys: ["OK"], label: t("common.select") },
                 { keys: ["\u2190", "RETURN"], label: t("common.close") },
               ]}
@@ -2829,13 +3085,10 @@ export function LiveScreen({
             <KeyGuide
               className="guide-drawer-hints ruled"
               items={[
-                ...(guide.state === "loaded" && guide.items.length
-                  ? [{ keys: ["\u2191", "\u2193"], label: t("common.move") }]
-                  : []),
                 ...(guide.state === "failed"
-                  ? [{ keys: ["OK"], label: t("library.retry") }]
+                  ? [{ keys: ["OK"], label: t("common.select") }]
                   : guide.items[guideIndex]?.target
-                    ? [{ keys: ["OK"], label: t("guide.playFromStart") }]
+                    ? [{ keys: ["OK"], label: t("common.select") }]
                     : []),
                 { keys: ["\u2190", "RETURN"], label: t("common.close") },
               ]}
@@ -2870,44 +3123,115 @@ export function LiveScreen({
       {panelHost &&
         createPortal(
           <div className={`panel ${panelOpen ? "" : "away"}`}>
-            <div className={`panel-cols ${panelSearching ? "searching" : ""}`}>
-              {!panelSearching && (
-                <Sidebar
-                  categories={railItems}
-                  /* Nothing is showing while a search is, and the rail has to say so. Left pointing at
+            {panelSearching ? (
+              <div className="live-search-bar">
+                <SearchField
+                  value={panelQuery}
+                  focused={searchOnField}
+                  shown={panelChannels.length + panelSearchCategories.length}
+                  total={panelResultCount + panelCategoryTotal}
+                  placeholder={t("common.search")}
+                  ariaLabel={t("search.ariaLabel")}
+                  onChange={setQuery}
+                  onFocus={() => {
+                    setPane("list");
+                    setIndex(FIELD);
+                  }}
+                  onExitStart={leaveSearchStart}
+                  onExitUp={leaveSearchUp}
+                  onExitDown={leaveSearchDown}
+                />
+              </div>
+            ) : (
+              <div className="live-search-entry">
+                <button
+                  type="button"
+                  className={`btn tonal section-search ${inputEnabled && pane === "rail" && cursor === 0 ? "cursor" : ""}`}
+                  onPointerEnter={() => pointerOnly(() => focusSearchEntry(pane))}
+                  onClick={openSectionSearch}
+                >
+                  <Icon name="search" />
+                  <span>{t("common.search")}</span>
+                </button>
+              </div>
+            )}
+            {panelSearching &&
+            (!panelQuery.trim() || (!panelChannels.length && !panelSearchCategories.length)) ? (
+              <SearchState
+                loading={panelSearchPending}
+                title={
+                  !panelQuery.trim()
+                    ? `${t("common.search")} ${t("channel.channels")}`
+                    : panelSearchPending
+                      ? t("vod.searching")
+                      : t("vod.noResults", { query: panelQuery.trim() })
+                }
+                description={
+                  !panelQuery.trim()
+                    ? t("channel.typeName")
+                    : panelSearchPending
+                      ? undefined
+                      : t("vod.searchEmptyHint")
+                }
+              />
+            ) : (
+              <div className={`panel-cols ${panelSearching ? "searching" : ""}`}>
+                {panelSearching ? (
+                  <Sidebar
+                    className="search-categories"
+                    categories={panelSearchCategories}
+                    selected={-1}
+                    cursor={panelSearchCategoryIndex + 1}
+                    total={panelCategoryTotal}
+                    loading={loading}
+                    allHidden={false}
+                    emptyLabel={panelQuery.trim() ? t("playlist.noCategoryMatches") : ""}
+                    focused={inputEnabled && pane === "rail"}
+                    scale={scale}
+                    onFocus={focusSearchCategory}
+                    onSelect={pickSearchCategory}
+                    onWheel={wheelSearchCategory}
+                  />
+                ) : (
+                  <Sidebar
+                    categories={railItems}
+                    /* Nothing is showing while a search is, and the rail has to say so. Left pointing at
                    the category the column used to hold, the marker claims the results beside it came
                    from there, which is the one thing that mark means. The Search key carries the state
                    instead, which is where it belongs. */
-                  selected={category}
-                  cursor={cursor}
+                    selected={category}
+                    cursor={cursor}
+                    loading={loading}
+                    allHidden={categories.length > 0 && !lists.length}
+                    focused={inputEnabled && pane === "rail"}
+                    scale={scale}
+                    onFocus={focusCategory}
+                    onSelect={pickCategory}
+                    onWheel={wheelCategory}
+                  />
+                )}
+                <ChannelList
+                  channels={panelChannels}
+                  category={
+                    panelSearching ? t("channel.channels") : displayListName(lists[category])
+                  }
+                  index={panelIndex}
                   loading={loading}
-                  allHidden={categories.length > 0 && !lists.length}
-                  focused={inputEnabled && pane === "rail"}
+                  focused={inputEnabled && pane === "list"}
+                  playingId={told.current.playingId}
+                  live={told.current.live}
+                  favourites={favouriteIds}
+                  showNumbers={showNumbers}
+                  showLogos={showLogos}
                   scale={scale}
-                  onFocus={focusCategory}
-                  onSelect={pickCategory}
-                  onWheel={wheelCategory}
+                  numberDigits={numberDigits}
+                  search={panelSearch}
+                  onFocus={focusChannel}
+                  onSelect={searchPick}
+                  onWheel={wheelChannel}
                 />
-              )}
-              <ChannelList
-                channels={panelChannels}
-                category={displayListName(lists[category])}
-                index={panelIndex}
-                loading={loading}
-                focused={inputEnabled && pane === "list"}
-                playingId={told.current.playingId}
-                live={told.current.live}
-                favourites={favouriteIds}
-                showNumbers={showNumbers}
-                showLogos={showLogos}
-                scale={scale}
-                numberDigits={numberDigits}
-                search={panelSearch}
-                onFocus={focusChannel}
-                onSelect={searchPick}
-                onWheel={wheelChannel}
-              />
-            </div>
+              </div>
+            )}
 
             {/*
              * The key guide, along the foot of the panel it describes.
@@ -2928,32 +3252,33 @@ export function LiveScreen({
                 before it goes back to the picture. A guide that says otherwise is worse than none. */}
             <KeyGuide
               className="panel-hints ruled"
-              items={
-                panelSearching
+              items={[
+                ...(panelSearching
                   ? [
-                      { keys: ["\u2191", "\u2193"], label: t("common.move") },
                       {
                         keys: ["OK"],
-                        label:
-                          panelIndex === FIELD ? t("guide.showMatches") : t("common.watch"),
+                        label: t("common.select"),
                       },
                       {
                         keys: ["Return"],
-                        label: panelQuery ? t("guide.clear") : t("common.backToChannels"),
+                        label: panelQuery ? t("guide.clear") : t("common.back"),
                       },
                     ]
                   : [
-                      { keys: ["\u2191", "\u2193"], label: t("common.move") },
-                      { keys: ["OK"], label: t("common.watch") },
-                      categoryVisibilityGuide
-                        ? { keys: ["Red"], label: categoryVisibilityGuide }
+                      { keys: ["OK"], label: t("common.select") },
+                      visibilityGuide
+                        ? { keys: ["Red"], label: visibilityGuide }
                         : { keys: ["0-9"], label: t("common.channelNumber") },
                       {
                         keys: ["Return"],
-                        label: current ? t("common.backToPicture") : t("common.closeApp"),
+                        label: current ? t("common.back") : t("common.closeApp"),
                       },
-                    ]
-              }
+                    ]),
+                ...(pane === "list" && panelIndex >= 0 && panelChannels[panelIndex]
+                  ? [{ keys: ["Green"], label: t("guide.favourite") }]
+                  : []),
+                { keys: ["Blue"], label: t("common.search") },
+              ]}
             />
           </div>,
           panelHost,

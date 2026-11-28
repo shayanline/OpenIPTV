@@ -436,6 +436,39 @@ describe("frame and focus recorder", () => {
     expect(r.stop()).toMatchObject({ answered: 1, distance: 1 });
   });
 
+  it.each(["3", "3 / 5"])(
+    "records the complete category cycle through Search with a count of %s",
+    (count) => {
+      const r = recorder(
+        `<div class="panel"><button class="section-search">Search</button><div class="pane rail focused"><div class="pane-head"><span class="count">${count}</span></div><button class="row cursor" style="top:100px;height:50px">Last</button></div></div>`,
+      );
+      const search = document.querySelector(".section-search");
+      const row = document.querySelector<HTMLElement>(".row");
+      if (!search || !row) throw new Error("Missing fixture controls");
+      r.start();
+      r.down();
+      row.classList.remove("cursor");
+      search.classList.add("cursor");
+      r.frame();
+      r.frame();
+      for (const top of [0, 50, 100]) {
+        r.down();
+        search.classList.remove("cursor");
+        row.classList.add("cursor");
+        row.style.top = `${top}px`;
+        r.frame();
+        r.frame();
+      }
+      expect(r.stop()).toMatchObject({
+        presses: 4,
+        answered: 4,
+        moves: 4,
+        distance: 4,
+        hadCursor: true,
+      });
+    },
+  );
+
   it("retains the oldest coalesced input and exposes movement lost between frames", () => {
     const r = recorder(
       '<div class="panel"><div class="pane focused"><button class="row cursor" style="top:0px;height:50px">One</button></div></div>',

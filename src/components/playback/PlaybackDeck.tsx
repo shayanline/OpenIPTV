@@ -435,18 +435,8 @@ export function PlaybackDeck({
     if (control && !control.matches(":disabled")) control.focus({ preventScroll: true });
   }, [focus, inputEnabled, disabled, displayRange]);
 
-  /*
-   * Both horizontal arrows describe control movement, including at bounded edges.
-   * Vertical hints show movement between rows when available and the close keys for each focus.
-   */
   const inlineStartArrow = rtl ? "\u2192" : "\u2190";
   const inlineEndArrow = rtl ? "\u2190" : "\u2192";
-  const moveKeys =
-    focus === "seek"
-      ? navigableControls.length
-        ? ["\u2193"]
-        : []
-      : [inlineStartArrow, inlineEndArrow, ...(seekable ? ["\u2191"] : [])];
   const closeKeys =
     focus === "seek"
       ? ["\u2191", "Return"]
@@ -462,7 +452,6 @@ export function PlaybackDeck({
       : [];
   const hintItems = [
     ...(seekKeys.length ? [{ keys: seekKeys, label: t("deck.seek") }] : []),
-    ...(moveKeys.length ? [{ keys: moveKeys, label: t("common.move") }] : []),
     ...(navigableControls.includes(focus as PlaybackDeckAction)
       ? [{ keys: ["OK"], label: t("common.select") }]
       : []),

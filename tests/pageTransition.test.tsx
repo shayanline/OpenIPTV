@@ -513,7 +513,7 @@ test("the duration fallback drives fades that never emit transitionend", async (
   const { result, commits, finishes } = setup();
 
   act(() => result.current.request("movies", FADE));
-  await advance(DURATION_MS + 99);
+  await advance(DURATION_MS - 1);
   expect(result.current.phase).toBe("leaving");
   await advance(1);
   expect(result.current.phase).toBe("settling");

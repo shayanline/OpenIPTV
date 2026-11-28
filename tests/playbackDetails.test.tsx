@@ -223,7 +223,7 @@ test("A movie displays its provider metadata beside separate artwork frames.", a
   expect(dialog?.getAttribute("role")).toBe("dialog");
   expect(document.querySelector("#playback-details-title")?.textContent).toBe("The Film");
   expect(document.querySelector(".playback-details-context")?.textContent).toBe("Cinema");
-  const tags = document.querySelector(".playback-details-copy > .vod-detail-tags");
+  const tags = document.querySelector(".playback-details-copy > .vod-detail-meta");
   for (const value of ["2020-05-01", "8.1", "Drama", "90 min"]) {
     expect(tags?.textContent).toContain(value);
   }
@@ -330,7 +330,7 @@ test.each(["Italy", "Atlantis"])(
         },
       },
     });
-    const tags = document.querySelector(".playback-details-copy > .vod-detail-tags");
+    const tags = document.querySelector(".playback-details-copy > .vod-detail-meta");
     if (country === "Italy") {
       expect(tags?.children).toHaveLength(1);
       expect(tags?.querySelector('img[alt="Italy"]')?.getAttribute("src")).toBe(
@@ -380,7 +380,7 @@ test("Episode facts remain separate from series facts and credits.", async () =>
   const context = document.querySelector(".playback-details-context");
   expect(context?.textContent).toContain("The Series");
   expect(context?.textContent).toContain("S1:E2");
-  const tags = document.querySelector(".playback-details-copy > .vod-detail-tags");
+  const tags = document.querySelector(".playback-details-copy > .vod-detail-meta");
   for (const value of ["2021-03-04", "7.9", "45 min"])
     expect(tags?.textContent).toContain(value);
   expect(tags?.textContent).not.toContain("Crime");
@@ -429,7 +429,7 @@ test("An unmatched episode uses its target identity while retaining series conte
     "Missing Episode",
   );
   expect(document.querySelector(".playback-details-context")?.textContent).toContain("S1:E9");
-  expect(document.querySelector(".playback-details-copy > .vod-detail-tags")).toBeNull();
+  expect(document.querySelector(".playback-details-copy > .vod-detail-meta")).toBeNull();
   expect(document.querySelector(".playback-details-series h2")?.textContent).toBe("The Series");
   expect(document.querySelector('[data-artwork="image"]')?.getAttribute("aria-label")).toBe(
     `${translate("en", "common.open")}, ${translate("en", "vod.backdrop")}`,

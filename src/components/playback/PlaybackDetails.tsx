@@ -523,27 +523,21 @@ function PlaybackDetailsContent({
             className="playback-details-hints"
             items={
               viewing
-                ? [{ keys: ["OK", "Return"], label: t("common.back") }]
+                ? [
+                    { keys: ["OK"], label: t("common.select") },
+                    { keys: ["Return"], label: t("common.back") },
+                  ]
                 : focusedArtwork
                   ? [
-                      {
-                        keys:
-                          artworks.length > 1
-                            ? ["\u2190", "\u2192", "\u2191", "\u2193"]
-                            : ["\u2190", "\u2192"],
-                        label: t("common.move"),
-                      },
-                      { keys: ["OK"], label: t("common.open") },
+                      { keys: ["OK"], label: t("common.select") },
                       { keys: ["Return"], label: t("common.close") },
                     ]
                   : [
                       ...(overflowing
                         ? [{ keys: ["\u2191", "\u2193"], label: t("common.scroll") }]
                         : []),
-                      ...(artworks.length
-                        ? [{ keys: ["\u2190", "\u2192"], label: t("common.move") }]
-                        : []),
-                      { keys: ["OK", "Return"], label: t("common.close") },
+                      { keys: ["OK"], label: t("common.select") },
+                      { keys: ["Return"], label: t("common.close") },
                     ]
             }
           />

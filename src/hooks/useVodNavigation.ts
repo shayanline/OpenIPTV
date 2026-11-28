@@ -4,6 +4,7 @@ import type { XtreamSeasonKey } from "../services/xtream";
 import { stepDetailAction } from "../services/vodActionLayout";
 import { pointerInputActive } from "./usePointerAwake";
 import { KEY } from "./useRemote";
+import { MAX_LIST_STEP, useListAcceleration } from "./useListAcceleration";
 import { POSTER_COLUMNS, wheelStep, windowOf } from "./useWindowed";
 
 export type VodHeaderControl = "live" | "movie" | "series" | "search" | "settings";
@@ -11,11 +12,13 @@ export type VodHeaderControl = "live" | "movie" | "series" | "search" | "setting
 export type VodZone =
   | "header"
   | "rail"
+  | "rail-search"
   | "catalogue-actions"
   | "grid"
   | "search-field"
   | "search-submit"
   | "search-grid"
+  | "search-categories"
   | "detail-actions"
   | "detail-copy"
   | "season-row"
@@ -68,6 +71,7 @@ export interface VodNavigationState {
     control?: "search-field" | "search-submit";
     itemKey: string;
     itemIndex: number;
+    categoryIndex?: number;
     firstRow: number;
     origin: VodOrigin;
   };
@@ -91,6 +95,7 @@ export interface VodNavigationContext {
   direction: Direction;
   headerKeys: readonly VodHeaderControl[];
   categoryKeys: readonly string[];
+  categoryHeaderIndex?: number;
   categoryVisibleRows?: number;
   categoryRowHeight?: number;
   itemKeys: readonly string[];
@@ -100,6 +105,8 @@ export interface VodNavigationContext {
   searchVisibleRows?: number;
   searchItemKeys: readonly string[];
   searchKeysForQuery?: (query: string) => readonly string[];
+  searchCategoryKeys?: readonly string[];
+  searchCategoryKeysForQuery?: (query: string) => readonly string[];
   seasons: readonly XtreamSeasonKey[];
   episodeKeys: readonly string[];
   episodeKeysBySeason?: Readonly<Record<string, readonly string[]>>;
@@ -113,7 +120,7 @@ export interface VodNavigationContext {
 }
 
 export type VodAction =
-  | { type: "key"; code: number }
+  | { type: "key"; code: number; amount?: number; repeat?: boolean }
   | { type: "mode"; mode: "movie" | "series" }
   | { type: "category-focus"; index: number }
   | { type: "category-display"; categoryKey: string; enterContent?: boolean }
@@ -129,6 +136,7 @@ export type VodAction =
   | { type: "query"; value: string }
   | { type: "query-apply"; value: string }
   | { type: "search-control-focus"; control: "search-field" | "search-submit" }
+  | { type: "search-category-focus"; index: number }
   | { type: "keyboard"; open: boolean }
   | { type: "details-open"; itemKey: string; origin: VodOrigin }
   | { type: "details-close" }
@@ -147,6 +155,8 @@ export type VodAction =
   | { type: "restore"; origin: VodOrigin };
 
 export interface VodNavigationOptions extends VodNavigationContext {
+  active?: boolean;
+  inputScope?: string;
   mode: "movie" | "series";
   onCategorySettled: (categoryKey: string) => void;
   onQuerySettled: (query: string) => void;
@@ -181,6 +191,7 @@ export interface VodNavigation {
   setQuery: (value: string) => void;
   submitQuery: () => void;
   focusSearchControl: (control: "search-field" | "search-submit") => void;
+  focusSearchCategory: (index: number) => void;
   retry: () => void;
   openSearch: () => void;
   closeSearch: () => void;
@@ -239,6 +250,11 @@ const selectedCategoryIndex = (state: VodNavigationState, keys: readonly string[
   return keys[index] === state.selectedCategoryKey
     ? index
     : keys.indexOf(state.selectedCategoryKey);
+};
+
+const categoryNavigationIndex = (state: VodNavigationState, keys: readonly string[]) => {
+  const index = selectedCategoryIndex(state, keys);
+  return index >= 0 ? index : clampedIndex(keys, state.memories[state.mode].railIndex);
 };
 
 const categoryItems = (context: VodNavigationContext, categoryKey: string): readonly string[] =>
@@ -398,16 +414,20 @@ export function reduceVodNavigation(
     };
   }
   if (action.type === "category-focus") {
+    if (action.index < 0) return { ...state, zone: "rail-search" };
     const index = clampedIndex(context.categoryKeys, action.index);
     const key = context.categoryKeys[index] ?? "";
     const held = state.memories[state.mode];
     const { categoryVisibleRows, categoryRowHeight } = context;
+    const headerIndex = context.categoryHeaderIndex ?? -1;
+    const hasHeader = headerIndex >= 0 && headerIndex < context.categoryKeys.length;
+    const rowIndex = index + (hasHeader && index >= headerIndex ? 1 : 0);
     const first =
       categoryVisibleRows === undefined || categoryRowHeight === undefined
         ? undefined
         : windowOf(
-            context.categoryKeys.length,
-            index,
+            context.categoryKeys.length + (hasHeader ? 1 : 0),
+            rowIndex,
             categoryVisibleRows,
             1,
             held.categoryFirst,
@@ -496,7 +516,12 @@ export function reduceVodNavigation(
   }
   if (action.type === "item-focus") {
     return state.search
-      ? withSearchItem(state, context.searchItemKeys, action.index, context)
+      ? withSearchItem(
+          { ...state, zone: "search-grid" },
+          context.searchItemKeys,
+          action.index,
+          context,
+        )
       : withItem(
           state,
           categoryItems(context, state.displayedCategoryKey),
@@ -623,6 +648,7 @@ export function reduceVodNavigation(
         applied: action.value,
         itemKey: "",
         itemIndex: 0,
+        categoryIndex: 0,
         firstRow: 0,
       },
     };
@@ -639,6 +665,17 @@ export function reduceVodNavigation(
       ...state,
       zone: action.control,
       search: { ...state.search, control: action.control, keyboardOpen },
+    };
+  }
+  if (action.type === "search-category-focus" && state.search) {
+    return {
+      ...state,
+      zone: "search-categories",
+      search: {
+        ...state.search,
+        keyboardOpen: false,
+        categoryIndex: clampedIndex(context.searchCategoryKeys ?? [], action.index),
+      },
     };
   }
   if (action.type === "keyboard" && state.search) {
@@ -860,7 +897,21 @@ export function reduceVodNavigation(
             itemKey: keys[index] ?? "",
             itemIndex: index,
             firstRow: action.origin.firstRow,
-            origin: action.origin,
+            // Details restore the search cursor without replacing its category return location.
+            origin:
+              state.search?.origin.surface === "category" &&
+              state.search.origin.mode === action.origin.mode
+                ? state.search.origin
+                : {
+                    mode: action.origin.mode,
+                    surface: "category",
+                    categoryKey: action.origin.categoryKey,
+                    itemKey: held.itemByCategory[action.origin.categoryKey] ?? held.itemKey,
+                    itemIndex:
+                      held.indexByCategory[action.origin.categoryKey] ?? held.itemIndex,
+                    firstRow:
+                      held.firstRowByCategory[action.origin.categoryKey] ?? held.firstRow,
+                  },
           }
         : null,
       details: null,
@@ -885,6 +936,7 @@ export function reduceVodNavigation(
   const inlineStart = context.direction === "rtl" ? KEY.RIGHT : KEY.LEFT;
   const inlineEnd = context.direction === "rtl" ? KEY.LEFT : KEY.RIGHT;
   const code = action.code;
+  const amount = Math.max(1, Math.min(MAX_LIST_STEP, action.amount ?? 1));
 
   if (code === KEY.BACK || code === KEY.ESC) {
     if (state.episodes?.open) {
@@ -948,11 +1000,77 @@ export function reduceVodNavigation(
     }
     return state;
   }
+  if (state.zone === "rail-search") {
+    if (code === KEY.ENTER) {
+      return reduceVodNavigation(state, { type: "search-open" }, context);
+    }
+    if (code === inlineEnd) {
+      return { ...state, zone: context.regionState === "failed" ? "retry" : "grid" };
+    }
+    if (code === KEY.DOWN || code === KEY.UP) {
+      return reduceVodNavigation(
+        state,
+        {
+          type: "category-focus",
+          index: code === KEY.DOWN ? 0 : context.categoryKeys.length - 1,
+        },
+        context,
+      );
+    }
+    return state;
+  }
+  if (state.zone === "search-categories" && state.search) {
+    if (code === KEY.UP && !(state.search.categoryIndex ?? 0)) {
+      if (action.repeat) return state;
+      return reduceVodNavigation(
+        state,
+        {
+          type: "search-control-focus",
+          control: "search-field",
+        },
+        context,
+      );
+    }
+    if (code === KEY.UP || code === KEY.DOWN) {
+      return reduceVodNavigation(
+        state,
+        {
+          type: "search-category-focus",
+          index: (state.search.categoryIndex ?? 0) + (code === KEY.DOWN ? amount : -amount),
+        },
+        context,
+      );
+    }
+    if (code === inlineEnd) {
+      if (!context.searchItemKeys.length) {
+        return reduceVodNavigation(
+          state,
+          {
+            type: "search-control-focus",
+            control: "search-field",
+          },
+          context,
+        );
+      }
+      return withSearchItem(
+        { ...state, zone: "search-grid" },
+        context.searchItemKeys,
+        state.search.itemIndex,
+        context,
+      );
+    }
+    return state;
+  }
   if (state.zone === "rail") {
-    const index = selectedCategoryIndex(state, context.categoryKeys);
-    if ((code === KEY.UP || code === KEY.DOWN) && context.categoryKeys.length) {
-      const delta = code === KEY.UP ? -1 : 1;
-      const next = (index + delta + context.categoryKeys.length) % context.categoryKeys.length;
+    if (code === KEY.UP || code === KEY.DOWN) {
+      if (!context.categoryKeys.length) return { ...state, zone: "rail-search" };
+      const index = categoryNavigationIndex(state, context.categoryKeys);
+      const delta = code === KEY.UP ? -amount : amount;
+      const next = action.repeat
+        ? Math.max(0, Math.min(context.categoryKeys.length - 1, index + delta))
+        : ((index + 1 + delta + context.categoryKeys.length + 1) %
+            (context.categoryKeys.length + 1)) -
+          1;
       return reduceVodNavigation(state, { type: "category-focus", index: next }, context);
     }
     if (
@@ -1013,7 +1131,19 @@ export function reduceVodNavigation(
       };
     };
     if (code === inlineStart) {
-      if (index % columns === 0) return search ? returnToSearch() : { ...state, zone: "rail" };
+      if (index % columns === 0) {
+        if (search && context.searchCategoryKeys?.length) {
+          return reduceVodNavigation(
+            state,
+            {
+              type: "search-category-focus",
+              index: state.search?.categoryIndex ?? 0,
+            },
+            context,
+          );
+        }
+        return search ? returnToSearch() : { ...state, zone: "rail" };
+      }
       return move(index - 1);
     }
     if (code === inlineEnd) {
@@ -1021,19 +1151,25 @@ export function reduceVodNavigation(
       return move(index + 1);
     }
     if (code === KEY.UP) {
-      if (index < columns)
+      if (index < columns) {
+        if (action.repeat) return state;
         return search
           ? returnToSearch()
           : { ...state, zone: "catalogue-actions", catalogueActionIndex: 0 };
-      return move(index - columns);
+      }
+      return move(Math.max(index % columns, index - columns * amount));
     }
     if (code === KEY.DOWN) {
-      const next = index + columns;
-      return next < keys.length ? move(next) : state;
+      const row = Math.floor(index / columns);
+      const lastRow = Math.floor((keys.length - 1) / columns);
+      if (row >= lastRow) return state;
+      const targetRow = Math.min(lastRow, row + amount);
+      return move(Math.min(keys.length - 1, targetRow * columns + (index % columns)));
     }
     return state;
   }
   if (state.zone === "search-field" || state.zone === "search-submit") {
+    if (code === KEY.DOWN && !state.search?.applied.trim()) return state;
     if (code === inlineEnd && state.zone === "search-field" && state.search?.query.trim()) {
       return {
         ...state,
@@ -1068,6 +1204,16 @@ export function reduceVodNavigation(
         },
         context.searchItemKeys,
         state.search.itemIndex,
+        context,
+      );
+    }
+    if (code === KEY.DOWN && context.searchCategoryKeys?.length && state.search) {
+      return reduceVodNavigation(
+        state,
+        {
+          type: "search-category-focus",
+          index: state.search.categoryIndex ?? 0,
+        },
         context,
       );
     }
@@ -1151,12 +1297,16 @@ export function reduceVodNavigation(
       );
     if (code === inlineEnd) return state;
     if (code === KEY.UP && index === 0) {
+      if (action.repeat) return state;
       const hasVisibleSeason =
         context.seasons.length > 1 || context.seasons[0] !== "unassigned";
       return hasVisibleSeason ? { ...state, zone: "season-row" } : state;
     }
     if (code === KEY.UP || code === KEY.DOWN) {
-      const next = clampedIndex(context.episodeKeys, index + (code === KEY.DOWN ? 1 : -1));
+      const next = clampedIndex(
+        context.episodeKeys,
+        index + (code === KEY.DOWN ? amount : -amount),
+      );
       const episodeKey = context.episodeKeys[next] ?? "";
       if (!state.details) return { ...state, episodes: { ...state.episodes, episodeKey } };
       const held = state.memories[state.mode];
@@ -1183,6 +1333,7 @@ export function reduceVodNavigation(
 }
 
 export function useVodNavigation(options: VodNavigationOptions): VodNavigation {
+  const listStep = useListAcceleration(options.active !== false);
   const [state, setState] = useState(() => initialVodNavigation(options.mode));
   const [posterFetchReady, setPosterFetchReady] = useState(false);
   const stateRef = useRef(state);
@@ -1221,6 +1372,9 @@ export function useVodNavigation(options: VodNavigationOptions): VodNavigation {
       searchItemKeys: options.searchKeysForQuery
         ? options.searchKeysForQuery(current.search?.applied ?? "")
         : options.searchItemKeys,
+      searchCategoryKeys: options.searchCategoryKeysForQuery
+        ? options.searchCategoryKeysForQuery(current.search?.applied ?? "")
+        : options.searchCategoryKeys,
       episodeKeys: seasonEpisodes(
         options,
         current.episodes?.selectedSeason ??
@@ -1258,6 +1412,27 @@ export function useVodNavigation(options: VodNavigationOptions): VodNavigation {
     },
     [context],
   );
+
+  useEffect(() => {
+    if (
+      options.active === false ||
+      !options.detailRetryAvailable ||
+      !state.details ||
+      state.zone === "retry" ||
+      state.details.drawerOpen ||
+      state.episodes?.open
+    ) {
+      return;
+    }
+    dispatch({ type: "retry-focus" });
+  }, [
+    dispatch,
+    options.active,
+    options.detailRetryAvailable,
+    state.details,
+    state.episodes?.open,
+    state.zone,
+  ]);
 
   const settlePosters = useCallback((mode = optionsRef.current.mode) => {
     setPosterFetchReady(false);
@@ -1312,6 +1487,12 @@ export function useVodNavigation(options: VodNavigationOptions): VodNavigation {
     },
     [dispatch],
   );
+  const focusSearchCategory = useCallback(
+    (index: number) => {
+      dispatch({ type: "search-category-focus", index });
+    },
+    [dispatch],
+  );
 
   const setQuery = useCallback(
     (value: string) => dispatch({ type: "query", value }),
@@ -1341,9 +1522,49 @@ export function useVodNavigation(options: VodNavigationOptions): VodNavigation {
         before.zone === "search-field" && document.activeElement instanceof HTMLInputElement;
       const inlineStart = optionsRef.current.direction === "rtl" ? KEY.RIGHT : KEY.LEFT;
       const inlineEnd = optionsRef.current.direction === "rtl" ? KEY.LEFT : KEY.RIGHT;
+      const scrolling =
+        before.zone === "rail" ||
+        before.zone === "grid" ||
+        before.zone === "search-grid" ||
+        before.zone === "search-categories" ||
+        before.zone === "episode-list";
+      const amount =
+        (code === KEY.UP || code === KEY.DOWN) && scrolling
+          ? listStep(
+              code,
+              event.repeat,
+              `${optionsRef.current.inputScope ?? ""}:${before.mode}:${before.zone}:${
+                before.search?.applied ??
+                (before.zone === "rail" ? "" : before.displayedCategoryKey)
+              }:${before.episodes?.selectedSeason ?? ""}:${before.details?.itemKey ?? ""}`,
+            )
+          : 1;
+      if (!amount || (before.zone === "rail-search" && code === KEY.UP && event.repeat)) {
+        event.preventDefault();
+        return;
+      }
+      if (before.zone === "search-field" && code === KEY.ENTER && !typing) {
+        dispatch({ type: "keyboard", open: true });
+        event.preventDefault();
+        return;
+      }
+      if (
+        code === inlineStart &&
+        before.search &&
+        !before.details &&
+        context().searchCategoryKeys?.length &&
+        (before.zone === "search-field" || before.zone === "retry")
+      ) {
+        if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+        dispatch({ type: "search-category-focus", index: before.search.categoryIndex ?? 0 });
+        event.preventDefault();
+        return;
+      }
       if (
         code === inlineStart &&
         (before.zone === "rail" ||
+          before.zone === "rail-search" ||
+          before.zone === "search-categories" ||
           (before.zone === "retry" && before.search && !before.details))
       ) {
         if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
@@ -1354,7 +1575,7 @@ export function useVodNavigation(options: VodNavigationOptions): VodNavigation {
       if (before.zone === "search-grid" && code === inlineStart) {
         const columns = optionsRef.current.posterColumns ?? POSTER_COLUMNS;
         const index = before.search?.itemIndex ?? before.selectedItemIndex;
-        if (index % columns === 0) {
+        if (index % columns === 0 && !context().searchCategoryKeys?.length) {
           optionsRef.current.onAppNavigationFocus?.();
           event.preventDefault();
           return;
@@ -1411,12 +1632,29 @@ export function useVodNavigation(options: VodNavigationOptions): VodNavigation {
         event.preventDefault();
         return;
       }
-      if (before.zone === "rail" && (code === KEY.UP || code === KEY.DOWN)) {
+      if (
+        (before.zone === "rail" || before.zone === "rail-search") &&
+        (code === KEY.UP || code === KEY.DOWN)
+      ) {
         const keys = context().categoryKeys;
-        const index = selectedCategoryIndex(before, keys);
+        if (!keys.length) {
+          if (before.zone !== "rail-search") dispatch({ type: "category-focus", index: -1 });
+          event.preventDefault();
+          return;
+        }
+        const index =
+          before.zone === "rail-search" ? -1 : categoryNavigationIndex(before, keys);
         if (keys.length) {
-          const delta = code === KEY.DOWN ? 1 : -1;
-          selectCategory((index + delta + keys.length) % keys.length, false);
+          const delta = code === KEY.DOWN ? amount : -amount;
+          const next = event.repeat
+            ? Math.max(0, Math.min(keys.length - 1, index + delta))
+            : ((index + 1 + delta + keys.length + 1) % (keys.length + 1)) - 1;
+          if (next === index) {
+            event.preventDefault();
+            return;
+          }
+          if (next < 0) dispatch({ type: "category-focus", index: -1 });
+          else selectCategory(next, false);
           event.preventDefault();
           return;
         }
@@ -1432,7 +1670,7 @@ export function useVodNavigation(options: VodNavigationOptions): VodNavigation {
         event.preventDefault();
         return;
       }
-      const next = dispatch({ type: "key", code });
+      const next = dispatch({ type: "key", code, amount, repeat: event.repeat });
       if (code === KEY.ENTER) {
         if (before.zone === "retry") {
           retry();
@@ -1440,6 +1678,7 @@ export function useVodNavigation(options: VodNavigationOptions): VodNavigation {
           before.zone === "header" ||
           before.zone === "grid" ||
           before.zone === "search-grid" ||
+          before.zone === "search-categories" ||
           (before.zone === "detail-actions" && context().detailActionCount > 0) ||
           before.zone === "episode-list"
         ) {
@@ -1448,7 +1687,7 @@ export function useVodNavigation(options: VodNavigationOptions): VodNavigation {
       }
       event.preventDefault();
     },
-    [context, dispatch, retry, selectCategory, submitQuery],
+    [context, dispatch, listStep, retry, selectCategory, submitQuery],
   );
 
   const handleWheel = useCallback(
@@ -1567,6 +1806,7 @@ export function useVodNavigation(options: VodNavigationOptions): VodNavigation {
     setQuery,
     submitQuery,
     focusSearchControl: (control) => dispatch({ type: "search-control-focus", control }),
+    focusSearchCategory,
     retry,
     openSearch: () => dispatch({ type: "search-open" }),
     closeSearch: () => dispatch({ type: "search-close" }),

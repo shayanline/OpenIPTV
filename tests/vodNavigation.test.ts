@@ -36,6 +36,80 @@ const root = () => {
   return reduceVodNavigation(state, { type: "category-focus", index: 0 }, context());
 };
 
+test.each(["ltr", "rtl"] as const)(
+  "search arrows move between category and content columns in %s",
+  (direction) => {
+    const options = context({
+      direction,
+      searchCategoryKeys: ["movie:10", "movie:20"],
+      searchItemKeys: ["movie:9", "movie:3"],
+    });
+    const move = (state: VodNavigationState, code: number) =>
+      reduceVodNavigation(state, { type: "key", code }, options);
+    const start = direction === "rtl" ? KEY.RIGHT : KEY.LEFT;
+    const end = direction === "rtl" ? KEY.LEFT : KEY.RIGHT;
+    let state = reduceVodNavigation(root(), { type: "search-open" }, options);
+    state = reduceVodNavigation(state, { type: "query", value: "Name" }, options);
+    state = reduceVodNavigation(state, { type: "query-apply", value: "Name" }, options);
+    state = move(state, KEY.DOWN);
+    expect(state.zone).toBe("search-grid");
+    expect(state.search?.itemKey).toBe("movie:9");
+    state = move(state, start);
+    expect(state.zone).toBe("search-categories");
+    state = move(state, KEY.DOWN);
+    expect(state.search?.categoryIndex).toBe(1);
+    state = move(state, end);
+    expect(state.zone).toBe("search-grid");
+    expect(state.search?.itemKey).toBe("movie:9");
+    state = move(move(move(state, start), KEY.UP), KEY.UP);
+    expect(state.zone).toBe("search-field");
+    expect(state.search?.keyboardOpen).toBe(true);
+  },
+);
+
+test("accelerated grid movement preserves columns until the partial final row", () => {
+  const options = context({
+    posterColumns: 6,
+    itemKeys: Array.from({ length: 200 }, (_, index) => `movie:${index}`),
+  });
+  let state = reduceVodNavigation(
+    { ...root(), zone: "grid" },
+    { type: "item-focus", index: 2 },
+    options,
+  );
+  state = reduceVodNavigation(
+    state,
+    { type: "key", code: KEY.DOWN, amount: 20, repeat: true },
+    options,
+  );
+  expect(state.selectedItemIndex).toBe(122);
+  state = reduceVodNavigation(
+    state,
+    { type: "key", code: KEY.DOWN, amount: 20, repeat: true },
+    options,
+  );
+  expect(state.selectedItemIndex).toBe(199);
+  state = reduceVodNavigation(
+    state,
+    { type: "key", code: KEY.UP, amount: 20, repeat: true },
+    options,
+  );
+  expect(state.selectedItemIndex).toBe(79);
+  state = reduceVodNavigation(
+    state,
+    { type: "key", code: KEY.UP, amount: 20, repeat: true },
+    options,
+  );
+  expect(state.selectedItemIndex).toBe(1);
+  state = reduceVodNavigation(
+    state,
+    { type: "key", code: KEY.UP, amount: 20, repeat: true },
+    options,
+  );
+  expect(state.zone).toBe("grid");
+  expect(state.selectedItemIndex).toBe(1);
+});
+
 test("VOD grids cross the former page boundary without resetting", () => {
   let state = { ...root(), zone: "grid" as const };
   state = reduceVodNavigation(state, { type: "item-focus", index: 12 }, context());
@@ -44,6 +118,28 @@ test("VOD grids cross the former page boundary without resetting", () => {
   expect(next.selectedItemKey).toBe("movie:18");
   expect(key(next, KEY.UP).selectedItemIndex).toBe(12);
 });
+
+test.each(["grid", "search-grid"] as const)(
+  "%s reaches a partial last row from every column and stops there",
+  (zone) => {
+    const keys = Array.from({ length: 7 }, (_, index) => `movie:${index}`);
+    const options = context({ itemKeys: keys, searchItemKeys: keys, posterColumns: 6 });
+    const base =
+      zone === "search-grid"
+        ? reduceVodNavigation(root(), { type: "search-open" }, options)
+        : root();
+    for (let column = 0; column < 6; column += 1) {
+      const start = reduceVodNavigation(
+        { ...base, zone },
+        { type: "item-focus", index: column },
+        options,
+      );
+      const last = reduceVodNavigation(start, { type: "key", code: KEY.DOWN }, options);
+      expect(last.search?.itemIndex ?? last.selectedItemIndex).toBe(6);
+      expect(reduceVodNavigation(last, { type: "key", code: KEY.DOWN }, options)).toBe(last);
+    }
+  },
+);
 
 test.each([0, 0.5])(
   "measured poster movement updates the cursor and window together from row %s",
@@ -327,26 +423,45 @@ test("catalogue item reset leaves search state unchanged", () => {
   expect(reduceVodNavigation(state, { type: "items-reset" }, context())).toBe(state);
 });
 
-test("Movie and Series category rails cycle at both ends", () => {
+test("Movie and Series category rails include Search at their boundary", () => {
   const first = root();
-  const last = key(first, KEY.UP);
+  const search = key(first, KEY.UP);
+  expect(search.zone).toBe("rail-search");
+  const last = key(search, KEY.UP);
   expect(last.selectedCategoryKey).toBe("movie:20");
-  expect(key(last, KEY.DOWN).selectedCategoryKey).toBe("movie:all");
+  expect(key(last, KEY.DOWN).zone).toBe("rail-search");
+  expect(key(key(last, KEY.DOWN), KEY.DOWN).selectedCategoryKey).toBe("movie:all");
 });
 
 const refreshedCategoryCases = [
-  ["reordered", ["movie:20", "movie:all", "movie:10"], "movie:10", "movie:all"],
-  ["shortened", ["movie:20"], "movie:20", "movie:20"],
-  ["missing selected key", ["movie:all", "movie:10", "movie:30"], "movie:10", "movie:all"],
-  ["empty", [], "movie:20", "movie:20"],
+  [
+    "reordered",
+    ["movie:20", "movie:all", "movie:10"],
+    "movie:20",
+    "movie:all",
+    "rail-search",
+    "rail",
+  ],
+  ["shortened", ["movie:20"], "movie:20", "movie:20", "rail-search", "rail-search"],
+  [
+    "missing selected key",
+    ["movie:all", "movie:10", "movie:30"],
+    "movie:10",
+    "movie:20",
+    "rail",
+    "rail-search",
+  ],
+  ["empty", [], "movie:20", "movie:20", "rail-search", "rail-search"],
 ] as const;
 
 test.each(refreshedCategoryCases)(
   "%s categories preserve reducer rail movement with stale memory",
-  (_label, categoryKeys, up, down) => {
+  (_label, categoryKeys, up, down, upZone, downZone) => {
     const state = reduceVodNavigation(root(), { type: "category-focus", index: 2 }, context());
     expect(key(state, KEY.UP, { categoryKeys }).selectedCategoryKey).toBe(up);
     expect(key(state, KEY.DOWN, { categoryKeys }).selectedCategoryKey).toBe(down);
+    expect(key(state, KEY.UP, { categoryKeys }).zone).toBe(upZone);
+    expect(key(state, KEY.DOWN, { categoryKeys }).zone).toBe(downZone);
   },
 );
 
@@ -367,7 +482,7 @@ test("header cursor reaches every rendered control and mirrors inline movement",
   assert.equal(rtl.headerControl, "series");
 });
 
-test("details can reach the header and return without losing their surface", () => {
+test("details retain action focus at the top edge", () => {
   const details = reduceVodNavigation(
     root(),
     {
@@ -385,11 +500,11 @@ test("details can reach the header and return without losing their surface", () 
     context(),
   );
   const header = key(details, KEY.UP);
-  assert.equal(header.zone, "header");
+  assert.equal(header.zone, "detail-actions");
   assert.equal(key(header, KEY.DOWN).zone, "detail-actions");
 });
 
-test("loaded details keep Favourite in the action column and return from the header", () => {
+test("loaded details reach Favourite across the secondary action row", () => {
   const opened = reduceVodNavigation(
     root(),
     {
@@ -409,11 +524,11 @@ test("loaded details keep Favourite in the action column and return from the hea
   const ready = reduceVodNavigation(opened, { type: "details-ready" }, context());
   assert.equal(ready.zone, "detail-actions");
   assert.equal(ready.details?.actionIndex, 0);
-  const favourite = key(key(ready, KEY.DOWN), KEY.DOWN);
+  const favourite = key(key(ready, KEY.DOWN), KEY.RIGHT);
   assert.equal(favourite.zone, "detail-actions");
   assert.equal(favourite.details?.actionIndex, 2);
   const header = key(ready, KEY.UP);
-  assert.equal(header.zone, "header");
+  assert.equal(header.zone, "detail-actions");
   assert.equal(key(header, KEY.DOWN).zone, "detail-actions");
   assert.equal(key(favourite, KEY.DOWN).details?.actionIndex, 2);
 });
@@ -442,6 +557,19 @@ test("category selection changes immediately while displayed content waits", () 
     context(),
   );
   assert.equal(displayed.displayedCategoryKey, "movie:20");
+});
+
+test("the category window counts its heading without making that row selectable", () => {
+  const options = context({
+    categoryHeaderIndex: 1,
+    categoryVisibleRows: 2,
+    categoryRowHeight: 84,
+  });
+  const state = reduceVodNavigation(root(), { type: "category-focus", index: 1 }, options);
+  expect(state.selectedCategoryKey).toBe("movie:10");
+  expect(state.memories.movie.railIndex).toBe(1);
+  expect(state.memories.movie.categoryFirst).toBe(1);
+  expect(state.memories.movie.categoryScrollOffset).toBe(84);
 });
 
 test("category rail window origins stay isolated between Movie and Series memory", () => {
@@ -519,11 +647,12 @@ test("mode changes expose the new category and first item before the next paint"
   vi.useRealTimers();
 });
 
-test("rail focus cycles at its boundaries", () => {
+test("Search is reachable from either end of a category rail", () => {
   const first = root();
-  assert.equal(key(first, KEY.UP).selectedCategoryKey, "movie:20");
+  assert.equal(key(first, KEY.UP).zone, "rail-search");
   const last = reduceVodNavigation(first, { type: "category-focus", index: 2 }, context());
-  assert.equal(key(last, KEY.DOWN).selectedCategoryKey, "movie:all");
+  assert.equal(key(last, KEY.DOWN).zone, "rail-search");
+  assert.equal(key(key(first, KEY.UP), KEY.ENTER).zone, "search-field");
 });
 
 test("an empty category retains rail focus and a failed category exposes Retry", () => {
@@ -667,11 +796,15 @@ test("poster directions stay within rows while vertical movement uses six column
   const partialRow = { itemKeys: Array.from({ length: 14 }, (_, index) => `movie:${index}`) };
   assert.equal(
     key({ ...state, selectedItemIndex: 8 }, KEY.DOWN, partialRow).selectedItemIndex,
-    8,
+    13,
   );
   assert.equal(
     key({ ...state, selectedItemIndex: 7 }, KEY.DOWN, partialRow).selectedItemIndex,
     13,
+  );
+  assert.equal(
+    key({ ...state, selectedItemIndex: 12 }, KEY.DOWN, partialRow).selectedItemIndex,
+    12,
   );
   const top = key({ ...state, selectedItemIndex: 0, selectedItemKey: "movie:0" }, KEY.UP);
   assert.equal(top.zone, "catalogue-actions");
@@ -710,7 +843,8 @@ test("search Back dismisses the keyboard before restoring its exact origin", () 
 });
 
 test("leaving the search field clears keyboard ownership", () => {
-  const search = reduceVodNavigation(root(), { type: "search-open" }, context());
+  const opened = reduceVodNavigation(root(), { type: "search-open" }, context());
+  const search = reduceVodNavigation(opened, { type: "query-apply", value: "Film" }, context());
   const results = key(search, KEY.DOWN);
   assert.equal(results.zone, "search-grid");
   assert.equal(results.search?.keyboardOpen, false);
@@ -738,6 +872,42 @@ test("details Back restores the exact search result origin", () => {
   assert.equal(restored.zone, "search-grid");
   assert.equal(restored.selectedItemKey, "movie:3");
   assert.equal(restored.search?.query, "film");
+  assert.equal(key(restored, KEY.BACK).search, null);
+});
+
+test("returning from a search result preserves the category origin for the next Back", () => {
+  const category = {
+    ...root(),
+    zone: "grid" as const,
+    selectedCategoryKey: "movie:10",
+    displayedCategoryKey: "movie:10",
+    selectedItemIndex: 8,
+    selectedItemKey: "movie:8",
+  };
+  const search = reduceVodNavigation(category, { type: "search-open" }, context());
+  const origin: VodOrigin = {
+    mode: "movie",
+    surface: "search",
+    categoryKey: "movie:10",
+    itemKey: "movie:3",
+    itemIndex: 1,
+    firstRow: 0,
+    query: "film draft",
+    appliedQuery: "film",
+  };
+  const details = reduceVodNavigation(
+    search,
+    { type: "details-open", itemKey: "movie:3", origin },
+    context(),
+  );
+  const restored = key(details, KEY.BACK);
+  expect(restored.search?.origin).toEqual(search.search?.origin);
+  expect(restored.search?.query).toBe("film draft");
+  expect(restored.search?.applied).toBe("film");
+  const closed = key(restored, KEY.BACK);
+  expect(closed.search).toBeNull();
+  expect(closed.displayedCategoryKey).toBe("movie:10");
+  expect(closed.selectedItemIndex).toBe(8);
 });
 
 test("Back closes information before leaving details", () => {
@@ -1106,7 +1276,11 @@ test.each([
       result.current.focusFirstDetailAction();
     });
 
-    for (const actionIndex of [0, 1, 2]) {
+    for (const [actionIndex, afterEnd] of [
+      [0, 0],
+      [1, 2],
+      [2, 2],
+    ]) {
       act(() => result.current.focusDetailAction(actionIndex));
       const event = { preventDefault: vi.fn() } as unknown as KeyboardEvent;
       act(() => result.current.handleKey(inlineStart, event));
@@ -1115,7 +1289,7 @@ test.each([
       expect(event.preventDefault).toHaveBeenCalledOnce();
       act(() => result.current.handleKey(inlineEnd, event));
       expect(result.current.state.zone).toBe("detail-actions");
-      expect(result.current.state.details?.actionIndex).toBe(actionIndex);
+      expect(result.current.state.details?.actionIndex).toBe(afterEnd);
     }
 
     const event = { preventDefault: vi.fn() } as unknown as KeyboardEvent;
@@ -1615,6 +1789,8 @@ test("measured search capacity stays independent and Back restores category wind
     act(() => result.current.rememberWindow(2, false, 2));
     const categoryMemory = result.current.state.memories.movie;
     act(() => result.current.openSearch());
+    act(() => result.current.setQuery("Film"));
+    act(() => result.current.submitQuery());
     act(() => press(KEY.DOWN));
     act(() => result.current.rememberWindow(0, true, 3));
     act(() => result.current.selectItem(18));
@@ -1788,7 +1964,7 @@ test("arrow navigation back to the displayed category remains on the rail", () =
 
 test.each(refreshedCategoryCases)(
   "%s categories preserve mounted rail movement and Enter with stale memory",
-  (_label, categoryKeys, up, down) => {
+  (_label, categoryKeys, up, down, upZone, downZone) => {
     const keys: readonly string[] = categoryKeys;
     vi.useFakeTimers();
     try {
@@ -1813,6 +1989,13 @@ test.each(refreshedCategoryCases)(
           const before = result.current.state;
           act(() => result.current.handleKey(code, { preventDefault() {} } as KeyboardEvent));
           expect(result.current.state.selectedCategoryKey).toBe(expected);
+          if (code !== KEY.ENTER) {
+            expect(result.current.state.zone).toBe(code === KEY.UP ? upZone : downZone);
+          }
+          if (result.current.state.zone === "rail-search") {
+            expect(settled).not.toHaveBeenCalled();
+            continue;
+          }
           if (code === KEY.ENTER && !keys.includes("movie:20")) {
             expect(result.current.state).toBe(before);
             act(() => vi.advanceTimersByTime(150));

@@ -1,6 +1,24 @@
 import type { MessageKey, MessageValues } from "../services/locale";
 
 export default {
+  "vod.searchHint": "Bir başlık veya kategori yazın, ardından Ara'yı seçin veya Enter'a basın.",
+  "vod.searching": "Katalogda aranıyor…",
+  "vod.searchFailed": "Arama kullanılamıyor",
+  "vod.searchFailedHint":
+    "Sorgunuz kaydedildi. Sağlayıcı kataloğunu yüklemek için yeniden deneyin.",
+  "vod.searchEmptyHint": "Yazımı kontrol edin veya başka bir arama deneyin.",
+  "vod.searchEmptyCatalogue": "Sağlayıcının bu katalogda içeriği yok.",
+  "vod.searchDraft": ({ query }) => `"${query}" sonuçları. Güncellemek için Ara'yı seçin.`,
+  "vod.searchCached": "Kaydedilmiş katalog sonuçları gösteriliyor.",
+  "vod.browseCategories": "Kategorilere göz at",
+  "vod.resumeTime": ({ time }) => `${time} itibarıyla`,
+  "vod.resumeEpisode": ({ episode, time }) => `${episode} bölümüne ${time} itibarıyla devam et`,
+  "vod.restartShort": "Baştan başlat",
+  "vod.restartEpisode": "Bölümü baştan başlat",
+  "vod.continueShort": "Devam et",
+  "vod.overview": "Genel bakış",
+  "vod.information": "Bu içerik hakkında",
+  "app.playlistUnavailable": "Bu oynatma listesi yüklenemedi",
   "error.playbackUnavailable": "Oynatma kullanılamıyor.",
   "error.accessDenied": "Bu yayına erişim reddedildi.",
   "error.serverError": "Sunucu bir hata döndürdü.",
@@ -219,7 +237,7 @@ export default {
   "settings.showLive": "Canlıyı göster",
   "settings.showMovies": "Filmleri göster",
   "settings.showSeries": "Dizileri göster",
-  "settings.sectionVisibilityHint": "{section} ana menüde ve arama sonuçlarında gösterilsin.",
+  "settings.sectionVisibilityHint": "{section} ana menüde gösterilsin.",
   "settings.keepSectionHint": "En az bir desteklenen bölüm açık kalmalıdır.",
   "settings.sectionUnsupportedHint":
     "Etkin oynatma listesi bu bölümü desteklediğinde kullanılabilir.",
@@ -236,14 +254,14 @@ export default {
   "settings.continuousReconnectHint":
     "Birkaç denemeden sonra vazgeçmek yerine canlı kanalı geri yüklemeyi denemeye devam eder.",
   "settings.playbackInfo": "Oynatma bilgileri",
-  "settings.playbackInfoHint":
-    "Oynatma tanılamalarını varsayılan olarak gösterir. Göstermek veya gizlemek için oynatma sırasında OK düğmesini basılı tutun.",
+  "settings.playbackInfoHint": "Oynatma ayrıntılarını varsayılan olarak gösterir.",
   "playbackInfo.title": "Oynatma bilgileri",
   "playbackInfo.hold": "Basılı tut",
   "playbackInfo.hideHint": "Oynatma bilgilerini gizle",
   "playbackInfo.engine": "Oynatma motoru",
   "playbackInfo.resolution": "Çözünürlük",
   "playbackInfo.dynamicRange": "Dinamik aralık",
+  "playbackInfo.manifestRange": "Dinamik aralık (bildirim dosyası)",
   "playbackInfo.scan": "Tarama",
   "playbackInfo.progressive": "Aşamalı",
   "playbackInfo.interlaced": "Taramalı",

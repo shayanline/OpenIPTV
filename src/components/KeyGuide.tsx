@@ -51,11 +51,23 @@ export function KeyGuide({
     <div className={`hints ${className}`}>
       {items.map((item) => (
         <span key={item.keys.join("|")}>
-          {item.beforeKeys && <span className="guide-prefix">{item.beforeKeys}</span>}
-          {item.keys.map((key) => (
-            <kbd key={key}>{key}</kbd>
+          {item.keys.map((key, keyIndex) => (
+            <kbd key={key} data-key={key}>
+              {keyIndex === 0 && item.beforeKeys ? (
+                <>
+                  {item.beforeKeys} {key}
+                </>
+              ) : (
+                key
+              )}
+            </kbd>
           ))}
-          {item.label}
+          <span
+            className="guide-label"
+            title={typeof item.label === "string" ? item.label : undefined}
+          >
+            {item.label}
+          </span>
         </span>
       ))}
     </div>
@@ -65,21 +77,21 @@ export function KeyGuide({
 export function NavigationGuide({
   className = "",
   scroll = false,
+  shortcuts = [],
 }: {
   className?: string;
   scroll?: boolean;
+  shortcuts?: Guide[];
 }) {
   const { t } = useLocale();
   return (
     <KeyGuide
       className={className}
       items={[
-        {
-          keys: scroll ? ["\u2191", "\u2193"] : ["\u2191", "\u2193", "\u2190", "\u2192"],
-          label: t(scroll ? "common.scroll" : "common.move"),
-        },
+        ...(scroll ? [{ keys: ["\u2191", "\u2193"], label: t("common.scroll") }] : []),
         { keys: ["OK"], label: t("common.select") },
         { keys: ["Return"], label: t("common.back") },
+        ...shortcuts,
       ]}
     />
   );

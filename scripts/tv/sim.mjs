@@ -1833,12 +1833,13 @@ if (has("bench") || has("budget") || quick) {
   };
   const openSearch = async () => {
     const clicked = await ev(`(() => {
-      var button = document.querySelector('[data-navigation-action="search"]');
+      var button = document.querySelector('.vod-host:not(.hidden) .section-search')
+        || document.querySelector('.panel:not(.away) .section-search');
       if (!button) return false;
       button.click();
       return true;
     })()`);
-    if (!clicked) throw new Error("The Search navigation action is missing.");
+    if (!clicked) throw new Error("The active section Search control is missing.");
     const focused = await tryUntil(`(() => {
       var field = document.activeElement;
       return !!field && field.matches(".search-field") && field.getClientRects().length > 0;
@@ -2306,6 +2307,7 @@ if (has("bench") || has("budget") || quick) {
       await openSearch();
       for (const ch of "Movie 010")
         await cdp.send("Input.dispatchKeyEvent", { type: "char", text: ch });
+      await press("enter");
     },
     "!!document.querySelector('.vod-search .poster-card')",
   );
@@ -2503,6 +2505,7 @@ if (has("bench") || has("budget") || quick) {
   await openSearch();
   for (const ch of "Movie 0008")
     await cdp.send("Input.dispatchKeyEvent", { type: "char", text: ch });
+  await press("enter");
   await waitUntil("!!document.querySelector('.vod-search .poster-card')");
   await requireScreen(
     `(() => {

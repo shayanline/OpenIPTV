@@ -1021,14 +1021,14 @@ test.each([
     if (route === "seekBy") {
       expect(result.current.quickSeek).toEqual({ deltaSeconds: 10, targetSeconds: 70 });
     }
-    await act(async () => vi.advanceTimersByTimeAsync(600));
+    await act(async () => vi.advanceTimersByTimeAsync(SEEK_SETTLE_MS - 1));
     expect(engine.seekTo).not.toHaveBeenCalled();
 
     act(() => result.current[route](route === "seekBy" ? 10 : 80));
     if (route === "seekBy") {
       expect(result.current.quickSeek).toEqual({ deltaSeconds: 20, targetSeconds: 80 });
     }
-    await act(async () => vi.advanceTimersByTimeAsync(600));
+    await act(async () => vi.advanceTimersByTimeAsync(SEEK_SETTLE_MS - 1));
     expect(engine.seekTo).not.toHaveBeenCalled();
 
     act(() => result.current[route](route === "seekBy" ? -10 : 70));
@@ -1036,8 +1036,8 @@ test.each([
       expect(result.current.quickSeek).toEqual({ deltaSeconds: 10, targetSeconds: 70 });
     }
     expect(engine.seekTo).not.toHaveBeenCalled();
-    expect(result.current.snapshot.phase).toBe("paused");
-    expect(engine.pause).toHaveBeenCalledOnce();
+    expect(result.current.snapshot.phase).toBe("playing");
+    expect(engine.pause).not.toHaveBeenCalled();
     expect(engine.resumePlayback).not.toHaveBeenCalled();
 
     await act(async () => vi.advanceTimersByTimeAsync(SEEK_SETTLE_MS - 1));
@@ -1071,7 +1071,7 @@ test("an originally paused seek updates its preview and stays paused after settl
 
   act(() => result.current.seekBy(10));
   expect(result.current.quickSeek?.targetSeconds).toBe(70);
-  await act(async () => vi.advanceTimersByTimeAsync(600));
+  await act(async () => vi.advanceTimersByTimeAsync(SEEK_SETTLE_MS - 1));
   expect(engine.seekTo).not.toHaveBeenCalled();
   act(() => result.current.seekBy(-10));
   expect(result.current.quickSeek?.targetSeconds).toBe(60);
@@ -1101,7 +1101,7 @@ test.each(["stop", "replacement", "unmount"] as const)(
 
     act(() => result.current.seekBy(10));
     expect(result.current.quickSeek?.targetSeconds).toBe(70);
-    await act(async () => vi.advanceTimersByTimeAsync(600));
+    await act(async () => vi.advanceTimersByTimeAsync(SEEK_SETTLE_MS - 1));
     expect(engine.seekTo).not.toHaveBeenCalled();
     if (action === "stop") act(() => result.current.stop());
     else if (action === "replacement") act(() => result.current.start(episode));
@@ -1472,7 +1472,8 @@ test("pausing during a pending seek suppresses the resume when it lands", async 
 test("stopping cancels a pending seek and drops the flag", async () => {
   const { result, engine } = mountSeekable();
   act(() => result.current.seekBy(10));
-  expect(result.current.seeking).toBe(true);
+  expect(result.current.seeking).toBe(false);
+  expect(result.current.quickSeek?.deltaSeconds).toBe(10);
   act(() => result.current.stop());
   expect(result.current.seeking).toBe(false);
   await act(async () => vi.advanceTimersByTimeAsync(SEEK_SETTLE_MS));
@@ -1767,7 +1768,8 @@ test("Go live overrides a seek still inside its debounce before any native call"
      heard nothing yet. */
   act(() => result.current.seekBy(10));
   expect(engine.seekTo).not.toHaveBeenCalled();
-  expect(result.current.seeking).toBe(true);
+  expect(result.current.seeking).toBe(false);
+  expect(result.current.quickSeek?.deltaSeconds).toBe(10);
 
   /* Go live replaces the pending target outright and commits at once, so exactly one
      native call goes out and it is the safe live target, never the obsolete seek. */

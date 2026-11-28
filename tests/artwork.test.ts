@@ -143,6 +143,7 @@ test("a larger episode source bypasses the cached thumbnail and shares the canon
     fit: "contain" as const,
   };
   try {
+    service.claimArtwork(request);
     const loaded = await service.loadArtwork(request);
     expect(loaded?.bitmap).toBe(normalized.value);
     expect(fetch).toHaveBeenCalledWith(source, expect.any(Object));
@@ -1781,6 +1782,7 @@ test("owner cancellation retains finished artwork for a warm playlist return", a
     vi.fn(async (...args: unknown[]) => (args.length > 1 ? final.value : source.value)),
   );
   const request = posterRequest("https://images.example/return.jpg");
+  service.claimArtwork(request);
   const ready = await service.loadArtwork(request);
   service.cancelArtworkWork();
   assert.equal(service.artworkOf(request), ready);

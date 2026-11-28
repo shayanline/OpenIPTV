@@ -179,6 +179,7 @@ export interface PlaybackStats {
   width?: number;
   height?: number;
   dynamicRange?: PlaybackDynamicRange;
+  dynamicRangeSource?: "engine" | "manifest";
   scan?: "progressive" | "interlaced";
   videoCodec?: string;
   audioCodec?: string;
@@ -283,32 +284,39 @@ const streamInfo = (value: string): Record<string, unknown> => {
 
 const dynamicRange = (...values: unknown[]): PlaybackDynamicRange | undefined => {
   for (const value of values) {
-    const raw = String(value ?? "").trim();
-    if (!raw) continue;
-    const code = Number(raw);
-    if (code === 16) return "PQ";
-    if (code === 18) return "HLG";
-    if ([1, 6, 13, 14, 15].includes(code)) return "SDR";
-    const name = raw
+    if (typeof value !== "string") continue;
+    const name = value
       .toLowerCase()
       .replace(/\+/g, "plus")
       .replace(/[^a-z0-9]/g, "");
-    if (name.includes("hdr10plus") || name.includes("smpte209440")) return "HDR10+";
-    if (name.includes("dolbyvision") || /^(dvh1|dvhe|dav1)/.test(name)) return "Dolby Vision";
-    if (name.includes("hlg") || name.includes("aribstdb67")) return "HLG";
-    if (name.includes("hdr10")) return "HDR10";
-    if (name === "pq" || name.includes("smpte2084") || name.includes("st2084")) return "PQ";
+    if (name === "hdr10plus" || name === "smpte209440") return "HDR10+";
+    if (name === "dolbyvision") return "Dolby Vision";
+    if (name === "hlg" || name === "aribstdb67") return "HLG";
+    if (name === "hdr10") return "HDR10";
+    if (name === "pq" || name === "smpte2084" || name === "st2084") return "PQ";
     if (name === "hdr") return "HDR";
-    if (name === "sdr" || name.includes("bt709")) return "SDR";
+    if (name === "sdr" || name === "bt709") return "SDR";
   }
   return undefined;
 };
 
-const streamDynamicRange = (video: Record<string, unknown>): PlaybackDynamicRange | undefined =>
-  dynamicRange(
-    video.hdrtype,
-    video.hdrformat,
-    video.dynamicrange,
+const transferRange = (...values: unknown[]): PlaybackDynamicRange | undefined => {
+  for (const value of values) {
+    if (typeof value !== "number" && typeof value !== "string") continue;
+    const code = Number(value);
+    if (code === 16) return "PQ";
+    if (code === 18) return "HLG";
+    if ([1, 6, 13, 14, 15].includes(code)) return "SDR";
+    const range = dynamicRange(value);
+    if (range) return range;
+  }
+  return undefined;
+};
+
+const streamTransferRange = (
+  video: Record<string, unknown>,
+): PlaybackDynamicRange | undefined =>
+  transferRange(
     video.videorange,
     video.transferfunction,
     video.transfercharacteristics,
@@ -317,38 +325,51 @@ const streamDynamicRange = (video: Record<string, unknown>): PlaybackDynamicRang
     video.colourtransfer,
   );
 
+const streamDynamicRange = (video: Record<string, unknown>): PlaybackDynamicRange | undefined =>
+  dynamicRange(video.hdrtype, video.hdrformat, video.dynamicrange) ??
+  streamTransferRange(video);
+
+const hlsVideoRange = (value: unknown): "SDR" | "PQ" | "HLG" | undefined =>
+  value === "SDR" || value === "PQ" || value === "HLG" ? value : undefined;
+
 const hlsDynamicRange = (
   videoRange: unknown,
   codecs: unknown,
   supplementalCodecs: unknown,
 ): PlaybackDynamicRange | undefined => {
+  const range = hlsVideoRange(videoRange);
   const supplemental = String(supplementalCodecs ?? "");
-  if (/\/cdm4(?:\s*,|\s*$)/i.test(supplemental)) return "HDR10+";
+  const hdr10plus = supplemental.split(",").some((codec) => {
+    const [format, ...brands] = codec.trim().toLowerCase().split("/");
+    return /^(hvc1|hev1|av01)\./.test(format) && brands.includes("cdm4");
+  });
+  if (hdr10plus && (!range || range === "PQ")) return "HDR10+";
   if (/(?:^|[\s,"])(?:dvh1|dvhe|dav1)\./i.test(`${String(codecs ?? "")},${supplemental}`)) {
     return "Dolby Vision";
   }
-  const range = dynamicRange(videoRange);
-  return range === "PQ" ? "HDR10" : range;
+  // PQ describes the transfer function, not the presence of HDR10 static metadata.
+  return range;
 };
 
 interface HlsRange {
-  range: PlaybackDynamicRange;
+  range?: PlaybackDynamicRange;
+  transfer?: PlaybackDynamicRange;
   width?: number;
   height?: number;
-  bandwidth?: number;
-  averageBandwidth?: number;
 }
 
 const HLS_ATTRIBUTE = /([A-Z0-9-]+)=("[^"]*"|[^,]*)/gi;
 
-const manifestDynamicRange = (
-  text: string,
-  width?: number,
-  height?: number,
-  bitrate?: number,
-): PlaybackDynamicRange | undefined => {
+const manifestRanges = (text: string): HlsRange[] => {
+  if (!text.trimStart().startsWith("#EXTM3U")) return [];
   const variants: HlsRange[] = [];
-  for (const line of text.split(/\r?\n/)) {
+  let pending: HlsRange | undefined;
+  for (const raw of text.split(/\r?\n/)) {
+    const line = raw.trim();
+    if (line && !line.startsWith("#") && pending) {
+      variants.push(pending);
+      pending = undefined;
+    }
     if (!line.startsWith("#EXT-X-STREAM-INF:")) continue;
     const attributes: Record<string, string> = {};
     HLS_ATTRIBUTE.lastIndex = 0;
@@ -357,40 +378,46 @@ const manifestDynamicRange = (
       attributes[match[1].toUpperCase()] = match[2].replace(/^"|"$/g, "");
       match = HLS_ATTRIBUTE.exec(line);
     }
-    const range = hlsDynamicRange(
-      attributes["VIDEO-RANGE"],
-      attributes.CODECS,
-      attributes["SUPPLEMENTAL-CODECS"],
-    );
-    if (!range) continue;
     const resolution = attributes.RESOLUTION?.split(/[xX]/).map(Number) ?? [];
-    variants.push({
-      range,
+    pending = {
+      range: hlsDynamicRange(
+        attributes["VIDEO-RANGE"],
+        attributes.CODECS,
+        attributes["SUPPLEMENTAL-CODECS"],
+      ),
+      transfer: hlsVideoRange(attributes["VIDEO-RANGE"]),
       width: finite(resolution[0]),
       height: finite(resolution[1]),
-      bandwidth: finite(attributes.BANDWIDTH),
-      averageBandwidth: finite(attributes["AVERAGE-BANDWIDTH"]),
-    });
+    };
   }
-  if (!variants.length) return undefined;
-  let candidates = variants;
-  if (width && height) {
-    const sameSize = candidates.filter(
-      (item) => item.width === width && item.height === height,
-    );
-    if (sameSize.length) candidates = sameSize;
-  }
-  if (bitrate && candidates.length > 1) {
-    candidates = [...candidates].sort((left, right) => {
-      const leftRate = left.averageBandwidth ?? left.bandwidth ?? 0;
-      const rightRate = right.averageBandwidth ?? right.bandwidth ?? 0;
-      return Math.abs(leftRate - bitrate) - Math.abs(rightRate - bitrate);
-    });
-    return candidates[0].range;
-  }
-  return candidates.every((item) => item.range === candidates[0].range)
-    ? candidates[0].range
-    : undefined;
+  return variants;
+};
+
+const refinesRange = (
+  reported: PlaybackDynamicRange | undefined,
+  candidate: PlaybackDynamicRange,
+): boolean =>
+  !reported ||
+  reported === candidate ||
+  (reported === "HDR" && candidate !== "SDR") ||
+  (reported === "PQ" &&
+    (candidate === "HDR10" || candidate === "HDR10+" || candidate === "Dolby Vision"));
+
+const manifestDynamicRange = (
+  variants: HlsRange[],
+  width?: number,
+  height?: number,
+  reported?: PlaybackDynamicRange,
+): PlaybackDynamicRange | undefined => {
+  // AVPlay bandwidth and rendition bandwidth need not agree, so proximity cannot select HDR.
+  const candidates = variants.filter(
+    (item) =>
+      (!width || !item.width || item.width === width) &&
+      (!height || !item.height || item.height === height) &&
+      (!item.transfer || !reported || refinesRange(reported, item.transfer)),
+  );
+  const range = candidates[0]?.range;
+  return range && candidates.every((item) => item.range === range) ? range : undefined;
 };
 
 export class Player {
@@ -424,9 +451,7 @@ export class Player {
   private nativeCorsFallback: (() => void) | null = null;
   private nativeAttempt = 0;
   private sourceUrl = "";
-  private avPlayDynamicRange?: PlaybackDynamicRange;
-  private avPlayMetadataProbed = false;
-  private manifestRange?: PlaybackDynamicRange;
+  private manifestVariants: HlsRange[] = [];
   private manifestProbe: AbortController | null = null;
   private manifestProbed = false;
 
@@ -1401,47 +1426,37 @@ export class Player {
     }
   }
 
-  private probeAVPlayDynamicRange(av: AVPlay): void {
-    if (this.avPlayMetadataProbed) return;
-    try {
-      const state = av.getState();
-      if (state !== "READY" && state !== "PLAYING" && state !== "PAUSED") return;
-    } catch {
-      return;
-    }
-    this.avPlayMetadataProbed = true;
-    const apply = (range?: PlaybackDynamicRange) => {
-      if (!range) return false;
-      if (
-        this.avPlayDynamicRange === "PQ" &&
-        range !== "HDR10" &&
-        range !== "HDR10+" &&
-        range !== "Dolby Vision"
-      ) {
-        return false;
-      }
-      this.avPlayDynamicRange = range;
-      return true;
-    };
+  private avPlayRange(
+    av: AVPlay,
+    current: AVPlayStreamInfo | undefined,
+    video: Record<string, unknown>,
+  ): PlaybackDynamicRange | undefined {
+    const reported = streamDynamicRange(video);
+    if (!current || (reported && reported !== "PQ" && reported !== "HDR")) return reported;
     try {
       for (const track of av.getTotalTrackInfo?.() ?? []) {
-        if (track.type !== "VIDEO") continue;
-        if (apply(streamDynamicRange(streamInfo(track.extra_info)))) return;
+        if (track.type !== "VIDEO" || track.index !== current.index) continue;
+        const info = streamInfo(track.extra_info);
+        const width = finite(video.width);
+        const height = finite(video.height);
+        const trackWidth = finite(info.width);
+        const trackHeight = finite(info.height);
+        const transfer = streamTransferRange(info);
+        if (
+          (width && trackWidth && width !== trackWidth) ||
+          (height && trackHeight && height !== trackHeight) ||
+          (transfer && !refinesRange(reported, transfer))
+        ) {
+          continue;
+        }
+        const range = streamDynamicRange(info);
+        if (range && refinesRange(reported, range)) return range;
       }
     } catch {}
-    for (const key of [
-      "GET_STREAM_INFO",
-      "PROPERTY_STREAMING_STATUS",
-      "PROPERTY_STREAMING_TYPE",
-      "PROPERTY_VR360_INFO",
-    ]) {
-      try {
-        if (apply(dynamicRange(av.getStreamingProperty?.(key)))) return;
-      } catch {}
-    }
+    return reported;
   }
 
-  private probeManifestDynamicRange(width?: number, height?: number, bitrate?: number): void {
+  private probeManifestDynamicRange(): void {
     if (
       this.manifestProbed ||
       !onTizen() ||
@@ -1458,8 +1473,12 @@ export class Player {
     void fetch(this.sourceUrl, { cache: "no-store", signal: controller.signal })
       .then((response) => (response.ok ? response.text() : Promise.reject()))
       .then((text) => {
-        if (generation === this.generation) {
-          this.manifestRange = manifestDynamicRange(text, width, height, bitrate);
+        if (
+          generation === this.generation &&
+          !controller.signal.aborted &&
+          text.length <= 512 * 1024
+        ) {
+          this.manifestVariants = manifestRanges(text);
         }
       })
       .catch(() => {})
@@ -1475,9 +1494,19 @@ export class Player {
       const av = window.webapis!.avplay!;
       let video: Record<string, unknown> = {};
       let audio: Record<string, unknown> = {};
+      let currentVideo: AVPlayStreamInfo | undefined;
+      try {
+        const state = av.getState();
+        if (state !== "READY" && state !== "PLAYING" && state !== "PAUSED") return stats;
+      } catch {
+        return stats;
+      }
       try {
         for (const track of av.getCurrentStreamInfo?.() ?? []) {
-          if (track.type === "VIDEO") video = streamInfo(track.extra_info);
+          if (track.type === "VIDEO") {
+            currentVideo = track;
+            video = streamInfo(track.extra_info);
+          }
           if (track.type === "AUDIO") audio = streamInfo(track.extra_info);
         }
       } catch {}
@@ -1490,20 +1519,25 @@ export class Player {
         String(audio.fourcc ?? audio.codec ?? audio.codectype ?? "") || undefined;
       stats.frameRate = finite(video.framerate);
       stats.bitrate = finite(video.bitrate);
-      const reportedRange = streamDynamicRange(video);
-      if (reportedRange && (reportedRange !== "PQ" || !this.avPlayDynamicRange)) {
-        this.avPlayDynamicRange = reportedRange;
-      }
-      if (!reportedRange || reportedRange === "PQ") this.probeAVPlayDynamicRange(av);
-      const engineRange = this.avPlayDynamicRange;
-      stats.dynamicRange =
-        engineRange === "PQ" ? (this.manifestRange ?? engineRange) : engineRange;
-      if (!stats.dynamicRange || stats.dynamicRange === "PQ") {
-        this.probeManifestDynamicRange(
+      const engineRange = this.avPlayRange(av, currentVideo, video);
+      stats.dynamicRange = engineRange;
+      if (engineRange) stats.dynamicRangeSource = "engine";
+      if (!engineRange || engineRange === "PQ" || engineRange === "HDR") {
+        const declaredRange = manifestDynamicRange(
+          this.manifestVariants,
           stats.width,
           stats.height,
-          finite(this.lastBitrate) ?? stats.bitrate,
+          engineRange,
         );
+        if (
+          declaredRange &&
+          declaredRange !== engineRange &&
+          refinesRange(engineRange, declaredRange)
+        ) {
+          stats.dynamicRange = declaredRange;
+          stats.dynamicRangeSource = "manifest";
+        }
+        this.probeManifestDynamicRange();
       }
 
       try {
@@ -1552,6 +1586,7 @@ export class Player {
       level?.attrs?.CODECS,
       level?.attrs?.["SUPPLEMENTAL-CODECS"],
     );
+    if (stats.dynamicRange) stats.dynamicRangeSource = "manifest";
     stats.bitrate = finite(level?.bitrate);
     stats.bandwidth = finite(hls?.bandwidthEstimate);
     stats.frameRate = finite(level?.frameRate);
@@ -1761,9 +1796,7 @@ export class Player {
     this.manifestProbe?.abort();
     this.manifestProbe = null;
     this.sourceUrl = "";
-    this.avPlayDynamicRange = undefined;
-    this.avPlayMetadataProbed = false;
-    this.manifestRange = undefined;
+    this.manifestVariants = [];
     this.manifestProbed = false;
     this.tracks = [];
     this.segmentSeconds = null;

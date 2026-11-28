@@ -172,17 +172,18 @@ async function shoot(name, expect, width = WIDTH, height = HEIGHT) {
   console.log(`  ${name}.png  ${width}x${height}  ${Math.round(bytes.length / 1024)}KB`);
 }
 
-/** Press one of the panel's title bar keys by its accessible label, as the parity harness does. */
+/** Activate an application control by its accessible label. */
 const keyed = async (label) => {
   const selector =
-    label === "Search" ? '[aria-label^="Search "]' : `[aria-label=${JSON.stringify(label)}]`;
+    label === "Search" ? ".section-search" : `[aria-label=${JSON.stringify(label)}]`;
   const hit = await app.evaluate(`(() => {
-    const el = document.querySelector(${JSON.stringify(selector)});
+    const el = [...document.querySelectorAll(${JSON.stringify(selector)})]
+      .find(element => element.matches("button") && element.getClientRects().length);
     if (!el || el.disabled) return false;
     el.click();
     return true;
   })()`);
-  if (!hit) throw new Error(`No key labelled "${label}" in the panel's title bar.`);
+  if (!hit) throw new Error(`No visible control labelled "${label}".`);
 };
 
 const clickControl = async (selector) => {

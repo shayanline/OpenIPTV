@@ -1,6 +1,26 @@
 import type { MessageKey, MessageValues } from "../services/locale";
 
 export default {
+  "vod.searchHint":
+    "Saisissez un titre ou une catégorie, puis choisissez Rechercher ou appuyez sur Entrée.",
+  "vod.searching": "Recherche dans le catalogue…",
+  "vod.searchFailed": "La recherche est indisponible",
+  "vod.searchFailedHint":
+    "Votre recherche est enregistrée. Réessayez de charger le catalogue du fournisseur.",
+  "vod.searchEmptyHint": "Vérifiez l’orthographe ou essayez une autre recherche.",
+  "vod.searchEmptyCatalogue": "Le fournisseur ne propose aucun titre dans ce catalogue.",
+  "vod.searchDraft": ({ query }) =>
+    `Résultats pour "${query}". Choisissez Rechercher pour les actualiser.`,
+  "vod.searchCached": "Les résultats enregistrés du catalogue sont affichés.",
+  "vod.browseCategories": "Parcourir les catégories",
+  "vod.resumeTime": ({ time }) => `À partir de ${time}`,
+  "vod.resumeEpisode": ({ episode, time }) => `Reprendre ${episode} à ${time}`,
+  "vod.restartShort": "Recommencer",
+  "vod.restartEpisode": "Recommencer l’épisode",
+  "vod.continueShort": "Continuer",
+  "vod.overview": "Présentation",
+  "vod.information": "À propos de ce titre",
+  "app.playlistUnavailable": "Impossible de charger cette liste de lecture",
   "error.playbackUnavailable": "La lecture est indisponible.",
   "error.accessDenied": "L'accès à ce flux a été refusé.",
   "error.serverError": "Le serveur a renvoyé une erreur.",
@@ -223,8 +243,7 @@ export default {
   "settings.showLive": "Afficher le direct",
   "settings.showMovies": "Afficher les films",
   "settings.showSeries": "Afficher les séries",
-  "settings.sectionVisibilityHint":
-    "Afficher {section} dans le menu principal et les résultats de recherche.",
+  "settings.sectionVisibilityHint": "Afficher {section} dans le menu principal.",
   "settings.keepSectionHint": "Au moins une section prise en charge doit rester activée.",
   "settings.sectionUnsupportedHint":
     "Disponible lorsque la playlist active prend en charge cette section.",
@@ -241,14 +260,14 @@ export default {
   "settings.continuousReconnectHint":
     "Continue d’essayer de restaurer une chaîne en direct au lieu d’abandonner après quelques tentatives.",
   "settings.playbackInfo": "Informations de lecture",
-  "settings.playbackInfoHint":
-    "Affiche les diagnostics de lecture par défaut. Maintenez OK pendant la lecture pour les afficher ou les masquer.",
+  "settings.playbackInfoHint": "Afficher les détails de lecture par défaut.",
   "playbackInfo.title": "Informations de lecture",
   "playbackInfo.hold": "Maintenir",
   "playbackInfo.hideHint": "Masquer les informations de lecture",
   "playbackInfo.engine": "Moteur",
   "playbackInfo.resolution": "Résolution",
   "playbackInfo.dynamicRange": "Plage dynamique",
+  "playbackInfo.manifestRange": "Plage dynamique (manifeste)",
   "playbackInfo.scan": "Balayage",
   "playbackInfo.progressive": "Progressif",
   "playbackInfo.interlaced": "Entrelacé",

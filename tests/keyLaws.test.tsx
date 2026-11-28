@@ -8,6 +8,7 @@ import { PLAYBACK_CHROME_TIMEOUT_MS } from "../src/services/playbackChrome";
 import type { MediaTrack } from "../src/types";
 import {
   emitPlayback,
+  finishPageEntry,
   hold,
   mountApp,
   muted,
@@ -53,16 +54,6 @@ http://example.invalid/c.m3u8`;
 
 const mount = (options: Parameters<typeof mountApp>[1] = {}) => mountApp(PLAYLIST, options);
 
-async function finishPageEntry() {
-  await vi.waitFor(
-    async () => {
-      await settle(0);
-      expect(document.querySelector(".app")?.getAttribute("data-page-transition")).toBe("idle");
-    },
-    { interval: 10 },
-  );
-}
-
 beforeEach(() => {
   localStorage.clear();
   const clientHeight = Object.getOwnPropertyDescriptor(Element.prototype, "clientHeight")!.get!;
@@ -73,6 +64,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  document.documentElement.style.removeProperty("--t-navigation");
   vi.useRealTimers();
   vi.unstubAllGlobals();
   vi.doUnmock("../src/services/player");
@@ -422,7 +414,7 @@ test("law 4 returns from the Xtream Guide to the same live row", async () => {
   expect(document.querySelector(".playback-deck")).toBeTruthy();
   expect(
     document
-      .querySelector(".deck-programme-panel [data-selected]")
+      .querySelector(".deck-programme-panel[data-selected] [data-control]")
       ?.getAttribute("data-control"),
   ).toBe("guide");
   expect(panelOpen()).toBe(false);
@@ -1053,6 +1045,7 @@ async function startMovie(slowPicture = 0, faultPicture = false, keepControls = 
   movies.focus();
   fireEvent.click(movies);
   await settle(300);
+  await finishPageEntry();
   press(KEY.RIGHT);
   const film = screen.getByRole("button", { name: /Film/ });
   film.focus();
@@ -1097,6 +1090,7 @@ async function startPendingMovie() {
   movies.focus();
   fireEvent.click(movies);
   await settle(300);
+  await finishPageEntry();
   press(KEY.RIGHT);
   const film = screen.getByRole("button", { name: /Film/ });
   film.focus();
@@ -1117,6 +1111,7 @@ test.each([
   await mountApp("", { source: XTREAM_SOURCE, fetchImplementation: VOD_FETCH });
   fireEvent.click(screen.getByRole("button", { name: mode, exact: true }));
   await settle(300);
+  await finishPageEntry();
   document.documentElement.style.setProperty("--t-navigation", "180ms");
   fireEvent.click(screen.getByRole("button", { name: title, exact: true }));
   const app = document.querySelector(".app")!;
@@ -1125,6 +1120,7 @@ test.each([
   expect(app.getAttribute("data-page-enter-motion")).toBe("fade");
   expect(document.querySelector(".vod-details")).toBeNull();
   await settle(700);
+  await finishPageEntry();
   expect(app.getAttribute("data-page-transition")).toBe("idle");
   expect(document.querySelector(".vod-details")).toBeTruthy();
 
@@ -1133,6 +1129,7 @@ test.each([
   expect(app.getAttribute("data-page-leave-motion")).toBe("fade");
   expect(app.getAttribute("data-page-enter-motion")).toBe("fade");
   await settle(700);
+  await finishPageEntry();
   expect(app.getAttribute("data-page-transition")).toBe("idle");
   expect(document.querySelector(".vod-details")).toBeNull();
 });
@@ -1152,6 +1149,7 @@ test.each([
     navigationButton.focus();
     fireEvent.click(navigationButton);
     await settle(300);
+    await finishPageEntry();
     expect(document.querySelector(".vod-detail-back")).toBeNull();
     const poster = screen.getByRole("button", { name: title, exact: true });
     poster.focus();
@@ -1338,6 +1336,7 @@ test.each([
     route.focus();
     fireEvent.click(route);
     await settle(300);
+    await finishPageEntry();
     const poster = screen.getByRole("button", { name: title, exact: true });
     poster.focus();
     fireEvent.click(poster);
@@ -1435,31 +1434,23 @@ test("pending VOD resolution owns arrows, channel keys and digits", async () => 
 });
 
 test.each([
-  ["Live", [KEY.UP], ".vod-host:not(.hidden) .vod-screen", false],
-  ["Series", [KEY.DOWN], ".vod-host:not(.hidden) .vod-screen[data-mode='series']", true],
-  ["Search", [KEY.DOWN, KEY.DOWN], ".search-field", true],
-  ["Settings", [KEY.DOWN, KEY.DOWN, KEY.DOWN], ".settings-host:not(.hidden) .sheet", true],
+  ["Live", [KEY.UP]],
+  ["Series", [KEY.DOWN]],
+  ["Search", [KEY.DOWN, KEY.DOWN]],
+  ["Settings", [KEY.DOWN, KEY.DOWN, KEY.DOWN]],
 ] as const)(
-  "remote %s activation cancels pending VOD resolution",
-  async (_name, directions, selector, expected) => {
+  "pending VOD resolution does not expose %s navigation through arrow keys",
+  async (name, directions) => {
     const resolveUrl = await startPendingMovie();
 
     press(KEY.UP);
     for (const direction of directions) press(direction);
-    const action = screen.queryByRole("button", {
-      name: _name === "Search" ? /^Search/ : _name,
-    });
-    if (action) {
-      expect(action.classList.contains("cursor")).toBe(true);
-      press(KEY.ENTER);
-    } else {
-      expect(_name).toBe("Settings");
-    }
+    expect(screen.queryByRole("button", { name })).toBeNull();
+    expect(playCalls).toHaveLength(0);
     resolveUrl();
     await settle(0);
 
-    expect(played.some((url) => url.includes("movie/100.mp4"))).toBe(false);
-    expect(Boolean(document.querySelector(selector))).toBe(expected);
+    expect(played.some((url) => url.includes("movie/100.mp4"))).toBe(true);
     expect(document.querySelector(".vod-action:disabled")).toBeNull();
   },
 );
@@ -1507,11 +1498,11 @@ test("the finite seek deck previews reversals immediately and sends only the set
 
   press(KEY.RIGHT);
   expect(seekbar.getAttribute("aria-valuenow")).toBe("20");
-  await settle(600);
+  await settle(SEEK_SETTLE_MS - 1);
   expect(seekChanges).toEqual([10]);
   press(KEY.RIGHT);
   expect(seekbar.getAttribute("aria-valuenow")).toBe("30");
-  await settle(600);
+  await settle(SEEK_SETTLE_MS - 1);
   expect(seekChanges).toEqual([10]);
   press(KEY.LEFT);
   expect(seekbar.getAttribute("aria-valuenow")).toBe("20");
@@ -1696,7 +1687,9 @@ function readFocusOwner(): string {
   if (document.querySelector(".playback-drawer")) return "drawer";
   const deck = document.querySelector(".playback-deck");
   if (deck) {
-    const selected = deck.querySelector("[data-selected]");
+    const selected = deck.querySelector(
+      "[data-control][data-selected], .deck-programme-panel[data-selected] [data-control]",
+    );
     return `deck:${selected?.getAttribute("data-control") ?? "none"}`;
   }
   if (panelOpen()) return "panel";
@@ -2166,37 +2159,35 @@ test.each([
 
       fireEvent.click(selected);
       expect(document.querySelector(".vod-details")).toBeNull();
-      expect(
-        document
-          .querySelector(".vod-host .content-transition-shade")
-          ?.getAttribute("data-phase"),
-      ).toBe("leaving");
-      expect(
-        document.querySelector(".poster-card.cursor")?.getAttribute("data-poster-index"),
-      ).toBe(index);
+      expect(document.querySelector(".app")?.getAttribute("data-page-transition")).toBe(
+        "leaving",
+      );
+      expect(document.querySelector(`.poster-card[data-poster-index="${index}"]`)).toBeTruthy();
 
       press(KEY.DOWN);
       press(KEY.ENTER);
       press(KEY.BACK);
-      await settle(0);
+      await finishPageEntry();
       expect(document.querySelector(".vod-details")).toBeNull();
       expect(
         document.querySelector(".poster-card.cursor")?.getAttribute("data-poster-index"),
       ).toBe(index);
       expect(playCalls.length).toBe(plays);
 
-      await finishContentMotion();
+      await finishPageEntry();
       expect(screen.queryByRole("dialog")).toBeNull();
       expect(document.querySelector(".vod-details")).toBeNull();
       fireEvent.click(document.querySelector<HTMLButtonElement>(".poster-card.cursor")!);
-      await finishContentMotion();
+      await finishPageEntry();
       expect(document.querySelector(".vod-details")).toBeTruthy();
       expect(document.querySelector(".vod-action.cursor")).toBeTruthy();
       expect(document.querySelector(".vod-detail-back")).toBeNull();
 
       press(KEY.BACK);
-      expect(document.querySelector(".vod-details")).toBeNull();
-      await finishContentMotion();
+      expect(document.querySelector(".app")?.getAttribute("data-page-transition")).toBe(
+        "leaving",
+      );
+      await finishPageEntry();
       expect(document.querySelector(".vod-details")).toBeNull();
       expect(
         document.querySelector(".poster-card.cursor")?.getAttribute("data-poster-index"),
@@ -2232,9 +2223,9 @@ test("a source replacement during pending details entry keeps the obsolete title
     const poster = screen.getByRole("button", { name: /^Film 0$/ });
     poster.focus();
     fireEvent.click(poster);
-    expect(
-      document.querySelector(".vod-host .content-transition-shade")?.getAttribute("data-phase"),
-    ).toBe("leaving");
+    expect(document.querySelector(".app")?.getAttribute("data-page-transition")).toBe(
+      "leaving",
+    );
 
     const { useSettings } = await import("../src/stores/settings");
     const playlist = useSettings.getState().activePlaylist()!;

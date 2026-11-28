@@ -893,7 +893,6 @@ export function Settings({
             items={
               inSections
                 ? [
-                    { keys: ["\u2191", "\u2193"], label: t("common.move") },
                     { keys: [inlineEndArrow], label: t("common.open") },
                     {
                       keys: ["Return"],
@@ -901,10 +900,7 @@ export function Settings({
                     },
                   ]
                 : [
-                    { keys: ["\u2191", "\u2193", "\u2190", "\u2192"], label: t("common.move") },
-                    ...(asking || okGuide
-                      ? [{ keys: ["OK"], label: asking ? t("common.select") : okGuide }]
-                      : []),
+                    ...(asking || okGuide ? [{ keys: ["OK"], label: t("common.select") }] : []),
                     {
                       keys: ["Return"],
                       label: details.length ? t("common.back") : t("settings.close"),

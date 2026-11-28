@@ -187,8 +187,7 @@ http://example.invalid/5.m3u8
   press(KEY.LEFT);
   await settle();
   const started = played.length;
-  const showing = () =>
-    document.querySelector(".rail .row.showing .row-label")?.textContent;
+  const showing = () => document.querySelector(".rail .row.showing .row-label")?.textContent;
 
   pressDown(KEY.DOWN);
   expect(showing()).toBe("Sport");
@@ -198,23 +197,23 @@ http://example.invalid/5.m3u8
   pressDown(KEY.DOWN, true);
   await settle(40);
   pressDown(KEY.DOWN, true);
-  expect(categoryUnderCursor()).toBe("News");
+  expect(categoryUnderCursor()).toBe("Culture");
   await settle(29);
   expect(showing()).toBe("Sport");
   await settle(1);
-  expect(showing()).toBe("News");
-  expect(document.querySelector(".list .row-label")?.textContent).toBe("First Channel");
+  expect(showing()).toBe("Culture");
+  expect(document.querySelector(".list .row-label")?.textContent).toBe("Culture Channel");
 
   await settle(10);
   pressDown(KEY.DOWN, true);
   await settle(40);
   pressDown(KEY.DOWN, true);
   await settle(100);
-  expect(showing()).toBe("Culture");
-  expect(document.querySelector(".list .row-label")?.textContent).toBe("Culture Channel");
+  expect(showing()).toBe("Music");
+  expect(document.querySelector(".list .row-label")?.textContent).toBe("Music Channel");
   release(KEY.DOWN);
   await settle();
-  expect(showing()).toBe("Culture");
+  expect(showing()).toBe("Music");
   expect(played).toHaveLength(started);
 });
 
@@ -285,6 +284,9 @@ test("Live channel and category lists cycle at their vertical boundaries", async
 
   press(KEY.UP);
   await settle();
+  expect(document.querySelector(".section-search.cursor")).toBeTruthy();
+  press(KEY.UP);
+  await settle();
   expect(channelUnderCursor()).toBe("Second Channel");
   press(KEY.DOWN);
   await settle();
@@ -294,7 +296,13 @@ test("Live channel and category lists cycle at their vertical boundaries", async
   await settle();
   press(KEY.UP);
   await settle();
+  expect(document.querySelector(".section-search.cursor")).toBeTruthy();
+  press(KEY.UP);
+  await settle();
   expect(categoryUnderCursor()).toBe("Sport");
+  press(KEY.DOWN);
+  await settle();
+  expect(document.querySelector(".section-search.cursor")).toBeTruthy();
   press(KEY.DOWN);
   await settle();
   expect(categoryUnderCursor()).toBe("News");
@@ -326,13 +334,13 @@ test("a picked search result keeps its presentation through the panel exit", asy
   expect((document.querySelector(".search-field") as HTMLInputElement).value).toBe("First");
   expect(document.querySelector(".list")?.textContent).toContain("First Channel");
   expect(document.querySelector(".list")?.textContent).not.toContain("Second Channel");
-  expect(document.querySelector(".panel .rail")).toBeNull();
+  expect(document.querySelector(".panel .rail.search-categories")).toBeTruthy();
 
   await settle(179);
   expect(document.querySelector(".panel-cols.searching")).toBeTruthy();
   expect(document.querySelector(".search-field")).toBeTruthy();
   expect(document.querySelector(".list")?.textContent).toContain("First Channel");
-  expect(document.querySelector(".panel .rail")).toBeNull();
+  expect(document.querySelector(".panel .rail.search-categories")).toBeTruthy();
 
   await settle(1);
   expect(document.querySelector(".search-field")).toBeNull();
@@ -376,7 +384,7 @@ test("a fresh search survives the deadline of the exit it interrupted", async ()
   expect(panelOpen()).toBe(true);
   expect((document.querySelector(".search-field") as HTMLInputElement).value).toBe("Second");
   expect(document.querySelector(".panel-cols.searching")).toBeTruthy();
-  expect(document.querySelector(".panel .rail")).toBeNull();
+  expect(document.querySelector(".panel .rail.search-categories")).toBeTruthy();
   expect(document.querySelector(".list")?.textContent).toContain("Second Channel");
   expect(document.querySelector(".list")?.textContent).not.toContain("First Channel");
 

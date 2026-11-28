@@ -24,6 +24,7 @@ export function Confirm({
   cancelLabel,
   destructive,
   confirmIcon,
+  cancelIcon = "close",
   busy = false,
   onConfirm,
   onCancel,
@@ -35,6 +36,8 @@ export function Confirm({
   /** Colours the confirming button as a warning rather than as the ordinary next step. */
   destructive?: boolean;
   confirmIcon?: IconName;
+  /** Use null for a text only cancel action. */
+  cancelIcon?: IconName | null;
   /** The answer is already on its way: the question cannot be dismissed or re-answered. */
   busy?: boolean;
   onConfirm: () => void;
@@ -166,7 +169,7 @@ export function Confirm({
             onPointerEnter={(event) => pointerOnly(() => event.currentTarget.focus())}
             onClick={() => dismiss.current()}
           >
-            <Icon name="back" />
+            {cancelIcon && <Icon name={cancelIcon} />}
             <span>{cancelLabel}</span>
           </button>
           <button

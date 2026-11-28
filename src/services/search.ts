@@ -73,7 +73,7 @@ function foldedNames<T extends { name: string }>(items: readonly T[]): string[] 
  * "BBC News" and "BBC One" and playlist order alone puts Sky at the top, which reads as the
  * search ignoring what was typed.
  */
-function searchNamedItems<T extends { name: string }>(
+export function searchNamedItems<T extends { name: string }>(
   items: readonly T[],
   query: string,
 ): SearchResults<T> {

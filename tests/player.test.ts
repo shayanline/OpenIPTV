@@ -14,6 +14,11 @@ interface FakeHlsInstance {
   audioTrack: number;
   audioTracks: Array<{ name: string; lang: string; default: boolean }>;
   subtitleTrack: number;
+  currentLevel: number;
+  levels: Array<{
+    videoRange?: string;
+    attrs?: Record<string, string>;
+  }>;
   emit(event: string, data: unknown): void;
 }
 
@@ -248,6 +253,11 @@ let player: Player;
 let tvMuted = false;
 
 const codes = () => events.filter((e) => e.type === "error").map((e) => e.code);
+const videoTrack = (info: Record<string, unknown>, index = 0) => ({
+  index,
+  type: "VIDEO" as const,
+  extra_info: JSON.stringify(info),
+});
 const liveRequest = (
   url = "http://example.invalid/a.m3u8",
   overrides: Partial<PlayerOpenRequest> = {},
@@ -354,6 +364,7 @@ test("AVPlay statistics normalize current engine values without using playlist l
     width: 1920,
     height: 1080,
     dynamicRange: "PQ",
+    dynamicRangeSource: "engine",
     scan: "progressive",
     videoCodec: "H264",
     audioCodec: "AAC",
@@ -380,6 +391,7 @@ test("AVPlay statistics stay available when newer optional firmware APIs are abs
     width: 1920,
     height: 1080,
     dynamicRange: "PQ",
+    dynamicRangeSource: "engine",
     videoCodec: "H264",
     audioCodec: "AAC",
     bitrate: 4_500_000,
@@ -424,7 +436,7 @@ test("AVPlay uses richer total track HDR metadata when current info omits it", (
   expect(player.getStats().dynamicRange).toBe("Dolby Vision");
 });
 
-test("AVPlay accepts a best effort HDR value from Samsung streaming properties", () => {
+test("AVPlay does not treat undocumented streaming properties as HDR evidence", () => {
   av.getCurrentStreamInfo = () => [];
   av.getTotalTrackInfo = () => [];
   av.getStreamingProperty = (key: string) => {
@@ -434,11 +446,14 @@ test("AVPlay accepts a best effort HDR value from Samsung streaming properties",
   player.play(liveRequest());
   av.prepared?.ok();
 
-  expect(player.getStats().dynamicRange).toBe("HLG");
-  expect(av.streamingReads).toContain("GET_STREAM_INFO");
+  expect(player.getStats().dynamicRange).toBeUndefined();
+  expect(av.streamingReads).not.toContain("GET_STREAM_INFO");
+  expect(av.streamingReads).not.toContain("PROPERTY_STREAMING_STATUS");
+  expect(av.streamingReads).not.toContain("PROPERTY_STREAMING_TYPE");
+  expect(av.streamingReads).not.toContain("PROPERTY_VR360_INFO");
 });
 
-test("AVPlay infers HDR10+ from the closest HLS rendition when metadata stops at PQ", async () => {
+test("AVPlay uses an unambiguous PQ rendition declaration without claiming engine support", async () => {
   vi.mocked(fetch).mockResolvedValue(
     new Response(`#EXTM3U
 #EXT-X-STREAM-INF:BANDWIDTH=2500000,RESOLUTION=1920x1080,VIDEO-RANGE=SDR,CODECS="hvc1.2.4.L120.B0,mp4a.40.2"
@@ -452,7 +467,279 @@ hdr.m3u8`),
   expect(player.getStats().dynamicRange).toBe("PQ");
   await vi.advanceTimersByTimeAsync(0);
   expect(player.getStats().dynamicRange).toBe("HDR10+");
+  expect(player.getStats().dynamicRangeSource).toBe("manifest");
   expect(fetch).toHaveBeenCalledTimes(1);
+});
+
+test.each([
+  [{ Hdr_type: "HDR10" }, "HDR10"],
+  [{ Hdr_format: "HDR10+" }, "HDR10+"],
+  [{ Dynamic_range: "Dolby Vision" }, "Dolby Vision"],
+  [{ Transfer_characteristics: "16" }, "PQ"],
+  [{ Transfer_characteristics: 18 }, "HLG"],
+  [{ Transfer_function: "smpte2084" }, "PQ"],
+  [{ Color_transfer: "arib-std-b67" }, "HLG"],
+  [{ Transfer_characteristics: 1 }, "SDR"],
+  [{ Colour_primaries: "bt2020", FourCC: "HEVC" }, undefined],
+  [{ Hdr_type: 16 }, undefined],
+  [{ Hdr_type: "not HDR10" }, undefined],
+  [{ Hdr_type: { hdrFormat: "HDR10+" } }, undefined],
+] as const)(
+  "AVPlay interprets only explicit format and transfer metadata: %j",
+  (info, expected) => {
+    av.getCurrentStreamInfo = () => [videoTrack(info)];
+    player.play(liveRequest());
+    av.prepared?.ok();
+
+    expect(player.getStats().dynamicRange).toBe(expected);
+  },
+);
+
+test("AVPlay matches total video information to the active index rather than the first track", () => {
+  av.getCurrentStreamInfo = () => [videoTrack({ Width: 1920, Height: 1080 }, 2)];
+  av.getTotalTrackInfo = () => [
+    videoTrack({ Hdr_type: "HDR10+" }, 0),
+    videoTrack({ Hdr_type: "HLG" }, 2),
+  ];
+  player.play(liveRequest());
+  av.prepared?.ok();
+
+  expect(player.getStats().dynamicRange).toBe("HLG");
+});
+
+test("AVPlay rejects total video metadata that contradicts the current dimensions", () => {
+  av.getCurrentStreamInfo = () => [videoTrack({ Width: 1280, Height: 720 })];
+  av.getTotalTrackInfo = () => [videoTrack({ Width: 1920, Height: 1080, Hdr_type: "HDR10+" })];
+  player.play(liveRequest());
+  av.prepared?.ok();
+
+  expect(player.getStats().dynamicRange).toBeUndefined();
+});
+
+test("AVPlay rejects an enhancement whose total track transfer function contradicts PQ", () => {
+  av.getTotalTrackInfo = () => [
+    videoTrack({ Hdr_type: "HDR10+", Transfer_characteristics: 18 }),
+  ];
+  player.play(liveRequest());
+  av.prepared?.ok();
+
+  expect(player.getStats().dynamicRange).toBe("PQ");
+});
+
+test("AVPlay does not retain a previous range when active metadata changes or disappears", () => {
+  let info: Record<string, unknown> = { Hdr_type: "HDR10+" };
+  av.getCurrentStreamInfo = () => [videoTrack(info)];
+  player.play(liveRequest());
+  av.prepared?.ok();
+
+  expect(player.getStats().dynamicRange).toBe("HDR10+");
+  info = { Transfer_characteristics: 16 };
+  expect(player.getStats().dynamicRange).toBe("PQ");
+  info = { Transfer_characteristics: 1 };
+  expect(player.getStats().dynamicRange).toBe("SDR");
+  info = {};
+  expect(player.getStats().dynamicRange).toBeUndefined();
+});
+
+test.each([
+  ["HLG", 'CODECS="hvc1.2.4.L150.B0",VIDEO-RANGE=HLG', "HLG"],
+  ["PQ", 'CODECS="hvc1.2.4.L150.B0",VIDEO-RANGE=PQ', "PQ"],
+  ["SDR", 'CODECS="hvc1.2.4.L150.B0",VIDEO-RANGE=SDR', "SDR"],
+  ["Main 10 alone", 'CODECS="hvc1.2.20000000.H150.B0"', undefined],
+  ["an invalid video range", "VIDEO-RANGE=HDR10", undefined],
+  ["unsupported CODECS brand", 'CODECS="av01.0.05M.10.0.112/cdm4"', undefined],
+  ["HDR10+", 'VIDEO-RANGE=PQ,SUPPLEMENTAL-CODECS="av01.0.05M.10.0.112/cdm4/other"', "HDR10+"],
+  ["Dolby Vision", 'VIDEO-RANGE=PQ,CODECS="dvh1.05.06,ec-3"', "Dolby Vision"],
+  [
+    "Dolby Vision HLG compatibility",
+    'VIDEO-RANGE=HLG,CODECS="hvc1.2.4.L153.B0",SUPPLEMENTAL-CODECS="dvh1.08.07/db4h"',
+    "Dolby Vision",
+  ],
+] as const)(
+  "AVPlay can show a manifest declaration for %s without firmware HDR metadata",
+  async (_name, attributes, expected) => {
+    av.getCurrentStreamInfo = () => [videoTrack({ Width: 1920, Height: 1080 })];
+    vi.mocked(fetch).mockResolvedValue(
+      new Response(
+        `#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=4500000,RESOLUTION=1920x1080,${attributes}\nvideo.m3u8`,
+      ),
+    );
+    player.play(liveRequest());
+    av.prepared?.ok();
+
+    expect(player.getStats().dynamicRange).toBeUndefined();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(player.getStats().dynamicRange).toBe(expected);
+    expect(player.getStats().dynamicRangeSource).toBe(expected ? "manifest" : undefined);
+  },
+);
+
+test.each([
+  ["a different PQ enhancement", "1920x1080", "VIDEO-RANGE=PQ", "PQ"],
+  ["a missing declaration", "1920x1080", 'CODECS="hvc1.2.4.L150.B0"', "PQ"],
+  ["a missing resolution", "", "VIDEO-RANGE=PQ", "PQ"],
+  ["no matching resolution", "3840x2160", "VIDEO-RANGE=PQ", "PQ"],
+] as const)(
+  "AVPlay leaves ambiguous manifest information unknown with %s",
+  async (_name, resolution, attributes, expected) => {
+    const size = resolution ? `RESOLUTION=${resolution},` : "";
+    const firstSize = resolution === "3840x2160" ? resolution : "1920x1080";
+    vi.mocked(fetch).mockResolvedValue(
+      new Response(`#EXTM3U
+#EXT-X-STREAM-INF:BANDWIDTH=4500000,RESOLUTION=${firstSize},VIDEO-RANGE=PQ,SUPPLEMENTAL-CODECS="hvc1.2.4.L150.B0/cdm4"
+plus.m3u8
+#EXT-X-STREAM-INF:BANDWIDTH=9000000,${size}${attributes}
+other.m3u8`),
+    );
+    player.play(liveRequest());
+    av.prepared?.ok();
+
+    player.getStats();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(player.getStats().dynamicRange).toBe(expected);
+    expect(player.getStats().dynamicRangeSource).toBe("engine");
+  },
+);
+
+test("AVPlay reevaluates retained manifest declarations after a rendition change", async () => {
+  let width = 1920;
+  av.getCurrentStreamInfo = () => [
+    videoTrack({ Width: width, Height: width === 1920 ? 1080 : 2160 }),
+  ];
+  vi.mocked(fetch).mockResolvedValue(
+    new Response(`#EXTM3U
+#EXT-X-STREAM-INF:BANDWIDTH=4500000,RESOLUTION=1920x1080,VIDEO-RANGE=SDR
+sdr.m3u8
+#EXT-X-STREAM-INF:BANDWIDTH=9000000,RESOLUTION=3840x2160,VIDEO-RANGE=HLG
+hlg.m3u8`),
+  );
+  player.play(liveRequest());
+  av.prepared?.ok();
+
+  player.getStats();
+  await vi.advanceTimersByTimeAsync(0);
+  expect(player.getStats().dynamicRange).toBe("SDR");
+  width = 3840;
+  expect(player.getStats().dynamicRange).toBe("HLG");
+  expect(fetch).toHaveBeenCalledTimes(1);
+});
+
+test("AVPlay cannot select an advertised HDR alternative when firmware gives no range", async () => {
+  av.getCurrentStreamInfo = () => [videoTrack({ Width: 1920, Height: 1080 })];
+  vi.mocked(fetch).mockResolvedValue(
+    new Response(`#EXTM3U
+#EXT-X-STREAM-INF:BANDWIDTH=4500000,RESOLUTION=1920x1080,VIDEO-RANGE=SDR
+sdr.m3u8
+#EXT-X-STREAM-INF:BANDWIDTH=9000000,RESOLUTION=1920x1080,VIDEO-RANGE=PQ,SUPPLEMENTAL-CODECS="hvc1.2.4.L150.B0/cdm4"
+plus.m3u8`),
+  );
+  player.play(liveRequest());
+  av.prepared?.ok();
+  player.getStats();
+  await vi.advanceTimersByTimeAsync(0);
+
+  expect(player.getStats().dynamicRange).toBeUndefined();
+  expect(player.getStats().dynamicRangeSource).toBeUndefined();
+});
+
+test.each([
+  ["an invalid header", "not an HLS manifest"],
+  ["a media playlist", "#EXTM3U\n#EXT-X-TARGETDURATION:4\n#EXTINF:4,\nsegment.ts"],
+  ["a missing variant URI", "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=4500000,VIDEO-RANGE=HLG"],
+  ["an oversized body", `#EXTM3U\n${"x".repeat(512 * 1024)}`],
+])("manifest metadata with %s cannot replace the engine report", async (_name, text) => {
+  vi.mocked(fetch).mockResolvedValue(new Response(text));
+  player.play(liveRequest());
+  av.prepared?.ok();
+  player.getStats();
+  await vi.advanceTimersByTimeAsync(0);
+
+  expect(player.getStats().dynamicRange).toBe("PQ");
+  expect(fetch).toHaveBeenCalledTimes(1);
+});
+
+test("a failed HDR manifest request leaves playback and the engine report intact", async () => {
+  vi.mocked(fetch).mockRejectedValue(new TypeError("Failed to fetch"));
+  player.play(liveRequest());
+  av.prepared?.ok();
+  player.getStats();
+  await vi.advanceTimersByTimeAsync(0);
+
+  expect(player.getStats().dynamicRange).toBe("PQ");
+  expect(fetch).toHaveBeenCalledTimes(1);
+  expect(codes()).toEqual([]);
+});
+
+test("AVPlay prioritises explicit firmware metadata over the manifest", async () => {
+  vi.mocked(fetch).mockResolvedValue(
+    new Response(`#EXTM3U
+#EXT-X-STREAM-INF:BANDWIDTH=4500000,VIDEO-RANGE=PQ,SUPPLEMENTAL-CODECS="hvc1.2.4.L150.B0/cdm4"
+plus.m3u8`),
+  );
+  player.play(liveRequest());
+  av.prepared?.ok();
+  player.getStats();
+  await vi.advanceTimersByTimeAsync(0);
+  expect(player.getStats().dynamicRange).toBe("HDR10+");
+
+  av.getCurrentStreamInfo = () => [videoTrack({ Hdr_type: "SDR" })];
+  expect(player.getStats()).toMatchObject({
+    dynamicRange: "SDR",
+    dynamicRangeSource: "engine",
+  });
+});
+
+test("HDR manifest inspection waits for diagnostics and does not run while AVPlay is idle", () => {
+  player.play(liveRequest());
+  expect(fetch).not.toHaveBeenCalled();
+  expect(player.getStats().dynamicRange).toBeUndefined();
+  expect(fetch).not.toHaveBeenCalled();
+
+  av.prepared?.ok();
+  expect(fetch).not.toHaveBeenCalled();
+  player.getStats();
+  expect(fetch).toHaveBeenCalledTimes(1);
+});
+
+test("HDR manifest inspection stops on timeout without retrying every sample", async () => {
+  vi.mocked(fetch).mockImplementation(() => new Promise(() => {}));
+  player.play(liveRequest());
+  av.prepared?.ok();
+  player.getStats();
+  const options = vi.mocked(fetch).mock.calls[0][1];
+  expect(options?.signal?.aborted).toBe(false);
+
+  await vi.advanceTimersByTimeAsync(5000);
+  expect(options?.signal?.aborted).toBe(true);
+  expect(player.getStats().dynamicRange).toBe("PQ");
+  expect(fetch).toHaveBeenCalledTimes(1);
+});
+
+test("HDR manifest results cannot cross playback ownership after a stop", async () => {
+  let finish: ((response: Response) => void) | undefined;
+  vi.mocked(fetch).mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  player.play(liveRequest());
+  av.prepared?.ok();
+  player.getStats();
+  const options = vi.mocked(fetch).mock.calls[0][1];
+  player.stop();
+  expect(options?.signal?.aborted).toBe(true);
+  player.play(liveRequest("http://example.invalid/b.m3u8"));
+  av.prepared?.ok();
+  finish?.(
+    new Response(`#EXTM3U
+#EXT-X-STREAM-INF:BANDWIDTH=4500000,VIDEO-RANGE=PQ,SUPPLEMENTAL-CODECS="hvc1.2.4.L150.B0/cdm4"
+old.m3u8`),
+  );
+  await vi.advanceTimersByTimeAsync(0);
+
+  expect(player.getStats().dynamicRange).toBe("PQ");
+  expect(fetch).toHaveBeenCalledTimes(2);
 });
 
 test("AVPlay counts actual adaptive bitrate changes rather than the initial selection", () => {
@@ -522,6 +809,7 @@ test("hls.js statistics report the rendition in use and count level changes", as
     width: 1920,
     height: 1080,
     dynamicRange: "HDR10+",
+    dynamicRangeSource: "manifest",
     videoCodec: "hvc1.2.4.L150.B0",
     audioCodec: "mp4a.40.2",
     bitrate: 4_500_000,
@@ -533,6 +821,36 @@ test("hls.js statistics report the rendition in use and count level changes", as
   });
   browser.stop();
 });
+
+test.each([
+  ["PQ", { CODECS: "hvc1.2.20000000.H150.B0" }, "PQ"],
+  ["HLG", { CODECS: "hvc1.2.4.L150.B0" }, "HLG"],
+  ["SDR", { CODECS: "hvc1.2.4.L150.B0" }, "SDR"],
+  ["PQ", { CODECS: "dvh1.05.06" }, "Dolby Vision"],
+] as const)(
+  "hls.js exposes the selected level declaration for %s",
+  async (range, attrs, expected) => {
+    delete (window as unknown as { webapis?: unknown }).webapis;
+    hlsMock.supported = true;
+    const browser = new Player(() => {});
+    browser.attach(document.createElement("video"));
+    browser.play(liveRequest());
+    await vi.advanceTimersByTimeAsync(0);
+    const hls = hlsMock.instance;
+    assert.ok(hls);
+    hls.levels[2].videoRange = range;
+    hls.levels[2].attrs = attrs;
+
+    expect(browser.getStats()).toMatchObject({
+      dynamicRange: expected,
+      dynamicRangeSource: "manifest",
+    });
+    hls.currentLevel = 0;
+    expect(browser.getStats().dynamicRange).toBeUndefined();
+    expect(fetch).not.toHaveBeenCalled();
+    browser.stop();
+  },
+);
 
 test("the adaptive request starts low and asks the set to skip nothing", () => {
   player.play(liveRequest());
@@ -978,10 +1296,14 @@ test("native CORS fallback preserves playback and ignores the first attempt's la
   const browser = new Player((event) => events.push(event));
   const video = document.createElement("video");
   let rejectFirst!: (error: unknown) => void;
-  video.play = vi.fn()
-    .mockImplementationOnce(() => new Promise<void>((_resolve, reject) => {
-      rejectFirst = reject;
-    }))
+  video.play = vi
+    .fn()
+    .mockImplementationOnce(
+      () =>
+        new Promise<void>((_resolve, reject) => {
+          rejectFirst = reject;
+        }),
+    )
     .mockResolvedValue(undefined);
   Object.defineProperty(video, "error", { configurable: true, value: { code: 4 } });
   browser.attach(video);

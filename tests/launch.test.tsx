@@ -27,7 +27,7 @@ const PLAYLIST = `#EXTM3U
 http://example.invalid/a.m3u8`;
 
 /** What the splash is saying, or that there is no splash, as a string either way. */
-const splash = () => document.querySelector(".splash p")?.textContent ?? "(no splash)";
+const splash = () => document.querySelector(".splash h1 + p")?.textContent ?? "(no splash)";
 
 const UNREADABLE = translate("en", "playlist.entryParsing");
 const LOADING = "Loading the playlist\u2026";
