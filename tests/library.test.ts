@@ -862,6 +862,65 @@ test("a relative episode source resolves against the provider stream origin", as
   );
 });
 
+test("generated movie and episode targets retain their alternate upstream", async () => {
+  vi.stubGlobal(
+    "fetch",
+    provider({
+      authenticate: {
+        user_info: { auth: 1, status: "Active" },
+        server_info: { server_protocol: "http", url: "advertised.example" },
+      },
+    }),
+  );
+  const { libraryPlaybackTarget, useLibrary } = await loadStore();
+  useLibrary.getState().selectPlaylist({
+    ...playlist(),
+    source: { ...source, server: "http://configured.example/portal" },
+  });
+  await useLibrary.getState().loadCategory("movie:10");
+  const movie = useLibrary.getState().itemsFor("movie", "movie:10").value[0];
+  if (!movie || !("streamId" in movie)) throw new Error("Fixture movie missing");
+  await expect(libraryPlaybackTarget(movie)).resolves.toEqual({
+    url: "http://configured.example/portal/movie/viewer/secret/100.mp4",
+    fallbackUrl: "http://advertised.example/movie/viewer/secret/100.mp4",
+  });
+
+  await useLibrary.getState().loadSeries("xtream:pl-1:series:200");
+  const episode =
+    useLibrary.getState().seriesDetails["xtream:pl-1:series:200"].value?.episodes[0];
+  if (!episode) throw new Error("Fixture episode missing");
+  await expect(libraryPlaybackTarget(episode)).resolves.toEqual({
+    url: `http://configured.example/portal/series/viewer/secret/${episode.episodeId}.mp4`,
+    fallbackUrl: `http://advertised.example/series/viewer/secret/${episode.episodeId}.mp4`,
+  });
+});
+
+test("cached direct sources keep a configured fallback without authentication work", async () => {
+  const fetchMock = vi.fn();
+  vi.stubGlobal("fetch", fetchMock);
+  const { libraryPlaybackTarget, useLibrary } = await loadStore();
+  useLibrary.getState().selectPlaylist(playlist());
+  const movie = {
+    key: "xtream:pl-1:movie:100",
+    streamId: "100",
+    categoryKey: "movie:10",
+    name: "Direct movie",
+    logo: "",
+    extension: "mkv",
+    directSource: "http://files.example/movie.mkv",
+    year: "",
+    rating: "",
+  };
+  await expect(libraryPlaybackTarget(movie)).resolves.toEqual({
+    url: movie.directSource,
+    fallbackUrl: "http://provider.example/movie/viewer/secret/100.mkv",
+  });
+  await expect(libraryPlaybackTarget({ ...movie, streamId: "" })).resolves.toEqual({
+    url: movie.directSource,
+  });
+  expect(fetchMock).not.toHaveBeenCalled();
+});
+
 test("progress seeds retain episode identity without retaining a direct source", async () => {
   vi.stubGlobal("fetch", provider());
   const { useLibrary } = await loadStore();

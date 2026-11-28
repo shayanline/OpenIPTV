@@ -144,10 +144,13 @@ test("catchup targets require a complete past programme inside the archive bound
               programme("missing-stop", now - 7200, now - 3600, { stop_timestamp: "" }),
             ],
           }
-        : auth,
+        : { ...auth, server_info: { ...auth.server_info, url: "advertised.example" } },
     ),
   );
-  useLibrary.getState().selectPlaylist(playlist);
+  useLibrary.getState().selectPlaylist({
+    ...playlist,
+    source: { ...source, server: "http://configured.example/portal" },
+  });
 
   await useLibrary.getState().loadGuide(channel());
 
@@ -167,6 +170,11 @@ test("catchup targets require a complete past programme inside the archive bound
     logo: "http://provider.example/logo.png",
   });
   expect(byId.get("boundary")?.target?.url).toContain("/timeshift/viewer/secret/91/");
+  expect(byId.get("boundary")?.target).toMatchObject({
+    url: expect.stringContaining("http://configured.example/portal/timeshift/"),
+    fallbackUrl: expect.stringContaining("http://advertised.example/timeshift/"),
+    progress: { itemKey: "xtream:pl-1:catchup:10:boundary", playlistId: "pl-1" },
+  });
   expect(byId.get("expired")?.target).toBeUndefined();
   expect(byId.get("future")?.target).toBeUndefined();
   expect(byId.get("current")?.target).toBeUndefined();

@@ -42,6 +42,7 @@ const session = (id = "one", extra: Partial<RecoverySession> = {}): RecoverySess
 interface Harness {
   coordinator: PlaybackRecoveryCoordinator;
   calls: string[];
+  upstreams: string[];
   states: RecoveryState[];
   clockPosition: () => number | null;
   diagnoseDeferred: { resolve: (r: PlayerOpenRequest | null) => void } | null;
@@ -50,6 +51,7 @@ interface Harness {
     diagnoseResult: PlayerOpenRequest | null;
     holdDiagnose: boolean;
     fallbackResult: PlayerOpenRequest | null;
+    streamFallbackResult: PlayerOpenRequest | null;
     restore: boolean;
   };
 }
@@ -58,6 +60,7 @@ const makeHarness = (extra?: Partial<Harness["options"]>): Harness => {
   const harness: Harness = {
     coordinator: null as unknown as PlaybackRecoveryCoordinator,
     calls: [],
+    upstreams: [],
     states: [],
     clockPosition: () => null,
     diagnoseDeferred: null,
@@ -66,6 +69,7 @@ const makeHarness = (extra?: Partial<Harness["options"]>): Harness => {
       diagnoseResult: null,
       holdDiagnose: false,
       fallbackResult: null,
+      streamFallbackResult: null,
       restore: true,
       ...extra,
     },
@@ -84,8 +88,9 @@ const makeHarness = (extra?: Partial<Harness["options"]>): Harness => {
       harness.calls.push("warm");
       return harness.options.warm;
     },
-    diagnose: () => {
+    diagnose: (session) => {
       harness.calls.push("compatibility");
+      harness.upstreams.push(session.originalUrl);
       if (harness.options.holdDiagnose) {
         return new Promise<PlayerOpenRequest | null>((resolve) => {
           harness.diagnoseDeferred = { resolve };
@@ -93,12 +98,18 @@ const makeHarness = (extra?: Partial<Harness["options"]>): Harness => {
       }
       return Promise.resolve(harness.options.diagnoseResult);
     },
-    fallback: () => {
+    streamFallback: () => {
+      if (harness.options.streamFallbackResult) harness.calls.push("stream-fallback");
+      return harness.options.streamFallbackResult;
+    },
+    fallback: (session) => {
       harness.calls.push("http-fallback");
+      harness.upstreams.push(session.originalUrl);
       return harness.options.fallbackResult;
     },
     reopen: (request) => {
       harness.calls.push(`reopen:${request.url}`);
+      return request;
     },
     suspend: () => {
       harness.calls.push("suspend");
@@ -175,6 +186,44 @@ describe("target lifetime", () => {
 });
 
 describe("recovery order", () => {
+  test("an alternate upstream is tried once before diagnosis and remains the retry source", async () => {
+    const alternate = openRequest("https://alternate.invalid/one.m3u8");
+    const h = makeHarness({ streamFallbackResult: alternate });
+    h.coordinator.select(session());
+    h.coordinator.fault("NETWORK_ERROR", "network", "engine-network");
+    await flushRecovery();
+    expect(h.calls).toEqual([
+      "warm",
+      "stream-fallback",
+      `reopen:${alternate.url}`,
+    ]);
+
+    h.coordinator.fault("NETWORK_ERROR", "network", "engine-network");
+    await flushRecovery();
+    expect(h.upstreams).toEqual([alternate.url, alternate.url]);
+    expect(h.calls.filter((call) => call === "stream-fallback")).toHaveLength(1);
+    expect(lastState(h).stage).toBe("waiting");
+    vi.advanceTimersByTime(4000);
+    expect(h.calls[h.calls.length - 1]).toBe(`reopen:${alternate.url}`);
+
+    h.coordinator.select(session("two"));
+    h.coordinator.fault("NETWORK_ERROR", "network", "engine-network");
+    await flushRecovery();
+    expect(h.calls.filter((call) => call === "stream-fallback")).toHaveLength(2);
+    h.coordinator.dispose();
+  });
+
+  test("an alternate upstream cannot bypass a terminal provider refusal", () => {
+    const h = makeHarness({
+      streamFallbackResult: openRequest("https://alternate.invalid/one.m3u8"),
+    });
+    h.coordinator.select(session());
+    h.coordinator.fault("HTTP 403", "network", "engine-network");
+    expect(lastState(h).stage).toBe("terminal");
+    expect(h.calls).toEqual([]);
+    h.coordinator.dispose();
+  });
+
   test("recovery runs warm, compatibility, HTTP fallback, reopen, then application delay in order", async () => {
     const h = makeHarness({ fallbackResult: openRequest("http://fallback/one") });
     h.coordinator.select(session());

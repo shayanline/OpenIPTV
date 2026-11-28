@@ -812,10 +812,10 @@ export default function App() {
               providerOrder: 0,
               metadata: { rating: "", plot: "", releaseDate: "", image: "" },
             };
-      let url: string;
+      let addresses: { url: string; fallbackUrl?: string };
       try {
-        const { libraryPlaybackUrl } = await import("./stores/library");
-        url = await libraryPlaybackUrl(item);
+        const { libraryPlaybackTarget } = await import("./stores/library");
+        addresses = await libraryPlaybackTarget(item);
       } catch {
         if (vodToken.current !== token) return;
         if (!replacement) setVodPhase("browsing");
@@ -847,7 +847,7 @@ export default function App() {
             logo: request.poster,
             year: request.year,
             rating: request.rating,
-            url,
+            ...addresses,
             resumeAt: request.resumeAt,
             progress: request.progress,
           },

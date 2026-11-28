@@ -18,7 +18,10 @@ export interface XtreamSession {
   username: string;
   password: string;
   output: XtreamOutput;
+  /** The address the viewer configured and that the API authenticated against. */
   streamOrigin: string;
+  /** The address the provider advertises, used only if the configured one fails. */
+  fallbackStreamOrigin?: string;
   account: XtreamAccount;
 }
 
@@ -583,6 +586,14 @@ const providerOrigin = (server: string, value: unknown): string => {
   return origin.origin;
 };
 
+/** Keep the authenticated address and its path ahead of provider advertisements. */
+const configuredStreamOrigin = (server: string): string => {
+  const url = configuredOrigin(server);
+  url.search = "";
+  url.hash = "";
+  return url.toString().replace(/\/+$/, "");
+};
+
 const optionalAccountNumber = (
   target: XtreamAccount,
   key: keyof XtreamAccount,
@@ -617,14 +628,30 @@ export async function authenticateXtream(
   optionalAccountNumber(account, "createdAt", user.created_at);
   optionalAccountNumber(account, "maxConnections", user.max_connections);
 
+  const streamOrigin = configuredStreamOrigin(source.server);
+
+  // Malformed advertisements must not reject an authenticated account.
+  let fallbackStreamOrigin: string | undefined;
+  try {
+    const info = payload.server_info;
+    if (
+      isRecord(info) &&
+      ["url", "server_protocol", "port", "https_port"].some((key) => text(info[key]).trim())
+    ) {
+      const advertised = providerOrigin(source.server, info);
+      if (advertised !== streamOrigin) fallbackStreamOrigin = advertised;
+    }
+  } catch {
+    /* the configured address is already known to answer */
+  }
+
   return {
-    server: applyBrowserTransport(configuredOrigin(source.server))
-      .toString()
-      .replace(/\/$/, ""),
+    server: streamOrigin,
     username: source.username,
     password: source.password,
     output: source.output,
-    streamOrigin: providerOrigin(source.server, payload.server_info),
+    streamOrigin,
+    ...(fallbackStreamOrigin ? { fallbackStreamOrigin } : {}),
     account,
   };
 }
@@ -670,32 +697,89 @@ const itemKey = (playlistId: string, kind: XtreamContentKind | "episode", id: st
 const vodCategoryKey = (kind: "movie" | "series", id: unknown): string =>
   `${kind}:${text(id) || "__none__"}`;
 
+export interface XtreamStreamUrls {
+  url: string;
+  /** The provider-advertised address, present only when it differs from the configured one. */
+  fallbackUrl?: string;
+}
+
+const pathAt = (
+  origin: string,
+  session: Pick<XtreamSession, "username" | "password">,
+  kind: "live" | "movie" | "series",
+  id: string,
+  extension?: string,
+): string => {
+  const base = `${origin}/${kind}/${encodeURIComponent(session.username)}/${encodeURIComponent(session.password)}/${encodeURIComponent(id)}`;
+  return extension ? `${base}.${encodeURIComponent(extension)}` : base;
+};
+
 const pathUrl = (
   session: XtreamSession,
   kind: "live" | "movie" | "series",
   id: string,
   extension?: string,
-): string => {
-  const base = `${session.streamOrigin}/${kind}/${encodeURIComponent(session.username)}/${encodeURIComponent(session.password)}/${encodeURIComponent(id)}`;
-  return extension ? `${base}.${encodeURIComponent(extension)}` : base;
-};
+): string => pathAt(session.streamOrigin, session, kind, id, extension);
+
+const fallbackPathUrl = (
+  session: XtreamSession,
+  kind: "live" | "movie" | "series",
+  id: string,
+  extension?: string,
+): string =>
+  session.fallbackStreamOrigin
+    ? pathAt(session.fallbackStreamOrigin, session, kind, id, extension)
+    : "";
+
+const withFallback = (url: string, fallbackUrl: string): XtreamStreamUrls =>
+  fallbackUrl && fallbackUrl !== url ? { url, fallbackUrl } : { url };
+
+export const buildXtreamLiveUrls = (
+  session: XtreamSession,
+  streamId: string,
+): XtreamStreamUrls =>
+  withFallback(
+    pathUrl(session, "live", streamId, session.output),
+    fallbackPathUrl(session, "live", streamId, session.output),
+  );
 
 export const buildXtreamLiveUrl = (session: XtreamSession, streamId: string): string =>
-  pathUrl(session, "live", streamId, session.output);
+  buildXtreamLiveUrls(session, streamId).url;
+
+export const buildXtreamMovieUrls = (
+  session: XtreamSession,
+  streamId: string,
+  extension?: string,
+): XtreamStreamUrls =>
+  withFallback(
+    pathUrl(session, "movie", streamId, extension),
+    fallbackPathUrl(session, "movie", streamId, extension),
+  );
 
 export const buildXtreamMovieUrl = (
   session: XtreamSession,
   streamId: string,
   extension?: string,
-): string => pathUrl(session, "movie", streamId, extension);
+): string => buildXtreamMovieUrls(session, streamId, extension).url;
+
+export const buildXtreamEpisodeUrls = (
+  session: XtreamSession,
+  episodeId: string,
+  extension?: string,
+): XtreamStreamUrls =>
+  withFallback(
+    pathUrl(session, "series", episodeId, extension),
+    fallbackPathUrl(session, "series", episodeId, extension),
+  );
 
 export const buildXtreamEpisodeUrl = (
   session: XtreamSession,
   episodeId: string,
   extension?: string,
-): string => pathUrl(session, "series", episodeId, extension);
+): string => buildXtreamEpisodeUrls(session, episodeId, extension).url;
 
-export const buildXtreamCatchupUrl = (
+const catchupAt = (
+  origin: string,
   session: XtreamSession,
   streamId: string,
   durationMinutes: number,
@@ -705,8 +789,68 @@ export const buildXtreamCatchupUrl = (
     .slice(0, 16)
     .replace(" ", ":")
     .replace(/:/g, (match, offset) => (offset > 10 ? "-" : match));
-  return `${session.streamOrigin}/timeshift/${encodeURIComponent(session.username)}/${encodeURIComponent(session.password)}/${encodeURIComponent(String(Math.floor(durationMinutes)))}/${encodeURIComponent(providerStart).replace(/%3A/gi, ":")}/${encodeURIComponent(streamId)}.ts`;
+  return `${origin}/timeshift/${encodeURIComponent(session.username)}/${encodeURIComponent(session.password)}/${encodeURIComponent(String(Math.floor(durationMinutes)))}/${encodeURIComponent(providerStart).replace(/%3A/gi, ":")}/${encodeURIComponent(streamId)}.ts`;
 };
+
+export const buildXtreamCatchupUrls = (
+  session: XtreamSession,
+  streamId: string,
+  durationMinutes: number,
+  start: string,
+): XtreamStreamUrls =>
+  withFallback(
+    catchupAt(session.streamOrigin, session, streamId, durationMinutes, start),
+    session.fallbackStreamOrigin
+      ? catchupAt(session.fallbackStreamOrigin, session, streamId, durationMinutes, start)
+      : "",
+  );
+
+export const buildXtreamCatchupUrl = (
+  session: XtreamSession,
+  streamId: string,
+  durationMinutes: number,
+  start: string,
+): string => buildXtreamCatchupUrls(session, streamId, durationMinutes, start).url;
+
+/** Preserve an explicit direct source with a configured fallback when an id exists. */
+export function buildXtreamDirectUrls(
+  source: XtreamSource,
+  item: XtreamMovie | XtreamEpisode,
+): XtreamStreamUrls {
+  const movie = "streamId" in item;
+  const id = movie ? item.streamId : item.episodeId;
+  return withFallback(
+    item.directSource,
+    id
+      ? pathAt(
+          configuredStreamOrigin(source.server),
+          source,
+          movie ? "movie" : "series",
+          id,
+          item.extension,
+        )
+      : "",
+  );
+}
+
+/** Upgrade cached Live addresses without waiting for another provider request. */
+export function restoreXtreamLiveAddress(source: XtreamSource, channel: Channel): Channel {
+  if (!channel.xtream) return channel;
+  const configured = pathAt(
+    configuredStreamOrigin(source.server),
+    source,
+    "live",
+    channel.xtream.streamId,
+    source.output,
+  );
+  const direct = channel.xtream.directSource;
+  const url = direct || configured;
+  const fallbackUrl = direct ? configured : channel.fallbackUrl || channel.url;
+  const restored = { ...channel, url };
+  delete restored.fallbackUrl;
+  if (fallbackUrl && fallbackUrl !== url) restored.fallbackUrl = fallbackUrl;
+  return restored;
+}
 
 export async function loadXtreamLive(
   session: XtreamSession,
@@ -732,12 +876,16 @@ export async function loadXtreamLive(
     const directSource = address(stream.direct_source, session.streamOrigin);
     const numberText = text(stream.num).trim();
     const providerNumber = Number(numberText);
+    const addresses = buildXtreamLiveUrls(session, streamId);
+    const url = directSource || addresses.url;
+    const fallbackUrl = directSource ? addresses.url : addresses.fallbackUrl;
     result.push({
       id: itemKey(playlistId, "live", streamId),
       name: text(stream.name),
       logo: address(stream.stream_icon, session.streamOrigin),
       group: categoryKey,
-      url: directSource || buildXtreamLiveUrl(session, streamId),
+      url,
+      ...(fallbackUrl && fallbackUrl !== url ? { fallbackUrl } : {}),
       quality: "",
       number:
         /^\d+$/.test(numberText) && Number.isSafeInteger(providerNumber) && providerNumber > 0

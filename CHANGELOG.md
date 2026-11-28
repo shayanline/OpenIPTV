@@ -15,6 +15,7 @@ Notable changes, newest first, in the format of [Keep a Changelog](https://keepa
 - Browsing now includes country flags and artwork previews.
 - Artwork loading adapts to device capacity so stronger hardware can load more images concurrently.
 - Xtream address entry accepts more provider formats and preserves credentials when the server address changes.
+- Installed widgets start correctly on Tizen 5.5, and Xtream playback tries the configured server before its advertised fallback.
 - Focus, validation and error messages have been fixed.
 
 ## 1.10.0

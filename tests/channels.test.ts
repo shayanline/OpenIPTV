@@ -339,6 +339,29 @@ test("a fresh cached VOD only account launches without network work", async () =
   expect(fetchMock).not.toHaveBeenCalled();
 });
 
+test("cached Xtream Live addresses use the configured path before any network refresh", async () => {
+  const s = await load();
+  const playlist = configureXtream(s, {
+    ...XTREAM_SOURCE,
+    server: "http://configured.example/portal",
+  });
+  seedXtreamCache(playlist, 0);
+  const fetchMock = vi.fn();
+  vi.stubGlobal("fetch", fetchMock);
+
+  const result = await s.useChannels.getState().load();
+  expect(result).toEqual({ count: 1, error: "" });
+  const expected = {
+    url: "http://configured.example/portal/live/viewer/secret/1.m3u8",
+    fallbackUrl: "http://provider.example/live/viewer/secret/1.m3u8",
+  };
+  expect(s.useChannels.getState().channels[0]).toMatchObject(expected);
+  const cached = s.readCachedProvider(playlist);
+  await afterIdle();
+  expect((await cached)?.channels[0]).toMatchObject(expected);
+  expect(fetchMock).not.toHaveBeenCalled();
+});
+
 test("refreshing an inactive playlist caches it without replacing active channels", async () => {
   const s = await load();
   configure(s, "http://list.invalid/active.m3u");

@@ -164,6 +164,7 @@ const IDLE_CAPABILITIES: PlaybackCapabilities = {
 
 const RECOVERING_STAGES = new Set([
   "warm",
+  "stream-fallback",
   "compatibility",
   "http-fallback",
   "reopen",
@@ -216,6 +217,7 @@ export const targetOf = (item: TuneItem, playlistId = ""): PlaybackTarget =>
         group: item.group,
         logo: item.logo,
         url: item.url,
+        ...(item.fallbackUrl ? { fallbackUrl: item.fallbackUrl } : {}),
       };
 
 /**
@@ -447,19 +449,30 @@ export function usePlaybackController(options: PlaybackControllerOptions): Playb
         return player.current?.warmRecover(kind) ?? false;
       },
       diagnose,
+      streamFallback: (session) => {
+        const url = session.target.fallbackUrl;
+        if (!url || url === session.originalUrl) return null;
+        return { ...session.request, url, browserRepair: false };
+      },
       fallback,
       reopen: (request) => {
+        const hadPicture = seenPicture.current;
         seenPicture.current = false;
         parts.current.phase = "connecting";
         const target = currentRef.current;
         const position = player.current?.getClock().position;
-        open({
+        const opened = {
           ...request,
           startSeconds:
-            target?.mode === "finite" && position !== null && position !== undefined
+            target?.mode === "finite" &&
+            (hadPicture || (position ?? 0) > 0) &&
+            position !== null &&
+            position !== undefined
               ? position
               : request.startSeconds,
-        });
+        };
+        open(opened);
+        return opened;
       },
       suspend,
       restore,

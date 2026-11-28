@@ -9,6 +9,8 @@ export interface PlaybackTarget {
   year?: string;
   rating?: string;
   url: string;
+  /** An alternate upstream, tried once after an eligible connection failure. */
+  fallbackUrl?: string;
   resumeAt?: number;
   /** The seed progress records are written from, so persisted state never holds a media URL. */
   progress?: PlaybackProgressSeed;
@@ -21,6 +23,8 @@ export interface Channel {
   logo: string;
   group: string;
   url: string;
+  /** An alternate upstream, tried once after an eligible connection failure. */
+  fallbackUrl?: string;
   quality: string;
   /** Provider or fallback channel number, replaced by a personal number in effective views. */
   number: number;

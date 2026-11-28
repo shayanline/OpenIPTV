@@ -4,9 +4,10 @@ import { whenIdle } from "../services/idle";
 import { read, write } from "../services/store";
 import {
   authenticateXtream,
-  buildXtreamCatchupUrl,
-  buildXtreamEpisodeUrl,
-  buildXtreamMovieUrl,
+  buildXtreamCatchupUrls,
+  buildXtreamDirectUrls,
+  buildXtreamEpisodeUrls,
+  buildXtreamMovieUrls,
   compareXtreamSeasonKeys,
   directSourceFingerprint,
   loadXtreamCategories,
@@ -26,6 +27,7 @@ import {
   type XtreamSeries,
   type XtreamSeriesDetail,
   type XtreamSession,
+  type XtreamStreamUrls,
 } from "../services/xtream";
 import type { Channel, PlaybackProgressSeed, PlaybackTarget } from "../types";
 import { searchVodItems, type SearchResults } from "../services/search";
@@ -357,17 +359,27 @@ async function sessionFor(playlist: Playlist): Promise<XtreamSession> {
   return request;
 }
 
-export async function libraryPlaybackUrl(item: XtreamMovie | XtreamEpisode): Promise<string> {
+export async function libraryPlaybackTarget(
+  item: XtreamMovie | XtreamEpisode,
+): Promise<XtreamStreamUrls> {
   const playlist = selected;
   if (!playlist) throw new Error("This playlist has no on demand library");
   /* A valid direct source is the provider's own address and beats a generated one. */
-  if (item.directSource) return item.directSource;
+  if (item.directSource) {
+    return playlist.source.kind === "xtream"
+      ? buildXtreamDirectUrls(playlist.source, item)
+      : { url: item.directSource };
+  }
   const session = await sessionFor(playlist);
   if ("streamId" in item) {
-    return buildXtreamMovieUrl(session, item.streamId, item.extension);
+    return buildXtreamMovieUrls(session, item.streamId, item.extension);
   }
   if (!item.episodeId) throw new Error("This episode has no playable stream address");
-  return buildXtreamEpisodeUrl(session, item.episodeId, item.extension);
+  return buildXtreamEpisodeUrls(session, item.episodeId, item.extension);
+}
+
+export async function libraryPlaybackUrl(item: XtreamMovie | XtreamEpisode): Promise<string> {
+  return (await libraryPlaybackTarget(item)).url;
 }
 
 function deduplicate(frameKey: string, work: () => Promise<void>): Promise<void> {
@@ -412,6 +424,12 @@ function catchupTarget(
   )
     return undefined;
   const id = `xtream:${playlist.id}:catchup:${metadata.streamId}:${programme.id}`;
+  const addresses = buildXtreamCatchupUrls(
+    session,
+    metadata.streamId,
+    Math.ceil((stop - start) / 60),
+    programme.start,
+  );
   return {
     id,
     playlistId: playlist.id,
@@ -420,12 +438,7 @@ function catchupTarget(
     name: programme.title,
     group: channel.name,
     logo: channel.logo,
-    url: buildXtreamCatchupUrl(
-      session,
-      metadata.streamId,
-      Math.ceil((stop - start) / 60),
-      programme.start,
-    ),
+    ...addresses,
     progress: {
       itemKey: id,
       playlistId: playlist.id,

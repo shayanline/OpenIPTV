@@ -33,11 +33,12 @@
 import { existsSync } from "node:fs";
 import { release } from "node:os";
 import { join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import { findChrome } from "./cdp.mjs";
 import { withBrowser } from "./browser.mjs";
 import { ensureEngine } from "./engines.mjs";
 import { supported, floorPlatform, ceilingPlatform, source } from "./platforms.mjs";
-import { serve, walk, compare } from "./harness.mjs";
+import { serve, walk, compare, driver } from "./harness.mjs";
 
 const ROOT = resolve(import.meta.dirname, "../..");
 const DIST = join(ROOT, "dist");
@@ -233,6 +234,14 @@ async function attempt(tv, binary, pinned, port) {
 
       let shots;
       try {
+        // HTTP masks the widget's filesystem MIME handling, so exercise both entry paths.
+        await cdp.send("Page.navigate", {
+          url: pathToFileURL(join(DIST, "index.html")).href,
+        });
+        await driver(cdp, port).waitFor(`location.protocol === "file:"
+          && document.readyState === "complete"
+          && !!document.querySelector(".onboard input")
+          && !document.querySelector('script[type="module"]')`);
         shots = await walk(cdp, port, LAYOUT);
       } catch (error) {
         if (!complaints.length) throw error;

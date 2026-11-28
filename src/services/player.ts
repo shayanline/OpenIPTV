@@ -1,6 +1,7 @@
 import type HlsType from "hls.js";
 import type { MediaTrack } from "../types";
 import { createRepairingPlaylistLoader } from "./browserRepair";
+import { loadHlsLibrary } from "./hlsLoader";
 import {
   normalizeAvPlayTracks,
   normalizeBrowserTracks,
@@ -16,15 +17,9 @@ import { parseAvPlayLiveRange, SEEK_TIMEOUT_MS } from "./playbackRange";
  * at all, so a static import spent the parse and the heap of a software player on a set that
  * has a hardware one and 120 MB to live in.
  *
- * Loading it lazily is safe precisely because of that split: the import only happens inside
- * playBrowser, which the TV path never reaches, so if a packaged widget could not fetch a
- * second chunk it would never be asked to.
+ * The classic widget bundle loads the library's separate script through hlsLoader.
  */
-let hlsModule: Promise<typeof HlsType> | null = null;
-const loadHls = () => {
-  hlsModule ??= import("hls.js").then((m) => m.default);
-  return hlsModule;
-};
+const loadHls = loadHlsLibrary;
 
 /**
  * One play/stop interface over two very different engines.
@@ -339,14 +334,14 @@ const hlsDynamicRange = (
 ): PlaybackDynamicRange | undefined => {
   const range = hlsVideoRange(videoRange);
   const supplemental = String(supplementalCodecs ?? "");
+  if (/(?:^|[\s,"])(?:dvh1|dvhe|dav1|dva1)\./i.test(`${String(codecs ?? "")},${supplemental}`)) {
+    return "Dolby Vision";
+  }
   const hdr10plus = supplemental.split(",").some((codec) => {
     const [format, ...brands] = codec.trim().toLowerCase().split("/");
     return /^(hvc1|hev1|av01)\./.test(format) && brands.includes("cdm4");
   });
   if (hdr10plus && (!range || range === "PQ")) return "HDR10+";
-  if (/(?:^|[\s,"])(?:dvh1|dvhe|dav1)\./i.test(`${String(codecs ?? "")},${supplemental}`)) {
-    return "Dolby Vision";
-  }
   // PQ describes the transfer function, not the presence of HDR10 static metadata.
   return range;
 };
@@ -1038,7 +1033,15 @@ export class Player {
       return;
     }
 
-    const Hls = await loadHls();
+    let Hls: typeof HlsType;
+    try {
+      Hls = await loadHls();
+    } catch {
+      if (generation === this.generation && this.video === video) {
+        this.fail("HLS_LIBRARY_NETWORK_ERROR", "network");
+      }
+      return;
+    }
     // The viewer may have moved on while the engine was being fetched, and this attempt is
     // then for a channel nobody is watching.
     if (generation !== this.generation || this.video !== video || this.failed) return;

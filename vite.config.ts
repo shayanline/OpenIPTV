@@ -13,6 +13,25 @@ export default defineConfig({
     react(),
     devRemoteBridge(),
     {
+      // The widget runs its bundle from the filesystem, where a Tizen 5.5 set reports no MIME
+      // type and Chromium will not run an ES module without one. A classic script, deferred so
+      // it still runs after the document is parsed, has no such requirement.
+      name: "openiptv-classic-script",
+      apply: "build",
+      // In a build the bare "hls.js" import is never used, so it resolves to nothing rather
+      // than being inlined; the library ships as its own file. See services/hlsLoader.
+      config: () => ({
+        resolve: { alias: [{ find: /^hls\.js$/, replacement: "/src/services/hlsStub.ts" }] },
+      }),
+      transformIndexHtml: {
+        order: "post",
+        handler: (html: string) =>
+          html
+            .replace(/<script type="module" crossorigin src=/g, "<script defer src=")
+            .replace(/<link rel="stylesheet" crossorigin /g, '<link rel="stylesheet" '),
+      },
+    },
+    {
       name: "openiptv-http-relay",
       configureServer(server) {
         server.middlewares.use((request, response, next) => {
@@ -31,6 +50,10 @@ export default defineConfig({
   // reference has to be relative. An absolute /assets/... path resolves to the
   // device root and 404s.
   base: "./",
+  experimental: {
+    // Classic script assets are requested after startup, when currentScript is null.
+    renderBuiltUrl: (_filename, { hostType }) => ({ relative: hostType !== "js" }),
+  },
   build: {
     outDir: "dist",
     // The oldest engine a supported set runs is Chromium 69, on the 2020 models. 2021 is
@@ -53,6 +76,23 @@ export default defineConfig({
     // That is handled at the foot of styles/app.css against a measured capability class.
     cssTarget: "chrome69",
     assetsInlineLimit: 0,
+    modulePreload: false,
+    rolldownOptions: {
+      transform: {
+        define: {
+          "import.meta.url": "__openiptvScriptUrl",
+          "import.meta.resolve": "undefined",
+        },
+      },
+      output: {
+        format: "iife",
+        codeSplitting: false,
+        intro:
+          "const __openiptvScriptUrl = document.currentScript ? document.currentScript.src : document.baseURI;",
+      },
+    },
+    // One stylesheet file beside the script, as before, rather than CSS injected by it.
+    cssCodeSplit: false,
     chunkSizeWarningLimit: 1500,
   },
   server: { port: 5173, host: true },

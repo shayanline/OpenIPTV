@@ -260,7 +260,13 @@ export async function mountApp(
   if (playbackUrl) {
     vi.doMock("../../src/stores/library", async (importOriginal) => {
       const actual = await importOriginal<typeof import("../../src/stores/library")>();
-      return { ...actual, libraryPlaybackUrl: playbackUrl };
+      return {
+        ...actual,
+        libraryPlaybackUrl: playbackUrl,
+        libraryPlaybackTarget: async (item: XtreamMovie | XtreamEpisode) => ({
+          url: await playbackUrl(item),
+        }),
+      };
     });
   } else {
     vi.doUnmock("../../src/stores/library");

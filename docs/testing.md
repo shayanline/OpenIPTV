@@ -2,6 +2,8 @@
 
 Automated checks cover application behavior, browser compatibility and layout. TV performance requires measurements on physical hardware. Desktop diagnostics do not provide a TV performance verdict.
 
+The engine compatibility gate first opens the built widget through a `file:` address and requires the interactive welcome form to render without a module entry script. Its HTTP fixture journeys then cover the configured application. This filesystem smoke check guards against widget MIME failures that an HTTP server masks, but it does not replace installation on a real set.
+
 ## Choosing local checks
 
 Builds and packaging do not require approval, including native compilation, generated build artifacts and type checks invoked by a build. Run other verification commands only after explicit final approval under the verification rules in [AGENTS.md](../AGENTS.md). When approval is given, run the union of the checks the changed files justify rather than every row in this table.

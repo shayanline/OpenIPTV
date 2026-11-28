@@ -21,12 +21,13 @@ import {
   authenticateXtream,
   loadXtreamCategories,
   loadXtreamLive,
+  restoreXtreamLiveAddress,
   XtreamRequestError,
   type XtreamAccount,
   type XtreamCategory,
   type XtreamSession,
 } from "../services/xtream";
-import type { PlaylistSource } from "../services/playlistUrl";
+import type { PlaylistSource, XtreamSource } from "../services/playlistUrl";
 import {
   assertPlaylistContent,
   PLAYLIST_ENTRY_MESSAGE,
@@ -228,11 +229,15 @@ const m3uCatalogue = (text: string) => {
   };
 };
 
-const liveCatalogue = (categories: XtreamCategory[], loaded: Channel[]) => {
+const liveCatalogue = (
+  categories: XtreamCategory[],
+  loaded: Channel[],
+  source?: XtreamSource,
+) => {
   const live = categories.filter((category) => category.kind === "live");
   const names = new Map(live.map((category) => [category.key, category.name]));
   const channels = loaded.map((channel) => ({
-    ...channel,
+    ...(source ? restoreXtreamLiveAddress(source, channel) : channel),
     group: names.get(channel.xtream?.categoryKey ?? "") ?? UNCATEGORISED,
   }));
   const grouped = new Map<string, Channel[]>();
@@ -316,7 +321,13 @@ export function readCachedProvider(playlist: Playlist): Promise<ProviderLineup |
               resolve(null);
               return;
             }
-            resolve(liveCatalogue(categories, live).provider);
+            resolve(
+              liveCatalogue(
+                categories,
+                live,
+                playlist.source.kind === "xtream" ? playlist.source : undefined,
+              ).provider,
+            );
           } catch {
             resolve(null);
           }
@@ -815,7 +826,7 @@ export const useChannels = create<State>((set, get) => {
         Array.isArray(live) &&
         (live.length || hasLibrary)
       ) {
-        const catalogue = liveCatalogue(categories, live);
+        const catalogue = liveCatalogue(categories, live, playlist.source);
         const managedCategories = categories.map(({ key, name }) => ({ key, name }));
         adoptPersonal(playlist, catalogue.channels);
         const effective = await adopt(playlist, catalogue.provider, prepared);

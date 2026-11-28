@@ -14,6 +14,7 @@ import {
 import type { MediaTrack, PlaybackTarget } from "../src/types";
 
 const playerMock = vi.hoisted(() => ({
+  tizen: false,
   instances: [] as Array<{
     emit: (event: PlayerEvent) => void;
     play: ReturnType<typeof vi.fn>;
@@ -39,7 +40,7 @@ const repairMock = vi.hoisted(() => ({
 }));
 
 vi.mock("../src/services/player", () => ({
-  onTizen: () => false,
+  onTizen: () => playerMock.tizen,
   Player: class {
     play = vi.fn();
     attach = vi.fn();
@@ -155,6 +156,7 @@ beforeEach(() => {
   vi.useFakeTimers();
   clearPlaybackTrackChoices();
   playerMock.instances.length = 0;
+  playerMock.tizen = false;
   repairMock.idleRepair.mockReset();
   repairMock.prepare.mockReset().mockResolvedValue(null);
   repairMock.revalidate.mockReset().mockResolvedValue(false);
@@ -163,6 +165,90 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.useRealTimers();
+});
+
+test.each([false, true])(
+  "Live keeps its alternate upstream and attempts it once when Tizen is %s",
+  async (tizen) => {
+    playerMock.tizen = tizen;
+    const { result } = mount();
+    const channel = {
+      id: "channel",
+      name: "Channel",
+      group: "News",
+      logo: "",
+      quality: "",
+      number: 1,
+      url: live.url,
+      fallbackUrl: "http://advertised.invalid/live.m3u8",
+    };
+    act(() => result.current.start(channel));
+    const player = playerMock.instances[0];
+    await act(async () => {
+      player.emit({ type: "error", code: "NETWORK_ERROR", warmKind: "network" });
+    });
+    expect(player.play).toHaveBeenCalledTimes(2);
+    expect(player.play.mock.calls[1][0].url).toBe(channel.fallbackUrl);
+    expect(result.current.snapshot.target).toMatchObject({
+      url: channel.url,
+      fallbackUrl: channel.fallbackUrl,
+    });
+
+    await act(async () => {
+      player.emit({ type: "error", code: "NETWORK_ERROR", warmKind: "network" });
+    });
+    const addresses = player.play.mock.calls.map(([request]) => request.url);
+    expect(addresses.filter((url) => url === channel.fallbackUrl)).toHaveLength(1);
+    if (tizen) expect(player.play).toHaveBeenCalledTimes(2);
+    else expect(addresses[2]).toContain(encodeURIComponent(channel.fallbackUrl));
+  },
+);
+
+test("a finite upstream fallback preserves resume position before the first picture", async () => {
+  const { result } = mount();
+  const target = {
+    ...movie,
+    resumeAt: 75,
+    fallbackUrl: "http://advertised.invalid/movie.mp4",
+  };
+  act(() => result.current.start(target));
+  const player = playerMock.instances[0];
+  await act(async () => {
+    player.emit({ type: "error", code: "NETWORK_ERROR", warmKind: "network" });
+  });
+  expect(player.play.mock.calls[1][0]).toMatchObject({
+    url: target.fallbackUrl,
+    mode: "finite",
+    startSeconds: 75,
+  });
+});
+
+test("finite fallback and delayed retries retain the last picture position", async () => {
+  const { result } = mount();
+  act(() =>
+    result.current.start({
+      ...movie,
+      resumeAt: 75,
+      fallbackUrl: "http://advertised.invalid/movie.mp4",
+    }),
+  );
+  const player = playerMock.instances[0];
+  player.clock.position = 90;
+  act(() => player.emit({ type: "playing" }));
+  await act(async () => {
+    player.emit({ type: "error", code: "NETWORK_ERROR", warmKind: "network" });
+  });
+  player.clock.position = 0;
+  await act(async () => {
+    player.emit({ type: "error", code: "NETWORK_ERROR", warmKind: "network" });
+    await Promise.resolve();
+    player.emit({ type: "error", code: "NETWORK_ERROR", warmKind: "network" });
+  });
+  await act(async () => vi.advanceTimersByTimeAsync(4000));
+  expect(player.play).toHaveBeenCalledTimes(4);
+  expect(player.play.mock.calls.slice(1).map(([request]) => request.startSeconds)).toEqual([
+    90, 90, 90,
+  ]);
 });
 
 test("channel stepping names the landing channel now and tunes once the pressing stops", async () => {

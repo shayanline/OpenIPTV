@@ -32,6 +32,7 @@ export type RecoveryStage =
   | "idle"
   | "buffering"
   | "warm"
+  | "stream-fallback"
   | "compatibility"
   | "http-fallback"
   | "reopen"
@@ -47,7 +48,7 @@ export interface RecoverySession {
    */
   key: string;
   target: PlaybackTarget;
-  /** The address the viewer asked for, before any repair or fallback rewrite. */
+  /** The upstream address, advanced only when a provider fallback replaces it. */
   originalUrl: string;
   /** The open request an ordinary reopen uses. */
   request: PlayerOpenRequest;
@@ -84,8 +85,10 @@ export interface RecoveryActions {
   diagnose(session: RecoverySession): Promise<PlayerOpenRequest | null>;
   /** The HTTP fallback request for the original address, or null when none applies. */
   fallback(session: RecoverySession): PlayerOpenRequest | null;
-  /** Open a request through the ordinary playback pipeline. */
-  reopen(request: PlayerOpenRequest): void;
+  /** An alternate provider address, tried once before diagnosis or HTTP fallback. */
+  streamFallback?(session: RecoverySession): PlayerOpenRequest | null;
+  /** Open a request and return any adjusted resume position for subsequent attempts. */
+  reopen(request: PlayerOpenRequest): PlayerOpenRequest;
   /** Give the engine and decoder back while the app is off screen. */
   suspend(): void;
   /** Take the engine back on return. False means a coordinated recovery is needed. */
@@ -165,6 +168,7 @@ export class PlaybackRecoveryCoordinator {
   /** Corrective steps already spent, keyed by the original target identity. */
   private compatibilityTried = new Set<string>();
   private fallbackTried = new Set<string>();
+  private streamFallbackTried = false;
 
   private startupTimer: number | undefined;
   private statusTimer: number | undefined;
@@ -325,6 +329,22 @@ export class PlaybackRecoveryCoordinator {
     if (!session || this.offscreen || this.disposed) return;
 
     const policy = faultPolicy(this.faultCode ?? "");
+    if (policy.httpFallback && !this.streamFallbackTried) {
+      this.streamFallbackTried = true;
+      const request = this.actions.streamFallback?.(session);
+      if (request) {
+        // Keep the target identity, but repair and retry the newly selected upstream.
+        this.session = { ...session, originalUrl: request.url, request };
+        this.currentRequest = request;
+        this.stage = "stream-fallback";
+        this.statusVisible = true;
+        this.emit();
+        this.reopen(request);
+        this.seenPicture = false;
+        this.armStartup();
+        return;
+      }
+    }
     if (
       session.compatibility &&
       policy.compatibility &&
@@ -342,7 +362,7 @@ export class PlaybackRecoveryCoordinator {
         this.currentRequest = diagnosed;
         this.stage = "reopen";
         this.emit();
-        this.actions.reopen(diagnosed);
+        this.reopen(diagnosed);
         this.seenPicture = false;
         this.armStartup();
         return;
@@ -359,7 +379,7 @@ export class PlaybackRecoveryCoordinator {
         this.currentRequest = request;
         this.stage = "reopen";
         this.emit();
-        this.actions.reopen(request);
+        this.reopen(request);
         this.seenPicture = false;
         this.armStartup();
         return;
@@ -367,6 +387,17 @@ export class PlaybackRecoveryCoordinator {
     }
 
     this.scheduleRetry(session);
+  }
+
+  private reopen(request: PlayerOpenRequest) {
+    const token = this.token;
+    const opened = this.actions.reopen(request);
+    if (token !== this.token || !this.session) return;
+    this.currentRequest = opened;
+    this.session.request = {
+      ...this.session.request,
+      startSeconds: opened.startSeconds,
+    };
   }
 
   /**
@@ -415,7 +446,7 @@ export class PlaybackRecoveryCoordinator {
       this.stage = "reopen";
       this.statusVisible = this.hasPlayed;
       this.emit();
-      this.actions.reopen(this.currentRequest ?? session.request);
+      this.reopen(this.currentRequest ?? session.request);
       // The reopened attempt is a fresh connection that may itself stall or freeze.
       this.seenPicture = false;
       this.armStartup();
@@ -440,6 +471,7 @@ export class PlaybackRecoveryCoordinator {
     this.seekingActive = false;
     this.pausedActive = false;
     this.currentRequest = session.request;
+    this.streamFallbackTried = false;
     this.armStartup();
     if (!hasPlayed) this.armStatusDelay();
     this.emit();

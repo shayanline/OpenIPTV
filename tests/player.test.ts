@@ -550,6 +550,12 @@ test.each([
   ["unsupported CODECS brand", 'CODECS="av01.0.05M.10.0.112/cdm4"', undefined],
   ["HDR10+", 'VIDEO-RANGE=PQ,SUPPLEMENTAL-CODECS="av01.0.05M.10.0.112/cdm4/other"', "HDR10+"],
   ["Dolby Vision", 'VIDEO-RANGE=PQ,CODECS="dvh1.05.06,ec-3"', "Dolby Vision"],
+  ["Dolby Vision AV1", 'VIDEO-RANGE=PQ,CODECS="dva1.10.09"', "Dolby Vision"],
+  [
+    "Dolby Vision with an HDR10+ compatible layer",
+    'VIDEO-RANGE=PQ,CODECS="dvh1.08.06",SUPPLEMENTAL-CODECS="hvc1.2.4.L150.B0/cdm4"',
+    "Dolby Vision",
+  ],
   [
     "Dolby Vision HLG compatibility",
     'VIDEO-RANGE=HLG,CODECS="hvc1.2.4.L153.B0",SUPPLEMENTAL-CODECS="dvh1.08.07/db4h"',
@@ -827,6 +833,7 @@ test.each([
   ["HLG", { CODECS: "hvc1.2.4.L150.B0" }, "HLG"],
   ["SDR", { CODECS: "hvc1.2.4.L150.B0" }, "SDR"],
   ["PQ", { CODECS: "dvh1.05.06" }, "Dolby Vision"],
+  ["PQ", { CODECS: "dva1.10.09" }, "Dolby Vision"],
 ] as const)(
   "hls.js exposes the selected level declaration for %s",
   async (range, attrs, expected) => {
